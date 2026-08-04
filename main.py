@@ -106,7 +106,7 @@ PRESETS = [
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SmartShapeCrop - 挖水池裁剪设计器")
+        self.setWindowTitle("SmartShapeCrop - 水池圆角裁剪设计器")
         self.resize(1400, 900)
 
         # 中央：左边画布 + 右边标签页（属性面板/裁剪面板）
@@ -117,8 +117,8 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self.panel = PropertyPanel()
         self.cropper = CropperPanel()
-        self._tabs.addTab(self.panel, "设计器")
-        self._tabs.addTab(self.cropper, "裁剪工具")
+        self._tabs.addTab(self.cropper, "圆角裁剪工具")
+        self._tabs.addTab(self.panel, "水池设计器")
         
         splitter.addWidget(self.canvas)
         splitter.addWidget(self._tabs)
