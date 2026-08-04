@@ -1,0 +1,5 @@
+PyQt5>=5.15.0
+Pillow>=9.0.0
+numpy>=1.21.0
+psd-tools>=1.9.28
+opencv-python>=4.5.0
