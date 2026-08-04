@@ -6,6 +6,10 @@
 from PIL import Image, ImageDraw
 import os
 
+# 提高像素上限：业务常处理印刷级超大图（如 EPS 栅格化后超过 1 亿像素），
+# 默认 89478485 像素会触发 DecompressionBombWarning，设为 None 关闭限制。
+Image.MAX_IMAGE_PIXELS = None
+
 # ============ 参数配置 ============
 src_path = r"D:\SmartShapeCrop\psd_demo\双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
 output_dir = r"D:\SmartShapeCrop\psd_demo"
