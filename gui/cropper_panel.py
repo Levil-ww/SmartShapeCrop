@@ -105,7 +105,7 @@ class CropperPanel(QWidget):
         grid_size.addWidget(self._sp_h, 0, 5)
         
         grid_size.addWidget(QLabel("DPI:"), 1, 0)
-        self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(300)
+        self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(150)
         grid_size.addWidget(self._sp_dpi, 1, 1)
         
         grid_size.addWidget(QLabel("裁剪模式:"), 1, 2)

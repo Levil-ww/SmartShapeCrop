@@ -134,34 +134,50 @@ def _looks_like_tile(path: str) -> bool:
 
 
 def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
-    """返回挖洞区域（即内部填充区域）的 bool mask"""
+    """返回挖洞区域（即内部填充区域）的 bool mask，与边框带的同心圆角保持一致。"""
     from .geometry import make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask, apply_rounded_corners_to_mask
     W, H = design.canvas_w_px, design.canvas_h_px
     m = make_mask((W, H))
+
+    inner_rect = design.inner_rect_px()
+    outer = design.outer_rect_px()
+    corners = design.corners_px
+
+    T_left = inner_rect.x - outer.x
+    T_right = outer.right - inner_rect.right
+    T_top = inner_rect.y - outer.y
+    T_bottom = outer.bottom - inner_rect.bottom
+    T_total = max(T_left, T_right, T_top, T_bottom)
+
     if design.mode == 'rect_hole':
-        fill_rect_mask(m, design.inner_rect_px(), 255)
+        fill_rect_mask(m, inner_rect, 255)
+        inner_corners = {ck: max(0, corners.get(ck, 0.0) - T_total) for ck in ('tl', 'tr', 'bl', 'br')}
+        if any(r > 0 for r in inner_corners.values()):
+            apply_rounded_corners_to_mask(m, inner_rect, inner_corners)
+        return np.array(m, dtype=bool)
+
     elif design.mode == 'rect_lshape':
-        # L 形内部 = inner_rect 且 不在 cut_rect
-        fill_rect_mask(m, design.inner_rect_px(), 255)
+        fill_rect_mask(m, inner_rect, 255)
         cut = design.l_shape_px().cut_rect()
         cut_mask = make_mask((W, H))
         fill_rect_mask(cut_mask, cut, 255)
-        # 应用圆角（在 L 形切角之前，先对 inner_rect 应用圆角）
-        corners = design.corners_px
-        inner_rect = design.inner_rect_px()
-        # 注意：圆角在 L 形模式下可能不完全适用，但我们仍然应用到 inner_rect
-        apply_rounded_corners_to_mask(m, inner_rect, corners)
-        m_arr = np.array(m) & ~np.array(cut_mask)
+        m_arr = np.array(m, dtype=bool) & ~np.array(cut_mask, dtype=bool)
+
+        cut_corner = design.l_shape_px().cut_corner
+        inner_corners = {ck: max(0, corners.get(ck, 0.0) - T_total) for ck in ('tl', 'tr', 'bl', 'br')}
+        for ck in ('tl', 'tr', 'bl', 'br'):
+            if ck == cut_corner:
+                continue
+            if inner_corners[ck] > 0:
+                corner_mask = make_mask((W, H))
+                fill_rect_mask(corner_mask, inner_rect, 255)
+                apply_rounded_corners_to_mask(corner_mask, inner_rect, {ck2: (inner_corners[ck2] if ck2 == ck else 0) for ck2 in ('tl', 'tr', 'bl', 'br')})
+                m_arr = m_arr | np.array(corner_mask, dtype=bool)
         return m_arr.astype(bool)
-    else:
+
+    else:  # ellipse_hole
         fill_ellipse_mask(m, design.ellipse_px(), 255)
-    
-    # 对于非 L 形模式，应用圆角
-    corners = design.corners_px
-    inner_rect = design.inner_rect_px()
-    apply_rounded_corners_to_mask(m, inner_rect, corners)
-    
-    return np.array(m, dtype=bool)
+        return np.array(m, dtype=bool)
 
 
 def _render_inner_area(design: CropDesign) -> Image.Image:

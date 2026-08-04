@@ -675,7 +675,7 @@ def _layer_rounded_mask_arr(canvas_w: int, canvas_h: int,
 
 def apply_multi_layer_rounded_corners(img: Image.Image,
                                       corners_cm: dict[str, float],
-                                      dpi: int = 300,
+                                      dpi: int = 150,
                                       bg_color: tuple = (255, 255, 255),
                                       debug: bool = False) -> Image.Image:
     """

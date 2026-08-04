@@ -24,7 +24,7 @@ def _preset_rect_nested() -> CropDesign:
     """图 1 风格：矩形嵌套 + 3 层边框 + 米色背景 + 边框文字"""
     d = CropDesign(
         mode='rect_hole',
-        canvas_w_cm=50, canvas_h_cm=70, dpi=300,
+        canvas_w_cm=50, canvas_h_cm=70, dpi=150,
         outer_margin_cm=1.0,
         inner_margin_top_cm=10, inner_margin_bottom_cm=10,
         inner_margin_left_cm=10, inner_margin_right_cm=10,
@@ -43,7 +43,7 @@ def _preset_lshape() -> CropDesign:
     """图 2/4 风格：L 形挖角 + 浅米色 + 简单边框"""
     d = CropDesign(
         mode='rect_lshape',
-        canvas_w_cm=80, canvas_h_cm=30, dpi=300,
+        canvas_w_cm=80, canvas_h_cm=30, dpi=150,
         outer_margin_cm=0.5,
         inner_margin_top_cm=3, inner_margin_bottom_cm=3,
         inner_margin_left_cm=3, inner_margin_right_cm=3,
@@ -61,7 +61,7 @@ def _preset_ellipse() -> CropDesign:
     """图 3 风格：椭圆嵌套 + 3 层边框 + 白色画布"""
     d = CropDesign(
         mode='ellipse_hole',
-        canvas_w_cm=60, canvas_h_cm=80, dpi=300,
+        canvas_w_cm=60, canvas_h_cm=80, dpi=150,
         outer_margin_cm=1.0,
         ellipse_rx_ratio=0.30, ellipse_ry_ratio=0.28,
         borders=[
@@ -79,7 +79,7 @@ def _preset_tile() -> CropDesign:
     """图 5 风格：用于填充瓷砖花纹的矩形嵌套（等你选素材图后自动覆盖背景）"""
     d = CropDesign(
         mode='rect_hole',
-        canvas_w_cm=70, canvas_h_cm=60, dpi=300,
+        canvas_w_cm=70, canvas_h_cm=60, dpi=150,
         outer_margin_cm=0.8,
         inner_margin_top_cm=12, inner_margin_bottom_cm=12,
         inner_margin_left_cm=25, inner_margin_right_cm=8,

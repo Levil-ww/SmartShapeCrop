@@ -105,7 +105,7 @@ class CropDesign:
     # 画布尺寸（像素 = 厘米 × DPI）
     canvas_w_cm: float = 50.0
     canvas_h_cm: float = 70.0
-    dpi: int = 300
+    dpi: int = 150
 
     # 模式：'rect_hole' 矩形嵌套(图1/5) | 'rect_lshape' L形(图2/4) | 'ellipse_hole' 椭圆(图3)
     mode: Literal['rect_hole', 'rect_lshape', 'ellipse_hole'] = 'rect_hole'
@@ -297,72 +297,105 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
     计算每层边框的掩膜（numpy bool 数组，True 表示该层区域）
     返回 [(layer_mask, layer_def), ...]  从外向内
 
-    圆角处理（关键！）：
-      - 外轮廓 outer_rect 必须先应用圆角（否则最外边框四角是直角尖角）
-      - 内挖洞 inner_rect（rect_hole / rect_lshape 模式）也必须应用圆角
-      - 这样 frame_mask = 圆角outer ∩ 非圆角inner 的边界本身就是圆角矩形带，
-        后续靠腐蚀切分的各层边框 band 自然也都是圆角的，
-        保证属性面板设置 8cm 大圆角时，从外黑框到内花纹每层边框都同步裁圆角。
-      - ellipse_hole 模式无直角角，不需要额外圆角处理。
+    核心思路：
+      每层边框带 = 同心圆角矩形差集
+      - 外层：距 outer_rect 偏移 t_outer 的圆角矩形（圆角半径 max(0, R - t_outer)）
+      - 内层：距 outer_rect 偏移 t_outer + t_layer 的圆角矩形（圆角半径 max(0, R - t_outer - t_layer)）
+      - band = 外层 & ~内层
+
+      这样每层在直线部分是矩形带，在角落是同心环扇形，
+      不会出现白色覆盖，边框自身颜色和线条完整保留。
     """
     w, h = design.canvas_w_px, design.canvas_h_px
     outer = design.outer_rect_px()
     corners = design.corners_px
+    inner_rect = design.inner_rect_px()
 
-    # 1. 外边框外轮廓 mask：outer_rect + 圆角
-    outer_mask = make_mask((w, h))
-    fill_rect_mask(outer_mask, outer, 255)
-    # 对外轮廓 outer_rect 应用圆角：切掉 L 形尖角，保留扇形圆弧
-    apply_rounded_corners_to_mask(outer_mask, outer, corners)
-    outer_arr = np.array(outer_mask, dtype=bool)
+    # 1. 计算 frame_mask（总边框带）：外层圆角矩形 - 内层圆角矩形
+    outer_solid = make_mask((w, h))
+    fill_rect_mask(outer_solid, outer, 255)
+    apply_rounded_corners_to_mask(outer_solid, outer, corners)
 
-    # 2. 内挖洞 mask：根据模式 + 圆角
-    inner_mask = make_mask((w, h))
-    if design.mode == 'rect_hole':
-        inner_rect = design.inner_rect_px()
-        fill_rect_mask(inner_mask, inner_rect, 255)
-        # 挖洞的内边缘也要应用圆角，保证边框最内边缘也是圆角
-        apply_rounded_corners_to_mask(inner_mask, inner_rect, corners)
-        inner_arr = np.array(inner_mask, dtype=bool)
-    elif design.mode == 'rect_lshape':
-        inner_rect = design.inner_rect_px()
-        fill_rect_mask(inner_mask, inner_rect, 255)
-        # 先对 inner_rect 应用圆角（与 _get_inner_pixel_mask 顺序一致）
-        apply_rounded_corners_to_mask(inner_mask, inner_rect, corners)
-        # 再挖掉 L 形的那个角
-        cut = design.l_shape_px().cut_rect()
-        cut_mask = make_mask((w, h))
-        fill_rect_mask(cut_mask, cut, 255)
-        inner_arr = np.array(inner_mask, dtype=bool) & ~np.array(cut_mask, dtype=bool)
-    else:  # ellipse_hole
-        fill_ellipse_mask(inner_mask, design.ellipse_px(), 255)
-        inner_arr = np.array(inner_mask, dtype=bool)
+    inner_solid = make_mask((w, h))
+    fill_rect_mask(inner_solid, inner_rect, 255)
+    inner_corners = {ck: max(0, corners.get(ck, 0.0) - max(
+        inner_rect.x - outer.x, outer.right - inner_rect.right,
+        inner_rect.y - outer.y, outer.bottom - inner_rect.bottom
+    )) for ck in ('tl', 'tr', 'bl', 'br')}
+    # 实际上 inner_rect 的圆角半径 = max(0, R - T)，已在 _get_inner_pixel_mask 中正确计算
+    # 这里简单用相同逻辑
+    T_total = max(
+        inner_rect.x - outer.x, outer.right - inner_rect.right,
+        inner_rect.y - outer.y, outer.bottom - inner_rect.bottom
+    )
+    inner_corners = {ck: max(0, corners.get(ck, 0.0) - T_total) for ck in ('tl', 'tr', 'bl', 'br')}
+    if any(r > 0 for r in inner_corners.values()):
+        apply_rounded_corners_to_mask(inner_solid, inner_rect, inner_corners)
 
-    # 水池整体 = 圆角外轮廓  ∩  非(圆角内挖洞)   →  天然是圆角边框带
-    frame_mask = outer_arr & (~inner_arr)
+    frame_mask = np.array(outer_solid, dtype=bool) & ~np.array(inner_solid, dtype=bool)
 
-    # 2. 按每层边框 offset 向内收缩，切分 band
+    # 2. 按每层边框 offset 切分 band
     bands: list[tuple[np.ndarray, BorderLayer]] = []
-    remaining = frame_mask.copy()
-    prev_inner = outer_arr.copy()   # 上一层的“内边界掩膜”（初始=outer矩形）
+    cumulative_offset = 0
 
     for layer in design.borders:
         layer.offset_px = design.cm2px(layer.offset_cm)
-        # 当前层的“内边”= prev_inner 整体向内收缩 offset_px
-        shrink = int(round(max(1, layer.offset_px)))
-        current_inner = _erode_mask(prev_inner, shrink)
-        # 当前层 band = 剩余区域 且 在 prev_inner 且 不在 current_inner
-        band = remaining & prev_inner & (~current_inner)
-        bands.append((band, layer))
-        remaining = remaining & (~band)
-        prev_inner = current_inner
+        t_layer = int(round(max(1, layer.offset_px)))
+        t_outer = cumulative_offset
+        cumulative_offset += t_layer
 
-    # 如果还有剩余区域（边框层总厚度 < 水池厚度），自动追加一个使用 hole_bg_color 的填充层
+        # 外层：距 outer_rect 偏移 t_outer 的圆角矩形
+        outer_rect_i = RectShape(
+            x=outer.x + t_outer, y=outer.y + t_outer,
+            w=outer.w - 2 * t_outer, h=outer.h - 2 * t_outer,
+            corner_r=max(0, corners.get('br', 0.0) - t_outer)
+        )
+        outer_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_outer) for ck in ('tl', 'tr', 'bl', 'br')}
+        outer_mask_i = make_mask((w, h))
+        fill_rect_mask(outer_mask_i, outer_rect_i, 255)
+        if any(r > 0 for r in outer_radii_i.values()):
+            apply_rounded_corners_to_mask(outer_mask_i, outer_rect_i, outer_radii_i)
+
+        # 内层：距 outer_rect 偏移 t_outer + t_layer 的圆角矩形
+        t_inner = t_outer + t_layer
+        inner_rect_i = RectShape(
+            x=outer.x + t_inner, y=outer.y + t_inner,
+            w=outer.w - 2 * t_inner, h=outer.h - 2 * t_inner,
+            corner_r=max(0, corners.get('br', 0.0) - t_inner)
+        )
+        inner_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_inner) for ck in ('tl', 'tr', 'bl', 'br')}
+        inner_mask_i = make_mask((w, h))
+        fill_rect_mask(inner_mask_i, inner_rect_i, 255)
+        if any(r > 0 for r in inner_radii_i.values()):
+            apply_rounded_corners_to_mask(inner_mask_i, inner_rect_i, inner_radii_i)
+
+        band = np.array(outer_mask_i, dtype=bool) & ~np.array(inner_mask_i, dtype=bool)
+        bands.append((band, layer))
+
+    # 3. 处理剩余区域
+    all_bands = np.zeros((h, w), dtype=bool)
+    for b, _ in bands:
+        all_bands = all_bands | b
+    remaining = frame_mask & (~all_bands)
     if remaining.any():
         extra = BorderLayer(fill_type='solid', color=design.hole_bg_color)
         bands.append((remaining, extra))
 
     return bands
+
+
+def _draw_rounded_seg(mask_img, cx, cy, radius, corner_key, fill_val):
+    """在 mask 上画一个扇形（用于构建角落的环扇形）"""
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(mask_img)
+    # 扇形的 bounding box
+    bbox = [cx - radius, cy - radius, cx + radius, cy + radius]
+    # 根据角落确定起始和结束角度（PIL screen 坐标系：0=右，90=下，180=左，270=上）
+    if corner_key == 'tl':     start, end = 180, 270
+    elif corner_key == 'tr':   start, end = 270, 360
+    elif corner_key == 'bl':   start, end = 90, 180
+    else:                      start, end = 0, 90
+    draw.pieslice(bbox, start=start, end=end, fill=fill_val)
 
 
 def _erode_mask(mask_bool: np.ndarray, px: int) -> np.ndarray:
