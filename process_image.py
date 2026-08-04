@@ -50,12 +50,12 @@ r = corner_r_px
 mask = Image.new('L', (w, h), 255)
 draw = ImageDraw.Draw(mask)
 
-# 直接切圆角：以右下角顶点(w-1, h-1)为圆心，切掉左上1/4圆
-# [实测] PIL 屏幕坐标系角度：0°=右, 90°=下, 180°=左, 270°=上（逆时针）
-# 切掉左上1/4圆 = 180°(左) 逆时针到 270°(上) 的扇形
-cx, cy = w - 1, h - 1
-bbox = [cx - r, cy - r, cx + r, cy + r]
-draw.pieslice(bbox, start=180, end=270, fill=0)
+# 两步法：1.挖正方形  2.填回 1/4 圆
+# 1. 先把右下角 r×r 正方形区域设为0（挖空）
+draw.rectangle([w - r, h - r, w, h], fill=0)
+# 2. 填回右下 1/4 圆（圆心在 (w-r, h-r)，角度 0°→90° 即右下象限）
+# [实测] PIL 屏幕坐标系：0°=右, 90°=下, 180°=左, 270°=上
+draw.pieslice([w - 2*r, h - 2*r, w, h], start=0, end=90, fill=255)
 
 # 应用遮罩：圆角处填充白色（可改为透明或其他颜色）
 result = Image.new('RGB', (w, h), (255, 255, 255))

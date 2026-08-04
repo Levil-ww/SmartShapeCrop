@@ -5,7 +5,7 @@ gui/property_panel.py
 from __future__ import annotations
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QDoubleSpinBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
     QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
     QColorDialog, QFrame, QScrollArea, QMessageBox,
 )
@@ -131,6 +131,20 @@ class PropertyPanel(QWidget):
         fl.addLayout(self._row("挖角宽度(cm)", self._sp_lw))
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
         self._inner_layout.addWidget(self._gb_l)
+
+        # 4.5) 圆角设置
+        self._gb_corner = QGroupBox("圆角设置（厘米）")
+        fc = QVBoxLayout(self._gb_corner)
+        grid_corner = QGridLayout()
+        self._sp_design_corners = {}
+        corner_labels = [('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]
+        for i, (key, name) in enumerate(corner_labels):
+            grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 3)
+            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(getattr(self.design, f'corner_{key}_cm', 0)); sp.setDecimals(1); sp.setSuffix(" cm")
+            grid_corner.addWidget(sp, i // 2, (i % 2) * 3 + 1)
+            self._sp_design_corners[key] = sp
+        fc.addLayout(grid_corner)
+        self._inner_layout.addWidget(self._gb_corner)
 
         # 5) 椭圆参数
         self._gb_e = QGroupBox("椭圆参数")
@@ -288,6 +302,11 @@ class PropertyPanel(QWidget):
         d.l_corner = self._cb_lcorner.currentData()
         d.l_cut_w_cm = self._sp_lw.value()
         d.l_cut_h_cm = self._sp_lh.value()
+        # 圆角设置
+        d.corner_tl_cm = self._sp_design_corners['tl'].value()
+        d.corner_tr_cm = self._sp_design_corners['tr'].value()
+        d.corner_bl_cm = self._sp_design_corners['bl'].value()
+        d.corner_br_cm = self._sp_design_corners['br'].value()
         d.ellipse_rx_ratio = self._sp_erx.value()
         d.ellipse_ry_ratio = self._sp_ery.value()
         d.outer_bg_color = self._btn_outer_color.color()

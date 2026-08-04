@@ -27,7 +27,7 @@ from core.psd_loader import export_psd_layers_as_jpgs, load_psd_flattened, is_ps
 from core.geometry import CropDesign, BorderLayer
 from core.image_ops import render_design, save_jpg
 
-WORK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "psd_demo")
+WORK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../psd_demo")
 os.makedirs(WORK, exist_ok=True)
 
 PSD_PATH = os.path.join(WORK, "demo_materials.psd")   # 可以改成你自己的 PSD

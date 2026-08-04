@@ -36,24 +36,27 @@ class CropConfig:
 # 圆角处理参数
 # [实测] PIL 屏幕坐标系（y 向下）pieslice 角度映射（逆时针方向）：
 #   0° = 右, 90° = 下, 180° = 左, 270° = 上
-# 注：PIL 文档称 "90° is up"，但在屏幕坐标系（y向下）中实际表现为 90°=下
-# 思路：mask 初始 255（保留原图），将"要切掉的圆角扇形" fill=0（显示背景色）
-# 每个圆角 = 以图片角落顶点为圆心、r 为半径的 1/4 圆（在图片内部那一侧）
-_CORNER_CUT_PARAMS = {
-    # 左上角顶点(0,0)：切掉右下 1/4 圆（dx>0, dy>0），角度 0(右)→90(下)
-    'tl': (0, 90),
-    # 右上角顶点(w-1,0)：切掉左下 1/4 圆（dx<0, dy>0），角度 90(下)→180(左)
-    'tr': (90, 180),
-    # 左下角顶点(0,h-1)：切掉右上 1/4 圆（dx>0, dy<0），角度 270(上)→360(右)
-    'bl': (270, 360),
-    # 右下角顶点(w-1,h-1)：切掉左上 1/4 圆（dx<0, dy<0），角度 180(左)→270(上)
-    'br': (180, 270),
+# 思路（两步法）：
+#   1. 先把角落 r×r 正方形设为 0（切掉）
+#   2. 再用 pieslice 把"图片内部的 1/4 圆"填回 255（保留）
+# 这样切掉的是 L 形（正方形减去 1/4 圆），即只切掉尖角，保留圆弧
+# 圆心在正方形的"内角"顶点（即图片内部那个角），bbox 以该圆心为中心
+_CORNER_PARAMS = {
+    # tl: 正方形 [0,0,r,r]，圆心在 (r,r)，填回左上 1/4 圆 (dx<0,dy<0) → 180°→270°
+    'tl': lambda w, h, r: ([0, 0, 2*r, 2*r], 180, 270),
+    # tr: 正方形 [w-r,0,w,r]，圆心在 (w-r,r)，填回右上 1/4 圆 (dx>0,dy<0) → 270°→360°
+    'tr': lambda w, h, r: ([w-2*r, 0, w, 2*r], 270, 360),
+    # bl: 正方形 [0,h-r,r,h]，圆心在 (r,h-r)，填回左下 1/4 圆 (dx<0,dy>0) → 90°→180°
+    'bl': lambda w, h, r: ([0, h-2*r, 2*r, h], 90, 180),
+    # br: 正方形 [w-r,h-r,w,h]，圆心在 (w-r,h-r)，填回右下 1/4 圆 (dx>0,dy>0) → 0°→90°
+    'br': lambda w, h, r: ([w-2*r, h-2*r, w, h], 0, 90),
 }
-_CORNER_VERTEX = {
-    'tl': lambda w, h: (0, 0),
-    'tr': lambda w, h: (w - 1, 0),
-    'bl': lambda w, h: (0, h - 1),
-    'br': lambda w, h: (w - 1, h - 1),
+# 各角对应的正方形区域
+_CORNER_SQUARE = {
+    'tl': lambda w, h, r: (0, 0, r, r),
+    'tr': lambda w, h, r: (w - r, 0, w, r),
+    'bl': lambda w, h, r: (0, h - r, r, h),
+    'br': lambda w, h, r: (w - r, h - r, w, h),
 }
 
 
@@ -99,19 +102,22 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
         
         r = max(1, int(round(radius_cm * dpi / 2.54)))
         
-        # 获取角度参数
-        angles = _CORNER_CUT_PARAMS.get(corner_key)
-        vertex_fn = _CORNER_VERTEX.get(corner_key)
-        if angles is None or vertex_fn is None:
+        get_params = _CORNER_PARAMS.get(corner_key)
+        get_square = _CORNER_SQUARE.get(corner_key)
+        if get_params is None or get_square is None:
             continue
         
-        # 角落顶点为圆心，构造 2r x 2r 的 bbox（圆心在 bbox 正中心）
-        cx, cy = vertex_fn(w, h)
-        bbox = [cx - r, cy - r, cx + r, cy + r]
-        start_deg, end_deg = angles
+        # 1. 先把角落 r×r 正方形设为 0（切掉尖角）
+        sq = get_square(w, h, r)
+        sq_safe = [max(0, sq[0]), max(0, sq[1]), min(w, sq[2]), min(h, sq[3])]
+        if sq_safe[2] > sq_safe[0] and sq_safe[3] > sq_safe[1]:
+            draw.rectangle(sq_safe, fill=0)
         
-        # 直接画 pieslice(fill=0)：即把"要切掉的圆角"设为透明（显示背景色）
-        draw.pieslice(bbox, start=start_deg, end=end_deg, fill=0)
+        # 2. 用 pieslice 把图片内部的 1/4 圆填回 255（保留圆弧）
+        bbox, start_deg, end_deg = get_params(w, h, r)
+        safe_bbox = [max(0, bbox[0]), max(0, bbox[1]), min(w, bbox[2]), min(h, bbox[3])]
+        if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
+            draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
     
     # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)

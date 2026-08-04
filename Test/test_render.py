@@ -24,7 +24,7 @@ from core.geometry import CropDesign, BorderLayer
 from core.image_ops import render_design, save_jpg
 
 
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_output")
+OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../test_output")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 

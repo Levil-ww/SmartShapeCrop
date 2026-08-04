@@ -124,6 +124,12 @@ class CropDesign:
     l_cut_w_cm: float = 15.0
     l_cut_h_cm: float = 10.0
 
+    # —— 四个角的圆角半径（厘米），0 表示无圆角 ——
+    corner_tl_cm: float = 0.0
+    corner_tr_cm: float = 0.0
+    corner_bl_cm: float = 0.0
+    corner_br_cm: float = 0.0
+
     # —— mode == ellipse_hole 额外参数（相对中心的比例） ——
     ellipse_rx_ratio: float = 0.35   # 占画布宽度的比例
     ellipse_ry_ratio: float = 0.30   # 占画布高度的比例
@@ -189,6 +195,16 @@ class CropDesign:
             cut_h=self.cm2px(self.l_cut_h_cm),
         )
 
+    @property
+    def corners_px(self) -> dict[str, float]:
+        """返回四个角的像素级圆角半径字典"""
+        return {
+            'tl': self.cm2px(self.corner_tl_cm),
+            'tr': self.cm2px(self.corner_tr_cm),
+            'bl': self.cm2px(self.corner_bl_cm),
+            'br': self.cm2px(self.corner_br_cm),
+        }
+
 
 # ---------- 掩膜（mask）生成 ----------
 
@@ -219,6 +235,61 @@ def fill_lshape_mask(mask: Image.Image, l: LShape, value: int = 255) -> None:
     fill_rect_mask(mask, l.outer, value)
     # 再把 cut_rect 区域设为 0
     fill_rect_mask(mask, l.cut_rect(), value=0 if value == 255 else 255)
+
+
+# 圆角处理参数（与 image_cropper.py 保持一致）
+# [实测] PIL 屏幕坐标系（y 向下）pieslice 角度映射：
+#   0° = 右, 90° = 下, 180° = 左, 270° = 上
+# 两步法：1.挖正方形(fill=0)  2.填回 1/4 圆(fill=255)
+# 圆心在正方形的"内角"顶点，bbox 以该圆心为中心
+_CORNER_PIESLICE_PARAMS = {
+    'tl': lambda x, y, w, h, r: ([x, y, x + 2*r, y + 2*r], 180, 270),
+    'tr': lambda x, y, w, h, r: ([x + w - 2*r, y, x + w, y + 2*r], 270, 360),
+    'bl': lambda x, y, w, h, r: ([x, y + h - 2*r, x + 2*r, y + h], 90, 180),
+    'br': lambda x, y, w, h, r: ([x + w - 2*r, y + h - 2*r, x + w, y + h], 0, 90),
+}
+
+
+def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
+                                   corners: dict[str, float]) -> None:
+    """
+    在 mask 上应用圆角：对内部矩形的四个角，先挖正方形再填回 1/4 圆。
+    切掉的是 L 形（正方形减去 1/4 圆），即只切掉尖角，保留圆弧。
+    直接修改 mask_img (L 模式)。
+    """
+    draw = ImageDraw.Draw(mask_img)
+    W, H = mask_img.size
+    x, y, w, h = inner_rect.x, inner_rect.y, inner_rect.w, inner_rect.h
+    
+    for corner_key in ('tl', 'tr', 'bl', 'br'):
+        r = corners.get(corner_key, 0.0)
+        if r <= 0:
+            continue
+        
+        r_px = max(1, int(round(r)))
+        get_params = _CORNER_PIESLICE_PARAMS.get(corner_key)
+        if get_params is None:
+            continue
+        
+        # 1. 先把角落 r×r 正方形设为 0（切掉尖角）
+        if corner_key == 'tl':
+            sq = [x, y, x + r_px, y + r_px]
+        elif corner_key == 'tr':
+            sq = [x + w - r_px, y, x + w, y + r_px]
+        elif corner_key == 'bl':
+            sq = [x, y + h - r_px, x + r_px, y + h]
+        else:  # br
+            sq = [x + w - r_px, y + h - r_px, x + w, y + h]
+        
+        sq_safe = [max(0, sq[0]), max(0, sq[1]), min(W, sq[2]), min(H, sq[3])]
+        if sq_safe[2] > sq_safe[0] and sq_safe[3] > sq_safe[1]:
+            draw.rectangle(sq_safe, fill=0)
+        
+        # 2. 用 pieslice 把图片内部的 1/4 圆填回 255（保留圆弧）
+        bbox, start_deg, end_deg = get_params(x, y, w, h, r_px)
+        safe_bbox = [max(0, bbox[0]), max(0, bbox[1]), min(W, bbox[2]), min(H, bbox[3])]
+        if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
+            draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
 
 
 def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLayer]]:

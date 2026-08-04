@@ -131,7 +131,7 @@ def _looks_like_tile(path: str) -> bool:
 
 def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     """返回挖洞区域（即内部填充区域）的 bool mask"""
-    from .geometry import make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask
+    from .geometry import make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask, apply_rounded_corners_to_mask
     W, H = design.canvas_w_px, design.canvas_h_px
     m = make_mask((W, H))
     if design.mode == 'rect_hole':
@@ -142,10 +142,21 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
         cut = design.l_shape_px().cut_rect()
         cut_mask = make_mask((W, H))
         fill_rect_mask(cut_mask, cut, 255)
+        # 应用圆角（在 L 形切角之前，先对 inner_rect 应用圆角）
+        corners = design.corners_px
+        inner_rect = design.inner_rect_px()
+        # 注意：圆角在 L 形模式下可能不完全适用，但我们仍然应用到 inner_rect
+        apply_rounded_corners_to_mask(m, inner_rect, corners)
         m_arr = np.array(m) & ~np.array(cut_mask)
         return m_arr.astype(bool)
     else:
         fill_ellipse_mask(m, design.ellipse_px(), 255)
+    
+    # 对于非 L 形模式，应用圆角
+    corners = design.corners_px
+    inner_rect = design.inner_rect_px()
+    apply_rounded_corners_to_mask(m, inner_rect, corners)
+    
     return np.array(m, dtype=bool)
 
 
