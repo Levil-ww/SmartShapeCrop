@@ -1,14 +1,23 @@
 """
-图片等比缩放 + 右下角圆角处理脚本
-源图：双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg
-目标：55x41cm + 右下角圆角2cm
+图片等比缩放 + 圆角处理脚本
+支持根据圆角半径自动选择圆角模式：
+  - radius >= 8.5cm: 整体圆角（所有边框线条一起裁掉）
+  - radius < 8.5cm: 仅边框圆角（内层装饰保持直角）
 """
-from PIL import Image, ImageDraw
 import os
+from PIL import Image
 
-# 提高像素上限：业务常处理印刷级超大图（如 EPS 栅格化后超过 1 亿像素），
-# 默认 89478485 像素会触发 DecompressionBombWarning，设为 None 关闭限制。
 Image.MAX_IMAGE_PIXELS = None
+
+from core.image_cropper import (
+    load_source_image,
+    fit_image_to_rect,
+    apply_rounded_corners,
+    apply_border_only_corners,
+    apply_multi_layer_rounded_corners,
+    _determine_corner_mode,
+    BORDER_ONLY_THRESHOLD_CM,
+)
 
 # ============ 参数配置 ============
 src_path = r"D:\SmartShapeCrop\psd_demo\双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
@@ -29,41 +38,24 @@ print(f"目标尺寸: {target_w_px} x {target_h_px} px ({target_w_cm} x {target_
 print(f"圆角半径: {corner_r_px} px ({corner_r_cm} cm)")
 
 # ============ 1. 加载源图 ============
-src = Image.open(src_path)
-if src.mode != 'RGB':
-    src = src.convert('RGB')
+src = load_source_image(src_path)
 print(f"源图尺寸: {src.size} px")
 
 # ============ 2. Cover 模式等比缩放裁剪 ============
-sw, sh = src.size
-scale = max(target_w_px / sw, target_h_px / sh)
-nw, nh = max(1, int(sw * scale)), max(1, int(sh * scale))
-resized = src.resize((nw, nh), Image.LANCZOS)
+cropped = fit_image_to_rect(src, target_w_px, target_h_px, mode='cover')
+print(f"裁剪后尺寸: {cropped.size} px")
 
-# 居中裁剪
-left = (nw - target_w_px) // 2
-top = (nh - target_h_px) // 2
-cropped = resized.crop((left, top, left + target_w_px, top + target_h_px))
-print(f"缩放后尺寸: {nw} x {nh}, 裁剪区域: ({left}, {top}) - ({left + target_w_px}, {top + target_h_px})")
+# ============ 3. 添加圆角（自动选择模式） ============
+corners = {'tl': 0, 'tr': 0, 'bl': 0, 'br': corner_r_cm}
+corner_mode = _determine_corner_mode(corners)
+print(f"圆角模式: {'整体圆角' if corner_mode == 'full' else '仅边框圆角'}")
 
-# ============ 3. 添加右下角圆角 ============
-w, h = cropped.size
-r = corner_r_px
-
-# 创建遮罩：先全图设为255（不透明）
-mask = Image.new('L', (w, h), 255)
-draw = ImageDraw.Draw(mask)
-
-# 两步法：1.挖正方形  2.填回 1/4 圆
-# 1. 先把右下角 r×r 正方形区域设为0（挖空）
-draw.rectangle([w - r, h - r, w, h], fill=0)
-# 2. 填回右下 1/4 圆（圆心在 (w-r, h-r)，角度 0°→90° 即右下象限）
-# [实测] PIL 屏幕坐标系：0°=右, 90°=下, 180°=左, 270°=上
-draw.pieslice([w - 2*r, h - 2*r, w, h], start=0, end=90, fill=255)
-
-# 应用遮罩：圆角处填充白色（可改为透明或其他颜色）
-result = Image.new('RGB', (w, h), (255, 255, 255))
-result.paste(cropped, mask=mask)
+if corner_mode == 'full':
+    # 大圆角（>=8.5cm）：自动识别多层边框并统一裁圆角，
+    # 防止仅外层黑框裁了、内层图案/红框/花纹仍露方形尖角
+    result = apply_multi_layer_rounded_corners(cropped, corners, dpi, (255, 255, 255))
+else:
+    result = apply_border_only_corners(cropped, corners, dpi, (255, 255, 255))
 
 # ============ 4. 保存 ============
 output_path = os.path.join(output_dir, output_name)

@@ -296,25 +296,49 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
     """
     计算每层边框的掩膜（numpy bool 数组，True 表示该层区域）
     返回 [(layer_mask, layer_def), ...]  从外向内
+
+    圆角处理（关键！）：
+      - 外轮廓 outer_rect 必须先应用圆角（否则最外边框四角是直角尖角）
+      - 内挖洞 inner_rect（rect_hole / rect_lshape 模式）也必须应用圆角
+      - 这样 frame_mask = 圆角outer ∩ 非圆角inner 的边界本身就是圆角矩形带，
+        后续靠腐蚀切分的各层边框 band 自然也都是圆角的，
+        保证属性面板设置 8cm 大圆角时，从外黑框到内花纹每层边框都同步裁圆角。
+      - ellipse_hole 模式无直角角，不需要额外圆角处理。
     """
     w, h = design.canvas_w_px, design.canvas_h_px
     outer = design.outer_rect_px()
+    corners = design.corners_px
 
-    # 1. 根据模式得到“水池边框”整体的外多边形 mask：outer_rect - inner_shape
+    # 1. 外边框外轮廓 mask：outer_rect + 圆角
     outer_mask = make_mask((w, h))
     fill_rect_mask(outer_mask, outer, 255)
+    # 对外轮廓 outer_rect 应用圆角：切掉 L 形尖角，保留扇形圆弧
+    apply_rounded_corners_to_mask(outer_mask, outer, corners)
     outer_arr = np.array(outer_mask, dtype=bool)
 
+    # 2. 内挖洞 mask：根据模式 + 圆角
     inner_mask = make_mask((w, h))
     if design.mode == 'rect_hole':
-        fill_rect_mask(inner_mask, design.inner_rect_px(), 255)
+        inner_rect = design.inner_rect_px()
+        fill_rect_mask(inner_mask, inner_rect, 255)
+        # 挖洞的内边缘也要应用圆角，保证边框最内边缘也是圆角
+        apply_rounded_corners_to_mask(inner_mask, inner_rect, corners)
+        inner_arr = np.array(inner_mask, dtype=bool)
     elif design.mode == 'rect_lshape':
-        fill_lshape_mask(inner_mask, design.l_shape_px(), 255)
+        inner_rect = design.inner_rect_px()
+        fill_rect_mask(inner_mask, inner_rect, 255)
+        # 先对 inner_rect 应用圆角（与 _get_inner_pixel_mask 顺序一致）
+        apply_rounded_corners_to_mask(inner_mask, inner_rect, corners)
+        # 再挖掉 L 形的那个角
+        cut = design.l_shape_px().cut_rect()
+        cut_mask = make_mask((w, h))
+        fill_rect_mask(cut_mask, cut, 255)
+        inner_arr = np.array(inner_mask, dtype=bool) & ~np.array(cut_mask, dtype=bool)
     else:  # ellipse_hole
         fill_ellipse_mask(inner_mask, design.ellipse_px(), 255)
-    inner_arr = np.array(inner_mask, dtype=bool)
+        inner_arr = np.array(inner_mask, dtype=bool)
 
-    # 水池整体 = 外矩形 - 内挖洞
+    # 水池整体 = 圆角外轮廓  ∩  非(圆角内挖洞)   →  天然是圆角边框带
     frame_mask = outer_arr & (~inner_arr)
 
     # 2. 按每层边框 offset 向内收缩，切分 band
