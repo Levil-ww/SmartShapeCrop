@@ -147,8 +147,8 @@ class MainWindow(QMainWindow):
         # 裁剪面板信号
         self.cropper.image_cropped.connect(self._on_cropped_image)
 
-        # 初始加载一个默认模板并预览
-        self._apply_design(_preset_rect_nested())
+        # 初始不自动预览，等待用户点击"生成预览"按钮
+        pass
 
     # -------- 菜单 --------
     def _build_menu(self):
