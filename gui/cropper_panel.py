@@ -135,8 +135,8 @@ class CropperPanel(QWidget):
         grid_size = QGridLayout()
         grid_size.addWidget(QLabel("布局:"), 0, 0)
         self._cb_layout = QComboBox()
-        self._cb_layout.addItem("竖版（长边为高）", "portrait")
-        self._cb_layout.addItem("横版（长边为宽）", "landscape")
+        self._cb_layout.addItem("竖版（长边为高）", "竖版")
+        self._cb_layout.addItem("横版（长边为宽）", "")
         grid_size.addWidget(self._cb_layout, 0, 1)
         
         grid_size.addWidget(QLabel("宽(cm):"), 0, 2)
@@ -359,12 +359,13 @@ class CropperPanel(QWidget):
                 if idx >= 0:
                     self._cb_layout.setCurrentIndex(idx)
             
+            # 尺寸自动识别 + 1cm 切割损耗
             if target_parsed.width_cm > 0 and target_parsed.height_cm > 0:
-                self._sp_w.setValue(target_parsed.width_cm)
-                self._sp_h.setValue(target_parsed.height_cm)
+                self._sp_w.setValue(target_parsed.width_cm + 1.0)
+                self._sp_h.setValue(target_parsed.height_cm + 1.0)
             elif best.parsed and best.parsed.width_cm > 0:
-                self._sp_w.setValue(best.parsed.width_cm)
-                self._sp_h.setValue(best.parsed.height_cm)
+                self._sp_w.setValue(best.parsed.width_cm + 1.0)
+                self._sp_h.setValue(best.parsed.height_cm + 1.0)
             
             # 圆角只从目标文件名获取（模板通常不含圆角信息）
             if target_parsed.corners:
@@ -375,7 +376,7 @@ class CropperPanel(QWidget):
             msg = (f"✅ 匹配成功！\n\n"
                    f"源图: {os.path.basename(best.path)}\n"
                    f"匹配得分: {best.score:.2f}\n\n"
-                   f"已自动填充裁剪参数：\n"
+                   f"已自动填充裁剪参数（含 +1cm 切割损耗）：\n"
                    f"- 产品名称: {target_parsed.product_name or (best.parsed.product_name if best.parsed else '-')}\n"
                    f"- 尺寸: {self._sp_w.value()}×{self._sp_h.value()}cm 布局: {target_parsed.layout or (best.parsed.layout if best.parsed else '-')}\n"
                    f"- 圆角: {self._format_corners_for_msg(target_parsed.corners)}")
@@ -411,8 +412,8 @@ class CropperPanel(QWidget):
                     self._cb_layout.setCurrentIndex(idx)
             
             if parsed.width_cm > 0 and parsed.height_cm > 0:
-                self._sp_w.setValue(parsed.width_cm)
-                self._sp_h.setValue(parsed.height_cm)
+                self._sp_w.setValue(parsed.width_cm + 1.0)
+                self._sp_h.setValue(parsed.height_cm + 1.0)
             
             if parsed.corners:
                 for key in ('tl', 'tr', 'bl', 'br'):
@@ -421,7 +422,8 @@ class CropperPanel(QWidget):
             
             # 如果目标文件名中有尺寸信息但源图已选择，可以更新源图信息
             info_msg = f"产品: {parsed.product_name}\n"
-            info_msg += f"尺寸: {parsed.width_cm}×{parsed.height_cm}cm\n"
+            info_msg += f"原始尺寸: {parsed.width_cm}×{parsed.height_cm}cm\n"
+            info_msg += f"裁剪尺寸(含 +1cm 切割损耗): {self._sp_w.value()}×{self._sp_h.value()}cm\n"
             info_msg += f"布局: {parsed.layout}\n"
             info_msg += f"圆角: {self._format_corners_for_msg(parsed.corners)}"
             

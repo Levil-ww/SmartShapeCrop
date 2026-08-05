@@ -126,7 +126,7 @@ def parse_size_dims(size_str: str) -> tuple | None:
         diameter = float(circle_match.group(1))
         return (diameter, diameter)
 
-    size_match = re.search(r'(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)', size_str)
+    size_match = re.search(r'(\d+(?:\.\d+)?)\s*[xX×x]\s*(\d+(?:\.\d+)?)', size_str)
     if size_match:
         dim1 = float(size_match.group(1))
         dim2 = float(size_match.group(2))
@@ -171,10 +171,25 @@ def parse_filename(filename: str) -> ParsedFilename:
     else:
         result.layout = '横版'
     
-    size_match = re.search(r'(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?', spec)
+    # 尺寸识别：优先匹配带单位的完整格式（强制要求单位，使小数部分必须被匹配）
+    size_patterns = [
+        # 带单位的完整格式（单位必须匹配，确保小数部分不会被跳过）
+        r'(\d+(?:\.\d+)?)\s*[x×Xx]\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
+        # 无单位回退格式
+        r'(\d+(?:\.\d+)?)\s*[x×Xx]\s*(\d+(?:\.\d+)?)',
+    ]
+    
+    size_match = None
+    for pattern in size_patterns:
+        size_match = re.search(pattern, spec)
+        if size_match:
+            break
     
     if not size_match:
-        size_match = re.search(r'(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?', name)
+        for pattern in size_patterns:
+            size_match = re.search(pattern, name)
+            if size_match:
+                break
     
     if size_match:
         a = float(size_match.group(1))
@@ -238,18 +253,29 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
     
     for cn_name, key in corner_map.items():
         # 支持 cm/CM/厘米/公分 等单位
-        unit_pattern = r'(?:cm|CM|厘米|公分)?'
-        pattern = rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*{unit_pattern}'
-        pattern2 = rf'{cn_name}(?:圆角)?半径\s*(\d+(?:\.\d+)?)\s*{unit_pattern}'
-        
+        # 优先匹配带单位（强制要求单位，确保小数不被跳过）
+        pattern = rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)'
+        pattern2 = rf'{cn_name}(?:圆角)?半径\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)'
         m = re.search(pattern, spec) or re.search(pattern2, spec)
+        
+        if not m:
+            # 回退：无单位
+            pattern = rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:\.\d+)?)'
+            pattern2 = rf'{cn_name}(?:圆角)?半径\s*(\d+(?:\.\d+)?)'
+            m = re.search(pattern, spec) or re.search(pattern2, spec)
+        
         if m:
             result[key] = float(m.group(1))
     
     all_corners_patterns = [
-        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|公分)?',
-        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|公分)?',
-        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|公分)?',
+        # 带单位（强制匹配）
+        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
+        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
+        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
+        # 无单位回退
+        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)',
+        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)',
+        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:\.\d+)?)',
     ]
     
     for pattern in all_corners_patterns:
