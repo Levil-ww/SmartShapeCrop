@@ -292,6 +292,42 @@ def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
             draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
 
 
+def compute_inner_corner_radii(outer_rect: RectShape, inner_rect: RectShape,
+                                outer_corners: dict[str, float]) -> dict[str, float]:
+    """
+    计算内层矩形的有效圆角半径，基于每个角落到外层矩形的实际距离。
+
+    正确算法：对每个角落，计算内层矩形到外层矩形在 x 和 y 方向的距离，
+    取较大值作为缩减量，确保内层裁剪区域被外层完全包含。
+
+    示例：左上角有效半径 = max(0, R - max(T_left, T_top))
+    """
+    T_left = inner_rect.x - outer_rect.x
+    T_right = outer_rect.right - inner_rect.right
+    T_top = inner_rect.y - outer_rect.y
+    T_bottom = outer_rect.bottom - inner_rect.bottom
+
+    inner_corners = {}
+    for ck in ('tl', 'tr', 'bl', 'br'):
+        R = outer_corners.get(ck, 0.0)
+        if R <= 0:
+            inner_corners[ck] = 0.0
+            continue
+        
+        if ck == 'tl':
+            dist = max(T_left, T_top)
+        elif ck == 'tr':
+            dist = max(T_right, T_top)
+        elif ck == 'bl':
+            dist = max(T_left, T_bottom)
+        else:  # br
+            dist = max(T_right, T_bottom)
+        
+        inner_corners[ck] = max(0.0, R - dist)
+    
+    return inner_corners
+
+
 def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLayer]]:
     """
     计算每层边框的掩膜（numpy bool 数组，True 表示该层区域）
@@ -318,17 +354,8 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
 
     inner_solid = make_mask((w, h))
     fill_rect_mask(inner_solid, inner_rect, 255)
-    inner_corners = {ck: max(0, corners.get(ck, 0.0) - max(
-        inner_rect.x - outer.x, outer.right - inner_rect.right,
-        inner_rect.y - outer.y, outer.bottom - inner_rect.bottom
-    )) for ck in ('tl', 'tr', 'bl', 'br')}
-    # 实际上 inner_rect 的圆角半径 = max(0, R - T)，已在 _get_inner_pixel_mask 中正确计算
-    # 这里简单用相同逻辑
-    T_total = max(
-        inner_rect.x - outer.x, outer.right - inner_rect.right,
-        inner_rect.y - outer.y, outer.bottom - inner_rect.bottom
-    )
-    inner_corners = {ck: max(0, corners.get(ck, 0.0) - T_total) for ck in ('tl', 'tr', 'bl', 'br')}
+    # 使用正确的算法计算内层圆角半径（每个角落独立计算）
+    inner_corners = compute_inner_corner_radii(outer, inner_rect, corners)
     if any(r > 0 for r in inner_corners.values()):
         apply_rounded_corners_to_mask(inner_solid, inner_rect, inner_corners)
 

@@ -51,8 +51,8 @@ corner_mode = _determine_corner_mode(corners)
 print(f"圆角模式: {'整体圆角' if corner_mode == 'full' else '仅边框圆角'}")
 
 if corner_mode == 'full':
-    # 大圆角（>=8.5cm）：自动识别多层边框并统一裁圆角，
-    # 防止仅外层黑框裁了、内层图案/红框/花纹仍露方形尖角
+    # 大圆角（>=8.5cm）：使用多层统一圆角裁剪
+    # 自动识别嵌套边框层，对每一层都应用相同圆角，使用 AND 逻辑组合
     result = apply_multi_layer_rounded_corners(cropped, corners, dpi, (255, 255, 255))
 else:
     result = apply_border_only_corners(cropped, corners, dpi, (255, 255, 255))

@@ -90,10 +90,11 @@ def load_source_image(path: str) -> Image.Image:
 
 def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int = 300, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """
-    对图片应用四角圆角裁剪。
+    对整张图片应用四角圆角裁剪。
+    裁剪半径 = 指定的圆角半径（不做扩展）。
     
-    当 radius >= 8.5cm 时，自动扩展裁剪半径覆盖所有边框层：
-    实际裁剪半径 = max(radius, radius + BORDER_TOTAL_DEPTH_CM)
+    当用于大图（radius >= 8.5cm）时，会同步裁掉所有边框层的角落区域。
+    当用于小图（radius < 8.5cm）时，建议使用 apply_border_only_corners。
     
     Args:
         img: 输入图片（RGB 模式）
@@ -112,13 +113,8 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
         if radius_cm <= 0:
             continue
         
-        # 动态扩展半径：当 radius >= 阈值时，扩展覆盖所有边框层
-        if radius_cm >= BORDER_ONLY_THRESHOLD_CM:
-            actual_radius_cm = radius_cm + BORDER_TOTAL_DEPTH_CM
-        else:
-            actual_radius_cm = radius_cm
-        
-        r = max(1, int(round(actual_radius_cm * dpi / 2.54)))
+        # 直接使用指定的圆角半径（不做扩展）
+        r = max(1, int(round(radius_cm * dpi / 2.54)))
         
         get_params = _CORNER_PARAMS.get(corner_key)
         get_square = _CORNER_SQUARE.get(corner_key)
@@ -140,6 +136,78 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=mask)
+    return result
+
+
+def apply_concentric_rounded_corners(img: Image.Image, corners: dict[str, float],
+                                      dpi: int = 300, bg_color: tuple = (255, 255, 255)) -> Image.Image:
+    """
+    漏斗形多层同步圆角裁剪：对整张图片应用圆角，所有层次的边框/装饰都会
+    同步被裁掉，且保持同心圆角效果。
+    
+    核心算法（以右下角为例）：
+      设 R 为圆角半径，对于每个像素：
+        dx = 距右边缘的像素距离
+        dy = 距下边缘的像素距离
+        d_max = max(dx, dy)
+        d_euclid = sqrt(dx² + dy²)
+      裁剪条件：d_max + d_euclid >= R → 裁掉该像素
+      
+      这个公式的效果：
+      - 在角落处裁掉最宽的 L 形区域
+      - 裁剪深度随向内的距离线性递减
+      - 所有层次的边框都会同步被裁掉（因为它们在角落的"有效半径"递减）
+      - 所有层的圆弧都是同心的（共享同一个角点作为圆心）
+    
+    Args:
+        img: 输入图片（RGB 模式）
+        corners: 四角圆角半径(cm)字典，键为 tl/tr/bl/br
+        dpi: DPI
+        bg_color: 圆角处背景色
+    
+    Returns:
+        应用多层同步圆角后的图片
+    """
+    w, h = img.size
+    mask = Image.new('L', (w, h), 255)  # 全不透明（保留原图）
+    mask_arr = np.ones((h, w), dtype=np.uint8) * 255
+    
+    # 创建坐标网格
+    y_coords = np.arange(h, dtype=np.float64)
+    x_coords = np.arange(w, dtype=np.float64)
+    yy, xx = np.meshgrid(y_coords, x_coords, indexing='ij')
+    
+    for corner_key, radius_cm in corners.items():
+        if radius_cm <= 0:
+            continue
+        
+        r_px = max(1, int(round(radius_cm * dpi / 2.54)))
+        
+        # 计算每个像素到该角的 dx, dy
+        if corner_key == 'tl':
+            dx = xx  # 距左边缘
+            dy = yy  # 距上边缘
+        elif corner_key == 'tr':
+            dx = w - 1 - xx  # 距右边缘
+            dy = yy  # 距上边缘
+        elif corner_key == 'bl':
+            dx = xx  # 距左边缘
+            dy = h - 1 - yy  # 距下边缘
+        else:  # br
+            dx = w - 1 - xx  # 距右边缘
+            dy = h - 1 - yy  # 距下边缘
+        
+        # 漏斗形裁剪条件：d_max + d_euclid >= R → 裁掉
+        d_max = np.maximum(dx, dy)
+        d_euclid = np.sqrt(dx**2 + dy**2)
+        cut_mask = (d_max + d_euclid) >= r_px
+        
+        # 裁掉的像素设为 0
+        mask_arr[cut_mask] = 0
+    
+    # 应用遮罩
+    result = Image.new('RGB', (w, h), bg_color)
+    result.paste(img, mask=Image.fromarray(mask_arr, mode='L'))
     return result
 
 
@@ -350,8 +418,8 @@ def crop_image(config: CropConfig) -> Image.Image:
         if valid_corners:
             corner_mode = _determine_corner_mode(valid_corners)
             if corner_mode == 'full':
-                # 大圆角（半径 >= 8.5cm）：自动识别多层边框并统一裁剪，
-                # 避免只裁最外层导致内层图案露尖角
+                # 大圆角（半径 >= 8.5cm）：使用多层统一圆角裁剪
+                # 自动识别嵌套边框层，对每一层都应用相同圆角，使用 AND 逻辑组合
                 cropped = apply_multi_layer_rounded_corners(
                     cropped, valid_corners, config.dpi, config.bg_color)
             else:
@@ -748,8 +816,40 @@ def apply_multi_layer_rounded_corners(img: Image.Image,
     # ---- 5. 层层 AND：任何一层要裁掉的位置，最终都裁掉 ----
     for (x1, y1, x2_idx, y2_idx) in layers:
         # 像素索引语义 → 画布尺寸语义（x2 = x1 + width）
-        rect = (x1, y1, x2_idx + 1, y2_idx + 1)
-        unified = np.minimum(unified, _layer_rounded_mask_arr(w, h, rect, corners_px))
+        rect_x2 = x2_idx + 1
+        rect_y2 = y2_idx + 1
+
+        # 计算该层的有效圆角半径：根据该矩形到图片边缘的距离递减
+        # 关键修复：使用 max(t_x, t_y) 而非 min(t_x, t_y)！
+        #   - 如果用 min：当某边距很小（如5px）另一边距大（如80px），会导致 r_layer 过大，
+        #     进而使内层挖掉的正方形在"另一个方向"侵入外层保留区 → 白色扇形角
+        #   - 如果用 max：r_layer = R - max(tx, ty)，内层挖掉正方形必然被包在外层挖掉正方形内部，
+        #     同时内层真正的尖角顶点（必然在外层保留区内）也会被正确裁掉。
+        layer_corners_px = {}
+        for ck, r_px in corners_px.items():
+            if r_px <= 0:
+                layer_corners_px[ck] = 0
+                continue
+            if ck == 'tl':
+                t_x = x1                  # 左边距：图片左边缘 → 内层矩形左边
+                t_y = y1                  # 上边距：图片上边缘 → 内层矩形上边
+                dist = max(t_x, t_y)
+            elif ck == 'tr':
+                t_x = w - rect_x2         # 右边距：内层矩形右边 → 图片右边缘
+                t_y = y1                  # 上边距
+                dist = max(t_x, t_y)
+            elif ck == 'bl':
+                t_x = x1                  # 左边距
+                t_y = h - rect_y2         # 下边距：内层矩形下边 → 图片下边缘
+                dist = max(t_x, t_y)
+            else:  # br
+                t_x = w - rect_x2         # 右边距
+                t_y = h - rect_y2         # 下边距
+                dist = max(t_x, t_y)
+            layer_corners_px[ck] = max(0, r_px - dist)
+
+        rect = (x1, y1, rect_x2, rect_y2)
+        unified = np.minimum(unified, _layer_rounded_mask_arr(w, h, rect, layer_corners_px))
 
     # ---- 6. 应用最终遮罩 ----
     final_mask = Image.fromarray(unified, mode='L')

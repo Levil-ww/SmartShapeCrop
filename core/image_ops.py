@@ -135,7 +135,8 @@ def _looks_like_tile(path: str) -> bool:
 
 def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     """返回挖洞区域（即内部填充区域）的 bool mask，与边框带的同心圆角保持一致。"""
-    from .geometry import make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask, apply_rounded_corners_to_mask
+    from .geometry import (make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask, 
+                           apply_rounded_corners_to_mask, compute_inner_corner_radii)
     W, H = design.canvas_w_px, design.canvas_h_px
     m = make_mask((W, H))
 
@@ -143,15 +144,11 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     outer = design.outer_rect_px()
     corners = design.corners_px
 
-    T_left = inner_rect.x - outer.x
-    T_right = outer.right - inner_rect.right
-    T_top = inner_rect.y - outer.y
-    T_bottom = outer.bottom - inner_rect.bottom
-    T_total = max(T_left, T_right, T_top, T_bottom)
+    # 使用正确的算法计算内层圆角半径（每个角落独立计算）
+    inner_corners = compute_inner_corner_radii(outer, inner_rect, corners)
 
     if design.mode == 'rect_hole':
         fill_rect_mask(m, inner_rect, 255)
-        inner_corners = {ck: max(0, corners.get(ck, 0.0) - T_total) for ck in ('tl', 'tr', 'bl', 'br')}
         if any(r > 0 for r in inner_corners.values()):
             apply_rounded_corners_to_mask(m, inner_rect, inner_corners)
         return np.array(m, dtype=bool)
@@ -164,7 +161,6 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
         m_arr = np.array(m, dtype=bool) & ~np.array(cut_mask, dtype=bool)
 
         cut_corner = design.l_shape_px().cut_corner
-        inner_corners = {ck: max(0, corners.get(ck, 0.0) - T_total) for ck in ('tl', 'tr', 'bl', 'br')}
         for ck in ('tl', 'tr', 'bl', 'br'):
             if ck == cut_corner:
                 continue
