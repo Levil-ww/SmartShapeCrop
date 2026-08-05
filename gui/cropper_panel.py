@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 )
 from PIL import Image
 
-from core.name_parser import parse_filename, generate_filename, get_image_info
+from core.name_parser import parse_filename, generate_filename, get_image_info, _fmt_num
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
 from core.template_matcher import TemplateMatcher, TemplateEntry
 
@@ -41,6 +41,7 @@ class CropperPanel(QWidget):
         self._bg_color: tuple[int, int, int] = (255, 255, 255)
         self._matcher = TemplateMatcher()
         self._matcher.set_log_callback(self._on_matcher_log)
+        self._target_parsed = None  # 目标文件名解析结果（保存原始尺寸，不含损耗）
         self._build_ui()
     
     def _on_matcher_log(self, msg: str):
@@ -266,11 +267,23 @@ class CropperPanel(QWidget):
         self._ck_auto_name.stateChanged.connect(self._update_name_preview)
         self._ed_custom_name.textChanged.connect(self._update_name_preview)
         self._cb_mode.currentIndexChanged.connect(self._on_mode_changed)
+        self._ed_target_name.textChanged.connect(self._on_target_name_changed)
         self._ed_target_name.textChanged.connect(self._update_name_preview)
         
         self._update_name_preview()
     
     # ===== 事件处理 =====
+    
+    def _on_target_name_changed(self, text: str):
+        """目标文件名变化时，自动解析并保存原始目标尺寸（不含损耗）"""
+        text = text.strip()
+        if text:
+            try:
+                self._target_parsed = parse_filename(text)
+            except Exception:
+                self._target_parsed = None
+        else:
+            self._target_parsed = None
     
     def _on_mode_changed(self):
         """裁剪模式改变时更新说明"""
@@ -340,6 +353,7 @@ class CropperPanel(QWidget):
         
         # 解析目标文件名获取完整裁剪参数（含圆角）
         target_parsed = parse_filename(target_name)
+        self._target_parsed = target_parsed  # 保存原始解析结果（含目标尺寸，不含损耗）
         
         if best:
             self._set_source_path(best.path)
@@ -402,6 +416,7 @@ class CropperPanel(QWidget):
         
         try:
             parsed = parse_filename(target_name)
+            self._target_parsed = parsed  # 保存原始解析结果（含目标尺寸，不含损耗）
             
             if parsed.product_name:
                 self._ed_product.setText(parsed.product_name)
@@ -458,34 +473,56 @@ class CropperPanel(QWidget):
         return self._cb_layout.currentData()
     
     def _update_name_preview(self):
-        """更新文件名预览"""
+        """更新文件名预览
+        - 尺寸优先使用目标文件名原始尺寸（不含+1cm损耗），若无则使用裁剪参数
+        - 圆角使用圆角设置的值
+        """
         if self._ck_auto_name.isChecked():
             product = self._ed_product.text().strip() or "产品"
-            layout = self._get_layout()
-            w = self._sp_w.value()
-            h = self._sp_h.value()
+
+            # 1) 确定用于命名的尺寸和布局：优先使用目标解析结果中的原始尺寸（不含损耗）
+            tp = self._target_parsed
+            use_target_size = (
+                tp is not None
+                and tp.width_cm > 0
+                and tp.height_cm > 0
+            )
+            if use_target_size:
+                layout = tp.layout or self._get_layout()
+                w = tp.width_cm
+                h = tp.height_cm
+            else:
+                layout = self._get_layout()
+                w = self._sp_w.value()
+                h = self._sp_h.value()
+
+            # 2) 短边 × 长边，竖版加前缀
+            short_side = min(w, h)
+            long_side = max(w, h)
+            size_str = f"{_fmt_num(short_side)}x{_fmt_num(long_side)}cm"
+            if layout == '竖版':
+                spec_parts = [f"竖版{size_str}"]
+            else:
+                spec_parts = [size_str]
+
+            # 3) 圆角描述（使用当前圆角设置）
             corners = self._get_corners_config()
-            
-            # 构建规格部分
-            spec_parts = [f"{layout}{w}x{h}cm"]
-            
-            # 圆角描述
             non_zero = {k: v for k, v in corners.items() if v > 0}
             if non_zero:
                 unique_radii = set(non_zero.values())
                 if len(unique_radii) == 1 and len(non_zero) == 4:
                     r = list(unique_radii)[0]
-                    spec_parts.append(f"四角圆角半径{r}cm")
+                    spec_parts.append(f"四角半径{_fmt_num(r)}cm")
                 else:
                     for k in ('tl', 'tr', 'bl', 'br'):
                         if k in non_zero and non_zero[k] > 0:
-                            spec_parts.append(f"{get_corner_name(k)}圆角半径{non_zero[k]}cm")
-            
+                            spec_parts.append(f"{get_corner_name(k)}半径{_fmt_num(non_zero[k])}cm")
+
             spec_str = ''.join(spec_parts)
             name = f"{product};{spec_str}.jpg"
         else:
             name = self._ed_custom_name.text().strip() or "output.jpg"
-        
+
         self._lbl_name_preview.setText(name)
     
     def _build_crop_config(self) -> CropConfig:

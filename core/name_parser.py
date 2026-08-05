@@ -305,44 +305,60 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
     return None
 
 
+def _fmt_num(v: float) -> str:
+    """格式化数字：整数时去掉小数点，如 161.0 → '161'，2.5 → '2.5'"""
+    if v == int(v):
+        return str(int(v))
+    return f"{v:g}"
+
+
 def generate_filename(parsed: ParsedFilename, corners_override: dict[str, float] | None = None) -> str:
     """
     根据解析结果和可选的圆角覆盖，生成规范化的文件名。
-    
-    输出格式: 产品名称;布局尺寸圆角描述.jpg
-    示例: 双面格;竖版55x41cm右下角圆角半径2cm.jpg
-    
+
+    输出格式: 产品名称;[竖版]短边x长边cm圆角描述.jpg
+    示例: 双面格;88x161cm四角半径5cm.jpg (横版无前缀)
+          双面格;竖版41x55cm右下角半径2cm.jpg (竖版加前缀)
+
+    规则:
+    - 竖版添加"竖版"前缀，横版不加前缀
+    - 尺寸默认短边在前、长边在后
+    - 整数值去掉小数点（161.0 → 161）
+
     Args:
         parsed: 解析后的文件名信息
         corners_override: 可选的圆角覆盖（如果为None则使用parsed.corners）
-    
+
     Returns:
         规范化的文件名字符串
     """
-    spec_parts = []
-    
-    if parsed.layout:
-        spec_parts.append(f"{parsed.layout}{parsed.width_cm}x{parsed.height_cm}cm")
+    w = parsed.width_cm
+    h = parsed.height_cm
+    short_side = min(w, h)
+    long_side = max(w, h)
+    size_str = f"{_fmt_num(short_side)}x{_fmt_num(long_side)}cm"
+    if parsed.layout == '竖版':
+        spec_parts = [f"竖版{size_str}"]
     else:
-        spec_parts.append(f"{parsed.width_cm}x{parsed.height_cm}cm")
-    
+        spec_parts = [size_str]
+
     corners = corners_override if corners_override is not None else parsed.corners
     if corners:
         corner_names = {'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角'}
-        
+
         unique_values = set(v for v in corners.values() if v > 0)
         non_zero = {k: v for k, v in corners.items() if v > 0}
-        
+
         if len(unique_values) == 1 and len(non_zero) == 4:
             r = list(unique_values)[0]
-            spec_parts.append(f"四角圆角半径{r}cm")
+            spec_parts.append(f"四个圆角半径{_fmt_num(r)}cm")
         else:
             for k in ('tl', 'tr', 'bl', 'br'):
                 if k in non_zero and non_zero[k] > 0:
-                    spec_parts.append(f"{corner_names[k]}圆角半径{non_zero[k]}cm")
-    
+                    spec_parts.append(f"{corner_names[k]}半径{_fmt_num(non_zero[k])}cm")
+
     spec_str = ''.join(spec_parts)
-    
+
     return f"{parsed.product_name};{spec_str}.jpg"
 
 
