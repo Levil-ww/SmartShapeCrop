@@ -25,7 +25,7 @@ class CropConfig:
     target_w_cm: float = 0.0              # 目标宽度（厘米）
     target_h_cm: float = 0.0              # 目标高度（厘米）
     corners: dict[str, float] | None = None  # 四角圆角半径(cm)，键: tl/tr/bl/br
-    mode: str = 'light_cover'             # cover | contain | light_cover | auto
+    mode: str = 'simple_resize'             # simple_resize | cover | contain | light_cover | auto
     dpi: int = 300                        # 输出 DPI
     bg_color: tuple[int, int, int] = (255, 255, 255)  # 背景色（留白/圆角处）
     output_path: str = ""                 # 输出路径（空则返回PIL对象）
@@ -235,6 +235,17 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     w, h = img.size
     border_w_px = max(1, int(round(border_width_cm * dpi / 2.54)))
     
+    # 计算最大圆角半径
+    max_r = 0
+    for radius_cm in corners.values():
+        if radius_cm > max_r:
+            max_r = radius_cm
+    max_r_px = max(1, int(round(max_r * dpi / 2.54)))
+    
+    # 如果边框宽度不够容纳圆角，自动扩大边框宽度
+    if border_w_px < max_r_px:
+        border_w_px = max_r_px
+    
     # 安全检查：如果边框宽度超过图像一半，退化为整体圆角
     if border_w_px * 2 >= w or border_w_px * 2 >= h:
         return apply_rounded_corners(img, corners, dpi, bg_color)
@@ -403,7 +414,9 @@ def crop_image(config: CropConfig) -> Image.Image:
     mode = config.mode
     bg_color = config.bg_color
     
-    if mode == 'auto':
+    if mode == 'simple_resize':
+        cropped = src.resize((target_w_px, target_h_px), Image.LANCZOS)
+    elif mode == 'auto':
         cropped = _smart_crop(src, target_w_px, target_h_px, config.max_crop_ratio, bg_color)
     elif mode == 'light_cover':
         cropped = _light_cover(src, target_w_px, target_h_px, config.max_crop_ratio, bg_color)
@@ -468,6 +481,7 @@ def get_default_corners() -> dict[str, float]:
 def get_mode_description(mode: str) -> str:
     """获取裁剪模式描述"""
     descriptions = {
+        'simple_resize': '简单缩放：直接缩放到目标尺寸，不裁剪不留白，保持图片完整性（推荐）',
         'cover': '裁剪填满：裁剪图片填满目标尺寸，可能损失边缘内容',
         'contain': '留白填充：完整显示图片，四周可能留白',
         'light_cover': '轻度裁剪：优先裁剪，裁剪量过大时自动改为留白',

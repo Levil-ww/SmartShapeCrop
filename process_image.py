@@ -11,7 +11,6 @@ Image.MAX_IMAGE_PIXELS = None
 
 from core.image_cropper import (
     load_source_image,
-    fit_image_to_rect,
     apply_rounded_corners,
     apply_border_only_corners,
     apply_multi_layer_rounded_corners,
@@ -41,9 +40,9 @@ print(f"圆角半径: {corner_r_px} px ({corner_r_cm} cm)")
 src = load_source_image(src_path)
 print(f"源图尺寸: {src.size} px")
 
-# ============ 2. Cover 模式等比缩放裁剪 ============
-cropped = fit_image_to_rect(src, target_w_px, target_h_px, mode='cover')
-print(f"裁剪后尺寸: {cropped.size} px")
+# ============ 2. 简单缩放（不裁剪，保持图片完整性）============
+cropped = src.resize((target_w_px, target_h_px), Image.LANCZOS)
+print(f"缩放后尺寸: {cropped.size} px")
 
 # ============ 3. 添加圆角（自动选择模式） ============
 corners = {'tl': 0, 'tr': 0, 'bl': 0, 'br': corner_r_cm}
