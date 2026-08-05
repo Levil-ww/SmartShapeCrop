@@ -1,6 +1,7 @@
 """
 gui/cropper_panel.py
 裁剪面板：上传成品图/PSD → 自动识别或手动输入裁剪参数 → 预览 → 导出 JPG。
+支持从目标文件名自动匹配模板库中的源图。
 """
 from __future__ import annotations
 import os
@@ -15,6 +16,7 @@ from PIL import Image
 
 from core.name_parser import parse_filename, generate_filename, get_image_info
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
+from core.template_matcher import TemplateMatcher, TemplateEntry
 
 
 def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
@@ -37,7 +39,14 @@ class CropperPanel(QWidget):
         self._src_info: dict = {}
         self._last_result: Image.Image | None = None
         self._bg_color: tuple[int, int, int] = (255, 255, 255)
+        self._matcher = TemplateMatcher()
+        self._matcher.set_log_callback(self._on_matcher_log)
         self._build_ui()
+    
+    def _on_matcher_log(self, msg: str):
+        """接收匹配引擎日志"""
+        if hasattr(self, '_lbl_match_log'):
+            self._lbl_match_log.setText(msg)
     
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -52,10 +61,35 @@ class CropperPanel(QWidget):
         scroll.setWidget(inner)
         root.addWidget(scroll)
         
-        # ===== 1) 文件选择 =====
+        # ===== 1) 源图选择 =====
         gb_file = QGroupBox("1. 选择源图")
         fg = QVBoxLayout(gb_file)
         
+        # 1a) 模板库目录
+        row_tpl_dir = QHBoxLayout()
+        row_tpl_dir.addWidget(QLabel("模板库:"))
+        self._ed_template_dir = QLineEdit()
+        self._ed_template_dir.setPlaceholderText("模板库目录路径…")
+        self._ed_template_dir.textChanged.connect(self._on_template_dir_changed)
+        row_tpl_dir.addWidget(self._ed_template_dir, 1)
+        btn_tpl_dir = QPushButton("浏览…")
+        btn_tpl_dir.clicked.connect(self._pick_template_dir)
+        row_tpl_dir.addWidget(btn_tpl_dir)
+        fg.addLayout(row_tpl_dir)
+        
+        # 1b) 目标文件名输入
+        row_target = QHBoxLayout()
+        row_target.addWidget(QLabel("目标文件名:"))
+        self._ed_target_name = QLineEdit()
+        self._ed_target_name.setPlaceholderText("如: 双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角半径2厘米")
+        row_target.addWidget(self._ed_target_name, 1)
+        btn_match = QPushButton("🔍 自动匹配")
+        btn_match.setStyleSheet("background:#e67e22; color:white; font-weight:bold; padding:5px 10px;")
+        btn_match.clicked.connect(self._auto_match)
+        row_target.addWidget(btn_match)
+        fg.addLayout(row_target)
+        
+        # 1c) 源图文件路径
         row_file = QHBoxLayout()
         self._ed_file = QLineEdit()
         self._ed_file.setPlaceholderText("JPG / PSD 文件路径…")
@@ -65,10 +99,19 @@ class CropperPanel(QWidget):
         row_file.addWidget(btn_pick)
         fg.addLayout(row_file)
         
+        # 1d) 源图信息显示
         self._lbl_src_info = QLabel("尚未选择源图")
         self._lbl_src_info.setStyleSheet("color:#666;")
+        self._lbl_src_info.setWordWrap(True)
         fg.addWidget(self._lbl_src_info)
         
+        # 1e) 匹配日志
+        self._lbl_match_log = QLabel("")
+        self._lbl_match_log.setStyleSheet("color:#e67e22; font-size:11px;")
+        self._lbl_match_log.setWordWrap(True)
+        fg.addWidget(self._lbl_match_log)
+        
+        # 1f) 自动识别按钮
         btn_parse = QPushButton("2. 从文件名自动识别尺寸/圆角")
         btn_parse.setStyleSheet("padding:6px; background:#4a90d9; color:white; font-weight:bold;")
         btn_parse.clicked.connect(self._auto_parse)
@@ -223,6 +266,7 @@ class CropperPanel(QWidget):
         self._ck_auto_name.stateChanged.connect(self._update_name_preview)
         self._ed_custom_name.textChanged.connect(self._update_name_preview)
         self._cb_mode.currentIndexChanged.connect(self._on_mode_changed)
+        self._ed_target_name.textChanged.connect(self._update_name_preview)
         
         self._update_name_preview()
     
@@ -248,27 +292,115 @@ class CropperPanel(QWidget):
             "图片文件 (*.jpg *.jpeg *.png *.psd *.psb)"
         )
         if path:
-            self._src_path = path
-            self._ed_file.setText(path)
-            try:
-                self._src_info = get_image_info(path)
-                size = self._src_info.get('size_cm', None)
-                size_str = f"{size[0]}×{size[1]}cm" if size else f"{self._src_info['width_px']}×{self._src_info['height_px']}px"
-                self._lbl_src_info.setText(
-                    f"源图: {size_str} | DPI: {self._src_info['dpi'][0]} | 模式: {self._src_info['mode']}"
-                )
-            except Exception as e:
-                self._lbl_src_info.setText(f"读取失败: {e}")
+            self._set_source_path(path)
     
-    def _auto_parse(self):
-        """从文件名自动识别参数"""
-        if not self._src_path:
-            QMessageBox.information(self, "提示", "请先选择源图")
+    def _set_source_path(self, path: str):
+        """设置源图路径并显示信息"""
+        self._src_path = path
+        self._ed_file.setText(path)
+        try:
+            self._src_info = get_image_info(path)
+            size = self._src_info.get('size_cm', None)
+            size_str = f"{size[0]}×{size[1]}cm" if size else f"{self._src_info['width_px']}×{self._src_info['height_px']}px"
+            self._lbl_src_info.setText(
+                f"源图: {size_str} | DPI: {self._src_info['dpi'][0]} | 模式: {self._src_info['mode']}"
+            )
+        except Exception as e:
+            self._lbl_src_info.setText(f"读取失败: {e}")
+    
+    def _pick_template_dir(self):
+        """选择模板库目录"""
+        dir_path = QFileDialog.getExistingDirectory(self, "选择模板库目录")
+        if dir_path:
+            self._ed_template_dir.setText(dir_path)
+    
+    def _on_template_dir_changed(self, text: str):
+        """模板库目录变更时更新匹配引擎"""
+        if text and os.path.isdir(text):
+            self._matcher.set_template_dir(text)
+    
+    def _auto_match(self):
+        """从目标文件名自动匹配模板库中的源图"""
+        target_name = self._ed_target_name.text().strip()
+        if not target_name:
+            QMessageBox.information(self, "提示", "请输入目标文件名")
             return
         
-        filename = os.path.basename(self._src_path)
+        template_dir = self._ed_template_dir.text().strip()
+        if not template_dir or not os.path.isdir(template_dir):
+            QMessageBox.information(self, "提示", "请先设置模板库目录")
+            return
+        
+        self._lbl_match_log.setText("正在匹配中...")
+        
+        self._matcher.set_template_dir(template_dir)
+        self._matcher.scan_library()
+        
+        best, candidates = self._matcher.find_best_match(target_name)
+        
+        # 解析目标文件名获取完整裁剪参数（含圆角）
+        target_parsed = parse_filename(target_name)
+        
+        if best:
+            self._set_source_path(best.path)
+            
+            # 优先使用目标文件名中的参数，模板参数作为回退
+            if target_parsed.product_name:
+                self._ed_product.setText(target_parsed.product_name)
+            elif best.parsed and best.parsed.product_name:
+                self._ed_product.setText(best.parsed.product_name)
+            
+            if target_parsed.layout:
+                idx = self._cb_layout.findData(target_parsed.layout)
+                if idx >= 0:
+                    self._cb_layout.setCurrentIndex(idx)
+            elif best.parsed and best.parsed.layout:
+                idx = self._cb_layout.findData(best.parsed.layout)
+                if idx >= 0:
+                    self._cb_layout.setCurrentIndex(idx)
+            
+            if target_parsed.width_cm > 0 and target_parsed.height_cm > 0:
+                self._sp_w.setValue(target_parsed.width_cm)
+                self._sp_h.setValue(target_parsed.height_cm)
+            elif best.parsed and best.parsed.width_cm > 0:
+                self._sp_w.setValue(best.parsed.width_cm)
+                self._sp_h.setValue(best.parsed.height_cm)
+            
+            # 圆角只从目标文件名获取（模板通常不含圆角信息）
+            if target_parsed.corners:
+                for key in ('tl', 'tr', 'bl', 'br'):
+                    if key in target_parsed.corners:
+                        self._sp_corners[key].setValue(target_parsed.corners[key])
+            
+            msg = (f"✅ 匹配成功！\n\n"
+                   f"源图: {os.path.basename(best.path)}\n"
+                   f"匹配得分: {best.score:.2f}\n\n"
+                   f"已自动填充裁剪参数：\n"
+                   f"- 产品名称: {target_parsed.product_name or (best.parsed.product_name if best.parsed else '-')}\n"
+                   f"- 尺寸: {self._sp_w.value()}×{self._sp_h.value()}cm 布局: {target_parsed.layout or (best.parsed.layout if best.parsed else '-')}\n"
+                   f"- 圆角: {self._format_corners_for_msg(target_parsed.corners)}")
+            QMessageBox.information(self, "匹配成功", msg)
+        else:
+            self._lbl_match_log.setText("❌ 未找到匹配的模板")
+            QMessageBox.warning(self, "匹配失败",
+                                "未在模板库中找到匹配的源图。\n\n请检查：\n"
+                                "1. 模板库目录是否正确\n"
+                                "2. 模板库中是否有对应花型的图片\n"
+                                "3. 尺寸和方向是否匹配")
+    
+    def _auto_parse(self):
+        """从文件名自动识别参数（优先使用目标文件名输入框，回退到源图文件名）"""
+        # 优先使用目标文件名输入
+        target_name = self._ed_target_name.text().strip()
+        if not target_name and self._src_path:
+            target_name = os.path.basename(self._src_path)
+        
+        if not target_name:
+            QMessageBox.information(self, "提示", "请先输入目标文件名或选择源图")
+            return
+        
         try:
-            parsed = parse_filename(filename)
+            parsed = parse_filename(target_name)
             
             if parsed.product_name:
                 self._ed_product.setText(parsed.product_name)
@@ -287,14 +419,13 @@ class CropperPanel(QWidget):
                     if key in parsed.corners:
                         self._sp_corners[key].setValue(parsed.corners[key])
             
-            QMessageBox.information(
-                self, "自动识别成功",
-                f"已从文件名识别参数：\n\n"
-                f"产品: {parsed.product_name}\n"
-                f"尺寸: {parsed.width_cm}×{parsed.height_cm}cm\n"
-                f"布局: {parsed.layout}\n"
-                f"圆角: {self._format_corners_for_msg(parsed.corners)}"
-            )
+            # 如果目标文件名中有尺寸信息但源图已选择，可以更新源图信息
+            info_msg = f"产品: {parsed.product_name}\n"
+            info_msg += f"尺寸: {parsed.width_cm}×{parsed.height_cm}cm\n"
+            info_msg += f"布局: {parsed.layout}\n"
+            info_msg += f"圆角: {self._format_corners_for_msg(parsed.corners)}"
+            
+            QMessageBox.information(self, "自动识别成功", info_msg)
         except Exception as e:
             QMessageBox.critical(self, "识别失败", str(e))
     
@@ -439,9 +570,4 @@ class CropperPanel(QWidget):
         return self._last_result
     
     def set_source_path(self, path: str):
-        self._src_path = path
-        self._ed_file.setText(path)
-        try:
-            self._src_info = get_image_info(path)
-        except Exception:
-            pass
+        self._set_source_path(path)

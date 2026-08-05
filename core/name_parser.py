@@ -21,10 +21,17 @@ class ParsedFilename:
     height_cm: float = 0.0          # 高度（厘米）
     corners: dict[str, float] | None = None  # 各角圆角半径(cm)，None=无圆角
     raw_filename: str = ""          # 原始文件名
+    material: str = ""              # 材质，如 "双面格"
+    pattern_name: str = ""          # 花型基础名，如 "简织"
+    shape_keywords: list = None     # 形状关键词列表，如 ["竖版"]
+    is_custom: bool = False         # 是否为定制类型
 
 
 # 中文数字映射
 CN_NUM = {'零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+
+# 形状后缀关键词
+SHAPE_SUFFIXES = ['方形', '弧形', '圆形', '横版', '竖版', '裁剪有图', '横', '竖', '方', '弧', '圆']
 
 
 def _cn_to_int(s: str) -> int | None:
@@ -35,6 +42,97 @@ def _cn_to_int(s: str) -> int | None:
         return int(s)
     except ValueError:
         return None
+
+
+def get_base_pattern_name(name: str) -> str:
+    """提取花型基础名（去除形状修饰后缀）"""
+    if not name:
+        return ""
+    result = str(name).strip()
+    changed = True
+    while changed:
+        changed = False
+        for suffix in SHAPE_SUFFIXES:
+            if result.endswith(suffix) and len(result) > len(suffix):
+                result = result[:-len(suffix)]
+                changed = True
+                break
+    return result.strip()
+
+
+def normalize_flower_name(name_part: str, size_part: str = "") -> tuple[str, list]:
+    """
+    标准化花型名，处理等价命名形式。
+    返回：(base_pattern_name, shape_keywords)
+    """
+    if not name_part:
+        return "", []
+
+    shape_keywords = []
+    found_keywords = []
+
+    for keyword in SHAPE_SUFFIXES:
+        if keyword == '圆':
+            temp = name_part.replace('圆角', '').replace('圆弧', '')
+            if '圆' in temp and '圆' not in found_keywords:
+                found_keywords.append('圆')
+        elif keyword in name_part and keyword not in found_keywords:
+            found_keywords.append(keyword)
+
+    if size_part:
+        for keyword in SHAPE_SUFFIXES:
+            if keyword == '圆':
+                temp = size_part.replace('圆角', '').replace('圆弧', '')
+                if '圆' in temp and '圆' not in found_keywords:
+                    found_keywords.append('圆')
+            elif keyword in size_part and keyword not in found_keywords:
+                found_keywords.append(keyword)
+        if '直径' in size_part and '圆形' not in found_keywords:
+            found_keywords.append('圆形')
+
+    if '圆' in found_keywords and '圆形' not in found_keywords:
+        found_keywords.append('圆形')
+    if '圆形' in found_keywords and '圆' not in found_keywords:
+        found_keywords.append('圆')
+
+    base_name = get_base_pattern_name(name_part)
+    return base_name, found_keywords
+
+
+def parse_size_dims(size_str: str) -> tuple | None:
+    """
+    解析尺寸字符串为两个浮点数。
+    支持：矩形(65x80)、圆形(直径42cm/136cm直径/58cm圆形)
+    """
+    if not size_str:
+        return None
+
+    if '直径' in size_str:
+        diameter_match = re.search(r'直径\s*(\d+(?:\.\d+)?)', size_str)
+        if diameter_match:
+            diameter = float(diameter_match.group(1))
+            return (diameter, diameter)
+        diameter_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:cm)?\s*直径', size_str)
+        if diameter_match:
+            diameter = float(diameter_match.group(1))
+            return (diameter, diameter)
+
+    circle_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:cm)?\s*圆形', size_str)
+    if circle_match:
+        diameter = float(circle_match.group(1))
+        return (diameter, diameter)
+    circle_match = re.search(r'圆形\s*(\d+(?:\.\d+)?)', size_str)
+    if circle_match:
+        diameter = float(circle_match.group(1))
+        return (diameter, diameter)
+
+    size_match = re.search(r'(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)', size_str)
+    if size_match:
+        dim1 = float(size_match.group(1))
+        dim2 = float(size_match.group(2))
+        return (dim1, dim2)
+
+    return None
 
 
 def parse_filename(filename: str) -> ParsedFilename:
@@ -52,63 +150,69 @@ def parse_filename(filename: str) -> ParsedFilename:
     Returns:
         ParsedFilename 对象
     """
-    # 去除扩展名
     name = re.sub(r'\.[^.]+$', '', filename)
     
     result = ParsedFilename(raw_filename=filename)
+    result.shape_keywords = []
     
-    # 分离产品名称和规格部分 - 支持多种分隔符
-    # 规则：找到第一个出现的"竖版"或"横版"或数字x数字作为分界
-    # 优先用分号、逗号分隔
     parts = re.split(r'[;,]', name, maxsplit=1)
     
     if len(parts) > 1:
         result.product_name = parts[0].strip()
         spec = parts[1].strip()
     else:
-        # 尝试在整个字符串中找布局标记
         spec = name
-        # 产品名是除了布局+尺寸+圆角之外的部分
         result.product_name = name
     
-    # 检查整个文件名（不仅是spec）来判断布局
-    # 规则："横版"优先级最高，出现即判定为横版
     if '横版' in name or '横款' in name:
         result.layout = '横版'
     elif '竖版' in name or '竖款' in name:
         result.layout = '竖版'
     else:
-        # 没有明确标记，默认为横版（长边为宽）
         result.layout = '横版'
     
-    # 提取尺寸 (数字x数字 cm)
     size_match = re.search(r'(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?', spec)
     
     if not size_match:
-        # 尝试在整个文件名中找
         size_match = re.search(r'(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?', name)
     
     if size_match:
         a = float(size_match.group(1))
         b = float(size_match.group(2))
         
-        # 根据布局确定宽高分配
         if result.layout == '竖版':
-            # 竖版：长边为高，短边为宽
             result.width_cm = min(a, b)
             result.height_cm = max(a, b)
         elif result.layout == '横版':
-            # 横版：长边为宽，短边为高
             result.width_cm = max(a, b)
             result.height_cm = min(a, b)
         else:
-            # 没有明确布局，按横版默认（长边为宽）
             result.width_cm = max(a, b)
             result.height_cm = min(a, b)
     
-    # 提取圆角要求
-    corners = _parse_corners(name)  # 在整个文件名中查找
+    corners = _parse_corners(name)
     result.corners = corners if corners else None
+    
+    # 提取材质和花型名
+    if result.product_name and '-' in result.product_name:
+        name_parts = result.product_name.split('-')
+        if len(name_parts) >= 2:
+            result.material = name_parts[0].strip()
+            result.pattern_name = name_parts[-1].strip()
+            for part in name_parts:
+                if '定制' in part:
+                    result.is_custom = True
+                    break
+        else:
+            result.pattern_name = result.product_name
+    else:
+        result.pattern_name = result.product_name
+    
+    # 提取形状关键词
+    base_name, shape_kw = normalize_flower_name(result.pattern_name or result.product_name, result.layout or "")
+    if base_name:
+        result.pattern_name = base_name
+    result.shape_keywords = shape_kw
     
     return result
 
@@ -120,11 +224,11 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
     支持的格式：
     - 四角圆角半径2cm / 四个圆角半径2cm / 4个圆角半径2cm
     - 左上角圆角半径2cm / 右下角圆角半径2cm
-    - 左下角圆角半径2.5cm / 右上角圆角半径3cm
+    - 左下角圆角半径2.5厘米 / 右上角圆角半径3cm
+    - 右下角圆角半径2厘米
     """
     result = {}
     
-    # 先尝试匹配每个角单独指定的情况
     corner_map = {
         '左上角': 'tl',
         '右上角': 'tr',
@@ -133,31 +237,28 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
     }
     
     for cn_name, key in corner_map.items():
-        # 匹配：左上角圆角半径2cm / 左上角圆角2cm
-        pattern = rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?'
-        # 或者：左上角半径2cm
-        pattern2 = rf'{cn_name}(?:圆角)?半径\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?'
+        # 支持 cm/CM/厘米/公分 等单位
+        unit_pattern = r'(?:cm|CM|厘米|公分)?'
+        pattern = rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*{unit_pattern}'
+        pattern2 = rf'{cn_name}(?:圆角)?半径\s*(\d+(?:\.\d+)?)\s*{unit_pattern}'
         
         m = re.search(pattern, spec) or re.search(pattern2, spec)
         if m:
             result[key] = float(m.group(1))
     
-    # 检查是否有"四角/四个/4个/2个/两个圆角"的情况
     all_corners_patterns = [
-        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?',
-        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?',
-        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米)?',
+        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|公分)?',
+        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|公分)?',
+        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:\.\d+)?)\s*(?:cm|CM|厘米|公分)?',
     ]
     
     for pattern in all_corners_patterns:
         m = re.search(pattern, spec)
         if m:
             if len(m.groups()) == 1:
-                # 四角圆角半径Xcm
                 radius = float(m.group(1))
                 result = {'tl': radius, 'tr': radius, 'bl': radius, 'br': radius}
             elif len(m.groups()) == 2:
-                # N个圆角半径Xcm
                 count_str = m.group(1)
                 count = _cn_to_int(count_str)
                 radius = float(m.group(2))
@@ -168,9 +269,7 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
             if result:
                 return result
     
-    # 如果没有"四角"模式，检查是否有单独的角指定
     if result:
-        # 如果只有部分角指定，未指定的角设为0（无圆角）
         all_keys = ['tl', 'tr', 'bl', 'br']
         for k in all_keys:
             if k not in result:
@@ -194,7 +293,6 @@ def generate_filename(parsed: ParsedFilename, corners_override: dict[str, float]
     Returns:
         规范化的文件名字符串
     """
-    # 构建规格部分（尺寸+圆角）
     spec_parts = []
     
     if parsed.layout:
@@ -202,26 +300,22 @@ def generate_filename(parsed: ParsedFilename, corners_override: dict[str, float]
     else:
         spec_parts.append(f"{parsed.width_cm}x{parsed.height_cm}cm")
     
-    # 添加圆角描述
     corners = corners_override if corners_override is not None else parsed.corners
     if corners:
         corner_names = {'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角'}
         
-        # 检查圆角情况
         unique_values = set(v for v in corners.values() if v > 0)
         non_zero = {k: v for k, v in corners.items() if v > 0}
         
         if len(unique_values) == 1 and len(non_zero) == 4:
-            # 四角相同
             r = list(unique_values)[0]
             spec_parts.append(f"四角圆角半径{r}cm")
         else:
-            # 各角不同或部分角
             for k in ('tl', 'tr', 'bl', 'br'):
                 if k in non_zero and non_zero[k] > 0:
                     spec_parts.append(f"{corner_names[k]}圆角半径{non_zero[k]}cm")
     
-    spec_str = ''.join(spec_parts)  # 尺寸和圆角连在一起
+    spec_str = ''.join(spec_parts)
     
     return f"{parsed.product_name};{spec_str}.jpg"
 
@@ -247,7 +341,6 @@ def get_image_info(path: str) -> dict:
         'size_cm': None,
     }
     
-    # 如果有DPI信息，计算物理尺寸
     dpi = info['dpi']
     if dpi and dpi[0] > 0:
         info['size_cm'] = (
