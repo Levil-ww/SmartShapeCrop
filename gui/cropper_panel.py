@@ -137,7 +137,7 @@ class CropperPanel(QWidget):
         grid_size.addWidget(QLabel("布局:"), 0, 0)
         self._cb_layout = QComboBox()
         self._cb_layout.addItem("竖版（长边为高）", "竖版")
-        self._cb_layout.addItem("横版（长边为宽）", "")
+        self._cb_layout.addItem("横版（长边为宽）", "横版")
         grid_size.addWidget(self._cb_layout, 0, 1)
         
         grid_size.addWidget(QLabel("宽(cm):"), 0, 2)
@@ -513,11 +513,11 @@ class CropperPanel(QWidget):
                 unique_radii = set(non_zero.values())
                 if len(unique_radii) == 1 and len(non_zero) == 4:
                     r = list(unique_radii)[0]
-                    spec_parts.append(f"四角半径{_fmt_num(r)}cm")
+                    spec_parts.append(f"四个圆角半径{_fmt_num(r)}cm")
                 else:
                     for k in ('tl', 'tr', 'bl', 'br'):
                         if k in non_zero and non_zero[k] > 0:
-                            spec_parts.append(f"{get_corner_name(k)}半径{_fmt_num(non_zero[k])}cm")
+                            spec_parts.append(f"{get_corner_name(k)}圆角半径{_fmt_num(non_zero[k])}cm")
 
             spec_str = ''.join(spec_parts)
             name = f"{product};{spec_str}.jpg"

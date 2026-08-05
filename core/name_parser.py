@@ -106,27 +106,28 @@ def parse_size_dims(size_str: str) -> tuple | None:
     """
     if not size_str:
         return None
+    s = _normalize_str(size_str)
 
-    if '直径' in size_str:
-        diameter_match = re.search(r'直径\s*(\d+(?:\.\d+)?)', size_str)
+    if '直径' in s:
+        diameter_match = re.search(r'直径\s*(\d+(?:[.]\d+)?)', s)
         if diameter_match:
             diameter = float(diameter_match.group(1))
             return (diameter, diameter)
-        diameter_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:cm)?\s*直径', size_str)
+        diameter_match = re.search(r'(\d+(?:[.]\d+)?)\s*(?:cm)?\s*直径', s, flags=re.IGNORECASE)
         if diameter_match:
             diameter = float(diameter_match.group(1))
             return (diameter, diameter)
 
-    circle_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:cm)?\s*圆形', size_str)
+    circle_match = re.search(r'(\d+(?:[.]\d+)?)\s*(?:cm)?\s*圆形', s, flags=re.IGNORECASE)
     if circle_match:
         diameter = float(circle_match.group(1))
         return (diameter, diameter)
-    circle_match = re.search(r'圆形\s*(\d+(?:\.\d+)?)', size_str)
+    circle_match = re.search(r'圆形\s*(\d+(?:[.]\d+)?)', s)
     if circle_match:
         diameter = float(circle_match.group(1))
         return (diameter, diameter)
 
-    size_match = re.search(r'(\d+(?:\.\d+)?)\s*[xX×x]\s*(\d+(?:\.\d+)?)', size_str)
+    size_match = re.search(r'(\d+(?:[.]\d+)?)\s*[xX]\s*(\d+(?:[.]\d+)?)', s, flags=re.IGNORECASE)
     if size_match:
         dim1 = float(size_match.group(1))
         dim2 = float(size_match.group(2))
@@ -135,75 +136,151 @@ def parse_size_dims(size_str: str) -> tuple | None:
     return None
 
 
+def _normalize_str(s: str) -> str:
+    """全角字符 → 半角字符 + 清除不可见字符，避免正则匹配失败导致精度丢失。"""
+    if not s:
+        return s
+    # 不可见/零宽字符（可能从网页/文档复制而来）
+    _INVISIBLE = (
+        '\u200b',  # zero-width space
+        '\u200c',  # zero-width non-joiner
+        '\u200d',  # zero-width joiner
+        '\u2060',  # word joiner
+        '\ufeff',  # BOM / zero-width no-break space
+        '\u00a0',  # non-breaking space → 普通空格
+        '\u3000',  # fullwidth space → 普通空格
+    )
+    for ch in _INVISIBLE:
+        s = s.replace(ch, '')
+
+    # 全角 → 半角字符映射
+    table = str.maketrans({
+        '０': '0', '１': '1', '２': '2', '３': '3', '４': '4',
+        '５': '5', '６': '6', '７': '7', '８': '8', '９': '9',
+        '．': '.', '。': '.',  # 全角小数点兼容
+        '×': 'x', 'Ｘ': 'x', 'ｘ': 'x', '✕': 'x',  # 各种乘号
+        '，': ',', '；': ';',
+        '　': ' ',
+        'ｃ': 'c', 'ｍ': 'm', 'Ｃ': 'c', 'Ｍ': 'm',
+    })
+    return s.translate(table)
+
+
+def _extract_size_pair(text: str) -> tuple[float, float] | None:
+    """
+    多层容错的尺寸提取：
+    1. 标准正则（带单位）
+    2. 标准正则（不带单位）
+    3. 宽松正则（允许任意空白/分隔符）
+    4. 兜底：找出所有形如 "数字x数字" 的片段，取第一个
+    5. 终极兜底：找出所有数字，取前两个
+    """
+    if not text:
+        return None
+
+    strategies = [
+        # S1: 带单位的完整格式
+        r'(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(cm|厘米|公分)',
+        # S2: 无单位
+        r'(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)',
+        # S3: 极宽松 —— 用 \s* 兼容任意空白，用 .*? 尽可能宽松
+        r'(\d+(?:\.\d+)?).*?[xX].*?(\d+(?:\.\d+)?)',
+    ]
+
+    for i, pat in enumerate(strategies):
+        m = re.search(pat, text, flags=re.IGNORECASE | re.DOTALL)
+        if m:
+            try:
+                a = float(m.group(1))
+                b = float(m.group(2))
+                print(f"[name_parser] size strategy S{i+1} matched: {m.group(1)} x {m.group(2)} -> {a} x {b}")
+                return (a, b)
+            except ValueError:
+                continue
+
+    # S4: 找出所有 "数字x数字" 模式（宽松匹配）
+    all_matches = re.findall(r'(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)', text, flags=re.IGNORECASE)
+    if all_matches:
+        a = float(all_matches[0][0])
+        b = float(all_matches[0][1])
+        print(f"[name_parser] size strategy S4 matched: {all_matches[0][0]} x {all_matches[0][1]} -> {a} x {b}")
+        return (a, b)
+
+    # S5: 终极兜底 — 提取所有数字，取前两个
+    all_nums = re.findall(r'\d+(?:\.\d+)?', text)
+    if len(all_nums) >= 2:
+        a = float(all_nums[0])
+        b = float(all_nums[1])
+        print(f"[name_parser] size strategy S5 (fallback) matched: {all_nums[0]} x {all_nums[1]} -> {a} x {b}")
+        return (a, b)
+
+    print(f"[name_parser] size parsing FAILED for text: {repr(text[:200])}")
+    return None
+
+
 def parse_filename(filename: str) -> ParsedFilename:
     """
     解析文件名，提取尺寸和圆角信息。
-    
+
     尺寸方向规则：
-    - 竖版：长边为高，短边为宽
-    - 横版：长边为宽，短边为高
-    - 出现"横版"即判定为横版
-    
+    - 无显式"横版/竖版"关键词时，默认横版：长边为宽（MAX），短边为高（MIN）
+    - 出现"横版/横款"即判定为横版：长边为宽（MAX），短边为高（MIN）
+    - 出现"竖版/竖款"即判定为竖版：短边为宽（MIN），长边为高（MAX）
+    - 例：45x220 或 220x50 → 宽=长边, 高=短边
+         竖版25x60 或 竖版60x25 → 宽=短边, 高=长边
+
     Args:
         filename: 文件名（含或不含扩展名）
-    
+
     Returns:
         ParsedFilename 对象
     """
-    name = re.sub(r'\.[^.]+$', '', filename)
-    
+    raw_name = re.sub(r'\.[^.]+$', '', filename)
+    # 先做一次全角 → 半角规范化，确保后续正则准确匹配小数部分、x和单位
+    name = _normalize_str(raw_name)
+
     result = ParsedFilename(raw_filename=filename)
     result.shape_keywords = []
-    
+
     parts = re.split(r'[;,]', name, maxsplit=1)
-    
+
     if len(parts) > 1:
         result.product_name = parts[0].strip()
         spec = parts[1].strip()
     else:
         spec = name
         result.product_name = name
-    
+
+    # 检测显式方向关键词（在规范化后的完整名称里检测）
+    explicit_layout = None
     if '横版' in name or '横款' in name:
-        result.layout = '横版'
+        explicit_layout = '横版'
     elif '竖版' in name or '竖款' in name:
-        result.layout = '竖版'
-    else:
-        result.layout = '横版'
-    
-    # 尺寸识别：优先匹配带单位的完整格式（强制要求单位，使小数部分必须被匹配）
-    size_patterns = [
-        # 带单位的完整格式（单位必须匹配，确保小数部分不会被跳过）
-        r'(\d+(?:\.\d+)?)\s*[x×Xx]\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
-        # 无单位回退格式
-        r'(\d+(?:\.\d+)?)\s*[x×Xx]\s*(\d+(?:\.\d+)?)',
-    ]
-    
-    size_match = None
-    for pattern in size_patterns:
-        size_match = re.search(pattern, spec)
-        if size_match:
-            break
-    
-    if not size_match:
-        for pattern in size_patterns:
-            size_match = re.search(pattern, name)
-            if size_match:
-                break
-    
-    if size_match:
-        a = float(size_match.group(1))
-        b = float(size_match.group(2))
-        
-        if result.layout == '竖版':
+        explicit_layout = '竖版'
+
+    # 尺寸识别：使用多层容错的 _extract_size_pair，先在 spec 中查找，找不到再在完整 name 中查找
+    dims = _extract_size_pair(spec)
+    if dims is None:
+        dims = _extract_size_pair(name)
+
+    if dims:
+        a, b = dims
+
+        layout = explicit_layout if explicit_layout else '横版'
+        if layout == '横版':
+            # 横版：长边为宽，短边为高
+            result.width_cm = max(a, b)
+            result.height_cm = min(a, b)
+        else:  # 竖版
+            # 竖版：短边为宽，长边为高
             result.width_cm = min(a, b)
             result.height_cm = max(a, b)
-        elif result.layout == '横版':
-            result.width_cm = max(a, b)
-            result.height_cm = min(a, b)
-        else:
-            result.width_cm = max(a, b)
-            result.height_cm = min(a, b)
+        result.layout = layout
+        print(f"[name_parser] FINAL: a={a}, b={b}, layout={layout}, width={result.width_cm}, height={result.height_cm}")
+    else:
+        # 无尺寸信息时默认横版
+        result.layout = '横版'
+        print(f"[name_parser] FINAL: no dimensions parsed, default layout=横版")
     
     corners = _parse_corners(name)
     result.corners = corners if corners else None
@@ -235,51 +312,77 @@ def parse_filename(filename: str) -> ParsedFilename:
 def _parse_corners(spec: str) -> dict[str, float] | None:
     """
     从字符串中解析圆角要求。
-    
+
     支持的格式：
     - 四角圆角半径2cm / 四个圆角半径2cm / 4个圆角半径2cm
     - 左上角圆角半径2cm / 右下角圆角半径2cm
     - 左下角圆角半径2.5厘米 / 右上角圆角半径3cm
     - 右下角圆角半径2厘米
+    - 左下角做3cm半径圆弧角 / 右上角做2cm半径弧角  (口语化表述)
     """
+    # 先做全角 → 半角规范化，避免小数和单位匹配失败
+    s = _normalize_str(spec) if spec else ""
+    if not s:
+        return None
+
     result = {}
-    
+
+    # 圆角/圆弧角/弧角 统一为 "角" 关键字
+    # 先把 "圆弧角"、"弧角" 统一替换为 "圆角"，简化后续正则
+    for alt in ('圆弧角', '弧角', '圆角弧'):
+        s = s.replace(alt, '圆角')
+
     corner_map = {
         '左上角': 'tl',
         '右上角': 'tr',
         '左下角': 'bl',
         '右下角': 'br',
     }
-    
+
     for cn_name, key in corner_map.items():
-        # 支持 cm/CM/厘米/公分 等单位
-        # 优先匹配带单位（强制要求单位，确保小数不被跳过）
-        pattern = rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)'
-        pattern2 = rf'{cn_name}(?:圆角)?半径\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)'
-        m = re.search(pattern, spec) or re.search(pattern2, spec)
-        
-        if not m:
-            # 回退：无单位
-            pattern = rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:\.\d+)?)'
-            pattern2 = rf'{cn_name}(?:圆角)?半径\s*(\d+(?:\.\d+)?)'
-            m = re.search(pattern, spec) or re.search(pattern2, spec)
-        
+        # 多种表述方式（放宽中间的连接词）：
+        # 1. 左下角圆角3cm / 左下角圆角半径3cm / 左下角半径3cm
+        # 2. 左下角做3cm半径圆角 / 左下角做3cm圆角
+        # 3. 左下角3cm圆角 / 左下角3cm半径圆角
+        patterns = [
+            # 标准：位置 + 圆角 + 半径 + 数字 + 单位
+            rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
+            # 位置 + 半径 + 数字 + 单位
+            rf'{cn_name}(?:圆角)?半径\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
+            # 口语：位置 + 做 + 数字 + 单位 + 半径 + 圆角
+            rf'{cn_name}.{0,3}做\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径?\s*圆角',
+            # 口语：位置 + 数字 + 单位 + 半径 + 圆角
+            rf'{cn_name}\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径?\s*圆角',
+            # 口语：位置 + 做 + 数字 + 单位 + 圆角
+            rf'{cn_name}.{0,3}做\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*圆角',
+            # 无单位回退
+            rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
+            rf'{cn_name}(?:圆角)?半径\s*(\d+(?:[.]\d+)?)',
+        ]
+
+        m = None
+        for pat in patterns:
+            m = re.search(pat, s, flags=re.IGNORECASE)
+            if m:
+                print(f"[name_parser] corner '{key}' matched pattern: {pat} -> {m.group(1)}")
+                break
+
         if m:
             result[key] = float(m.group(1))
-    
+
     all_corners_patterns = [
         # 带单位（强制匹配）
-        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
-        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
-        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:\.\d+)?)\s*(cm|CM|厘米|公分)',
+        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
+        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
+        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
         # 无单位回退
-        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)',
-        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:\.\d+)?)',
-        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:\.\d+)?)',
+        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
+        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
+        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:[.]\d+)?)',
     ]
-    
+
     for pattern in all_corners_patterns:
-        m = re.search(pattern, spec)
+        m = re.search(pattern, s, flags=re.IGNORECASE)
         if m:
             if len(m.groups()) == 1:
                 radius = float(m.group(1))
@@ -288,20 +391,23 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
                 count_str = m.group(1)
                 count = _cn_to_int(count_str)
                 radius = float(m.group(2))
-                
+
                 if count == 4:
                     result = {'tl': radius, 'tr': radius, 'bl': radius, 'br': radius}
-            
+
             if result:
+                print(f"[name_parser] all-corners matched: {result}")
                 return result
-    
+
     if result:
         all_keys = ['tl', 'tr', 'bl', 'br']
         for k in all_keys:
             if k not in result:
                 result[k] = 0.0
+        print(f"[name_parser] individual corners: {result}")
         return result
-    
+
+    print(f"[name_parser] no corners parsed from: {repr(s[:200])}")
     return None
 
 
