@@ -453,20 +453,34 @@ def _build_border_sector_mask(
     d_outer: float, d_inner: float
 ) -> np.ndarray:
     """
-    构建单个边框层在圆弧上的精确遮罩（收窄扇区形状）。
+    构建单个边框层在圆弧上的精确遮罩（固定角度扇区形状）。
     
     遮罩原理：对于每个像素 p 在角落区域：
       - r = 到该层圆心距离
       - d_p = R - r （该层自身坐标系下的深度，正值在弧内）
       - 保留条件：
         1) d_outer <= d_p < d_inner （径向范围属于该层）
-        2) angle_bottom(d_p) <= angle_p <= angle_side(d_p)
-           （角度在该深度对应 bottom/side 交点之间）
+        2) angle_p 在该角固定角度范围内
+           （固定角度 = pieslice 角度，确保直线到圆弧的完整连接）
     
     注意：cx, cy 已经是该层独立的圆心位置（由调用方根据累计偏移调整），
     R 是该层的有效圆角半径（R_eff = R_total - cumulative_thickness）。
     返回 bool 数组 [H, W]，True 表示绘制区域。
+    
+    历史：早期版本使用 _angle_bottom/_angle_side 计算随深度收窄的角度，
+    但这导致内层边框在圆弧上无法覆盖直线到圆弧的连接区域，
+    产生白色扇形角和背景色漏出。修复为固定角度范围。
     """
+    # 各角的固定角度范围（与 _CORNER_PARAMS 中的 pieslice 角度一致）
+    # 这确保边框层在圆弧上从直线边缘完整延伸到另一边
+    _FIXED_ANGLE_RANGES = {
+        'tl': (180.0, 270.0),
+        'tr': (270.0, 360.0),
+        'bl': (90.0, 180.0),
+        'br': (0.0, 90.0),
+    }
+    ang_min, ang_max = _FIXED_ANGLE_RANGES[corner_key]
+
     # 只计算角落 ROI 以加速
     roi_x0 = max(0, cx - R)
     roi_y0 = max(0, cy - R)
@@ -488,22 +502,16 @@ def _build_border_sector_mask(
     # 条件 1: 径向属于该层（在该层的环形区域内）
     cond_r = (d_p >= d_outer) & (d_p < d_inner)
 
-    # 条件 2: 角度在 [angle_bottom(d_p), angle_side(d_p)] 之间
+    # 条件 2: 角度在固定范围内（确保直线到圆弧的完整连接）
     # 用 atan2 计算角度 (dy, dx)，转为 0~360 度
     angle_p = np.degrees(np.arctan2(dy, dx))
     angle_p = np.mod(angle_p, 360.0)
 
-    # 向量化计算每个像素对应深度的 bottom/side 角度
-    # 使用该层自身的有效半径 R 进行角度收窄计算
-    safe_d = np.clip(d_p, 0.0, float(R))
-    ang_bottom_arr = np.asarray(_angle_bottom(corner_key, float(R), safe_d), dtype=np.float64)
-    ang_side_arr = np.asarray(_angle_side(corner_key, float(R), safe_d), dtype=np.float64)
-
-    # 修复：angle_bottom 和 angle_side 在不同深度下可能互换
-    # 使用 min/max 确保角度范围始终正确
-    ang_min = np.minimum(ang_bottom_arr, ang_side_arr)
-    ang_max = np.maximum(ang_bottom_arr, ang_side_arr)
-    cond_angle = (angle_p >= ang_min) & (angle_p <= ang_max)
+    # 使用角度偏移法统一处理所有角（包括 tr 的 270°→360° 跨 0° 情况）
+    # 将角度平移到以 ang_min 为起点的 [0°, 360°) 范围
+    shifted_angle = np.mod(angle_p - ang_min, 360.0)
+    angular_span = ang_max - ang_min
+    cond_angle = shifted_angle <= angular_span
 
     roi_mask = cond_r & cond_angle
 
