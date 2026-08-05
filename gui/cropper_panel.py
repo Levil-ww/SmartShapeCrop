@@ -141,11 +141,11 @@ class CropperPanel(QWidget):
         grid_size.addWidget(self._cb_layout, 0, 1)
         
         grid_size.addWidget(QLabel("宽(cm):"), 0, 2)
-        self._sp_w = QDoubleSpinBox(); self._sp_w.setRange(1, 500); self._sp_w.setValue(55); self._sp_w.setDecimals(1)
+        self._sp_w = QDoubleSpinBox(); self._sp_w.setRange(1, 500); self._sp_w.setValue(55); self._sp_w.setDecimals(2); self._sp_w.setSingleStep(0.5)
         grid_size.addWidget(self._sp_w, 0, 3)
         
         grid_size.addWidget(QLabel("高(cm):"), 0, 4)
-        self._sp_h = QDoubleSpinBox(); self._sp_h.setRange(1, 500); self._sp_h.setValue(41); self._sp_h.setDecimals(1)
+        self._sp_h = QDoubleSpinBox(); self._sp_h.setRange(1, 500); self._sp_h.setValue(41); self._sp_h.setDecimals(2); self._sp_h.setSingleStep(0.5)
         grid_size.addWidget(self._sp_h, 0, 5)
         
         grid_size.addWidget(QLabel("DPI:"), 1, 0)
@@ -196,7 +196,7 @@ class CropperPanel(QWidget):
         
         row_quick = QHBoxLayout()
         row_quick.addWidget(QLabel("快速设置:"))
-        self._sp_quick_r = QDoubleSpinBox(); self._sp_quick_r.setRange(0, 50); self._sp_quick_r.setValue(2); self._sp_quick_r.setDecimals(1)
+        self._sp_quick_r = QDoubleSpinBox(); self._sp_quick_r.setRange(0, 50); self._sp_quick_r.setValue(2); self._sp_quick_r.setDecimals(2); self._sp_quick_r.setSingleStep(0.5)
         self._sp_quick_r.setSuffix(" cm")
         row_quick.addWidget(self._sp_quick_r)
         
@@ -216,7 +216,7 @@ class CropperPanel(QWidget):
         self._sp_corners = {}
         for i, (key, name) in enumerate([('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]):
             grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 3)
-            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(0); sp.setDecimals(1); sp.setSuffix(" cm")
+            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(0); sp.setDecimals(2); sp.setSingleStep(0.5); sp.setSuffix(" cm")
             grid_corner.addWidget(sp, i // 2, (i % 2) * 3 + 1)
             self._sp_corners[key] = sp
         
@@ -393,7 +393,7 @@ class CropperPanel(QWidget):
                    f"匹配得分: {best.score:.2f}\n\n"
                    f"已自动填充裁剪参数（含 +1cm 切割损耗）：\n"
                    f"- 产品名称: {target_parsed.product_name or (best.parsed.product_name if best.parsed else '-')}\n"
-                   f"- 尺寸: {self._sp_w.value()}×{self._sp_h.value()}cm 布局: {target_parsed.layout or (best.parsed.layout if best.parsed else '-')}\n"
+                   f"- 尺寸: {_fmt_num(self._sp_w.value())}×{_fmt_num(self._sp_h.value())}cm 布局: {target_parsed.layout or (best.parsed.layout if best.parsed else '-')}\n"
                    f"- 圆角: {self._format_corners_for_msg(target_parsed.corners)}")
             QMessageBox.information(self, "匹配成功", msg)
         else:
@@ -438,8 +438,8 @@ class CropperPanel(QWidget):
             
             # 如果目标文件名中有尺寸信息但源图已选择，可以更新源图信息
             info_msg = f"产品: {parsed.product_name}\n"
-            info_msg += f"原始尺寸: {parsed.width_cm}×{parsed.height_cm}cm\n"
-            info_msg += f"裁剪尺寸(含 +1cm 切割损耗): {self._sp_w.value()}×{self._sp_h.value()}cm\n"
+            info_msg += f"原始尺寸: {_fmt_num(parsed.width_cm)}×{_fmt_num(parsed.height_cm)}cm\n"
+            info_msg += f"裁剪尺寸(含 +1cm 切割损耗): {_fmt_num(self._sp_w.value())}×{_fmt_num(self._sp_h.value())}cm\n"
             info_msg += f"布局: {parsed.layout}\n"
             info_msg += f"圆角: {self._format_corners_for_msg(parsed.corners)}"
             

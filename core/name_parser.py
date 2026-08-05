@@ -137,82 +137,190 @@ def parse_size_dims(size_str: str) -> tuple | None:
 
 
 def _normalize_str(s: str) -> str:
-    """全角字符 → 半角字符 + 清除不可见字符，避免正则匹配失败导致精度丢失。"""
+    """全角字符 → 半角字符 + 清除所有不可见/异常字符。"""
     if not s:
         return s
-    # 不可见/零宽字符（可能从网页/文档复制而来）
-    _INVISIBLE = (
+        
+    # 1. 删除所有不可见/零宽/控制字符
+    _INVISIBLE_CHARS = [
         '\u200b',  # zero-width space
         '\u200c',  # zero-width non-joiner
         '\u200d',  # zero-width joiner
         '\u2060',  # word joiner
         '\ufeff',  # BOM / zero-width no-break space
-        '\u00a0',  # non-breaking space → 普通空格
-        '\u3000',  # fullwidth space → 普通空格
-    )
-    for ch in _INVISIBLE:
+        '\u202a',  # LEFT-TO-RIGHT EMBEDDING
+        '\u202b',  # RIGHT-TO-LEFT EMBEDDING
+        '\u202c',  # POP DIRECTIONAL FORMATTING
+        '\u202d',  # LEFT-TO-RIGHT OVERRIDE
+        '\u202e',  # RIGHT-TO-LEFT OVERRIDE
+        '\u200e',  # LEFT-TO-RIGHT MARK
+        '\u200f',  # RIGHT-TO-LEFT MARK
+        '\u2066',  # LEFT-TO-RIGHT ISOLATE
+        '\u2067',  # RIGHT-TO-LEFT ISOLATE
+        '\u2068',  # FIRST STRONG ISOLATE
+        '\u2069',  # POP DIRECTIONAL ISOLATE
+        '\u2000',  # EN QUAD
+        '\u2001',  # EM QUAD
+        '\u2002',  # EN SPACE
+        '\u2003',  # EM SPACE
+        '\u2004',  # THREE-PER-EM SPACE
+        '\u2005',  # FOUR-PER-EM SPACE
+        '\u2006',  # SIX-PER-EM SPACE
+        '\u2007',  # FIGURE SPACE
+        '\u2008',  # PUNCTUATION SPACE
+        '\u2009',  # THIN SPACE
+        '\u200a',  # HAIR SPACE
+        '\u2028',  # LINE SEPARATOR
+        '\u2029',  # PARAGRAPH SEPARATOR
+    ]
+    for ch in _INVISIBLE_CHARS:
         s = s.replace(ch, '')
-
-    # 全角 → 半角字符映射
+        
+    # 2. 将全角/特殊空格转为普通空格
+    _SPACE_CHARS = [
+        '\u00a0',  # non-breaking space
+        '\u3000',  # ideographic space (全角空格)
+        '\u202f',  # NARROW NO-BREAK SPACE
+        '\u205f',  # MEDIUM MATHEMATICAL SPACE
+    ]
+    for ch in _SPACE_CHARS:
+        s = s.replace(ch, ' ')
+        
+    # 3. 全角 → 半角字符映射（注意：字典键不能重复，否则后者覆盖前者）
     table = str.maketrans({
         '０': '0', '１': '1', '２': '2', '３': '3', '４': '4',
         '５': '5', '６': '6', '７': '7', '８': '8', '９': '9',
-        '．': '.', '。': '.',  # 全角小数点兼容
-        '×': 'x', 'Ｘ': 'x', 'ｘ': 'x', '✕': 'x',  # 各种乘号
-        '，': ',', '；': ';',
-        '　': ' ',
+        '．': '.', '。': '.',  # 全角小数点
+        '×': 'x', 'Ｘ': 'x', 'ｘ': 'x', '✕': 'x', '＊': '*',  # 各种乘号
+        '，': ',', '；': ';', '：': ':',
         'ｃ': 'c', 'ｍ': 'm', 'Ｃ': 'c', 'Ｍ': 'm',
     })
-    return s.translate(table)
+    s = s.translate(table)
+    
+    # 4. 将所有连续的空白符压缩为单个空格
+    s = re.sub(r'\s+', ' ', s)
+    
+    return s.strip()
+
+
+def _extract_size_pair_manual(text: str) -> tuple[float, float] | None:
+    """
+    字符级手动解析算法（作为正则失败后的终极兜底）。
+    逐字符扫描，寻找 "第一个数字" + "乘号/关键字" + "第二个数字" 的模式。
+    这种方法完全绕过正则引擎可能的贪婪匹配陷阱，对隐藏字符具有极强的免疫力。
+    """
+    if not text:
+        return None
+        
+    # 定义乘号字符集
+    mul_chars = set('xX*×·⋅')
+    
+    # 1. 找到文本中所有数字的起止位置
+    num_pattern = re.compile(r'\d+(?:\.\d+)?')
+    nums_found = []
+    for m in num_pattern.finditer(text):
+        nums_found.append((m.start(), m.end(), m.group()))
+        
+    if len(nums_found) < 2:
+        return None
+        
+    # 2. 遍历所有相邻数字对，检查它们之间是否存在乘号
+    for i in range(len(nums_found) - 1):
+        start_a, end_a, str_a = nums_found[i]
+        start_b, end_b, str_b = nums_found[i+1]
+        
+        # 提取两个数字之间的文本
+        between_text = text[end_a:start_b]
+        
+        # 检查中间文本是否包含乘号字符
+        has_mul = any(ch in mul_chars for ch in between_text)
+        
+        if has_mul:
+            try:
+                a = float(str_a)
+                b = float(str_b)
+                print(f"[name_parser] MANUAL parse matched: '{str_a}' x '{str_b}' -> {a} x {b}")
+                return (a, b)
+            except ValueError:
+                continue
+                
+    # 3. 如果没有乘号，直接取前两个数字（比如 "49.5 114.5" 或 "49.5, 114.5"）
+    if len(nums_found) >= 2:
+        _, _, str_a = nums_found[0]
+        _, _, str_b = nums_found[1]
+        # 检查它们之间是否只有非字母数字和乘号的字符（如空格、逗号）
+        between_text = text[nums_found[0][1]:nums_found[1][0]]
+        if not re.search(r'[a-zA-Z\u4e00-\u9fff]', between_text):
+            try:
+                a = float(str_a)
+                b = float(str_b)
+                print(f"[name_parser] MANUAL fallback (no mul sign) matched: '{str_a}' x '{str_b}' -> {a} x {b}")
+                return (a, b)
+            except ValueError:
+                pass
+                
+    return None
 
 
 def _extract_size_pair(text: str) -> tuple[float, float] | None:
     """
-    多层容错的尺寸提取：
-    1. 标准正则（带单位）
-    2. 标准正则（不带单位）
-    3. 宽松正则（允许任意空白/分隔符）
-    4. 兜底：找出所有形如 "数字x数字" 的片段，取第一个
-    5. 终极兜底：找出所有数字，取前两个
+    多层容错的尺寸提取（按可靠性从高到低排序）：
+    S1: 带单位的标准正则
+    S2: 无单位的标准正则
+    S3: 宽松正则
+    S4: findall 宽松正则
+    S5: 提取所有数字取前两个
+    S6: 【新增】字符级手动扫描（绕开所有正则陷阱）
     """
     if not text:
         return None
 
     strategies = [
-        # S1: 带单位的完整格式
-        r'(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\s*(cm|厘米|公分)',
+        # S1: 带单位的完整格式 —— 强制要求 cm/厘米/公分
+        r'(\d+(?:\.\d+)?)\s*[xX*×Ｘｘ✕·⋅]\s*(\d+(?:\.\d+)?)\s*(cm|厘米|公分)',
         # S2: 无单位
-        r'(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)',
-        # S3: 极宽松 —— 用 \s* 兼容任意空白，用 .*? 尽可能宽松
-        r'(\d+(?:\.\d+)?).*?[xX].*?(\d+(?:\.\d+)?)',
+        r'(\d+(?:\.\d+)?)\s*[xX*×Ｘｘ✕·⋅]\s*(\d+(?:\.\d+)?)',
+        # S3: 极宽松
+        r'(\d+(?:\.\d+)?).*?[xX*×Ｘｘ✕·⋅].*?(\d+(?:\.\d+)?)',
     ]
 
     for i, pat in enumerate(strategies):
         m = re.search(pat, text, flags=re.IGNORECASE | re.DOTALL)
         if m:
+            raw_a = m.group(1)
+            raw_b = m.group(2)
             try:
-                a = float(m.group(1))
-                b = float(m.group(2))
-                print(f"[name_parser] size strategy S{i+1} matched: {m.group(1)} x {m.group(2)} -> {a} x {b}")
+                # 双重 round 抑制浮点误差
+                a = round(round(float(raw_a), 6), 2)
+                b = round(round(float(raw_b), 6), 2)
+                print(f"[name_parser] size strategy S{i+1} matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
                 return (a, b)
             except ValueError:
+                print(f"[name_parser] S{i+1} ValueError for groups: {repr(raw_a)}, {repr(raw_b)}")
                 continue
 
-    # S4: 找出所有 "数字x数字" 模式（宽松匹配）
-    all_matches = re.findall(r'(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)', text, flags=re.IGNORECASE)
+    # S4: 找出所有 "数字x数字" 模式，取第一个
+    all_matches = re.findall(r'(\d+(?:\.\d+)?)\s*[xX*×Ｘｘ✕·⋅]\s*(\d+(?:\.\d+)?)', text, flags=re.IGNORECASE)
     if all_matches:
-        a = float(all_matches[0][0])
-        b = float(all_matches[0][1])
-        print(f"[name_parser] size strategy S4 matched: {all_matches[0][0]} x {all_matches[0][1]} -> {a} x {b}")
+        raw_a, raw_b = all_matches[0]
+        a = round(round(float(raw_a), 6), 2)
+        b = round(round(float(raw_b), 6), 2)
+        print(f"[name_parser] size strategy S4 matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
         return (a, b)
 
-    # S5: 终极兜底 — 提取所有数字，取前两个
+    # S5: 兜底 — 提取所有数字，取前两个
     all_nums = re.findall(r'\d+(?:\.\d+)?', text)
     if len(all_nums) >= 2:
-        a = float(all_nums[0])
-        b = float(all_nums[1])
-        print(f"[name_parser] size strategy S5 (fallback) matched: {all_nums[0]} x {all_nums[1]} -> {a} x {b}")
+        raw_a, raw_b = all_nums[0], all_nums[1]
+        a = round(round(float(raw_a), 6), 2)
+        b = round(round(float(raw_b), 6), 2)
+        print(f"[name_parser] size strategy S5 (fallback) matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
         return (a, b)
+        
+    # S6: 终极兜底 — 字符级手动解析
+    manual_result = _extract_size_pair_manual(text)
+    if manual_result:
+        return manual_result
 
     print(f"[name_parser] size parsing FAILED for text: {repr(text[:200])}")
     return None
@@ -235,7 +343,8 @@ def parse_filename(filename: str) -> ParsedFilename:
     Returns:
         ParsedFilename 对象
     """
-    raw_name = re.sub(r'\.[^.]+$', '', filename)
+    # 仅移除已知的图片扩展名（不能使用 \.[^.]+$ ，否则会把尺寸小数部分误当扩展名删掉）
+    raw_name = re.sub(r'\.(jpg|jpeg|png|psd|psb|bmp|tiff|tif|webp|gif)$', '', filename, flags=re.IGNORECASE)
     # 先做一次全角 → 半角规范化，确保后续正则准确匹配小数部分、x和单位
     name = _normalize_str(raw_name)
 
