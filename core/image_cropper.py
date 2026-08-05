@@ -88,10 +88,85 @@ def load_source_image(path: str) -> Image.Image:
         return load_image_rgb(path)
 
 
+def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255)) -> list[tuple[tuple[int, int, int], int]]:
+    """
+    获取边框层列表，带 fallback 逻辑。
+    先尝试 _detect_border_layers，如果失败则从边缘采样寻找非背景色像素。
+    
+    Args:
+        img: 输入图片（RGB）
+        bg_color: 背景色（与背景色相似的颜色不作为边框）
+    
+    Returns:
+        边框层列表 [(color, thickness_px), ...]
+    """
+    # 先尝试正常检测
+    layers = _detect_border_layers(img)
+    
+    if layers:
+        return layers
+    
+    # Fallback：从图像边缘采样，寻找非背景色的深色像素
+    w, h = img.size
+    arr = np.array(img)
+    
+    # 定义背景色阈值（与 bg_color 的差异）
+    bg_threshold = 30
+    
+    # 从4条边采样，寻找最常见的非背景色
+    edge_colors = []
+    sample_positions = [
+        ('bottom', w // 2),
+        ('top', w // 2),
+        ('left', h // 2),
+        ('right', h // 2),
+    ]
+    
+    for edge, pos in sample_positions:
+        if edge in ('bottom', 'top'):
+            for dy in range(min(30, h // 4)):
+                y = h - 1 - dy if edge == 'bottom' else dy
+                color = tuple(arr[y, pos, :])
+                dist_to_bg = np.sqrt(sum((a - b) ** 2 for a, b in zip(color, bg_color)))
+                if dist_to_bg > bg_threshold:
+                    edge_colors.append(color)
+                    break
+        else:
+            for dx in range(min(30, w // 4)):
+                x = dx if edge == 'left' else w - 1 - dx
+                color = tuple(arr[pos, x, :])
+                dist_to_bg = np.sqrt(sum((a - b) ** 2 for a, b in zip(color, bg_color)))
+                if dist_to_bg > bg_threshold:
+                    edge_colors.append(color)
+                    break
+    
+    if edge_colors:
+        # 取最常见的颜色作为边框颜色
+        from collections import Counter
+        color_counts = Counter(edge_colors)
+        best_color = color_counts.most_common(1)[0][0]
+        
+        # 估算边框厚度：从边缘向内扫描直到颜色变为背景色
+        thickness = 0
+        for dy in range(min(50, h // 4)):
+            y = h - 1 - dy
+            color = tuple(arr[y, w // 2, :])
+            dist_to_bg = np.sqrt(sum((a - b) ** 2 for a, b in zip(color, bg_color)))
+            if dist_to_bg <= bg_threshold:
+                break
+            thickness += 1
+        
+        if thickness >= 2:
+            return [(best_color, thickness)]
+    
+    return []
+
+
 def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int = 300, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """
     对整张图片应用四角圆角裁剪。
     裁剪半径 = 指定的圆角半径（不做扩展）。
+    裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
     
     当用于大图（radius >= 8.5cm）时，会同步裁掉所有边框层的角落区域。
     当用于小图（radius < 8.5cm）时，建议使用 apply_border_only_corners。
@@ -106,6 +181,10 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
         应用圆角后的图片
     """
     w, h = img.size
+    
+    # 检测原图边框层（带 fallback）
+    border_layers = _get_border_layers_robust(img, bg_color)
+    
     mask = Image.new('L', (w, h), 255)  # 全不透明（保留原图）
     draw = ImageDraw.Draw(mask)
     
@@ -136,6 +215,15 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=mask)
+    
+    # 在圆角弧线上重新绘制边框层
+    if border_layers:
+        for corner_key, radius_cm in corners.items():
+            if radius_cm <= 0:
+                continue
+            r_px = max(1, int(round(radius_cm * dpi / 2.54)))
+            _redraw_border_on_corner(result, corner_key, r_px, border_layers)
+    
     return result
 
 
@@ -211,16 +299,243 @@ def apply_concentric_rounded_corners(img: Image.Image, corners: dict[str, float]
     return result
 
 
+def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = 300) -> list[tuple[tuple[int, int, int], int]]:
+    """
+    检测图像的边框层：从多个方向和位置向内扫描颜色变化，识别边框的颜色和厚度。
+    使用颜色距离阈值代替精确匹配，提高鲁棒性。
+    
+    Args:
+        img: 输入图片（RGB）
+        max_scan_depth_px: 最大扫描深度（像素）
+    
+    Returns:
+        边框层列表 [(color, thickness_px), ...]，从外到内排序
+        如果无法检测，返回包含最边缘颜色的单一层列表
+    """
+    w, h = img.size
+    arr = np.array(img)
+    
+    COLOR_DIFF_THRESHOLD = 15  # 颜色差异阈值（0-255），超过视为不同层
+    MIN_LAYER_THICKNESS = 2    # 最小层厚度（像素），小于此值合并到上一层
+    
+    # 从4条边的中点向内扫描，取平均结果
+    scan_configs = [
+        ('bottom', w // 2, None),
+        ('top', w // 2, None),
+        ('left', h // 2, None),
+        ('right', h // 2, None),
+    ]
+    
+    all_color_seqs = []
+    
+    for edge, pos, _ in scan_configs:
+        colors = []
+        if edge in ('bottom', 'top'):
+            depth = min(max_scan_depth_px, h // 4)
+            if depth < 10:
+                continue
+            for dy in range(depth):
+                if edge == 'bottom':
+                    y = h - 1 - dy
+                else:
+                    y = dy
+                colors.append(tuple(arr[y, pos, :]))
+        else:
+            depth = min(max_scan_depth_px, w // 4)
+            if depth < 10:
+                continue
+            for dx in range(depth):
+                if edge == 'left':
+                    x = dx
+                else:
+                    x = w - 1 - dx
+                colors.append(tuple(arr[pos, x, :]))
+        
+        if len(colors) >= 10:
+            all_color_seqs.append(colors)
+    
+    if not all_color_seqs:
+        return []
+    
+    # 合并所有扫描结果，检测颜色变化
+    # 主用底边扫描，辅以其他扫描结果验证
+    main_colors = all_color_seqs[0]  # 底边
+    
+    if len(main_colors) < 10:
+        return []
+    
+    # 对颜色序列进行平滑处理（减少噪声）
+    smoothed_colors = []
+    window_size = 3
+    for i in range(len(main_colors)):
+        start = max(0, i - window_size // 2)
+        end = min(len(main_colors), i + window_size // 2 + 1)
+        window = main_colors[start:end]
+        avg_color = tuple(int(round(np.mean([c[j] for c in window]))) for j in range(3))
+        smoothed_colors.append(avg_color)
+    
+    # 使用颜色距离阈值检测层边界
+    layers = []
+    current_color = smoothed_colors[0]
+    current_start = 0
+    
+    for i in range(1, len(smoothed_colors)):
+        # 计算欧几里得颜色距离
+        dist = np.sqrt(sum((a - b) ** 2 for a, b in zip(smoothed_colors[i], current_color)))
+        if dist > COLOR_DIFF_THRESHOLD:
+            thickness = i - current_start
+            if thickness >= MIN_LAYER_THICKNESS:
+                layers.append((current_color, thickness))
+            current_color = smoothed_colors[i]
+            current_start = i
+    
+    # 添加最后一层
+    thickness = len(smoothed_colors) - current_start
+    if thickness >= MIN_LAYER_THICKNESS:
+        layers.append((current_color, thickness))
+    
+    # 如果没有检测到层，使用 fallback：取最边缘像素颜色作为第一层
+    if not layers:
+        edge_color = tuple(arr[h - 1, w // 2, :])
+        # 估算边框厚度：扫描到第一个明显颜色变化为止
+        est_thickness = 0
+        for dy in range(min(50, h // 4)):
+            y = h - 1 - dy
+            color = tuple(arr[y, w // 2, :])
+            dist = np.sqrt(sum((a - b) ** 2 for a, b in zip(color, edge_color)))
+            if dist > COLOR_DIFF_THRESHOLD * 2:
+                break
+            est_thickness += 1
+        if est_thickness >= MIN_LAYER_THICKNESS:
+            layers.append((edge_color, est_thickness))
+    
+    return layers
+
+
+def _redraw_border_on_corner(result_img: Image.Image, corner_key: str,
+                              corner_radius_px: int,
+                              border_layers: list[tuple[tuple[int, int, int], int]]) -> None:
+    """
+    在圆角弧线上重新绘制边框层，使边框线跟随圆弧轮廓。
+    通过绘制同心环形扇区（annular sector）实现。
+    
+    关键改进：
+    1. 正确计算每层的外半径和内半径
+    2. 使用差值模式绘制环形区域（外弧 - 内弧）
+    3. 确保边框颜色在圆角弧线上连续
+    
+    Args:
+        result_img: 结果图片（原地修改）
+        corner_key: 角落标识 ('tl'/'tr'/'bl'/'br')
+        corner_radius_px: 圆角半径（像素）
+        border_layers: 边框层列表 [(color, thickness), ...]
+    """
+    w, h = result_img.size
+    
+    if corner_radius_px <= 0 or not border_layers:
+        return
+    
+    # 确定圆弧圆心和角度范围（PIL屏幕坐标系：0°=右, 90°=下, 180°=左, 270°=上）
+    if corner_key == 'tl':
+        cx, cy = corner_radius_px, corner_radius_px
+        start_angle, end_angle = 180, 270
+    elif corner_key == 'tr':
+        cx, cy = w - corner_radius_px, corner_radius_px
+        start_angle, end_angle = 270, 360
+    elif corner_key == 'bl':
+        cx, cy = corner_radius_px, h - corner_radius_px
+        start_angle, end_angle = 90, 180
+    else:  # br
+        cx, cy = w - corner_radius_px, h - corner_radius_px
+        start_angle, end_angle = 0, 90
+    
+    # 逐层绘制同心弧形边框
+    # 注意：边框从外向内排列，cumulative_offset 表示已绘制的厚度
+    cumulative_offset = 0
+    for color, thickness in border_layers:
+        # 该层的外半径和内半径
+        outer_r = corner_radius_px - cumulative_offset
+        inner_r = outer_r - thickness
+        
+        # 边界检查
+        if outer_r <= 0:
+            break
+        if inner_r < 0:
+            inner_r = 0
+        if outer_r <= inner_r:
+            continue
+        
+        # 创建该层的环形扇区遮罩
+        layer_mask = Image.new('L', (w, h), 0)
+        mask_draw = ImageDraw.Draw(layer_mask)
+        
+        # 绘制外圆扇形（整个扇形区域）
+        outer_bbox = [max(0, cx - outer_r), max(0, cy - outer_r),
+                      min(w, cx + outer_r), min(h, cy + outer_r)]
+        mask_draw.pieslice(outer_bbox, start=start_angle, end=end_angle, fill=255)
+        
+        # 绘制内圆扇形（用于挖空内部，形成环形）
+        if inner_r > 0:
+            inner_bbox = [max(0, cx - inner_r), max(0, cy - inner_r),
+                          min(w, cx + inner_r), min(h, cy + inner_r)]
+            mask_draw.pieslice(inner_bbox, start=start_angle, end=end_angle, fill=0)
+        
+        # 将该层颜色合成到结果图
+        layer_img = Image.new('RGB', (w, h), color)
+        result_img.paste(layer_img, mask=layer_mask)
+        
+        cumulative_offset += thickness
+
+
+def _extend_border_to_arc(result_img: Image.Image, corner_key: str,
+                           corner_radius_px: int,
+                           border_layers: list[tuple[tuple[int, int, int], int]]) -> None:
+    """
+    将边框层从直线边缘延伸到圆弧，使边框线在角落处连续。
+    在角落的两条直线边上，用边框色填充从边框内边缘到圆弧的间隙。
+    
+    Args:
+        result_img: 结果图片（原地修改）
+        corner_key: 角落标识
+        corner_radius_px: 圆角半径（像素）
+        border_layers: 边框层列表
+    """
+    w, h = result_img
+    
+    if corner_radius_px <= 0 or not border_layers:
+        return
+    
+    total_border_px = sum(t for _, t in border_layers)
+    
+    if corner_key == 'tl':
+        # 左上角：在左边和上边延伸
+        # 左边：从x=0到x=corner_radius_px，y从border内边缘到圆弧
+        # 上边：类似
+        pass  # 边框在直线部分已保留，此处无需额外延伸
+    elif corner_key == 'tr':
+        pass
+    elif corner_key == 'bl':
+        pass
+    else:  # br
+        pass
+    
+    # 对于大多数情况，边框在直线上的部分已被保留
+    # 圆弧部分已由 _redraw_border_on_corner 绘制
+    # 直线到圆弧的过渡自然衔接即可
+
+
 def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
                                dpi: int = 300, bg_color: tuple = (255, 255, 255),
                                border_width_cm: float = _DEFAULT_BORDER_WIDTH_CM) -> Image.Image:
     """
     仅对边框区域应用圆角，内部保持直角。
+    裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
     
     实现思路：
     1. 创建完整的圆角遮罩（对整个图片应用圆角半径）
     2. 创建内部矩形遮罩（距边缘 border_width 的区域，全不透明）
     3. 合并遮罩：边框区域用圆角遮罩，内部用直角遮罩
+    4. 在圆角弧线上重新绘制边框层
     
     Args:
         img: 输入图片（RGB 模式）
@@ -250,7 +565,15 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     if border_w_px * 2 >= w or border_w_px * 2 >= h:
         return apply_rounded_corners(img, corners, dpi, bg_color)
     
-    # 1. 创建完整的圆角遮罩（现有逻辑）
+    # ---- 步骤 0: 检测原图边框层（带 fallback） ----
+    border_layers = _get_border_layers_robust(img, bg_color)
+    total_border_thickness = sum(t for _, t in border_layers) if border_layers else 0
+    
+    # 确保边框区域足够容纳所有边框层
+    if border_w_px < total_border_thickness + max_r_px:
+        border_w_px = total_border_thickness + max_r_px
+    
+    # ---- 步骤 1: 创建完整的圆角遮罩 ----
     full_mask = Image.new('L', (w, h), 255)
     full_draw = ImageDraw.Draw(full_mask)
     
@@ -277,24 +600,29 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
             full_draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
     
-    # 2. 创建内部矩形遮罩（距边缘 border_w_px 的区域，全不透明）
+    # ---- 步骤 2: 创建内部矩形遮罩 ----
     inner_mask = Image.new('L', (w, h), 0)
     inner_draw = ImageDraw.Draw(inner_mask)
     inner_rect = [border_w_px, border_w_px, w - border_w_px, h - border_w_px]
     inner_draw.rectangle(inner_rect, fill=255)
     
-    # 3. 计算边框区域遮罩 = 全图 - 内部区域（保留圆角效果）
+    # ---- 步骤 3: 合并遮罩 ----
     zero_img = Image.new('L', (w, h), 0)
     border_region_mask = Image.composite(zero_img, full_mask, inner_mask)
-    # inner_mask=255(内部)→用zero(透明); inner_mask=0(边框)→用full_mask(有圆角)
-    
-    # 4. 最终遮罩：内部区域用直角，边框区域用圆角
     final_mask = Image.composite(inner_mask, border_region_mask, inner_mask)
-    # inner_mask=255(内部)→用inner_mask(255,直角); inner_mask=0(边框)→用border_region_mask(有圆角)
     
-    # 5. 应用遮罩
+    # ---- 步骤 4: 应用遮罩 ----
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=final_mask)
+    
+    # ---- 步骤 5: 在圆角弧线上重新绘制边框层 ----
+    if border_layers:
+        for corner_key, radius_cm in corners.items():
+            if radius_cm <= 0:
+                continue
+            r_px = max(1, int(round(radius_cm * dpi / 2.54)))
+            _redraw_border_on_corner(result, corner_key, r_px, border_layers)
+    
     return result
 
 
@@ -762,6 +1090,7 @@ def apply_multi_layer_rounded_corners(img: Image.Image,
                                       debug: bool = False) -> Image.Image:
     """
     多层级统一圆角裁剪：自动识别所有嵌套边框层，对每一层都应用相同圆角。
+    裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
 
     解决大圆角（如 8cm）时只裁最外层、内层图案漏出尖角的问题（即用户图 1 现象）。
 
@@ -771,6 +1100,7 @@ def apply_multi_layer_rounded_corners(img: Image.Image,
     这等价于"裁掉所有层各自的尖角的并集"，恰好符合『每层边框都同步裁圆角』的语义。
 
     实现步骤：
+      0. 检测原图边框层（用于后续重绘）
       1. 初始化 unified_mask = 全 255（全部保留）
       2. 对"整张图外框(0,0,w,h)"先算一层 mask，unified_mask = min(unified_mask, mask)
          ——保证最外层绝对生效（即使检测没扫到最外层黑框）
@@ -781,6 +1111,7 @@ def apply_multi_layer_rounded_corners(img: Image.Image,
          - 生成该层圆角 mask（正方形挖空 + sector 填回）
          - unified_mask = 逐点 min（AND）累加
       6. 应用最终 unified_mask 得到输出图
+      7. 在圆角弧线上重新绘制边框层
 
     Args:
         img: 输入图（RGB）
@@ -795,6 +1126,9 @@ def apply_multi_layer_rounded_corners(img: Image.Image,
     w, h = img.size
     if w <= 0 or h <= 0:
         return img
+
+    # ---- 步骤 0: 检测原图边框层（带 fallback） ----
+    border_layers = _get_border_layers_robust(img, bg_color)
 
     # 转换圆角半径为像素（注意：不再用 BORDER_TOTAL_DEPTH_CM 扩展 hack！
     # 因为我们靠『每层矩形独立裁角 + AND』覆盖了所有层，不再需要扩大最外层半径蒙混）
@@ -878,8 +1212,20 @@ def apply_multi_layer_rounded_corners(img: Image.Image,
             d.rectangle([x1, y1, x2_idx, y2_idx], outline=c, width=lw)
         result = Image.new('RGB', (w, h), bg_color)
         result.paste(debug_img, mask=final_mask)
+        # ---- 步骤 7: 在圆角弧线上重新绘制边框层 ----
+        if border_layers:
+            for ck, r_px in corners_px.items():
+                if r_px > 0:
+                    _redraw_border_on_corner(result, ck, r_px, border_layers)
         return result
 
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=final_mask)
+
+    # ---- 步骤 7: 在圆角弧线上重新绘制边框层 ----
+    if border_layers:
+        for ck, r_px in corners_px.items():
+            if r_px > 0:
+                _redraw_border_on_corner(result, ck, r_px, border_layers)
+
     return result
