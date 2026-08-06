@@ -237,10 +237,10 @@ def fill_lshape_mask(mask: Image.Image, l: LShape, value: int = 255) -> None:
     fill_rect_mask(mask, l.cut_rect(), value=0 if value == 255 else 255)
 
 
-# 圆角处理统一委托给 core.rounded_corner 模块，确保与 image_cropper.py 完全一致。
+# 圆角处理统一委托给 core.corner.algorithm 模块，确保与 image_cropper.py 完全一致。
 # 历史的 _CORNER_PIESLICE_PARAMS 表已删除，单一来源为
-# core.rounded_corner.CORNER_ANGLES / carve_corner_on_mask。
-from .rounded_corner import carve_corner_on_mask as _carve_corner_on_mask
+# core.corner.algorithm.CORNER_ANGLES / carve_corner_on_mask。
+from .corner.algorithm import carve_corner_on_mask as _carve_corner_on_mask
 
 
 def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,

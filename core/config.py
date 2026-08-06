@@ -73,12 +73,39 @@ def get_resample_algorithm():
 # ============================================================================
 # 边框检测
 # ============================================================================
+# 说明：以下常量统一从 config.py 引用，detection.py / image_cropper.py /
+# sector_render.py 等子模块通过 `from ..config import ...` 取得单一来源。
+# 历史 detection.py 中的同名带下划线前缀常量（_BORDER_SCAN_STEP 等）保留为
+# 别名，向后兼容旧测试脚本的 `from core.image_cropper import _BORDER_SCAN_STEP`。
 
 # 颜色距离阈值：欧氏距离 > 此值视为不同颜色（处理抗锯齿/渐变）
-# 用于 _detect_border_layers 的边框颜色匹配
+# 用于 _detect_border_layers 的边框颜色匹配（基于 RGB 欧氏距离）
 BORDER_COLOR_DISTANCE_THRESHOLD: int = 15
 
-# 边框扫描最大深度（像素）
+# 亮度差分阈值：R+G+B 总和的一阶差分 > 此值视为边界
+# 用于 _scan_edge_boundaries 的亮度突变检测（基于 R+G+B 总和，故阈值较大）
+# 注意：两类算法使用不同阈值是有意为之，分别处理不同的边框识别场景
+BORDER_LUMINANCE_DIFF_THRESHOLD: int = 25
+
+# 边框扫描步长（像素）：步长越大越快但越不精确
+BORDER_SCAN_STEP_PX: int = 2
+
+# 相邻两个边界之间的最小间距（像素）：小于此值视为同一条边界
+BORDER_MIN_GAP_PX: int = 5
+
+# 最多检测层数上限，防止误检过多
+BORDER_MAX_LAYERS: int = 10
+
+# 忽略最边缘几个像素（避免最外白边/黑边干扰）
+BORDER_EDGE_IGNORE_PX: int = 2
+
+# 最小层厚度（像素）：小于此值的层合并到上一层
+BORDER_MIN_LAYER_THICKNESS_PX: int = 2
+
+# 背景色相似度阈值：与 bg_color 的距离 <= 此值视为背景（用于 _get_border_layers_robust 的 fallback）
+BORDER_BG_SIMILARITY_THRESHOLD: int = 30
+
+# 边框扫描最大深度（像素）：_detect_border_layers 的 max_scan_depth_px 默认值
 BORDER_SCAN_MAX_DEPTH_PX: int = 300
 
 

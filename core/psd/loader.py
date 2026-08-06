@@ -1,11 +1,13 @@
 """
-core/psd_loader.py
+core/psd/loader.py
 PSD 分层文件读取：
   1) 读取所有图层（name, visible, bbox, RGBA 图像）
   2) 支持“自动裁剪到非透明区域”（消除 PSD 图层的大块透明边距，方便素材复用）
   3) 支持把可见图层合成一张 JPG 可使用的 RGB 图（相当于 PS 里的“导出为 JPG”）
 
 依赖：psd-tools（已在 requirements.txt 中）
+
+向后兼容：原 core/psd_loader.py 已改为薄重导出 shim，旧导入路径继续可用。
 """
 from __future__ import annotations
 import os

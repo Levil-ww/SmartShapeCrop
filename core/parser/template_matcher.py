@@ -1,11 +1,16 @@
 """
-core/template_matcher.py
+core/parser/template_matcher.py
 模板库扫描与匹配引擎。
 
 功能：
 1. 扫描模板库目录，建立缓存索引
 2. 解析模板文件名中的尺寸、花型名、方向
 3. 根据目标文件名匹配最佳源图
+
+向后兼容：原 core/template_matcher.py 已改为薄重导出 shim，旧导入路径继续可用。
+
+注意：本模块原使用 `from core.name_parser import`（绝对导入），
+现已统一为相对导入 `from .name_parser import`，与项目其他模块风格一致。
 """
 from __future__ import annotations
 import os
@@ -13,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from core.name_parser import (
+from .name_parser import (
     ParsedFilename,
     parse_filename,
     get_base_pattern_name,

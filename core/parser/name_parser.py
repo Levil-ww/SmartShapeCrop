@@ -1,11 +1,13 @@
 """
-core/name_parser.py
+core/parser/name_parser.py
 文件名解析器：从文件名提取产品名称、尺寸、圆角要求等信息。
 
 尺寸方向规则：
 - 竖版：长边为高，短边为宽（不管数字顺序）
 - 横版：长边为宽，短边为高（不管数字顺序）
 - 如果命名中出现"横版"，不管在哪个位置都判定为横版
+
+向后兼容：原 core/name_parser.py 已改为薄重导出 shim，旧导入路径继续可用。
 """
 from __future__ import annotations
 import re
@@ -440,7 +442,7 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
     result = {}
 
     # 圆角/圆弧角/弧角 统一为 "角" 关键字
-    # 先把 "圆弧角"、"弧角" 统一替换为 "圆角"，简化后续正则
+    # 先把 "圆弧角"、"弧角"、"圆角弧" 统一替换为 "圆角"，简化后续正则
     for alt in ('圆弧角', '弧角', '圆角弧'):
         s = s.replace(alt, '圆角')
 

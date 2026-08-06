@@ -1,5 +1,5 @@
 """
-core/rounded_corner.py
+core/corner/algorithm.py
 统一的圆角 mask 算法模块。
 
 消除 image_cropper.py 与 geometry.py 中 5 份重复的"挖正方形 + 填回 1/4 圆"逻辑。
@@ -13,6 +13,8 @@ PIL 屏幕坐标系（y 向下）pieslice 角度映射：
   2. 再用 pieslice 把"矩形内部的 1/4 圆"填回 255（保留圆弧）
   切掉的是 L 形（正方形减去 1/4 圆），即只切掉尖角，保留圆弧。
   圆心在正方形的"内角"顶点（即矩形内部那个角），bbox 以该圆心为中心。
+
+向后兼容：原 core/rounded_corner.py 已改为薄重导出 shim，旧导入路径继续可用。
 """
 from __future__ import annotations
 from PIL import Image, ImageDraw

@@ -301,7 +301,7 @@ def prepare_material_for_rect(material_path: str,
         return Image.new('RGB', (target_w, target_h), (255, 255, 255))
     ext = os.path.splitext(material_path)[1].lower()
     if ext in ('.psd', '.psb'):
-        from .psd_loader import load_psd_flattened
+        from .psd.loader import load_psd_flattened
         img = load_psd_flattened(material_path)
     else:
         img = load_image_rgb(material_path)
