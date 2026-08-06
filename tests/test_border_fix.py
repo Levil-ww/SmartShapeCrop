@@ -15,8 +15,6 @@ from core.image_cropper import (
     _redraw_border_on_corner,
     apply_border_only_corners,
     apply_rounded_corners,
-    apply_multi_layer_rounded_corners,
-    _determine_corner_mode,
     load_source_image,
 )
 
@@ -31,15 +29,8 @@ test_cases = [
         "name": "小圆角-仅边框模式",
         "target_w_cm": 41.0,
         "target_h_cm": 55.0,
-        "corners": {"tl": 0, "tr": 0, "bl": 0, "br": 3.0},  # 3cm < 8.5cm
+        "corners": {"tl": 0, "tr": 0, "bl": 0, "br": 3.0},
         "expected_mode": "border_only",
-    },
-    {
-        "name": "大圆角-多层模式",
-        "target_w_cm": 41.0,
-        "target_h_cm": 55.0,
-        "corners": {"tl": 0, "tr": 0, "bl": 0, "br": 10.0},  # 10cm >= 8.5cm
-        "expected_mode": "full",
     },
 ]
 
@@ -89,15 +80,11 @@ for case in test_cases:
     print(f"圆角: {case['corners']}")
     
     corners = case['corners']
-    corner_mode = _determine_corner_mode(corners)
-    print(f"圆角模式: {'整体圆角' if corner_mode == 'full' else '仅边框圆角'}")
+    print(f"圆角模式: 仅边框圆角")
     print(f"预期模式: {'整体圆角' if case['expected_mode'] == 'full' else '仅边框圆角'}")
-    
+
     # 执行圆角裁剪
-    if corner_mode == 'full':
-        result = apply_multi_layer_rounded_corners(cropped, corners, dpi, (255, 255, 255))
-    else:
-        result = apply_border_only_corners(cropped, corners, dpi, (255, 255, 255))
+    result = apply_border_only_corners(cropped, corners, dpi, (255, 255, 255))
     
     print(f"输出尺寸: {result.size[0]} x {result.size[1]} px")
     

@@ -13,8 +13,7 @@ from core import config
 class TestConfigConstants:
     """业务常量值正确性"""
 
-    def test_border_threshold(self):
-        assert config.BORDER_ONLY_THRESHOLD_CM == 8.5
+    def test_border_width(self):
         assert config.DEFAULT_BORDER_WIDTH_CM == 1.5
         assert config.BORDER_TOTAL_DEPTH_CM == 2.0
 
@@ -69,7 +68,6 @@ class TestConfigConsistency:
     def test_image_cropper_uses_config(self):
         """image_cropper.py 中的常量应从 config 派生，不应硬编码"""
         from core import image_cropper
-        assert image_cropper.BORDER_ONLY_THRESHOLD_CM is config.BORDER_ONLY_THRESHOLD_CM
         assert image_cropper.BORDER_TOTAL_DEPTH_CM is config.BORDER_TOTAL_DEPTH_CM
 
     def test_crop_config_default_dpi(self):

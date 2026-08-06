@@ -5,8 +5,8 @@ print('=== 语法 / 导入自检 ===')
 # 1. 导入 image_cropper 全部关键函数
 from core.image_cropper import (
     CropConfig, crop_image, batch_crop,
-    apply_rounded_corners, apply_border_only_corners, apply_multi_layer_rounded_corners,
-    detect_nested_rect_layers, _determine_corner_mode,
+    apply_rounded_corners, apply_border_only_corners,
+    detect_nested_rect_layers,
 )
 print('  [ok] core.image_cropper imports')
 
@@ -23,7 +23,7 @@ print(f'       _get_inner_pixel_mask = {hasattr(image_ops, "_get_inner_pixel_mas
 # 4. 构造一个最小设计并调用 compute_border_bands 验证无运行时错误
 d = geometry.CropDesign()
 d.canvas_w_cm = 20; d.canvas_h_cm = 20; d.dpi = 150
-d.corner_br_cm = 8.5  # 大圆角触发新路径
+d.corner_br_cm = 8.5
 bands = geometry.compute_border_bands(d)
 total_band_area = sum(int(b.sum()) for b, _ in bands)
 print(f'  [ok] geometry.compute_border_bands(br=8.5cm) returned {len(bands)} bands, total True pix = {total_band_area}')
@@ -32,17 +32,7 @@ print(f'  [ok] geometry.compute_border_bands(br=8.5cm) returned {len(bands)} ban
 img = image_ops.render_design(d)
 print(f'  [ok] image_ops.render_design ok, size={img.size}')
 
-# 6. 裁剪工具侧：构造小测试图，验证 apply_multi_layer_rounded_corners 语法无错
-import numpy as np
-from PIL import Image, ImageDraw
-src = Image.new('RGB', (400, 300), (255,255,255))
-dr = ImageDraw.Draw(src)
-dr.rectangle([10,10,389,289], outline=(0,0,0), width=6)
-dr.rectangle([30,30,369,269], outline=(220,40,40), width=3)
-result = apply_multi_layer_rounded_corners(src, {'br': 5.0}, dpi=150)
-print(f'  [ok] apply_multi_layer_rounded_corners test ok, result size={result.size}')
-
-# 7. process_image.py 的 import 语法检查
+# 6. process_image.py 的 import 语法检查
 import py_compile
 try:
     py_compile.compile('d:/SmartShapeCrop/process_image.py', doraise=True)

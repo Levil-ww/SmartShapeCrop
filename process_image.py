@@ -1,8 +1,6 @@
 """
 图片等比缩放 + 圆角处理脚本
-支持根据圆角半径自动选择圆角模式：
-  - radius >= 8.5cm: 整体圆角（所有边框线条一起裁掉）
-  - radius < 8.5cm: 仅边框圆角（内层装饰保持直角）
+圆角处理：仅边框区域应用圆角，内层装饰保持直角。
 """
 import os
 from PIL import Image
@@ -13,11 +11,7 @@ from core.image_cropper import (
     load_source_image,
     apply_rounded_corners,
     apply_border_only_corners,
-    apply_multi_layer_rounded_corners,
-    detect_nested_rect_layers,
     crop_image, CropConfig,
-    _determine_corner_mode,
-    BORDER_ONLY_THRESHOLD_CM,
 )
 from core.log_setup import setup_logging
 
@@ -50,17 +44,9 @@ print(f"源图尺寸: {src.size} px")
 cropped = src.resize((target_w_px, target_h_px), Image.LANCZOS)
 print(f"缩放后尺寸: {cropped.size} px")
 
-# ============ 3. 添加圆角（自动选择模式） ============
+# ============ 3. 添加圆角（仅边框区域应用圆角） ============
 corners = {'tl': 0, 'tr': 0, 'bl': 0, 'br': corner_r_cm}
-corner_mode = _determine_corner_mode(corners)
-print(f"圆角模式: {'整体圆角' if corner_mode == 'full' else '仅边框圆角'}")
-
-if corner_mode == 'full':
-    # 大圆角（>=8.5cm）：使用多层统一圆角裁剪
-    # 自动识别嵌套边框层，对每一层都应用相同圆角，使用 AND 逻辑组合
-    result = apply_multi_layer_rounded_corners(cropped, corners, dpi, (255, 255, 255))
-else:
-    result = apply_border_only_corners(cropped, corners, dpi, (255, 255, 255))
+result = apply_border_only_corners(cropped, corners, dpi, (255, 255, 255))
 
 # ============ 4. 保存 ============
 output_path = os.path.join(output_dir, output_name)

@@ -58,7 +58,6 @@ from .corner.sector_render import (
     _redraw_border_on_corner,
 )
 from .config import (
-    BORDER_ONLY_THRESHOLD_CM,
     DEFAULT_BORDER_WIDTH_CM,
     BORDER_TOTAL_DEPTH_CM,
     DEFAULT_DPI,
@@ -131,9 +130,6 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     对整张图片应用四角圆角裁剪。
     裁剪半径 = 指定的圆角半径（不做扩展）。
     裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
-
-    当用于大图（radius >= 8.5cm）时，会同步裁掉所有边框层的角落区域。
-    当用于小图（radius < 8.5cm）时，建议使用 apply_border_only_corners。
 
     圆角 mask 算法统一委托给 core.corner.algorithm.carve_corner_on_mask。
 
@@ -261,20 +257,6 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     return result
 
 
-def _determine_corner_mode(corners: dict[str, float]) -> str:
-    """
-    根据圆角半径判断圆角模式。
-
-    Returns:
-        'full' = 整体圆角（radius >= 8.5cm）
-        'border_only' = 仅边框圆角（radius < 8.5cm）
-    """
-    max_radius = max((v for v in corners.values()), default=0)
-    if max_radius >= BORDER_ONLY_THRESHOLD_CM:
-        return 'full'
-    return 'border_only'
-
-
 def _smart_crop(src: Image.Image, target_w_px: int, target_h_px: int,
                 max_crop_ratio: float = 0.15, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """
@@ -388,19 +370,11 @@ def crop_image(config: CropConfig) -> Image.Image:
     else:  # cover
         cropped = fit_image_to_rect(src, target_w_px, target_h_px, mode='cover', bg_color=bg_color)
 
-    # 4. 应用圆角（根据半径阈值自动选择模式）
+    # 4. 应用圆角（仅边框区域应用圆角，内部保持直角）
     if config.corners:
         valid_corners = {k: v for k, v in config.corners.items() if v > 0}
         if valid_corners:
-            corner_mode = _determine_corner_mode(valid_corners)
-            if corner_mode == 'full':
-                # 大圆角（半径 >= 8.5cm）：使用多层统一圆角裁剪
-                # 自动识别嵌套边框层，对每一层都应用相同圆角，使用 AND 逻辑组合
-                cropped = apply_multi_layer_rounded_corners(
-                    cropped, valid_corners, config.dpi, config.bg_color)
-            else:
-                # 小圆角（半径 < 8.5cm）：仅边框区域应用圆角
-                cropped = apply_border_only_corners(cropped, valid_corners, config.dpi, config.bg_color)
+            cropped = apply_border_only_corners(cropped, valid_corners, config.dpi, config.bg_color)
 
     # 5. 保存或返回
     if config.output_path:
@@ -451,246 +425,3 @@ def get_mode_description(mode: str) -> str:
         'auto': '智能模式：自动分析源图和目标比例差异，选择最佳方式',
     }
     return descriptions.get(mode, mode)
-
-
-# ============================================================
-# 多层边框自动检测 + 统一圆角裁剪（解决大圆角时内层图案露角问题）
-# ============================================================
-# 边框检测函数与参数已迁移至 core/corner/detection.py：
-#   _detect_border_layers / _get_border_layers_robust /
-#   _scan_edge_boundaries / detect_nested_rect_layers
-#   _BORDER_SCAN_STEP / _BORDER_COLOR_DIFF_THRESHOLD /
-#   _BORDER_MIN_GAP_PX / _BORDER_MAX_LAYERS / _EDGE_IGNORE_PX
-# 本模块顶部已 `from .corner.detection import ...` 重导出，向后兼容
-# `from core.image_cropper import detect_nested_rect_layers` 等旧导入路径。
-
-
-def _layer_rounded_mask_arr(canvas_w: int, canvas_h: int,
-                            rect_canvas: tuple[int, int, int, int],
-                            corners_px: dict[str, int]) -> np.ndarray:
-    """
-    为一个矩形生成"该层的圆角裁剪 mask（numpy 数组 L，255=保留 0=裁掉）"。
-
-    rect_canvas: 画布尺寸语义 (x1, y1, x2_canvas_size, y2_canvas_size)
-                 ——即 x2 = x1 + width，y2 = y1 + height（不包含终点像素索引）。
-    算法统一委托给 core.corner.algorithm.carve_corner_on_mask，确保与
-    apply_rounded_corners / apply_border_only_corners / geometry 完全一致。
-    """
-    x1, y1, x2, y2 = rect_canvas
-    rw, rh = x2 - x1, y2 - y1
-    # 半径限制到矩形一半（carve_corner_on_mask 内部也会做，这里提前 clip 以保持语义）
-    safe_corners = {}
-    for ck, r_px in corners_px.items():
-        max_r = max(1, min(rw, rh) // 2)
-        safe_corners[ck] = max(0, min(r_px, max_r))
-    mask = Image.new('L', (canvas_w, canvas_h), 255)
-    carve_corner_on_mask(mask, (x1, y1, rw, rh), safe_corners, canvas_size=(canvas_w, canvas_h))
-    return np.array(mask, dtype=np.uint8)
-
-
-def apply_multi_layer_rounded_corners(img: Image.Image,
-                                      corners_cm: dict[str, float],
-                                      dpi: int = 150,
-                                      bg_color: tuple = (255, 255, 255),
-                                      debug: bool = False) -> Image.Image:
-    """
-    多层级统一圆角裁剪：自动识别所有嵌套边框层，对每一层都应用相同圆角。
-    裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
-
-    解决大圆角（如 8cm）时只裁最外层、内层图案漏出尖角的问题（即用户图 1 现象）。
-
-    最终可见区域 = 所有层各自圆角保留区域的 **交集（AND / 逐点 min）**：
-      任一层的 L 形尖角区（应裁掉=0）→ 最终图必然裁掉；
-      只有所有层都允许保留（=255）的位置，最终图才保留原图色。
-    这等价于"裁掉所有层各自的尖角的并集"，恰好符合『每层边框都同步裁圆角』的语义。
-
-    实现步骤：
-      0. 检测原图边框层（用于后续重绘）
-      1. 初始化 unified_mask = 全 255（全部保留）
-      2. 对"整张图外框(0,0,w,h)"先算一层 mask，unified_mask = min(unified_mask, mask)
-         ——保证最外层绝对生效（即使检测没扫到最外层黑框）
-      3. 自动检测嵌套矩形层（外黑框 / 红框 / 花纹边缘 / 文字框 / 中心黑框…）
-      4. 过滤误检：尺寸过小或过于狭长（宽高比失衡，典型是单行文字或细横线误检）
-      5. 对每层矩形：
-         - 将『像素索引语义』的 x2,y2 各 +1 转为『画布尺寸语义』
-         - 生成该层圆角 mask（正方形挖空 + sector 填回）
-         - unified_mask = 逐点 min（AND）累加
-      6. 应用最终 unified_mask 得到输出图
-      7. 在圆角弧线上重新绘制边框层
-
-    Args:
-        img: 输入图（RGB）
-        corners_cm: 四角圆角（厘米），如 {'br': 8.0}
-        dpi: DPI
-        bg_color: 背景色
-        debug: True 时在输出图上叠加彩色框标出检测到的各层矩形（肉眼核对层数是否准确）
-
-    Returns:
-        应用了多层统一圆角的图片
-    """
-    w, h = img.size
-    if w <= 0 or h <= 0:
-        return img
-
-    # ---- 步骤 0: 检测原图边框层（带 fallback） ----
-    border_layers = _get_border_layers_robust(img, bg_color)
-
-    # 转换圆角半径为像素（注意：不再用 BORDER_TOTAL_DEPTH_CM 扩展 hack！
-    # 因为我们靠『每层矩形独立裁角 + AND』覆盖了所有层，不再需要扩大最外层半径蒙混）
-    corners_px = {}
-    for ck, r_cm in corners_cm.items():
-        r_px = max(0, int(round(r_cm * dpi / 2.54)))
-        corners_px[ck] = r_px
-    if all(r <= 0 for r in corners_px.values()):
-        return img
-
-    # ---- 1. 初始化统一 mask（全保留） ----
-    unified = np.ones((h, w), dtype=np.uint8) * 255
-
-    # 2. 自动检测嵌套矩形层（仅作兜底；见下方说明）
-    layers = detect_nested_rect_layers(img)
-
-    # 3. 过滤误检：过于狭长（宽高比失衡）或尺寸过小的矩形丢弃
-    filtered_layers = []
-    for (x1, y1, x2_last_idx, y2_last_idx) in layers:
-        bw, bh = x2_last_idx - x1, y2_last_idx - y1
-        if bw <= 40 or bh <= 40:
-            continue
-        ratio = bw / max(1, bh)
-        if ratio > 12 or ratio < 1 / 12:
-            continue
-        filtered_layers.append((x1, y1, x2_last_idx, y2_last_idx))
-    layers = filtered_layers
-
-    # 3b. 根据 border_layers 的累计厚度构建"可靠 arc 半径序列"
-    #   detect_nested_rect_layers 基于亮度差分，容易把图内花纹/文字等
-    #   "内层图案"误识别为边框层，从而导致内层 arc 半径异常小、形成"内
-    #   折叠扇形角"遮住花纹。
-    #   这里 **优先使用 border_layers（颜色距离阈值）** 的累计厚度计算
-    #   内层 arc 半径，与 _redraw_border_on_corner 的 R_eff 定义完全一致 →
-    #   carved arc 与重绘 arc 同心且半径匹配 → 边框线自然衔接。
-    _arc_radii_by_corner: dict[str, list[tuple[float, float]]] = {}
-    for ck in ('tl', 'tr', 'bl', 'br'):
-        _arc_radii_by_corner[ck] = []
-        cum = 0.0
-        for _color, thickness in border_layers:
-            t = float(max(1, thickness))
-            _arc_radii_by_corner[ck].append((cum, cum + t))
-            cum += t
-
-    # ---- 4. 同心弧裁角：所有层的 1/4 圆弧共享外层圆心 ----
-    #   不变量：所有嵌套矩形的圆角弧线必须同心（圆心相同 = 外层圆角圆心）
-    #   这样边框线才能自然衔接，内层花纹才不会被非同心弧遮挡。
-    #
-    #   对每个角：
-    #     1) 外层裁剪正方形（r×r）内的像素 = 需要考虑的区域
-    #     2) 外层 1/4 圆（半径 R，圆心=外层圆心）→ 保留
-    #     3) 每个内层边框层的 1/4 圆（半径 R_eff = R - cumulative_thickness，
-    #        同一圆心）→ 保留
-    #     4) 裁剪区 = 裁剪正方形内 且 不在任何 1/4 圆 内的像素
-    for ck, R in corners_px.items():
-        if R <= 0:
-            continue
-
-        # 外层 corner center（与 _redraw_border_on_corner / carve_corner_on_mask 一致）
-        if ck == 'tl':
-            cx, cy = R, R
-        elif ck == 'tr':
-            cx, cy = w - R, R
-        elif ck == 'bl':
-            cx, cy = R, h - R
-        else:  # br
-            cx, cy = w - R, h - R
-
-        # 构建裁剪正方形的 ROI（外层 corner square）
-        sq_x0, sq_y0 = max(0, cx - R), max(0, cy - R)
-        sq_x1, sq_y1 = min(w, cx + R + 1), min(h, cy + R + 1)
-        if sq_x1 <= sq_x0 or sq_y1 <= sq_y0:
-            continue
-
-        yy, xx = np.mgrid[sq_y0:sq_y1, sq_x0:sq_x1].astype(np.float64)
-        dist = np.sqrt((xx - float(cx)) ** 2 + (yy - float(cy)) ** 2)
-
-        # 外层裁剪正方形 mask（角的 L 形区域所在的正方形）
-        if ck == 'tl':
-            in_sq = (xx >= cx - R) & (xx <= cx) & (yy >= cy - R) & (yy <= cy)
-        elif ck == 'tr':
-            in_sq = (xx >= cx) & (xx <= cx + R) & (yy >= cy - R) & (yy <= cy)
-        elif ck == 'bl':
-            in_sq = (xx >= cx - R) & (xx <= cx) & (yy >= cy) & (yy <= cy + R)
-        else:  # br
-            in_sq = (xx >= cx) & (xx <= cx + R) & (yy >= cy) & (yy <= cy + R)
-
-        # 保留区 = 外层 1/4 圆 ∪ 所有内层边框层的 1/4 圆（同心）
-        keep_region = dist <= float(R)  # 外层 1/4 圆
-
-        # —— 优先使用 border_layers 的累计厚度计算内层 arc ——
-        # 这与 _redraw_border_on_corner 的 R_eff 定义完全一致，
-        # 保证 carved arc 与 redrawn arc 半径相同 → 边框线自然衔接；
-        # 同时避免 detect_nested_rect_layers 把花纹误识别为边框导致的
-        # "内折叠扇形角"。
-        for cum_depth, _end_depth in _arc_radii_by_corner.get(ck, []):
-            R_eff = float(R) - float(cum_depth)
-            if R_eff > 0:
-                keep_region |= dist <= R_eff
-
-        # —— 兜底：若 border_layers 不足，再用 rect_layers 位置作为保留弧 ——
-        # rect_layers 可能包含花纹误检，仅在 border_layers 覆盖不到时启用。
-        if not border_layers or len(border_layers) < len(layers):
-            for (x1, y1, x2_idx, y2_idx) in layers:
-                rect_x2 = x2_idx + 1
-                rect_y2 = y2_idx + 1
-
-                if ck == 'tl':
-                    d_x, d_y = x1, y1
-                elif ck == 'tr':
-                    d_x, d_y = w - rect_x2, y1
-                elif ck == 'bl':
-                    d_x, d_y = x1, h - rect_y2
-                else:  # br
-                    d_x, d_y = w - rect_x2, h - rect_y2
-
-                R_eff_rect = float(max(0, R - max(d_x, d_y)))
-                if R_eff_rect > 0:
-                    keep_region |= dist <= R_eff_rect
-
-        # 裁剪区 = 正方形内 且 不在保留区
-        carve_mask_in_sq = in_sq & (~keep_region)
-        if np.any(carve_mask_in_sq):
-            unified[sq_y0:sq_y1, sq_x0:sq_x1][carve_mask_in_sq] = 0
-
-    # ---- 6. 应用最终遮罩 ----
-    final_mask = Image.fromarray(unified, mode='L')
-    if debug:
-        debug_img = img.copy()
-        d = ImageDraw.Draw(debug_img)
-        colors = [(255, 0, 0), (0, 0, 255), (0, 150, 0),
-                  (255, 140, 0), (150, 0, 180), (220, 20, 147)]
-        for i, (x1, y1, x2_idx, y2_idx) in enumerate(layers):
-            c = colors[i % len(colors)]
-            lw = max(2, w // 600)
-            d.rectangle([x1, y1, x2_idx, y2_idx], outline=c, width=lw)
-        result = Image.new('RGB', (w, h), bg_color)
-        result.paste(debug_img, mask=final_mask)
-        # ---- 步骤 7: 在圆角弧线上重新绘制边框层（Fix A/S1 有效性遮罩）----
-        if border_layers:
-            for ck, r_px in corners_px.items():
-                if r_px > 0:
-                    _redraw_border_on_corner(
-                        result, ck, r_px, border_layers,
-                        src_img=img, validity_mask=final_mask)
-        return result
-
-    result = Image.new('RGB', (w, h), bg_color)
-    result.paste(img, mask=final_mask)
-
-    # ---- 步骤 7: 在圆角弧线上重新绘制边框层（Fix A/S1 有效性遮罩）----
-    # 对多层模式也启用 validity_mask，防止假厚层侵入内层花纹区域造成阴影遮挡。
-    if border_layers:
-        for ck, r_px in corners_px.items():
-            if r_px > 0:
-                _redraw_border_on_corner(
-                    result, ck, r_px, border_layers,
-                    src_img=img, validity_mask=final_mask)
-
-    return result

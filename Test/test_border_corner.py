@@ -1,4 +1,4 @@
-"""测试圆角模式判断和边框圆角功能"""
+"""测试边框圆角功能"""
 import sys
 import os
 
@@ -8,32 +8,10 @@ from PIL import Image, ImageDraw
 from core.image_cropper import (
     apply_rounded_corners,
     apply_border_only_corners,
-    _determine_corner_mode,
-    BORDER_ONLY_THRESHOLD_CM,
     _DEFAULT_BORDER_WIDTH_CM,
 )
 
 print("=" * 60)
-print("圆角模式判断测试")
-print("=" * 60)
-print(f"阈值: {BORDER_ONLY_THRESHOLD_CM}cm")
-print(f"默认边框宽度: {_DEFAULT_BORDER_WIDTH_CM}cm")
-print()
-
-test_cases = [
-    {"tl": 0, "tr": 0, "bl": 0, "br": 9.0},
-    {"tl": 0, "tr": 0, "bl": 0, "br": 3.5},
-    {"tl": 0, "tr": 0, "bl": 0, "br": 2.0},
-    {"tl": 0, "tr": 0, "bl": 0, "br": 8.5},
-    {"tl": 2.0, "tr": 3.0, "bl": 0, "br": 10.0},
-]
-
-for corners in test_cases:
-    mode = _determine_corner_mode(corners)
-    max_r = max(corners.values())
-    print(f"  max_r={max_r:5.1f}cm -> {mode}")
-
-print("\n" + "=" * 60)
 print("边框圆角 vs 整体圆角 视觉对比测试")
 print("=" * 60)
 
