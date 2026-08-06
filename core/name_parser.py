@@ -9,7 +9,10 @@ core/name_parser.py
 """
 from __future__ import annotations
 import re
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -239,7 +242,7 @@ def _extract_size_pair_manual(text: str) -> tuple[float, float] | None:
             try:
                 a = float(str_a)
                 b = float(str_b)
-                print(f"[name_parser] MANUAL parse matched: '{str_a}' x '{str_b}' -> {a} x {b}")
+                logger.debug(f"[name_parser] MANUAL parse matched: '{str_a}' x '{str_b}' -> {a} x {b}")
                 return (a, b)
             except ValueError:
                 continue
@@ -254,7 +257,7 @@ def _extract_size_pair_manual(text: str) -> tuple[float, float] | None:
             try:
                 a = float(str_a)
                 b = float(str_b)
-                print(f"[name_parser] MANUAL fallback (no mul sign) matched: '{str_a}' x '{str_b}' -> {a} x {b}")
+                logger.debug(f"[name_parser] MANUAL fallback (no mul sign) matched: '{str_a}' x '{str_b}' -> {a} x {b}")
                 return (a, b)
             except ValueError:
                 pass
@@ -293,10 +296,10 @@ def _extract_size_pair(text: str) -> tuple[float, float] | None:
                 # 双重 round 抑制浮点误差
                 a = round(round(float(raw_a), 6), 2)
                 b = round(round(float(raw_b), 6), 2)
-                print(f"[name_parser] size strategy S{i+1} matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
+                logger.debug(f"[name_parser] size strategy S{i+1} matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
                 return (a, b)
             except ValueError:
-                print(f"[name_parser] S{i+1} ValueError for groups: {repr(raw_a)}, {repr(raw_b)}")
+                logger.debug(f"[name_parser] S{i+1} ValueError for groups: {repr(raw_a)}, {repr(raw_b)}")
                 continue
 
     # S4: 找出所有 "数字x数字" 模式，取第一个
@@ -305,7 +308,7 @@ def _extract_size_pair(text: str) -> tuple[float, float] | None:
         raw_a, raw_b = all_matches[0]
         a = round(round(float(raw_a), 6), 2)
         b = round(round(float(raw_b), 6), 2)
-        print(f"[name_parser] size strategy S4 matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
+        logger.debug(f"[name_parser] size strategy S4 matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
         return (a, b)
 
     # S5: 兜底 — 提取所有数字，取前两个
@@ -314,7 +317,7 @@ def _extract_size_pair(text: str) -> tuple[float, float] | None:
         raw_a, raw_b = all_nums[0], all_nums[1]
         a = round(round(float(raw_a), 6), 2)
         b = round(round(float(raw_b), 6), 2)
-        print(f"[name_parser] size strategy S5 (fallback) matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
+        logger.debug(f"[name_parser] size strategy S5 (fallback) matched: '{raw_a}' x '{raw_b}' -> {a} x {b}")
         return (a, b)
         
     # S6: 终极兜底 — 字符级手动解析
@@ -322,7 +325,7 @@ def _extract_size_pair(text: str) -> tuple[float, float] | None:
     if manual_result:
         return manual_result
 
-    print(f"[name_parser] size parsing FAILED for text: {repr(text[:200])}")
+    logger.warning(f"[name_parser] size parsing FAILED for text: {repr(text[:200])}")
     return None
 
 
@@ -385,11 +388,11 @@ def parse_filename(filename: str) -> ParsedFilename:
             result.width_cm = min(a, b)
             result.height_cm = max(a, b)
         result.layout = layout
-        print(f"[name_parser] FINAL: a={a}, b={b}, layout={layout}, width={result.width_cm}, height={result.height_cm}")
+        logger.debug(f"[name_parser] FINAL: a={a}, b={b}, layout={layout}, width={result.width_cm}, height={result.height_cm}")
     else:
         # 无尺寸信息时默认横版
         result.layout = '横版'
-        print(f"[name_parser] FINAL: no dimensions parsed, default layout=横版")
+        logger.warning(f"[name_parser] FINAL: no dimensions parsed, default layout=横版")
     
     corners = _parse_corners(name)
     result.corners = corners if corners else None
@@ -473,7 +476,7 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
         for pat in patterns:
             m = re.search(pat, s, flags=re.IGNORECASE)
             if m:
-                print(f"[name_parser] corner '{key}' matched pattern: {pat} -> {m.group(1)}")
+                logger.debug(f"[name_parser] corner '{key}' matched pattern: {pat} -> {m.group(1)}")
                 break
 
         if m:
@@ -505,7 +508,7 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
                     result = {'tl': radius, 'tr': radius, 'bl': radius, 'br': radius}
 
             if result:
-                print(f"[name_parser] all-corners matched: {result}")
+                logger.debug(f"[name_parser] all-corners matched: {result}")
                 return result
 
     if result:
@@ -513,10 +516,10 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
         for k in all_keys:
             if k not in result:
                 result[k] = 0.0
-        print(f"[name_parser] individual corners: {result}")
+        logger.debug(f"[name_parser] individual corners: {result}")
         return result
 
-    print(f"[name_parser] no corners parsed from: {repr(s[:200])}")
+    logger.warning(f"[name_parser] no corners parsed from: {repr(s[:200])}")
     return None
 
 

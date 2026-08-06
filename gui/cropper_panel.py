@@ -17,6 +17,7 @@ from PIL import Image
 from core.name_parser import parse_filename, generate_filename, get_image_info, _fmt_num
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
 from core.template_matcher import TemplateMatcher, TemplateEntry
+from core.config import CUT_LOSS_CM, DEFAULT_DPI
 
 
 def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
@@ -149,7 +150,7 @@ class CropperPanel(QWidget):
         grid_size.addWidget(self._sp_h, 0, 5)
         
         grid_size.addWidget(QLabel("DPI:"), 1, 0)
-        self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(150)
+        self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(DEFAULT_DPI)
         grid_size.addWidget(self._sp_dpi, 1, 1)
         
         grid_size.addWidget(QLabel("裁剪模式:"), 1, 2)
@@ -374,13 +375,13 @@ class CropperPanel(QWidget):
                 if idx >= 0:
                     self._cb_layout.setCurrentIndex(idx)
             
-            # 尺寸自动识别 + 1cm 切割损耗
+            # 尺寸自动识别 + 切割损耗（CUT_LOSS_CM）
             if target_parsed.width_cm > 0 and target_parsed.height_cm > 0:
-                self._sp_w.setValue(target_parsed.width_cm + 1.0)
-                self._sp_h.setValue(target_parsed.height_cm + 1.0)
+                self._sp_w.setValue(target_parsed.width_cm + CUT_LOSS_CM)
+                self._sp_h.setValue(target_parsed.height_cm + CUT_LOSS_CM)
             elif best.parsed and best.parsed.width_cm > 0:
-                self._sp_w.setValue(best.parsed.width_cm + 1.0)
-                self._sp_h.setValue(best.parsed.height_cm + 1.0)
+                self._sp_w.setValue(best.parsed.width_cm + CUT_LOSS_CM)
+                self._sp_h.setValue(best.parsed.height_cm + CUT_LOSS_CM)
             
             # 圆角只从目标文件名获取（模板通常不含圆角信息）
             if target_parsed.corners:
@@ -428,8 +429,8 @@ class CropperPanel(QWidget):
                     self._cb_layout.setCurrentIndex(idx)
             
             if parsed.width_cm > 0 and parsed.height_cm > 0:
-                self._sp_w.setValue(parsed.width_cm + 1.0)
-                self._sp_h.setValue(parsed.height_cm + 1.0)
+                self._sp_w.setValue(parsed.width_cm + CUT_LOSS_CM)
+                self._sp_h.setValue(parsed.height_cm + CUT_LOSS_CM)
             
             if parsed.corners:
                 for key in ('tl', 'tr', 'bl', 'br'):

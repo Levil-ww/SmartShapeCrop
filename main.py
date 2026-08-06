@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QKeySequence
 
 from core.geometry import CropDesign, BorderLayer
+from core.log_setup import setup_logging
 from core.image_ops import save_jpg
 from gui.canvas_widget import PreviewCanvas
 from gui.property_panel import PropertyPanel
@@ -225,7 +226,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_design(design)
 
     def _on_rendered(self, img):
-        self._status_size.setText(f"画布尺寸：{img.width} × {img.height} px ({img.width/img.info.get('dpi',(300,))[0]*2.54:.1f}cm × {img.height/img.info.get('dpi',(300,))[1]*2.54:.1f}cm @ DPI {img.info.get('dpi',(300,))[0]:.0f})" if 'dpi' in img.info else f"画布尺寸：{img.width} × {img.height} px")
+        self._status_size.setText(f"画布尺寸：{img.width} × {img.height} px ({img.width/img.info.get('dpi',(150,))[0]*2.54:.1f}cm × {img.height/img.info.get('dpi',(150,))[1]*2.54:.1f}cm @ DPI {img.info.get('dpi',(150,))[0]:.0f})" if 'dpi' in img.info else f"画布尺寸：{img.width} × {img.height} px")
 
     def _on_cropped_image(self, pil_img):
         """裁剪面板生成的图片：在画布上显示预览"""
@@ -255,6 +256,10 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    # 初始化结构化日志（程序入口调用一次即可，幂等保护）
+    # 调试时设置环境变量 LOG_LEVEL=DEBUG 即可输出详细日志
+    setup_logging()
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     w = MainWindow()

@@ -14,9 +14,15 @@ from core.image_cropper import (
     apply_rounded_corners,
     apply_border_only_corners,
     apply_multi_layer_rounded_corners,
+    detect_nested_rect_layers,
+    crop_image, CropConfig,
     _determine_corner_mode,
     BORDER_ONLY_THRESHOLD_CM,
 )
+from core.log_setup import setup_logging
+
+# 初始化日志（幂等，调试时设 LOG_LEVEL=DEBUG）
+setup_logging()
 
 # ============ 参数配置 ============
 src_path = r"D:\SmartShapeCrop\psd_demo\双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
@@ -26,7 +32,7 @@ output_name = "双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角
 target_w_cm = 41.0      # 目标宽度（厘米，竖版短边）
 target_h_cm = 55.0      # 目标高度（厘米，竖版长边）
 corner_r_cm = 2.0       # 右下角圆角半径（厘米）
-dpi = 300               # DPI
+dpi = 150               # DPI（与 CropConfig / CropDesign / UI 默认值一致）
 
 # ============ 计算像素 ============
 target_w_px = int(round(target_w_cm * dpi / 2.54))

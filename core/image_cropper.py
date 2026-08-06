@@ -3,20 +3,42 @@ core/image_cropper.py
 图片裁剪服务：等比缩放 + 圆角裁剪 + 命名输出。
 
 裁剪模式：
+- simple_resize: 简单缩放（默认，高质量 LANCZOS，不裁剪不留白）
 - cover: 裁剪填满（裁剪到目标比例，可能损失部分内容）
 - contain: 留白填充（完整显示，四周留白）
 - light_cover: 轻度裁剪（仅裁剪必要部分，最多裁剪阈值）
 - auto: 智能模式（自动选择 cover 或 contain）
+
+圆角处理统一委托给 core.rounded_corner 模块，确保与 geometry.py、
+process_image.py 三处圆角逻辑完全一致。
 """
 from __future__ import annotations
 import math
 import os
+import logging
 from dataclasses import dataclass
 import numpy as np
 from PIL import Image, ImageDraw
 
 from .image_ops import load_image_rgb, fit_image_to_rect
 from .psd_loader import is_psd_file, load_psd_flattened
+from .rounded_corner import (
+    CORNER_ANGLES,
+    carve_corner_on_mask,
+    get_corner_square,
+    get_corner_pieslice_bbox,
+)
+from .config import (
+    BORDER_ONLY_THRESHOLD_CM,
+    DEFAULT_BORDER_WIDTH_CM,
+    BORDER_TOTAL_DEPTH_CM,
+    DEFAULT_DPI,
+    DEFAULT_BG_COLOR,
+    DEFAULT_CROP_MODE,
+    DEFAULT_MAX_CROP_RATIO,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,47 +48,33 @@ class CropConfig:
     target_w_cm: float = 0.0              # 目标宽度（厘米）
     target_h_cm: float = 0.0              # 目标高度（厘米）
     corners: dict[str, float] | None = None  # 四角圆角半径(cm)，键: tl/tr/bl/br
-    mode: str = 'simple_resize'             # simple_resize | cover | contain | light_cover | auto
-    dpi: int = 300                        # 输出 DPI
-    bg_color: tuple[int, int, int] = (255, 255, 255)  # 背景色（留白/圆角处）
+    mode: str = DEFAULT_CROP_MODE         # simple_resize | cover | contain | light_cover | auto
+    dpi: int = DEFAULT_DPI                # 输出 DPI（与 CropDesign / UI 默认值一致）
+    bg_color: tuple[int, int, int] = DEFAULT_BG_COLOR  # 背景色（留白/圆角处）
     output_path: str = ""                 # 输出路径（空则返回PIL对象）
-    max_crop_ratio: float = 0.15          # light_cover 最大裁剪比例（15%）
+    max_crop_ratio: float = DEFAULT_MAX_CROP_RATIO  # light_cover 最大裁剪比例
     # 自动缩放：是否允许放大源图到比原图更大
     allow_upscale: bool = True
 
 
-# 圆角模式阈值：圆角半径 >= 此值时采用"整体圆角"，否则采用"仅边框圆角"
-BORDER_ONLY_THRESHOLD_CM = 8.5
-# 边框圆角模式下的边框宽度（仅此深度范围内应用圆角）
-_DEFAULT_BORDER_WIDTH_CM = 1.5
-# 边框总深度（覆盖所有边框层的深度）
-# 当 radius >= 阈值时，实际裁剪半径 = radius + 此值，以确保所有边框层都被裁掉
-BORDER_TOTAL_DEPTH_CM = 2.0
+# 向后兼容别名：旧测试脚本可能直接 from core.image_cropper import 这些常量。
+# 内部统一使用 core.config 的定义，此处只是重导出。
+# _DEFAULT_BORDER_WIDTH_CM 保留原名（带下划线），因为 apply_border_only_corners
+# 的默认参数仍引用它。
+_DEFAULT_BORDER_WIDTH_CM = DEFAULT_BORDER_WIDTH_CM
 
-# 圆角处理参数
-# [实测] PIL 屏幕坐标系（y 向下）pieslice 角度映射（逆时针方向）：
-#   0° = 右, 90° = 下, 180° = 左, 270° = 上
-# 思路（两步法）：
-#   1. 先把角落 r×r 正方形设为 0（切掉）
-#   2. 再用 pieslice 把"图片内部的 1/4 圆"填回 255（保留）
-# 这样切掉的是 L 形（正方形减去 1/4 圆），即只切掉尖角，保留圆弧
-# 圆心在正方形的"内角"顶点（即图片内部那个角），bbox 以该圆心为中心
+# 向后兼容别名：旧测试脚本可能导入 _CORNER_PARAMS / _CORNER_SQUARE。
+# 内部统一使用 core.rounded_corner.carve_corner_on_mask，不再使用这两个表。
+# 此处从统一模块派生，确保数据单一来源。
 _CORNER_PARAMS = {
-    # tl: 正方形 [0,0,r,r]，圆心在 (r,r)，填回左上 1/4 圆 (dx<0,dy<0) → 180°→270°
-    'tl': lambda w, h, r: ([0, 0, 2*r, 2*r], 180, 270),
-    # tr: 正方形 [w-r,0,w,r]，圆心在 (w-r,r)，填回右上 1/4 圆 (dx>0,dy<0) → 270°→360°
-    'tr': lambda w, h, r: ([w-2*r, 0, w, 2*r], 270, 360),
-    # bl: 正方形 [0,h-r,r,h]，圆心在 (r,h-r)，填回左下 1/4 圆 (dx<0,dy>0) → 90°→180°
-    'bl': lambda w, h, r: ([0, h-2*r, 2*r, h], 90, 180),
-    # br: 正方形 [w-r,h-r,w,h]，圆心在 (w-r,h-r)，填回右下 1/4 圆 (dx>0,dy>0) → 0°→90°
-    'br': lambda w, h, r: ([w-2*r, h-2*r, w, h], 0, 90),
+    k: lambda w, h, r, _k=k: (
+        list(get_corner_pieslice_bbox((0, 0, w, h), _k, r)), *CORNER_ANGLES[_k]
+    )
+    for k in ('tl', 'tr', 'bl', 'br')
 }
-# 各角对应的正方形区域
 _CORNER_SQUARE = {
-    'tl': lambda w, h, r: (0, 0, r, r),
-    'tr': lambda w, h, r: (w - r, 0, w, r),
-    'bl': lambda w, h, r: (0, h - r, r, h),
-    'br': lambda w, h, r: (w - r, h - r, w, h),
+    k: lambda w, h, r, _k=k: get_corner_square((0, 0, w, h), _k, r)
+    for k in ('tl', 'tr', 'bl', 'br')
 }
 
 
@@ -163,140 +171,50 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
     return []
 
 
-def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int = 300, bg_color: tuple = (255, 255, 255)) -> Image.Image:
+def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int = 150, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """
     对整张图片应用四角圆角裁剪。
     裁剪半径 = 指定的圆角半径（不做扩展）。
     裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
-    
+
     当用于大图（radius >= 8.5cm）时，会同步裁掉所有边框层的角落区域。
     当用于小图（radius < 8.5cm）时，建议使用 apply_border_only_corners。
-    
+
+    圆角 mask 算法统一委托给 core.rounded_corner.carve_corner_on_mask。
+
     Args:
         img: 输入图片（RGB 模式）
         corners: 四角圆角半径(cm)字典，键为 tl/tr/bl/br
         dpi: DPI，用于将厘米转为像素
         bg_color: 圆角处背景色
-    
+
     Returns:
         应用圆角后的图片
     """
     w, h = img.size
-    
+
     # 检测原图边框层（带 fallback）
     border_layers = _get_border_layers_robust(img, bg_color)
-    
+
     mask = Image.new('L', (w, h), 255)  # 全不透明（保留原图）
-    draw = ImageDraw.Draw(mask)
-    
+
+    # 统一圆角处理：厘米 → 像素，整图 rect=(0,0,w,h)
+    corners_px = {}
     for corner_key, radius_cm in corners.items():
         if radius_cm <= 0:
             continue
-        
-        # 直接使用指定的圆角半径（不做扩展）
-        r = max(1, int(round(radius_cm * dpi / 2.54)))
-        
-        get_params = _CORNER_PARAMS.get(corner_key)
-        get_square = _CORNER_SQUARE.get(corner_key)
-        if get_params is None or get_square is None:
-            continue
-        
-        # 1. 先把角落 r×r 正方形设为 0（切掉尖角）
-        sq = get_square(w, h, r)
-        sq_safe = [max(0, sq[0]), max(0, sq[1]), min(w, sq[2]), min(h, sq[3])]
-        if sq_safe[2] > sq_safe[0] and sq_safe[3] > sq_safe[1]:
-            draw.rectangle(sq_safe, fill=0)
-        
-        # 2. 用 pieslice 把图片内部的 1/4 圆填回 255（保留圆弧）
-        bbox, start_deg, end_deg = get_params(w, h, r)
-        safe_bbox = [max(0, bbox[0]), max(0, bbox[1]), min(w, bbox[2]), min(h, bbox[3])]
-        if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
-            draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
-    
+        corners_px[corner_key] = max(1, int(round(radius_cm * dpi / 2.54)))
+    carve_corner_on_mask(mask, (0, 0, w, h), corners_px, canvas_size=(w, h))
+
     # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=mask)
-    
+
     # 在圆角弧线上重新绘制边框层
     if border_layers:
-        for corner_key, radius_cm in corners.items():
-            if radius_cm <= 0:
-                continue
-            r_px = max(1, int(round(radius_cm * dpi / 2.54)))
+        for corner_key, r_px in corners_px.items():
             _redraw_border_on_corner(result, corner_key, r_px, border_layers, src_img=img)
-    
-    return result
 
-
-def apply_concentric_rounded_corners(img: Image.Image, corners: dict[str, float],
-                                      dpi: int = 300, bg_color: tuple = (255, 255, 255)) -> Image.Image:
-    """
-    漏斗形多层同步圆角裁剪：对整张图片应用圆角，所有层次的边框/装饰都会
-    同步被裁掉，且保持同心圆角效果。
-    
-    核心算法（以右下角为例）：
-      设 R 为圆角半径，对于每个像素：
-        dx = 距右边缘的像素距离
-        dy = 距下边缘的像素距离
-        d_max = max(dx, dy)
-        d_euclid = sqrt(dx² + dy²)
-      裁剪条件：d_max + d_euclid >= R → 裁掉该像素
-      
-      这个公式的效果：
-      - 在角落处裁掉最宽的 L 形区域
-      - 裁剪深度随向内的距离线性递减
-      - 所有层次的边框都会同步被裁掉（因为它们在角落的"有效半径"递减）
-      - 所有层的圆弧都是同心的（共享同一个角点作为圆心）
-    
-    Args:
-        img: 输入图片（RGB 模式）
-        corners: 四角圆角半径(cm)字典，键为 tl/tr/bl/br
-        dpi: DPI
-        bg_color: 圆角处背景色
-    
-    Returns:
-        应用多层同步圆角后的图片
-    """
-    w, h = img.size
-    mask = Image.new('L', (w, h), 255)  # 全不透明（保留原图）
-    mask_arr = np.ones((h, w), dtype=np.uint8) * 255
-    
-    # 创建坐标网格
-    y_coords = np.arange(h, dtype=np.float64)
-    x_coords = np.arange(w, dtype=np.float64)
-    yy, xx = np.meshgrid(y_coords, x_coords, indexing='ij')
-    
-    for corner_key, radius_cm in corners.items():
-        if radius_cm <= 0:
-            continue
-        
-        r_px = max(1, int(round(radius_cm * dpi / 2.54)))
-        
-        # 计算每个像素到该角的 dx, dy
-        if corner_key == 'tl':
-            dx = xx  # 距左边缘
-            dy = yy  # 距上边缘
-        elif corner_key == 'tr':
-            dx = w - 1 - xx  # 距右边缘
-            dy = yy  # 距上边缘
-        elif corner_key == 'bl':
-            dx = xx  # 距左边缘
-            dy = h - 1 - yy  # 距下边缘
-        else:  # br
-            dx = w - 1 - xx  # 距右边缘
-            dy = h - 1 - yy  # 距下边缘
-        
-        # 漏斗形裁剪条件：d_max + d_euclid >= R → 裁掉
-        d_max = np.maximum(dx, dy)
-        d_euclid = np.sqrt(dx**2 + dy**2)
-        cut_mask = (d_max + d_euclid) >= r_px
-        
-        # 裁掉的像素设为 0
-        mask_arr[cut_mask] = 0
-    
-    # 应用遮罩
-    result = Image.new('RGB', (w, h), bg_color)
-    result.paste(img, mask=Image.fromarray(mask_arr, mode='L'))
     return result
 
 
@@ -471,15 +389,9 @@ def _build_border_sector_mask(
     但这导致内层边框在圆弧上无法覆盖直线到圆弧的连接区域，
     产生白色扇形角和背景色漏出。修复为固定角度范围。
     """
-    # 各角的固定角度范围（与 _CORNER_PARAMS 中的 pieslice 角度一致）
-    # 这确保边框层在圆弧上从直线边缘完整延伸到另一边
-    _FIXED_ANGLE_RANGES = {
-        'tl': (180.0, 270.0),
-        'tr': (270.0, 360.0),
-        'bl': (90.0, 180.0),
-        'br': (0.0, 90.0),
-    }
-    ang_min, ang_max = _FIXED_ANGLE_RANGES[corner_key]
+    # 各角的固定角度范围（统一从 core.rounded_corner.CORNER_ANGLES 取得，
+    # 确保与 carve_corner_on_mask 的 pieslice 角度完全一致）
+    ang_min, ang_max = CORNER_ANGLES[corner_key]
 
     # 只计算角落 ROI 以加速
     roi_x0 = max(0, cx - R)
@@ -683,142 +595,84 @@ def _redraw_border_on_corner(
     result_img.paste(new_img)
 
 
-def _extend_border_to_arc(result_img: Image.Image, corner_key: str,
-                           corner_radius_px: int,
-                           border_layers: list[tuple[tuple[int, int, int], int]]) -> None:
-    """
-    将边框层从直线边缘延伸到圆弧，使边框线在角落处连续。
-    在角落的两条直线边上，用边框色填充从边框内边缘到圆弧的间隙。
-    
-    Args:
-        result_img: 结果图片（原地修改）
-        corner_key: 角落标识
-        corner_radius_px: 圆角半径（像素）
-        border_layers: 边框层列表
-    """
-    w, h = result_img
-    
-    if corner_radius_px <= 0 or not border_layers:
-        return
-    
-    total_border_px = sum(t for _, t in border_layers)
-    
-    if corner_key == 'tl':
-        # 左上角：在左边和上边延伸
-        # 左边：从x=0到x=corner_radius_px，y从border内边缘到圆弧
-        # 上边：类似
-        pass  # 边框在直线部分已保留，此处无需额外延伸
-    elif corner_key == 'tr':
-        pass
-    elif corner_key == 'bl':
-        pass
-    else:  # br
-        pass
-    
-    # 对于大多数情况，边框在直线上的部分已被保留
-    # 圆弧部分已由 _redraw_border_on_corner 绘制
-    # 直线到圆弧的过渡自然衔接即可
-
-
 def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
-                               dpi: int = 300, bg_color: tuple = (255, 255, 255),
+                               dpi: int = 150, bg_color: tuple = (255, 255, 255),
                                border_width_cm: float = _DEFAULT_BORDER_WIDTH_CM) -> Image.Image:
     """
     仅对边框区域应用圆角，内部保持直角。
     裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
-    
+
     实现思路：
-    1. 创建完整的圆角遮罩（对整个图片应用圆角半径）
+    1. 创建完整的圆角遮罩（对整个图片应用圆角半径）—— 统一委托 carve_corner_on_mask
     2. 创建内部矩形遮罩（距边缘 border_width 的区域，全不透明）
     3. 合并遮罩：边框区域用圆角遮罩，内部用直角遮罩
     4. 在圆角弧线上重新绘制边框层
-    
+
     Args:
         img: 输入图片（RGB 模式）
         corners: 四角圆角半径(cm)字典
         dpi: DPI
         bg_color: 圆角处背景色
         border_width_cm: 边框宽度(cm)，仅此深度范围内应用圆角
-    
+
     Returns:
         应用边框圆角后的图片
     """
     w, h = img.size
     border_w_px = max(1, int(round(border_width_cm * dpi / 2.54)))
-    
+
     # 计算最大圆角半径
     max_r = 0
     for radius_cm in corners.values():
         if radius_cm > max_r:
             max_r = radius_cm
     max_r_px = max(1, int(round(max_r * dpi / 2.54)))
-    
+
     # 如果边框宽度不够容纳圆角，自动扩大边框宽度
     if border_w_px < max_r_px:
         border_w_px = max_r_px
-    
+
     # 安全检查：如果边框宽度超过图像一半，退化为整体圆角
     if border_w_px * 2 >= w or border_w_px * 2 >= h:
         return apply_rounded_corners(img, corners, dpi, bg_color)
-    
+
     # ---- 步骤 0: 检测原图边框层（带 fallback） ----
     border_layers = _get_border_layers_robust(img, bg_color)
     total_border_thickness = sum(t for _, t in border_layers) if border_layers else 0
-    
+
     # 确保边框区域足够容纳所有边框层
     if border_w_px < total_border_thickness + max_r_px:
         border_w_px = total_border_thickness + max_r_px
-    
-    # ---- 步骤 1: 创建完整的圆角遮罩 ----
+
+    # ---- 步骤 1: 创建完整的圆角遮罩（统一委托 carve_corner_on_mask） ----
     full_mask = Image.new('L', (w, h), 255)
-    full_draw = ImageDraw.Draw(full_mask)
-    
+    corners_px = {}
     for corner_key, radius_cm in corners.items():
         if radius_cm <= 0:
             continue
-        
-        r = max(1, int(round(radius_cm * dpi / 2.54)))
-        
-        get_params = _CORNER_PARAMS.get(corner_key)
-        get_square = _CORNER_SQUARE.get(corner_key)
-        if get_params is None or get_square is None:
-            continue
-        
-        # 1.1 切正方形（挖空）
-        sq = get_square(w, h, r)
-        sq_safe = [max(0, sq[0]), max(0, sq[1]), min(w, sq[2]), min(h, sq[3])]
-        if sq_safe[2] > sq_safe[0] and sq_safe[3] > sq_safe[1]:
-            full_draw.rectangle(sq_safe, fill=0)
-        
-        # 1.2 填回 1/4 圆
-        bbox, start_deg, end_deg = get_params(w, h, r)
-        safe_bbox = [max(0, bbox[0]), max(0, bbox[1]), min(w, bbox[2]), min(h, bbox[3])]
-        if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
-            full_draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
-    
+        corners_px[corner_key] = max(1, int(round(radius_cm * dpi / 2.54)))
+    carve_corner_on_mask(full_mask, (0, 0, w, h), corners_px, canvas_size=(w, h))
+
     # ---- 步骤 2: 创建内部矩形遮罩 ----
     inner_mask = Image.new('L', (w, h), 0)
     inner_draw = ImageDraw.Draw(inner_mask)
     inner_rect = [border_w_px, border_w_px, w - border_w_px, h - border_w_px]
     inner_draw.rectangle(inner_rect, fill=255)
-    
+
     # ---- 步骤 3: 合并遮罩 ----
     zero_img = Image.new('L', (w, h), 0)
     border_region_mask = Image.composite(zero_img, full_mask, inner_mask)
     final_mask = Image.composite(inner_mask, border_region_mask, inner_mask)
-    
+
     # ---- 步骤 4: 应用遮罩 ----
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=final_mask)
-    
+
     # ---- 步骤 5: 在圆角弧线上重新绘制边框层 ----
     if border_layers:
-        for corner_key, radius_cm in corners.items():
-            if radius_cm <= 0:
-                continue
-            r_px = max(1, int(round(radius_cm * dpi / 2.54)))
+        for corner_key, r_px in corners_px.items():
             _redraw_border_on_corner(result, corner_key, r_px, border_layers, src_img=img)
-    
+
     return result
 
 
@@ -1181,63 +1035,6 @@ def detect_nested_rect_layers(img: Image.Image) -> list[tuple[int, int, int, int
     return rects
 
 
-def _carve_L_corners_on_mask(draw: ImageDraw.ImageDraw,
-                              canvas_w: int, canvas_h: int,
-                              rect: tuple[int, int, int, int],
-                              corners_px: dict[str, int]) -> None:
-    """
-    在一张已有的 L 模式 mask 图上，对指定矩形的四个角刻出 L 形圆角裁掉区（置为 0）。
-    使用与全局 apply_rounded_corners 完全一致的两步法算法，直接原地修改。
-
-    算法（单角）：
-      1) 先把该角 r×r 正方形 挖空（fill=0）
-      2) 再把矩形内部的 1/4 圆 填回（fill=255）
-    只修改指定矩形相关的角，不影响 mask 其他区域。
-    层层调用此函数 = 层层叠加裁掉区，最终实现所有嵌套矩形的尖角统一圆角。
-    """
-    x1, y1, x2, y2 = rect
-    rw = x2 - x1
-    rh = y2 - y1
-
-    safe_corners = {}
-    for ck, r_px in corners_px.items():
-        max_r = max(1, min(rw, rh) // 2)
-        safe_corners[ck] = max(0, min(r_px, max_r))
-
-    for ck, r_px in safe_corners.items():
-        if r_px <= 0:
-            continue
-
-        if ck == 'tl':
-            sq = [x1, y1, x1 + r_px, y1 + r_px]
-            pieslice_bbox = [x1, y1, x1 + 2 * r_px, y1 + 2 * r_px]
-            start, end = 180, 270
-        elif ck == 'tr':
-            sq = [x2 - r_px, y1, x2, y1 + r_px]
-            pieslice_bbox = [x2 - 2 * r_px, y1, x2, y1 + 2 * r_px]
-            start, end = 270, 360
-        elif ck == 'bl':
-            sq = [x1, y2 - r_px, x1 + r_px, y2]
-            pieslice_bbox = [x1, y2 - 2 * r_px, x1 + 2 * r_px, y2]
-            start, end = 90, 180
-        else:  # br
-            sq = [x2 - r_px, y2 - r_px, x2, y2]
-            pieslice_bbox = [x2 - 2 * r_px, y2 - 2 * r_px, x2, y2]
-            start, end = 0, 90
-
-        # 1. 挖掉 r×r 正方形（设为 0 = 裁掉）
-        sq_safe = [max(0, sq[0]), max(0, sq[1]),
-                   min(canvas_w, sq[2]), min(canvas_h, sq[3])]
-        if sq_safe[2] > sq_safe[0] and sq_safe[3] > sq_safe[1]:
-            draw.rectangle(sq_safe, fill=0)
-
-        # 2. 填回矩形内部的 1/4 圆（设为 255 = 保留）
-        safe_bbox = [max(0, pieslice_bbox[0]), max(0, pieslice_bbox[1]),
-                     min(canvas_w, pieslice_bbox[2]), min(canvas_h, pieslice_bbox[3])]
-        if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
-            draw.pieslice(safe_bbox, start=start, end=end, fill=255)
-
-
 def _layer_rounded_mask_arr(canvas_w: int, canvas_h: int,
                             rect_canvas: tuple[int, int, int, int],
                             corners_px: dict[str, int]) -> np.ndarray:
@@ -1246,36 +1043,18 @@ def _layer_rounded_mask_arr(canvas_w: int, canvas_h: int,
 
     rect_canvas: 画布尺寸语义 (x1, y1, x2_canvas_size, y2_canvas_size)
                  ——即 x2 = x1 + width，y2 = y1 + height（不包含终点像素索引）。
-    算法与全局 apply_rounded_corners 完全一致：正方形挖空→扇形填回。
+    算法统一委托给 core.rounded_corner.carve_corner_on_mask，确保与
+    apply_rounded_corners / apply_border_only_corners / geometry 完全一致。
     """
     x1, y1, x2, y2 = rect_canvas
     rw, rh = x2 - x1, y2 - y1
+    # 半径限制到矩形一半（carve_corner_on_mask 内部也会做，这里提前 clip 以保持语义）
     safe_corners = {}
     for ck, r_px in corners_px.items():
         max_r = max(1, min(rw, rh) // 2)
         safe_corners[ck] = max(0, min(r_px, max_r))
     mask = Image.new('L', (canvas_w, canvas_h), 255)
-    draw = ImageDraw.Draw(mask)
-    for ck, r_px in safe_corners.items():
-        if r_px <= 0: continue
-        if ck == 'tl':
-            sq = [x1, y1, x1 + r_px, y1 + r_px]
-            pb = [x1, y1, x1 + 2 * r_px, y1 + 2 * r_px]; s, e = 180, 270
-        elif ck == 'tr':
-            sq = [x2 - r_px, y1, x2, y1 + r_px]
-            pb = [x2 - 2 * r_px, y1, x2, y1 + 2 * r_px]; s, e = 270, 360
-        elif ck == 'bl':
-            sq = [x1, y2 - r_px, x1 + r_px, y2]
-            pb = [x1, y2 - 2 * r_px, x1 + 2 * r_px, y2]; s, e = 90, 180
-        else:
-            sq = [x2 - r_px, y2 - r_px, x2, y2]
-            pb = [x2 - 2 * r_px, y2 - 2 * r_px, x2, y2]; s, e = 0, 90
-        sq_s = [max(0, sq[0]), max(0, sq[1]), min(canvas_w, sq[2]), min(canvas_h, sq[3])]
-        if sq_s[2] > sq_s[0] and sq_s[3] > sq_s[1]:
-            draw.rectangle(sq_s, fill=0)
-        pb_s = [max(0, pb[0]), max(0, pb[1]), min(canvas_w, pb[2]), min(canvas_h, pb[3])]
-        if pb_s[2] > pb_s[0] and pb_s[3] > pb_s[1]:
-            draw.pieslice(pb_s, start=s, end=e, fill=255)
+    carve_corner_on_mask(mask, (x1, y1, rw, rh), safe_corners, canvas_size=(canvas_w, canvas_h))
     return np.array(mask, dtype=np.uint8)
 
 

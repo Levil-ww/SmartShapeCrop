@@ -9,8 +9,11 @@ PSD 分层文件读取：
 """
 from __future__ import annotations
 import os
+import logging
 from dataclasses import dataclass
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -75,7 +78,7 @@ def load_psd_layers(path: str) -> list[PsdLayer]:
     """
     PSDImage = _try_import_psd_tools()
     if PSDImage is None:
-        print(f"[WARN] psd-tools 未安装，无法读取 {path}。请 pip install psd-tools")
+        logger.warning(f"[WARN] psd-tools 未安装，无法读取 {path}。请 pip install psd-tools")
         return []
     psd = PSDImage.open(path)
     layers: list[PsdLayer] = []
@@ -130,7 +133,7 @@ def load_psd_flattened(path: str, bg=(255, 255, 255)) -> Image.Image:
             bg_img.paste(comp, mask=comp.split()[-1])
             return bg_img
         except Exception as e:
-            print(f"[WARN] psd-tools 合成失败: {e}, 回退到 PIL 直接读取")
+            logger.warning(f"[WARN] psd-tools 合成失败: {e}, 回退到 PIL 直接读取")
     # 回退：PIL 直接打开（某些 PSD 会嵌入合成预览）
     try:
         img = Image.open(path)

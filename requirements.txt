@@ -3,3 +3,7 @@ Pillow>=9.0.0
 numpy>=1.21.0
 psd-tools>=1.9.28
 opencv-python>=4.5.0
+
+# 测试依赖（开发环境）
+pytest>=7.0.0
+
