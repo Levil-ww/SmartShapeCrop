@@ -423,26 +423,74 @@ def parse_filename(filename: str) -> ParsedFilename:
     return result
 
 
+def _extract_radius_from_text(text: str) -> float | None:
+    """
+    从文本片段中提取圆角半径值。
+    用于两角组合中"左下角和右下角"之后的半径描述。
+
+    支持的表述：
+    - 做3cm半径圆角 / 做3厘米半径圆弧角
+    - 圆角半径3cm / 是圆角半径3cm / 各一个圆角半径3cm
+    - 是圆角3cm半径
+    - 半径3cm / 3cm半径
+    """
+    if not text:
+        return None
+
+    radius_patterns = [
+        # 做 X cm 半径? 圆角  (做3cm半径圆弧角 → 做3cm半径圆角)
+        r'做\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径?\s*圆角',
+        # (各一个)? (是)? 圆角 半径 X cm  (圆角半径3cm / 各一个圆角半径3cm / 是圆角半径3cm)
+        r'(?:各\s*一个\s*)?(?:是\s*)?圆角\s*半径\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+        # (各一个)? (是)? 圆角 X cm 半径  (是圆角3cm半径)
+        r'(?:各\s*一个\s*)?(?:是\s*)?圆角\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径',
+        # (各一个)? (是)? 圆角 半径? X cm  (圆角3cm)
+        r'(?:各\s*一个\s*)?(?:是\s*)?圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+        # 半径 X cm
+        r'半径\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+        # X cm 半径
+        r'(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径',
+        # 无单位回退
+        r'做\s*(\d+(?:[.]\d+)?)\s*半径?\s*圆角',
+        r'圆角\s*半径\s*(\d+(?:[.]\d+)?)',
+        r'半径\s*(\d+(?:[.]\d+)?)',
+    ]
+
+    for pat in radius_patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            logger.debug(f"[name_parser] radius extracted via '{pat}': {m.group(1)}")
+            return float(m.group(1))
+    return None
+
+
 def _parse_corners(spec: str) -> dict[str, float] | None:
     """
     从字符串中解析圆角要求。
 
     支持的格式：
+    === 四角组合 ===
     - 四角圆角半径2cm / 四个圆角半径2cm / 4个圆角半径2cm
-    - 左上角圆角半径2cm / 右下角圆角半径2cm
-    - 左下角圆角半径2.5厘米 / 右上角圆角半径3cm
-    - 右下角圆角半径2厘米
-    - 左下角做3cm半径圆弧角 / 右上角做2cm半径弧角  (口语化表述)
+    - 四个角做2.5cm半径圆弧角 / 4个角做2.5厘米半径圆弧角
+
+    === 两角组合 ===
+    - 左下角和右下角做3cm半径圆弧角
+    - 左下角和右下角各一个圆角半径3cm
+    - 左下角和右下角圆角半径3cm
+    - 左下角右下角是圆角半径3cm
+
+    === 单角 ===
+    - 左下角圆角半径3.1cm / 左下角半径3.1cm
+    - 左下角一个圆角半径3.1厘米
+    - 左下角做3.1cm半径圆弧角
+    - 左下角是圆角3.1cm半径
     """
     # 先做全角 → 半角规范化，避免小数和单位匹配失败
     s = _normalize_str(spec) if spec else ""
     if not s:
         return None
 
-    result = {}
-
-    # 圆角/圆弧角/弧角 统一为 "角" 关键字
-    # 先把 "圆弧角"、"弧角"、"圆角弧" 统一替换为 "圆角"，简化后续正则
+    # 圆弧角/弧角/圆角弧 统一为 "圆角"，简化后续正则
     for alt in ('圆弧角', '弧角', '圆角弧'):
         s = s.replace(alt, '圆角')
 
@@ -453,25 +501,82 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
         '右下角': 'br',
     }
 
+    # ===== 阶段 0: 四角组合（最高优先级，避免被单角逻辑误匹配）=====
+    all_corners_patterns = [
+        # 4个/四个 角? 做 X cm 半径? 圆角  (四个角做2.5cm半径圆弧角)
+        r'(?:4个|四个|4|四)\s*个?\s*角?\s*做\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径?\s*圆角',
+        # 4个/四个 角? 圆角 半径? X cm  (四个角圆角半径2.5cm / 4个圆角半径2.5cm)
+        r'(?:4个|四个|4|四)\s*个?\s*角?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+        # 数字 + 个? 圆角 半径? X cm  (4个圆角半径2.5cm)
+        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+        # 四角 / 四个角 半径 X cm  (四角半径5cm)
+        r'(?:四角|四个角)\s*半径\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+        # 四角 / 四个 圆角 半径? X cm  (四角圆角半径2cm / 四个圆角半径2cm)
+        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+        # 无单位回退
+        r'(?:4个|四个|4|四)\s*个?\s*角?\s*做\s*(\d+(?:[.]\d+)?)\s*半径?\s*圆角',
+        r'(?:4个|四个|4|四)\s*个?\s*角?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
+        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
+        r'(?:四角|四个角)\s*半径\s*(\d+(?:[.]\d+)?)',
+        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
+    ]
+
+    for pattern in all_corners_patterns:
+        m = re.search(pattern, s, flags=re.IGNORECASE)
+        if m:
+            if len(m.groups()) == 1:
+                radius = float(m.group(1))
+                result = {'tl': radius, 'tr': radius, 'bl': radius, 'br': radius}
+                logger.debug(f"[name_parser] all-corners matched: {result}")
+                return result
+            elif len(m.groups()) == 2:
+                count_str = m.group(1)
+                count = _cn_to_int(count_str)
+                radius = float(m.group(2))
+                if count == 4:
+                    result = {'tl': radius, 'tr': radius, 'bl': radius, 'br': radius}
+                    logger.debug(f"[name_parser] all-corners matched: {result}")
+                    return result
+
+    # ===== 阶段 1: 两角组合 (X角和Y角 / X角Y角) =====
+    pair_pattern = re.compile(
+        r'(左上角|右上角|左下角|右下角)\s*(?:和|与|、)?\s*(左上角|右上角|左下角|右下角)'
+    )
+    for m in pair_pattern.finditer(s):
+        c1_name, c2_name = m.group(1), m.group(2)
+        if c1_name == c2_name:
+            continue
+        c1_key, c2_key = corner_map[c1_name], corner_map[c2_name]
+
+        # 在双角组合之后（优先）或之前的文本中寻找半径
+        radius_value = _extract_radius_from_text(s[m.end():])
+        if radius_value is None:
+            radius_value = _extract_radius_from_text(s[:m.start()])
+
+        if radius_value is not None:
+            result = {k: 0.0 for k in ('tl', 'tr', 'bl', 'br')}
+            result[c1_key] = radius_value
+            result[c2_key] = radius_value
+            logger.debug(f"[name_parser] pair corners matched: {c1_name}+{c2_name} -> {result}")
+            return result
+
+    # ===== 阶段 2: 单角 =====
+    result = {}
     for cn_name, key in corner_map.items():
-        # 多种表述方式（放宽中间的连接词）：
-        # 1. 左下角圆角3cm / 左下角圆角半径3cm / 左下角半径3cm
-        # 2. 左下角做3cm半径圆角 / 左下角做3cm圆角
-        # 3. 左下角3cm圆角 / 左下角3cm半径圆角
         patterns = [
-            # 标准：位置 + 圆角 + 半径 + 数字 + 单位
-            rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
-            # 位置 + 半径 + 数字 + 单位
-            rf'{cn_name}(?:圆角)?半径\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
-            # 口语：位置 + 做 + 数字 + 单位 + 半径 + 圆角
-            rf'{cn_name}.{0,3}做\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径?\s*圆角',
-            # 口语：位置 + 数字 + 单位 + 半径 + 圆角
+            # 位置 + (一个)? + (是)? + 圆角 + 半径? + 数字 + 单位
+            rf'{cn_name}(?:一个)?(?:是)?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+            # 位置 + (圆角)? + 半径 + 数字 + 单位
+            rf'{cn_name}(?:圆角)?\s*半径\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)',
+            # 口语：位置 + 做 + 数字 + 单位 + 半径? + 圆角
+            rf'{cn_name}.{{0,3}}做\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径?\s*圆角',
+            # 口语：位置 + 数字 + 单位 + 半径? + 圆角
             rf'{cn_name}\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径?\s*圆角',
-            # 口语：位置 + 做 + 数字 + 单位 + 圆角
-            rf'{cn_name}.{0,3}做\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*圆角',
+            # 口语：位置 + 是 + 圆角 + 数字 + 单位 + 半径  (左下角是圆角3.1cm半径)
+            rf'{cn_name}是\s*圆角\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)\s*半径',
             # 无单位回退
-            rf'{cn_name}?圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
-            rf'{cn_name}(?:圆角)?半径\s*(\d+(?:[.]\d+)?)',
+            rf'{cn_name}(?:一个)?(?:是)?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
+            rf'{cn_name}(?:圆角)?\s*半径\s*(\d+(?:[.]\d+)?)',
         ]
 
         m = None
@@ -484,38 +589,8 @@ def _parse_corners(spec: str) -> dict[str, float] | None:
         if m:
             result[key] = float(m.group(1))
 
-    all_corners_patterns = [
-        # 带单位（强制匹配）
-        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
-        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
-        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:[.]\d+)?)\s*(cm|厘米|公分)',
-        # 无单位回退
-        r'(?:四角|四个)\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
-        r'(\d+|[一二三四五])\s*个?\s*圆角(?:半径)?\s*(\d+(?:[.]\d+)?)',
-        r'(?:四角|四个)\s*圆角半径\s*(\d+(?:[.]\d+)?)',
-    ]
-
-    for pattern in all_corners_patterns:
-        m = re.search(pattern, s, flags=re.IGNORECASE)
-        if m:
-            if len(m.groups()) == 1:
-                radius = float(m.group(1))
-                result = {'tl': radius, 'tr': radius, 'bl': radius, 'br': radius}
-            elif len(m.groups()) == 2:
-                count_str = m.group(1)
-                count = _cn_to_int(count_str)
-                radius = float(m.group(2))
-
-                if count == 4:
-                    result = {'tl': radius, 'tr': radius, 'bl': radius, 'br': radius}
-
-            if result:
-                logger.debug(f"[name_parser] all-corners matched: {result}")
-                return result
-
     if result:
-        all_keys = ['tl', 'tr', 'bl', 'br']
-        for k in all_keys:
+        for k in ('tl', 'tr', 'bl', 'br'):
             if k not in result:
                 result[k] = 0.0
         logger.debug(f"[name_parser] individual corners: {result}")
@@ -532,18 +607,65 @@ def _fmt_num(v: float) -> str:
     return f"{v:g}"
 
 
+def format_corner_spec(corners: dict[str, float]) -> str:
+    """
+    根据圆角配置生成规范化的圆角描述字符串。
+
+    命名规则：
+    - 四角同半径: "4个圆角半径{x}cm"
+    - 两角同半径: "{角1}和{角2}圆角半径{x}cm"
+    - 单角/其他: 逐个列出 "{角}圆角半径{x}cm"
+
+    Args:
+        corners: 角->半径 映射，如 {'tl': 0, 'tr': 0, 'bl': 3.0, 'br': 3.0}
+
+    Returns:
+        圆角描述字符串（无圆角时返回空字符串）
+    """
+    if not corners:
+        return ""
+
+    corner_names = {'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角'}
+    non_zero = {k: v for k, v in corners.items() if v > 0}
+
+    if not non_zero:
+        return ""
+
+    unique_radii = set(non_zero.values())
+
+    # 四角同半径
+    if len(non_zero) == 4 and len(unique_radii) == 1:
+        r = list(unique_radii)[0]
+        return f"4个圆角半径{_fmt_num(r)}cm"
+
+    # 两角同半径（恰好两个非零角且半径相同）
+    if len(non_zero) == 2 and len(unique_radii) == 1:
+        r = list(unique_radii)[0]
+        keys = [k for k in ('tl', 'tr', 'bl', 'br') if k in non_zero]
+        names = [corner_names[k] for k in keys]
+        return f"{'和'.join(names)}圆角半径{_fmt_num(r)}cm"
+
+    # 其他情况（单角、三角、混合半径）→ 逐个列出
+    parts = []
+    for k in ('tl', 'tr', 'bl', 'br'):
+        if k in non_zero and non_zero[k] > 0:
+            parts.append(f"{corner_names[k]}圆角半径{_fmt_num(non_zero[k])}cm")
+    return ''.join(parts)
+
+
 def generate_filename(parsed: ParsedFilename, corners_override: dict[str, float] | None = None) -> str:
     """
     根据解析结果和可选的圆角覆盖，生成规范化的文件名。
 
     输出格式: 产品名称;[竖版]短边x长边cm圆角描述.jpg
-    示例: 双面格;88x161cm四角半径5cm.jpg (横版无前缀)
-          双面格;竖版41x55cm右下角半径2cm.jpg (竖版加前缀)
+    示例: 双面格;88x161cm4个圆角半径5cm.jpg (横版无前缀)
+          双面格;竖版41x55cm右下角圆角半径2cm.jpg (竖版加前缀)
 
     规则:
     - 竖版添加"竖版"前缀，横版不加前缀
     - 尺寸默认短边在前、长边在后
     - 整数值去掉小数点（161.0 → 161）
+    - 圆角命名使用 format_corner_spec 统一格式
 
     Args:
         parsed: 解析后的文件名信息
@@ -563,19 +685,9 @@ def generate_filename(parsed: ParsedFilename, corners_override: dict[str, float]
         spec_parts = [size_str]
 
     corners = corners_override if corners_override is not None else parsed.corners
-    if corners:
-        corner_names = {'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角'}
-
-        unique_values = set(v for v in corners.values() if v > 0)
-        non_zero = {k: v for k, v in corners.items() if v > 0}
-
-        if len(unique_values) == 1 and len(non_zero) == 4:
-            r = list(unique_values)[0]
-            spec_parts.append(f"四个圆角半径{_fmt_num(r)}cm")
-        else:
-            for k in ('tl', 'tr', 'bl', 'br'):
-                if k in non_zero and non_zero[k] > 0:
-                    spec_parts.append(f"{corner_names[k]}半径{_fmt_num(non_zero[k])}cm")
+    corner_spec = format_corner_spec(corners)
+    if corner_spec:
+        spec_parts.append(corner_spec)
 
     spec_str = ''.join(spec_parts)
 

@@ -9,6 +9,7 @@ from .name_parser import (
     parse_filename,
     parse_size_dims,
     generate_filename,
+    format_corner_spec,
     get_image_info,
     get_base_pattern_name,
     normalize_flower_name,
@@ -30,6 +31,7 @@ __all__ = [
     # name_parser
     'ParsedFilename', 'CN_NUM', 'SHAPE_SUFFIXES',
     'parse_filename', 'parse_size_dims', 'generate_filename',
+    'format_corner_spec',
     'get_image_info', 'get_base_pattern_name', 'normalize_flower_name',
     '_cn_to_int', '_normalize_str', '_extract_size_pair',
     '_extract_size_pair_manual', '_parse_corners', '_fmt_num',

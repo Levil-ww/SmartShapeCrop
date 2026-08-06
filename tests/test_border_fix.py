@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 # 添加项目根目录到路径
-sys.path.insert(0, r"D:\SmartShapeCrop")
+sys.path.insert(0, r"/")
 
 from core.image_cropper import (
     _detect_border_layers,
@@ -21,8 +21,8 @@ from core.image_cropper import (
 )
 
 # ============ 参数配置 ============
-src_path = r"D:\SmartShapeCrop\psd_demo\双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
-output_dir = r"D:\SmartShapeCrop\psd_demo"
+src_path = r"/psd_demo/双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
+output_dir = r"/psd_demo"
 dpi = 300
 
 # 测试不同的圆角场景

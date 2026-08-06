@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 )
 from PIL import Image
 
-from core.name_parser import parse_filename, generate_filename, get_image_info, _fmt_num
+from core.name_parser import parse_filename, generate_filename, format_corner_spec, get_image_info, _fmt_num
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
 from core.template_matcher import TemplateMatcher, TemplateEntry
 from core.config import CUT_LOSS_CM, DEFAULT_DPI
@@ -507,18 +507,11 @@ class CropperPanel(QWidget):
             else:
                 spec_parts = [size_str]
 
-            # 3) 圆角描述（使用当前圆角设置）
+            # 3) 圆角描述（使用当前圆角设置，统一命名格式）
             corners = self._get_corners_config()
-            non_zero = {k: v for k, v in corners.items() if v > 0}
-            if non_zero:
-                unique_radii = set(non_zero.values())
-                if len(unique_radii) == 1 and len(non_zero) == 4:
-                    r = list(unique_radii)[0]
-                    spec_parts.append(f"四个圆角半径{_fmt_num(r)}cm")
-                else:
-                    for k in ('tl', 'tr', 'bl', 'br'):
-                        if k in non_zero and non_zero[k] > 0:
-                            spec_parts.append(f"{get_corner_name(k)}圆角半径{_fmt_num(non_zero[k])}cm")
+            corner_spec = format_corner_spec(corners)
+            if corner_spec:
+                spec_parts.append(corner_spec)
 
             spec_str = ''.join(spec_parts)
             name = f"{product};{spec_str}.jpg"
