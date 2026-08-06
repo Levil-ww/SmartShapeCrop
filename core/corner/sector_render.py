@@ -134,60 +134,84 @@ def _sample_border_color(
 ) -> tuple[int, int, int]:
     """
     从原图直线边框对应深度范围采样平均颜色，降低色差。
-    在 corner 关联的两条边上的 [d_mid-d_thickness/2, d_mid+d_thickness/2] 深度
-    采样并取平均。
+
+    [Fix B/S4 角落感知采样]：
+      - 圆弧在某角只物理连接两条直线边（与角相邻的两条），
+        因此只从这两条边采样才能得到"真正属于该边框层"的颜色。
+        （若采样对面两条边，会采到图内部花纹/背景色，污染中位数，
+         造成 TL/TR 偏灰、BL/BR 偏黑的色差现象。）
+      - 从该两条边的厚度中心（d_mid）取 ±35% 厚度范围的像素行/列，
+        避开抗锯齿过渡带（跳过最外层 2px）。
+      - 对所有采样像素取中位数（median），对抗离群抗锯齿像素。
+      - 采样位置：距角点 ≥ 1/4 边长的中段纯直线区域。
     """
     arr = np.array(src_img)
-    samples = []
-    d0 = max(0, int(math.floor(d_mid - d_thickness * 0.5)))
-    d1 = max(d0 + 1, int(math.ceil(d_mid + d_thickness * 0.5)))
+    thickness = max(1.0, float(d_thickness))
+    samples: list[np.ndarray] = []
 
-    def add_line_samples(indices_0_or_1, axis):
-        # axis=0 按 y 方向（竖直边），axis=1 按 x 方向（水平边）
-        if axis == 1:  # 水平边：y 固定，扫 x
-            if corner_key in ('bl', 'br'):
-                y_arr = [h - 1 - d for d in range(d0, d1) if h - 1 - d >= 0]
-                for y in y_arr:
-                    if 0 <= y < h:
-                        x0 = max(0, w * 1 // 3)
-                        x1 = min(w, w * 2 // 3)
-                        samples.append(arr[y, x0:x1, :])
-            else:  # tl/tr
-                y_arr = [d for d in range(d0, d1) if d < h]
-                for y in y_arr:
-                    if 0 <= y < h:
-                        x0 = max(0, w * 1 // 3)
-                        x1 = min(w, w * 2 // 3)
-                        samples.append(arr[y, x0:x1, :])
-        else:  # axis=0 竖直边：x 固定，扫 y
-            if corner_key in ('tl', 'bl'):
-                x_arr = [d for d in range(d0, d1) if d < w]
-                for x in x_arr:
-                    if 0 <= x < w:
-                        y0 = max(0, h * 1 // 3)
-                        y1 = min(h, h * 2 // 3)
-                        samples.append(arr[y0:y1, x, :])
-            else:  # tr/br
-                x_arr = [w - 1 - d for d in range(d0, d1) if w - 1 - d >= 0]
-                for x in x_arr:
-                    if 0 <= x < w:
-                        y0 = max(0, h * 1 // 3)
-                        y1 = min(h, h * 2 // 3)
-                        samples.append(arr[y0:y1, x, :])
+    # 采样深度：边框厚度中心 ±35% 的范围（避开最外层 2px 抗锯齿带）
+    d_min = int(max(0, round(d_mid - thickness * 0.35)))
+    d_max = int(min(max(d_min + 1, round(d_mid + thickness * 0.35)), max(w, h)))
 
-    add_line_samples(0, axis=1)  # bottom/top
-    add_line_samples(1, axis=0)  # left/right
+    # 水平方向采样范围（顶/底边）：左右各留 25%，取中间 50%
+    h_x0 = max(0, w * 1 // 4)
+    h_x1 = min(w, w * 3 // 4)
+    if h_x1 - h_x0 < 10:
+        h_x0, h_x1 = max(0, w * 3 // 10), min(w, w * 7 // 10)
+
+    # 垂直方向采样范围（左/右边）：上下各留 25%，取中间 50%
+    v_y0 = max(0, h * 1 // 4)
+    v_y1 = min(h, h * 3 // 4)
+    if v_y1 - v_y0 < 10:
+        v_y0, v_y1 = max(0, h * 3 // 10), min(h, h * 7 // 10)
+
+    # 仅采样与该角相邻的两条直线边（物理上圆弧只与这两条边衔接）
+    # TL: top + left    TR: top + right
+    # BL: bottom + left  BR: bottom + right
+    if corner_key == 'tl':
+        sample_edges = ('top', 'left')
+    elif corner_key == 'tr':
+        sample_edges = ('top', 'right')
+    elif corner_key == 'bl':
+        sample_edges = ('bottom', 'left')
+    else:  # br
+        sample_edges = ('bottom', 'right')
+
+    for edge in sample_edges:
+        for d in range(d_min, d_max):
+            if edge == 'top':
+                # 距顶边 y=d 的行
+                if 0 <= d < h and h_x1 > h_x0:
+                    samples.append(arr[d, h_x0:h_x1, :])
+            elif edge == 'bottom':
+                # 距底边 y=h-1-d 的行
+                y_pos = h - 1 - d
+                if 0 <= y_pos < h and h_x1 > h_x0:
+                    samples.append(arr[y_pos, h_x0:h_x1, :])
+            elif edge == 'left':
+                # 距左边 x=d 的列
+                if 0 <= d < w and v_y1 > v_y0:
+                    samples.append(arr[v_y0:v_y1, d, :])
+            else:  # right
+                # 距右边 x=w-1-d 的列
+                x_pos = w - 1 - d
+                if 0 <= x_pos < w and v_y1 > v_y0:
+                    samples.append(arr[v_y0:v_y1, x_pos, :])
 
     if not samples:
-        # Fallback: 取边缘像素
-        return tuple(arr[h - 1, w // 2, :].tolist())
+        fallback_y = min(h - 1, max(0, int(round(d_mid))))
+        fallback_x = min(w - 1, max(0, int(round(d_mid))))
+        return tuple(arr[fallback_y, fallback_x, :].tolist())
 
     all_pixels = np.concatenate([s.reshape(-1, 3) for s in samples if s.size > 0], axis=0)
     if all_pixels.shape[0] == 0:
-        return tuple(arr[h - 1, w // 2, :].tolist())
+        fallback_y = min(h - 1, max(0, int(round(d_mid))))
+        fallback_x = min(w - 1, max(0, int(round(d_mid))))
+        return tuple(arr[fallback_y, fallback_x, :].tolist())
 
-    mean_color = np.mean(all_pixels.astype(np.float64), axis=0)
-    return tuple(int(round(v)) for v in mean_color.tolist())
+    # 取中位数（最鲁棒，对抗抗锯齿离群像素）
+    median_color = np.median(all_pixels, axis=0)
+    return tuple(int(round(v)) for v in median_color.tolist())
 
 
 def _redraw_border_on_corner(
@@ -195,6 +219,7 @@ def _redraw_border_on_corner(
     corner_radius_px: int,
     border_layers: list[tuple[tuple[int, int, int], int]],
     src_img: Image.Image | None = None,
+    validity_mask: Image.Image | None = None,
 ) -> None:
     """
     在圆角弧线上重新绘制边框层（多层同心圆弧设计）。
@@ -210,6 +235,8 @@ def _redraw_border_on_corner(
     2. 所有层的圆弧同心，自然衔接无错位
     3. 当 R_total <= 某层累计厚度时，该层保持直线（不进行圆角处理）
     4. 边框线完整性：每层在全局深度范围 [cumulative, cumulative+thickness] 内绘制
+    5. [Fix A/S1] 绝对不触碰 validity_mask == 0 的像素（透明/背景色区域），
+       防止"扇形向内折叠"——即已被裁掉的L形尖角区绝对不能被重新涂色。
 
     Args:
         result_img: 结果图片（原地修改）
@@ -217,6 +244,8 @@ def _redraw_border_on_corner(
         corner_radius_px: 总圆角半径像素 (R_total)
         border_layers: 边框层 [(color_fallback, thickness), ...]
         src_img: 原图（可选，用于采样颜色减少色差）
+        validity_mask: 可选，L模式。非零像素才允许重绘；
+                       为 None 时不做限制（兼容旧调用方）。
     """
     w, h = result_img.size
     if corner_radius_px <= 0 or not border_layers:
@@ -225,7 +254,6 @@ def _redraw_border_on_corner(
     R_total = corner_radius_px
 
     # 所有层的圆弧共享同一个圆心（外层圆角圆心）
-    # 根据 CAD 图设计，多层边框的圆弧是同心圆弧
     if corner_key == 'tl':
         cx, cy = R_total, R_total
     elif corner_key == 'tr':
@@ -236,19 +264,26 @@ def _redraw_border_on_corner(
         cx, cy = w - R_total, h - R_total
 
     result_arr = np.array(result_img)
+
+    # [Fix A/S1] 预计算有效性布尔数组：只有 validity_mask > 0 的像素允许修改
+    valid_arr = None
+    if validity_mask is not None:
+        vm = np.array(validity_mask)
+        if vm.shape[:2] == (h, w):
+            valid_arr = vm > 0
+        else:
+            valid_arr = None
+
     cumulative = 0
 
     for fallback_color, thickness in border_layers:
         # 该层的有效圆角半径：R_eff = max(0, R_total - cumulative)
-        # 外层使用完整 R_total，内层使用递减的半径
         R_eff = R_total - cumulative
         if R_eff <= 0:
             # 圆角半径已耗尽，该层保持直线，无需绘制圆弧
             break
 
         # 该层的深度范围（在全局坐标系中）
-        # 外层：深度 0 ~ thickness
-        # 内层：深度 cumulative ~ cumulative + thickness
         d_outer_global = float(cumulative)
         d_inner_global = float(cumulative + thickness)
 
@@ -261,8 +296,6 @@ def _redraw_border_on_corner(
             continue
 
         # 1) 构建该层的精确保留遮罩
-        # 使用统一圆心 (cx, cy) 和总半径 R_total
-        # 深度范围用全局深度（相对于外层圆心）
         mask_bool = _build_border_sector_mask(
             w, h, corner_key, cx, cy, R_total,
             d_outer_global, d_inner_global
@@ -272,7 +305,14 @@ def _redraw_border_on_corner(
             cumulative += thickness
             continue
 
-        # 2) 采样真实颜色（优先使用原图，使用该层在原图中的实际深度位置）
+        # [Fix A/S1] 与有效性遮罩求 AND：绝对不修改 validity_mask == 0 的像素
+        if valid_arr is not None:
+            mask_bool = mask_bool & valid_arr
+            if not np.any(mask_bool):
+                cumulative += thickness
+                continue
+
+        # 2) 采样真实颜色（优先使用原图）
         d_mid_original = 0.5 * (d_outer_global + d_inner_global)
         if src_img is not None:
             color = _sample_border_color(

@@ -18,7 +18,10 @@ from __future__ import annotations
 # ============================================================================
 
 # 圆角半径 >= 此值时采用"整体圆角"（所有嵌套层都同步裁角），否则采用"仅边框圆角"
-BORDER_ONLY_THRESHOLD_CM: float = 8.5
+# [Fix C/S4] 从 8.5cm 降到 4.0cm：大半径（如用户实际使用的 8cm）自动进入"多层同步裁角"模式，
+# 确保内层边框的圆弧被正确重绘、自然衔接，避免 border_only 模式粗暴扩展 border_w_px 导致的
+# 边框不对齐、花纹阴影遮挡、内层断裂等问题。
+BORDER_ONLY_THRESHOLD_CM: float = 4.0
 
 # 边框圆角模式下的边框宽度（仅此深度范围内应用圆角，内部保持直角）
 DEFAULT_BORDER_WIDTH_CM: float = 1.5

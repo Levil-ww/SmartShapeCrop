@@ -103,15 +103,23 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
         color_counts = Counter(edge_colors)
         best_color = color_counts.most_common(1)[0][0]
 
-        # 估算边框厚度：从边缘向内扫描直到颜色变为背景色
+        # [Fix E/S5] 估算边框厚度：从边缘向内扫描直到颜色变为背景色
+        # 添加严格上限，防止把背景/花纹误判为厚边框
+        fallback_max_thickness = max(
+            BORDER_MIN_LAYER_THICKNESS_PX * 2,
+            min(BORDER_SCAN_MAX_DEPTH_PX // 3, max(30, min(w, h) // 20))
+        )
         thickness = 0
-        for dy in range(min(50, h // 4)):
+        for dy in range(min(50, h // 4, fallback_max_thickness + 5)):
             y = h - 1 - dy
             color = tuple(arr[y, w // 2, :])
             dist_to_bg = np.sqrt(sum((a - b) ** 2 for a, b in zip(color, bg_color)))
             if dist_to_bg <= bg_threshold:
                 break
             thickness += 1
+            # [Fix E/S5] 超过上限立即停止，避免把内层花纹当成边框
+            if thickness >= fallback_max_thickness:
+                break
 
         if thickness >= BORDER_MIN_LAYER_THICKNESS_PX:
             return [(best_color, thickness)]
