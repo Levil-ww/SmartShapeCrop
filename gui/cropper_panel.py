@@ -17,7 +17,7 @@ from PIL import Image
 from core.name_parser import parse_filename, generate_filename, format_corner_spec, get_image_info, _fmt_num
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
 from core.template_matcher import TemplateMatcher, TemplateEntry
-from core.config import CUT_LOSS_CM, DEFAULT_DPI
+from core.config import CUT_LOSS_CM, CORNER_CUT_LOSS_CM, DEFAULT_DPI
 
 
 def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
@@ -43,6 +43,8 @@ class CropperPanel(QWidget):
         self._matcher = TemplateMatcher()
         self._matcher.set_log_callback(self._on_matcher_log)
         self._target_parsed = None  # 目标文件名解析结果（保存原始尺寸，不含损耗）
+        # 程序设置圆角 spinbox 时为 True，避免触发手动覆盖逻辑
+        self._corner_programmatic = False
         self._build_ui()
     
     def _on_matcher_log(self, msg: str):
@@ -264,7 +266,7 @@ class CropperPanel(QWidget):
         self._sp_w.valueChanged.connect(self._update_name_preview)
         self._sp_h.valueChanged.connect(self._update_name_preview)
         for sp in self._sp_corners.values():
-            sp.valueChanged.connect(self._update_name_preview)
+            sp.valueChanged.connect(self._on_corner_value_changed)
         self._ed_product.textChanged.connect(self._update_name_preview)
         self._ck_auto_name.stateChanged.connect(self._update_name_preview)
         self._ed_custom_name.textChanged.connect(self._update_name_preview)
@@ -286,6 +288,18 @@ class CropperPanel(QWidget):
                 self._target_parsed = None
         else:
             self._target_parsed = None
+
+    def _on_corner_value_changed(self):
+        """圆角 spinbox 值变化处理。
+
+        - 程序设置时（_auto_match/_auto_parse）：不覆盖 _target_parsed.corners，
+          保留原始值用于命名。
+        - 用户手动修改时：用 spinbox 值覆盖 _target_parsed.corners，
+          使文件名预览跟随手动输入（手动输入=实际裁剪半径=文件名值，无补偿）。
+        """
+        if not self._corner_programmatic and self._target_parsed is not None:
+            self._target_parsed.corners = self._get_corners_config()
+        self._update_name_preview()
     
     def _on_mode_changed(self):
         """裁剪模式改变时更新说明"""
@@ -384,18 +398,23 @@ class CropperPanel(QWidget):
                 self._sp_h.setValue(best.parsed.height_cm + CUT_LOSS_CM)
             
             # 圆角只从目标文件名获取（模板通常不含圆角信息）
+            # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
             if target_parsed.corners:
-                for key in ('tl', 'tr', 'bl', 'br'):
-                    if key in target_parsed.corners:
-                        self._sp_corners[key].setValue(target_parsed.corners[key])
-            
+                self._corner_programmatic = True
+                try:
+                    for key in ('tl', 'tr', 'bl', 'br'):
+                        if key in target_parsed.corners:
+                            self._sp_corners[key].setValue(target_parsed.corners[key] + CORNER_CUT_LOSS_CM)
+                finally:
+                    self._corner_programmatic = False
+
             msg = (f"✅ 匹配成功！\n\n"
                    f"源图: {os.path.basename(best.path)}\n"
                    f"匹配得分: {best.score:.2f}\n\n"
-                   f"已自动填充裁剪参数（含 +1cm 切割损耗）：\n"
+                   f"已自动填充裁剪参数（尺寸 +1cm / 圆角 +0.5cm 切割损耗）：\n"
                    f"- 产品名称: {target_parsed.product_name or (best.parsed.product_name if best.parsed else '-')}\n"
                    f"- 尺寸: {_fmt_num(self._sp_w.value())}×{_fmt_num(self._sp_h.value())}cm 布局: {target_parsed.layout or (best.parsed.layout if best.parsed else '-')}\n"
-                   f"- 圆角: {self._format_corners_for_msg(target_parsed.corners)}")
+                   f"- 圆角(命名→裁剪): {self._format_corners_for_msg(target_parsed.corners)} → {self._format_corners_for_msg(self._get_corners_config())}")
             QMessageBox.information(self, "匹配成功", msg)
         else:
             self._lbl_match_log.setText("❌ 未找到匹配的模板")
@@ -433,16 +452,21 @@ class CropperPanel(QWidget):
                 self._sp_h.setValue(parsed.height_cm + CUT_LOSS_CM)
             
             if parsed.corners:
-                for key in ('tl', 'tr', 'bl', 'br'):
-                    if key in parsed.corners:
-                        self._sp_corners[key].setValue(parsed.corners[key])
-            
+                # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
+                self._corner_programmatic = True
+                try:
+                    for key in ('tl', 'tr', 'bl', 'br'):
+                        if key in parsed.corners:
+                            self._sp_corners[key].setValue(parsed.corners[key] + CORNER_CUT_LOSS_CM)
+                finally:
+                    self._corner_programmatic = False
+
             # 如果目标文件名中有尺寸信息但源图已选择，可以更新源图信息
             info_msg = f"产品: {parsed.product_name}\n"
             info_msg += f"原始尺寸: {_fmt_num(parsed.width_cm)}×{_fmt_num(parsed.height_cm)}cm\n"
             info_msg += f"裁剪尺寸(含 +1cm 切割损耗): {_fmt_num(self._sp_w.value())}×{_fmt_num(self._sp_h.value())}cm\n"
             info_msg += f"布局: {parsed.layout}\n"
-            info_msg += f"圆角: {self._format_corners_for_msg(parsed.corners)}"
+            info_msg += f"圆角(命名→裁剪, +0.5cm): {self._format_corners_for_msg(parsed.corners)} → {self._format_corners_for_msg(self._get_corners_config())}"
             
             QMessageBox.information(self, "自动识别成功", info_msg)
         except Exception as e:
@@ -477,7 +501,7 @@ class CropperPanel(QWidget):
     def _update_name_preview(self):
         """更新文件名预览
         - 尺寸优先使用目标文件名原始尺寸（不含+1cm损耗），若无则使用裁剪参数
-        - 圆角使用圆角设置的值
+        - 圆角优先使用目标文件名原始圆角（不含+0.5cm损耗），若无则使用圆角设置
         """
         if self._ck_auto_name.isChecked():
             product = self._ed_product.text().strip() or "产品"
@@ -507,8 +531,12 @@ class CropperPanel(QWidget):
             else:
                 spec_parts = [size_str]
 
-            # 3) 圆角描述（使用当前圆角设置，统一命名格式）
-            corners = self._get_corners_config()
+            # 3) 圆角描述：优先使用目标解析结果中的原始圆角（不含损耗），
+            #    无目标解析时回退到圆角设置（手动输入场景）
+            if tp is not None and tp.corners:
+                corners = tp.corners
+            else:
+                corners = self._get_corners_config()
             corner_spec = format_corner_spec(corners)
             if corner_spec:
                 spec_parts.append(corner_spec)
