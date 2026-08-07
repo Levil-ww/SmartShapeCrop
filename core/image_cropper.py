@@ -209,7 +209,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     if border_w_px < max_r_px:
         border_w_px = max_r_px
 
-    # 安全检查：如果边框宽度超过图像一半，退化为整体圆角
+    # 安全检查（第1次）：如果边框宽度超过图像一半，退化为整体圆角
     if border_w_px * 2 >= w or border_w_px * 2 >= h:
         return apply_rounded_corners(img, corners, dpi, bg_color)
 
@@ -220,6 +220,18 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # 确保边框区域足够容纳所有边框层
     if border_w_px < total_border_thickness + max_r_px:
         border_w_px = total_border_thickness + max_r_px
+
+    # [Fix P0-2 / 修复③ 二次安全检查]
+    # border_w_px 可能因 total_border_thickness 虚高（例如检测到 142px 的假厚边框）
+    # 被极度扩大（如 142+177=319px），直接导致 inner_rect 坐标反转。
+    # 扩大后必须再次检查，必要时退化为整体圆角。
+    if border_w_px * 2 >= w or border_w_px * 2 >= h:
+        logger.warning(
+            "apply_border_only_corners: border_w_px=%d 扩大后超过半图（w=%d,h=%d），"
+            "退化为整体圆角。检测层数=%d, 总检测厚度=%dpx",
+            border_w_px, w, h, len(border_layers), total_border_thickness,
+        )
+        return apply_rounded_corners(img, corners, dpi, bg_color)
 
     # ---- 步骤 1: 创建完整的圆角遮罩（统一委托 carve_corner_on_mask） ----
     full_mask = Image.new('L', (w, h), 255)
@@ -233,7 +245,14 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # ---- 步骤 2: 创建内部矩形遮罩 ----
     inner_mask = Image.new('L', (w, h), 0)
     inner_draw = ImageDraw.Draw(inner_mask)
-    inner_rect = [border_w_px, border_w_px, w - border_w_px, h - border_w_px]
+    # [Fix P0-2 / 修复③ 防御性钳制]
+    # 即使二次安全检查，仍用 clamp 保证 x1<x2, y1<y2，彻底杜绝
+    # "ValueError y1 must be greater than or equal to y0" 崩溃。
+    inner_x1 = max(0, min(border_w_px, w - 2))
+    inner_y1 = max(0, min(border_w_px, h - 2))
+    inner_x2 = max(inner_x1 + 1, min(w - 1, w - border_w_px))
+    inner_y2 = max(inner_y1 + 1, min(h - 1, h - border_w_px))
+    inner_rect = [inner_x1, inner_y1, inner_x2, inner_y2]
     inner_draw.rectangle(inner_rect, fill=255)
 
     # ---- 步骤 3: 合并遮罩 ----

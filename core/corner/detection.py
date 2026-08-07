@@ -50,16 +50,18 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
     """
     获取边框层列表，带 fallback 逻辑。
     先尝试 _detect_border_layers，如果失败则从边缘采样寻找非背景色像素。
-    
+
+    [Fix P0-2] 将 bg_color 透传给 _detect_border_layers，使其能执行背景色过滤。
+
     Args:
         img: 输入图片（RGB）
         bg_color: 背景色（与背景色相似的颜色不作为边框）
-    
+
     Returns:
         边框层列表 [(color, thickness_px), ...]
     """
-    # 先尝试正常检测
-    layers = _detect_border_layers(img)
+    # 先尝试正常检测（透传 bg_color，启用背景色过滤 + 相邻同色合并）
+    layers = _detect_border_layers(img, bg_color=bg_color)
 
     if layers:
         return layers
@@ -127,14 +129,21 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
     return []
 
 
-def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN_MAX_DEPTH_PX) -> list[tuple[tuple[int, int, int], int]]:
+def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN_MAX_DEPTH_PX,
+                          bg_color: tuple[int, int, int] | None = None) -> list[tuple[tuple[int, int, int], int]]:
     """
     检测图像的边框层：从多个方向和位置向内扫描颜色变化，识别边框的颜色和厚度。
     使用颜色距离阈值代替精确匹配，提高鲁棒性。
 
+    [Fix P0-2 / 三处修复之①②]
+    - ① 新增 bg_color 参数 + 背景色过滤：与背景色相似的层被剔除，防止 (250,245,230) 等
+      近背景色被误判为边框层
+    - ② 新增相邻同色合并：颜色相近的相邻层自动合并，防止抗锯齿/渐变制造假层数
+
     Args:
         img: 输入图片（RGB）
         max_scan_depth_px: 最大扫描深度（像素），默认引用 config.BORDER_SCAN_MAX_DEPTH_PX
+        bg_color: 背景色，与该颜色距离 <= BORDER_BG_SIMILARITY_THRESHOLD 的层被视为背景并过滤
 
     Returns:
         边框层列表 [(color, thickness_px), ...]，从外到内排序
@@ -147,7 +156,9 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     COLOR_DIFF_THRESHOLD = BORDER_COLOR_DISTANCE_THRESHOLD
     # 最小层厚度统一引用 config.BORDER_MIN_LAYER_THICKNESS_PX
     MIN_LAYER_THICKNESS = BORDER_MIN_LAYER_THICKNESS_PX
-    
+    # 背景色相似度阈值（用于过滤背景层）
+    BG_THRESHOLD = BORDER_BG_SIMILARITY_THRESHOLD
+
     # 从4条边的中点向内扫描，取平均结果
     scan_configs = [
         ('bottom', w // 2, None),
@@ -155,9 +166,9 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
         ('left', h // 2, None),
         ('right', h // 2, None),
     ]
-    
+
     all_color_seqs = []
-    
+
     for edge, pos, _ in scan_configs:
         colors = []
         if edge in ('bottom', 'top'):
@@ -180,20 +191,20 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
                 else:
                     x = w - 1 - dx
                 colors.append(tuple(arr[pos, x, :]))
-        
+
         if len(colors) >= 10:
             all_color_seqs.append(colors)
-    
+
     if not all_color_seqs:
         return []
-    
+
     # 合并所有扫描结果，检测颜色变化
     # 主用底边扫描，辅以其他扫描结果验证
     main_colors = all_color_seqs[0]  # 底边
-    
+
     if len(main_colors) < 10:
         return []
-    
+
     # 对颜色序列进行平滑处理（减少噪声）
     smoothed_colors = []
     window_size = 3
@@ -203,12 +214,12 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
         window = main_colors[start:end]
         avg_color = tuple(int(round(np.mean([c[j] for c in window]))) for j in range(3))
         smoothed_colors.append(avg_color)
-    
+
     # 使用颜色距离阈值检测层边界
     layers = []
     current_color = smoothed_colors[0]
     current_start = 0
-    
+
     for i in range(1, len(smoothed_colors)):
         # 计算欧几里得颜色距离
         dist = np.sqrt(sum((a - b) ** 2 for a, b in zip(smoothed_colors[i], current_color)))
@@ -218,12 +229,45 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
                 layers.append((current_color, thickness))
             current_color = smoothed_colors[i]
             current_start = i
-    
+
     # 添加最后一层
     thickness = len(smoothed_colors) - current_start
     if thickness >= MIN_LAYER_THICKNESS:
         layers.append((current_color, thickness))
-    
+
+    # [Fix P0-2 / 修复② 相邻同色合并]
+    # 扫描 colors 时的阈值边界会导致相近颜色被拆成多层（抗锯齿/渐变），
+    # 这里把颜色距离 <= COLOR_DIFF_THRESHOLD 的相邻层重新合并。
+    if len(layers) >= 2:
+        merged: list[tuple[tuple[int, int, int], int]] = []
+        cur_col, cur_t = layers[0]
+        for col, t in layers[1:]:
+            d = np.sqrt(sum((a - b) ** 2 for a, b in zip(col, cur_col)))
+            if d <= COLOR_DIFF_THRESHOLD:
+                # 颜色相近：按厚度加权合并颜色，厚度累加
+                total_t = cur_t + t
+                if total_t > 0:
+                    cur_col = tuple(int(round((cur_col[j] * cur_t + col[j] * t) / total_t)) for j in range(3))
+                cur_t = total_t
+            else:
+                merged.append((cur_col, cur_t))
+                cur_col, cur_t = col, t
+        merged.append((cur_col, cur_t))
+        layers = merged
+
+    # [Fix P0-2 / 修复① 背景色过滤]
+    # 如果调用方提供了 bg_color，剔除与背景色过于相似的层（通常是最内层的"假边框"，
+    # 本质是渐变到背景的过渡带），防止 142px / 5 层这类严重虚高。
+    if bg_color is not None and layers:
+        filtered: list[tuple[tuple[int, int, int], int]] = []
+        for col, t in layers:
+            d = np.sqrt(sum((a - b) ** 2 for a, b in zip(col, bg_color)))
+            if d <= BG_THRESHOLD:
+                # 视为背景，跳过（通常是最末的内几层，丢掉不会丢失真实边框）
+                continue
+            filtered.append((col, t))
+        layers = filtered
+
     # 如果没有检测到层，使用 fallback：取最边缘像素颜色作为第一层
     if not layers:
         edge_color = tuple(arr[h - 1, w // 2, :])
@@ -238,7 +282,7 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
             est_thickness += 1
         if est_thickness >= MIN_LAYER_THICKNESS:
             layers.append((edge_color, est_thickness))
-    
+
     return layers
 
 

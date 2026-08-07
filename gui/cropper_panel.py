@@ -399,11 +399,12 @@ class CropperPanel(QWidget):
             
             # 圆角只从目标文件名获取（模板通常不含圆角信息）
             # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
+            # 仅对文件名中明确指定的角（半径 > 0）加切割损耗，未指定的角保持 0
             if target_parsed.corners:
                 self._corner_programmatic = True
                 try:
                     for key in ('tl', 'tr', 'bl', 'br'):
-                        if key in target_parsed.corners:
+                        if key in target_parsed.corners and target_parsed.corners[key] > 0:
                             self._sp_corners[key].setValue(target_parsed.corners[key] + CORNER_CUT_LOSS_CM)
                 finally:
                     self._corner_programmatic = False
@@ -453,10 +454,11 @@ class CropperPanel(QWidget):
             
             if parsed.corners:
                 # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
+                # 仅对文件名中明确指定的角（半径 > 0）加切割损耗，未指定的角保持 0
                 self._corner_programmatic = True
                 try:
                     for key in ('tl', 'tr', 'bl', 'br'):
-                        if key in parsed.corners:
+                        if key in parsed.corners and parsed.corners[key] > 0:
                             self._sp_corners[key].setValue(parsed.corners[key] + CORNER_CUT_LOSS_CM)
                 finally:
                     self._corner_programmatic = False
