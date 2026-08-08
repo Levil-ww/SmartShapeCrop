@@ -119,7 +119,7 @@ def _build_border_sector_mask(
     # 将角度平移到以 ang_min 为起点的 [0°, 360°) 范围
     shifted_angle = np.mod(angle_p - ang_min, 360.0)
     angular_span = ang_max - ang_min
-    cond_angle = shifted_angle <= angular_span
+    cond_angle = shifted_angle < angular_span
 
     roi_mask = cond_r & cond_angle
 
@@ -222,30 +222,22 @@ def _redraw_border_on_corner(
     validity_mask: Image.Image | None = None,
 ) -> None:
     """
-    在圆角弧线上重新绘制边框层（多层同心圆弧设计）。
+    在圆角区域重新绘制边框颜色。
 
-    核心设计：
-    所有边框层共享同一个圆弧圆心（外层圆角圆心），形成同心圆弧：
-      - cumulative_i = 所有外层边框的累计厚度
-      - R_eff_i = max(0, R_total - cumulative_i)  （该层的有效圆角半径）
-      - 圆心固定为外层圆角圆心，不随层数偏移
-
-    这样确保：
-    1. 外层边框圆弧半径最大，内层边框圆弧半径递减
-    2. 所有层的圆弧同心，自然衔接无错位
-    3. 当 R_total <= 某层累计厚度时，该层保持直线（不进行圆角处理）
-    4. 边框线完整性：每层在全局深度范围 [cumulative, cumulative+thickness] 内绘制
-    5. [Fix A/S1] 绝对不触碰 validity_mask == 0 的像素（透明/背景色区域），
-       防止"扇形向内折叠"——即已被裁掉的L形尖角区绝对不能被重新涂色。
+    修复设计（解决折叠感与边框不对齐）：
+    1. 只在边框厚度范围内绘制边框颜色，超出边框层的深度保留原图内容
+       （避免将内层图案/背景覆盖为边框颜色，消除"折叠"视觉）
+    2. 使用 validity_mask 限制绘制区域，禁止向裁剪区（L形区域）绘制
+       （确保裁剪区为背景色，边框只在圆弧可见区域内）
+    3. 角度边界与 mask 完全一致（angle < ang_max），消除边界像素偏差
 
     Args:
         result_img: 结果图片（原地修改）
         corner_key: 角落标识 ('tl','tr','bl','br')
         corner_radius_px: 总圆角半径像素 (R_total)
         border_layers: 边框层 [(color_fallback, thickness), ...]
-        src_img: 原图（可选，用于采样颜色减少色差）
-        validity_mask: 可选，L模式。非零像素才允许重绘；
-                       为 None 时不做限制（兼容旧调用方）。
+        src_img: 原图（用于采样颜色）
+        validity_mask: 可选，L模式。非零像素才允许修改
     """
     w, h = result_img.size
     if corner_radius_px <= 0 or not border_layers:
@@ -253,7 +245,7 @@ def _redraw_border_on_corner(
 
     R_total = corner_radius_px
 
-    # 所有层的圆弧共享同一个圆心（外层圆角圆心）
+    # 计算该角点的圆心位置
     if corner_key == 'tl':
         cx, cy = R_total, R_total
     elif corner_key == 'tr':
@@ -265,67 +257,156 @@ def _redraw_border_on_corner(
 
     result_arr = np.array(result_img)
 
-    # [Fix A/S1] 预计算有效性布尔数组：只有 validity_mask > 0 的像素允许修改
-    valid_arr = None
+    # 构建 validity mask 数组（如果提供）
+    validity_arr = None
     if validity_mask is not None:
-        vm = np.array(validity_mask)
-        if vm.shape[:2] == (h, w):
-            valid_arr = vm > 0
-        else:
-            valid_arr = None
+        validity_arr = np.array(validity_mask, dtype=bool)
 
-    cumulative = 0
+    # 构建各边框层的累积厚度
+    cumulative_depths = [0]
+    for _, thickness in border_layers:
+        cumulative_depths.append(cumulative_depths[-1] + thickness)
+    total_border_depth = cumulative_depths[-1]
 
-    for fallback_color, thickness in border_layers:
-        # 该层的有效圆角半径：R_eff = max(0, R_total - cumulative)
-        R_eff = R_total - cumulative
-        if R_eff <= 0:
-            # 圆角半径已耗尽，该层保持直线，无需绘制圆弧
-            break
+    # 构建颜色映射表（仅映射到边框厚度范围）
+    depth_mapping = {}
+    for d in range(total_border_depth + 1):
+        color_idx = 0
+        for i in range(len(border_layers)):
+            cum_i = cumulative_depths[i]
+            cum_next = cumulative_depths[i + 1]
+            if cum_i <= d < cum_next:
+                color_idx = i
+                break
+            elif d >= cum_next and i == len(border_layers) - 1:
+                color_idx = i
+        depth_mapping[d] = color_idx
 
-        # 该层的深度范围（在全局坐标系中）
-        d_outer_global = float(cumulative)
-        d_inner_global = float(cumulative + thickness)
+    # 各角的角度范围（与 carve_corner_on_mask / _build_multi_layer_corner_mask 完全一致）
+    ang_min, ang_max = CORNER_ANGLES[corner_key]
 
-        # 如果该层的有效半径不足以覆盖其完整深度，则截断
-        if d_inner_global > float(R_total):
-            d_inner_global = float(R_total)
+    # 计算处理区域（圆心附近的 R×R 区域）
+    x1 = max(0, cx - R_total)
+    y1 = max(0, cy - R_total)
+    x2 = min(w, cx + R_total + 1)
+    y2 = min(h, cy + R_total + 1)
 
-        if d_inner_global <= d_outer_global:
-            cumulative += thickness
+    if x2 <= x1 or y2 <= y1:
+        return
+
+    # 提取区域坐标网格
+    yy, xx = np.mgrid[y1:y2, x1:x2].astype(np.float64)
+
+    # 计算每个像素到圆心的距离和角度
+    dx = xx - float(cx)
+    dy = yy - float(cy)
+    dist = np.sqrt(dx * dx + dy * dy)
+    angle = np.degrees(np.arctan2(dy, dx))
+    angle = np.mod(angle, 360.0)
+
+    # 计算每个像素的深度（到弧线的距离，弧线上 depth=0）
+    depth = float(R_total) - dist
+
+    # 确定该角的有效绘制区域
+    # 条件：角度在范围内 + 在圆弧内部或弧线上（dist <= R_total）
+    # 注意：不扩展到圆弧外侧（dist > R_total），因为裁剪区应由 mask 控制
+    valid_region = (angle >= ang_min) & (angle < ang_max) & (dist <= R_total)
+
+    # 如果有 validity_mask，进一步限制为 mask 中非零像素
+    if validity_arr is not None:
+        local_validity = validity_arr[y1:y2, x1:x2]
+        valid_region = valid_region & local_validity
+
+    # 只在边框厚度范围内应用边框颜色
+    # 超出边框厚度的深度保留原图内容
+    for d in range(total_border_depth):
+        d_region = valid_region & (depth >= d) & (depth < d + 1)
+        if not np.any(d_region):
             continue
 
-        # 1) 构建该层的精确保留遮罩
-        mask_bool = _build_border_sector_mask(
-            w, h, corner_key, cx, cy, R_total,
-            d_outer_global, d_inner_global
-        )
-
-        if not np.any(mask_bool):
-            cumulative += thickness
-            continue
-
-        # [Fix A/S1] 与有效性遮罩求 AND：绝对不修改 validity_mask == 0 的像素
-        if valid_arr is not None:
-            mask_bool = mask_bool & valid_arr
-            if not np.any(mask_bool):
-                cumulative += thickness
-                continue
-
-        # 2) 采样真实颜色（优先使用原图）
-        d_mid_original = 0.5 * (d_outer_global + d_inner_global)
-        if src_img is not None:
-            color = _sample_border_color(
-                src_img, corner_key, w, h, d_mid_original, float(thickness)
-            )
-        else:
-            color = fallback_color
+        color_idx = depth_mapping.get(d, 0)
+        color = border_layers[color_idx][0] if color_idx < len(border_layers) else (255, 255, 255)
 
         color_arr = np.array(color, dtype=result_arr.dtype)
-        result_arr[mask_bool, :] = color_arr[np.newaxis, :]
-
-        cumulative += thickness
+        local_coords = np.where(d_region)
+        global_y = local_coords[0] + y1
+        global_x = local_coords[1] + x1
+        result_arr[global_y, global_x, :] = color_arr[np.newaxis, :]
 
     # 回写结果
     new_img = Image.fromarray(result_arr.astype(np.uint8), mode='RGB')
     result_img.paste(new_img)
+
+
+def _sample_line_border_color(
+    src_arr: np.ndarray, corner_key: str,
+    w: int, h: int, depth: int,
+    thickness: int,
+) -> tuple[int, int, int]:
+    """
+    从原图的直线边框区域采样指定深度的颜色。
+
+    Args:
+        src_arr: 原图的 numpy 数组
+        corner_key: 角落标识
+        w: 图像宽度
+        h: 图像高度
+        depth: 采样深度（像素）
+        thickness: 边框厚度（用于确定采样范围）
+
+    Returns:
+        采样的颜色 (R, G, B)
+    """
+    # 确定采样边（与该角相邻的两条直线边）
+    if corner_key == 'tl':
+        edges = ['top', 'left']
+    elif corner_key == 'tr':
+        edges = ['top', 'right']
+    elif corner_key == 'bl':
+        edges = ['bottom', 'left']
+    else:  # br
+        edges = ['bottom', 'right']
+
+    samples = []
+    
+    for edge in edges:
+        if edge == 'top':
+            y = depth
+            if 0 <= y < h:
+                # 采样水平方向中间部分
+                x_start = w // 4
+                x_end = w * 3 // 4
+                if x_end > x_start:
+                    samples.append(src_arr[y, x_start:x_end, :])
+        elif edge == 'bottom':
+            y = h - 1 - depth
+            if 0 <= y < h:
+                x_start = w // 4
+                x_end = w * 3 // 4
+                if x_end > x_start:
+                    samples.append(src_arr[y, x_start:x_end, :])
+        elif edge == 'left':
+            x = depth
+            if 0 <= x < w:
+                y_start = h // 4
+                y_end = h * 3 // 4
+                if y_end > y_start:
+                    samples.append(src_arr[y_start:y_end, x, :])
+        else:  # right
+            x = w - 1 - depth
+            if 0 <= x < w:
+                y_start = h // 4
+                y_end = h * 3 // 4
+                if y_end > y_start:
+                    samples.append(src_arr[y_start:y_end, x, :])
+
+    if not samples:
+        return (0, 0, 0)
+
+    all_pixels = np.concatenate([s.reshape(-1, 3) for s in samples if s.size > 0], axis=0)
+    if all_pixels.shape[0] == 0:
+        return (0, 0, 0)
+
+    # 取中位数作为代表颜色
+    median_color = np.median(all_pixels, axis=0)
+    return tuple(int(round(v)) for v in median_color.tolist())
