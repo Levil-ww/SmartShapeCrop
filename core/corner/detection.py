@@ -30,6 +30,9 @@ from ..config import (
     BORDER_MIN_LAYER_THICKNESS_PX,
     BORDER_BG_SIMILARITY_THRESHOLD,
     BORDER_SCAN_MAX_DEPTH_PX,
+    BORDER_MAX_SINGLE_LAYER_CM,
+    BORDER_MAX_TOTAL_CM,
+    CM_PER_INCH,
 )
 
 
@@ -44,6 +47,84 @@ _BORDER_COLOR_DIFF_THRESHOLD = BORDER_LUMINANCE_DIFF_THRESHOLD  # 亮度差分�
 _BORDER_MIN_GAP_PX = BORDER_MIN_GAP_PX                        # 相邻边界最小间距
 _BORDER_MAX_LAYERS = BORDER_MAX_LAYERS                        # 最多检测层数上限
 _EDGE_IGNORE_PX = BORDER_EDGE_IGNORE_PX                       # 忽略最边缘像素数
+
+
+def _enforce_border_thickness_caps(
+    layers: list[tuple[tuple[int, int, int], int]],
+    dpi: int = 150,
+) -> list[tuple[tuple[int, int, int], int]]:
+    """
+    对检测到的边框层施加厚度硬上限，防止把内容区/花纹误判为超厚边框。
+
+    [Fix E/S5 延伸]：解决 _detect_border_layers 最末层吃掉 300px 扫描深度的问题。
+    规则：
+      1. 若某单层厚度 > BORDER_MAX_SINGLE_LAYER_CM → 截断到该上限
+         （单层太厚几乎可确定是"内容区 + 边框"混在一起被误判）
+      2. 若所有层累计总厚度 > BORDER_MAX_TOTAL_CM → 从最末层开始丢弃，
+         直到总厚度 <= 上限。最末层通常是受内容区污染最大的。
+      3. 丢弃厚度 < BORDER_MIN_LAYER_THICKNESS_PX 的残差层。
+
+    Args:
+        layers: 原始检测层列表 [(color, thickness_px), ...]
+        dpi: 图像 DPI（用于厘米↔像素换算）
+
+    Returns:
+        厚度合规的层列表
+    """
+    if not layers:
+        return layers
+
+    # 常量（像素）
+    px_per_cm = dpi / CM_PER_INCH  # *not* /2.54; CM_PER_INCH=2.54 already
+    MAX_SINGLE_PX = int(round(BORDER_MAX_SINGLE_LAYER_CM * px_per_cm))
+    MAX_TOTAL_PX = int(round(BORDER_MAX_TOTAL_CM * px_per_cm))
+    MIN_PX = BORDER_MIN_LAYER_THICKNESS_PX
+
+    # Step 1: 单层厚度上限（截断过厚的层）
+    step1: list[tuple[tuple[int, int, int], int]] = []
+    for color, t in layers:
+        if t > MAX_SINGLE_PX:
+            # 超过单层上限：截断。过厚部分几乎可以确定是内容区污染
+            step1.append((color, MAX_SINGLE_PX))
+        else:
+            step1.append((color, t))
+    layers = step1
+
+    # Step 2: 总厚度上限（从最末层开始丢弃，因为最末层最常受内容区污染）
+    total = sum(t for _, t in layers)
+    while total > MAX_TOTAL_PX and layers:
+        # 丢弃最末层
+        last_color, last_t = layers.pop()
+        total -= last_t
+        # 若仅仅是超出一点点，则截断最末层而不是全丢
+        if layers and total > MAX_TOTAL_PX:
+            # 继续循环丢弃
+            continue
+        if not layers:
+            break
+        # 剩下的最后一层如果仍超出，截断它
+        last_c2, last_t2 = layers[-1]
+        if total > MAX_TOTAL_PX:
+            new_t = max(MIN_PX, last_t2 - (total - MAX_TOTAL_PX))
+            layers[-1] = (last_c2, new_t)
+            total = sum(t for _, t in layers)
+            break
+        # total <= MAX_TOTAL_PX，退出
+        break
+
+    # 再次循环确认（处理极端情况：逐层丢弃后的总厚度）
+    total = sum(t for _, t in layers)
+    if total > MAX_TOTAL_PX and layers:
+        # 若仍超，直接截断最末层到刚好凑满
+        excess = total - MAX_TOTAL_PX
+        last_c, last_t = layers[-1]
+        new_t = max(MIN_PX, last_t - excess)
+        layers[-1] = (last_c, new_t)
+
+    # Step 3: 清理厚度小于最小阈值的层
+    layers = [(c, t) for c, t in layers if t >= MIN_PX]
+
+    return layers
 
 
 def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255)) -> list[tuple[tuple[int, int, int], int]]:
@@ -62,6 +143,10 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
     """
     # 先尝试正常检测（透传 bg_color，启用背景色过滤 + 相邻同色合并）
     layers = _detect_border_layers(img, bg_color=bg_color)
+
+    # [Fix E/S5 延伸] 无论检测来自哪条路径，一律施加厚度硬上限，
+    # 防止 4.98cm 超厚边框把内容区吞掉并造成纯色填充遮挡。
+    layers = _enforce_border_thickness_caps(layers)
 
     if layers:
         return layers
@@ -282,6 +367,10 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
             est_thickness += 1
         if est_thickness >= MIN_LAYER_THICKNESS:
             layers.append((edge_color, est_thickness))
+
+    # [Fix E/S5 延伸] 检测最后一步统一施加厚度硬上限，
+    # 防止扫描深度 300px 把末尾层撑到 5cm 厚度，覆盖掉花朵装饰。
+    layers = _enforce_border_thickness_caps(layers)
 
     return layers
 

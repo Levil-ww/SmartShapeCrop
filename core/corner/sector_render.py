@@ -224,19 +224,22 @@ def _redraw_border_on_corner(
     """
     在圆角区域重新绘制边框颜色。
 
-    修复设计（解决折叠感与边框不对齐）：
+    修复设计（解决折叠感、边框不对齐、【装饰图案被纯色遮挡】）：
     1. 只在边框厚度范围内绘制边框颜色，超出边框层的深度保留原图内容
        （避免将内层图案/背景覆盖为边框颜色，消除"折叠"视觉）
     2. 使用 validity_mask 限制绘制区域，禁止向裁剪区（L形区域）绘制
        （确保裁剪区为背景色，边框只在圆弧可见区域内）
     3. 角度边界与 mask 完全一致（angle < ang_max），消除边界像素偏差
+    4. [P0 Fix 遮挡] 智能保护装饰图案：只有当 src_img 对应像素颜色与目标
+       边框色相近时才重绘为纯色边框色；若为花朵/点状线等装饰像素，
+       保留原图内容不变（防止 6 万+ 像素被纯色覆盖造成遮挡）。
 
     Args:
         result_img: 结果图片（原地修改）
         corner_key: 角落标识 ('tl','tr','bl','br')
         corner_radius_px: 总圆角半径像素 (R_total)
         border_layers: 边框层 [(color_fallback, thickness), ...]
-        src_img: 原图（用于采样颜色）
+        src_img: 原图（用于采样颜色 + 判断是否为装饰像素）
         validity_mask: 可选，L模式。非零像素才允许修改
     """
     w, h = result_img.size
@@ -244,6 +247,12 @@ def _redraw_border_on_corner(
         return
 
     R_total = corner_radius_px
+    # [Fix C1] 半径安全限制：与 carve_corner_on_mask / _build_multi_layer_corner_mask
+    # 保持一致，防止 R > 半图导致圆心跑出图像外，进而把整图按"表层边框色"
+    # 错误重绘（如 200x150 测试图中心被画成黑色）
+    R_total = min(R_total, max(1, min(w, h) // 2))
+    if R_total <= 0:
+        return
 
     # 计算该角点的圆心位置
     if corner_key == 'tl':
@@ -256,6 +265,16 @@ def _redraw_border_on_corner(
         cx, cy = w - R_total, h - R_total
 
     result_arr = np.array(result_img)
+
+    # 读取原图数组（用于判断像素是否与边框色一致）
+    src_arr = None
+    if src_img is not None:
+        if src_img.size == result_img.size:
+            src_arr = np.array(src_img)
+        else:
+            # 如果尺寸不一致，按结果图尺寸缩放原图以便坐标对齐
+            src_resized = src_img.resize((w, h), Image.LANCZOS)
+            src_arr = np.array(src_resized)
 
     # 构建 validity mask 数组（如果提供）
     validity_arr = None
@@ -281,6 +300,44 @@ def _redraw_border_on_corner(
             elif d >= cum_next and i == len(border_layers) - 1:
                 color_idx = i
         depth_mapping[d] = color_idx
+
+    # 预提取所有边框层颜色，用于装饰像素保护判断
+    border_colors_arr = np.array(
+        [np.array(c, dtype=np.float64) for c, _ in border_layers]
+    )
+    # 颜色距离阈值：与 BORDER_COLOR_DISTANCE_THRESHOLD 一致
+    COLOR_DIST_THRESHOLD = 15.0
+    # 层边界过渡带阈值（相邻层之间允许稍宽的匹配范围）
+    TRANSITION_THRESHOLD = 25.0
+
+    # [Fix D 升级：密集均匀采样 + 全局中值 提取内容参考色]
+    # 为什么用密集采样？
+    #   产品图内区可能有多张装饰卡/大花朵，少量分散点容易踩到装饰元素。
+    # 策略：
+    #   在「内容安全区」(15%~85% × 15%~85%) 内取 21×21=441 个均匀格点，
+    #   每个格点取单像素，拼成 (N,3) 大矩阵后取 RGB 各通道中值。
+    #   由于装饰卡片/花在整图中通常只占 <25% 面积，>75% 样本是真正的内容奶油色，
+    #   中值不可能被少数"装饰色"样本拉偏 — 抗噪性远胜单点/五点采样。
+    #   注：15%~85% 是为了避开靠近边框的外米色层/花漾之约的花朵延伸。
+    def _sample_content_ref(arr: np.ndarray, ww: int, hh: int) -> np.ndarray:
+        x_start = int(ww * 0.15)
+        x_end = int(ww * 0.85)
+        y_start = int(hh * 0.15)
+        y_end = int(hh * 0.85)
+        STEPS = 21  # 21x21 = 441 样本
+        xs = np.linspace(x_start, x_end, STEPS, dtype=np.int64).clip(0, ww - 1)
+        ys = np.linspace(y_start, y_end, STEPS, dtype=np.int64).clip(0, hh - 1)
+        gx, gy = np.meshgrid(xs, ys)
+        samples = arr[gy, gx, :].reshape(-1, 3).astype(np.float64)
+        if samples.shape[0] == 0:
+            return np.array([255.0, 255.0, 255.0])
+        return np.median(samples, axis=0)
+
+    content_ref_arr: np.ndarray | None = None
+    if src_arr is not None:
+        content_ref_arr = _sample_content_ref(src_arr, w, h)
+    if content_ref_arr is None:
+        content_ref_arr = _sample_content_ref(result_arr, w, h)
 
     # 各角的角度范围（与 carve_corner_on_mask / _build_multi_layer_corner_mask 完全一致）
     ang_min, ang_max = CORNER_ANGLES[corner_key]
@@ -317,21 +374,124 @@ def _redraw_border_on_corner(
         local_validity = validity_arr[y1:y2, x1:x2]
         valid_region = valid_region & local_validity
 
-    # 只在边框厚度范围内应用边框颜色
-    # 超出边框厚度的深度保留原图内容
+    # === [Fix 遮挡] 智能重绘：装饰像素保护 ===
+    # 一次性对所有边框深度处理，但只在原图像素与边框色"足够相似"时
+    # 才用纯色边框色覆盖；否则保留原图内容（花朵、点线等）。
     for d in range(total_border_depth):
         d_region = valid_region & (depth >= d) & (depth < d + 1)
         if not np.any(d_region):
             continue
 
         color_idx = depth_mapping.get(d, 0)
-        color = border_layers[color_idx][0] if color_idx < len(border_layers) else (255, 255, 255)
+        target_color = border_layers[color_idx][0] if color_idx < len(border_layers) else (255, 255, 255)
+        target_color_arr = np.array(target_color, dtype=np.float64)
 
-        color_arr = np.array(color, dtype=result_arr.dtype)
+        # 获取本层所有候选像素的坐标
         local_coords = np.where(d_region)
+        if len(local_coords[0]) == 0:
+            continue
         global_y = local_coords[0] + y1
         global_x = local_coords[1] + x1
-        result_arr[global_y, global_x, :] = color_arr[np.newaxis, :]
+
+        # 装饰像素保护逻辑
+        if src_arr is not None:
+            # 取出 src_img 上对应位置的所有像素颜色
+            src_pixels = src_arr[global_y, global_x, :].astype(np.float64)  # [N, 3]
+
+            # 计算与目标边框层颜色的距离
+            dist_to_target = np.sqrt(
+                np.sum((src_pixels - target_color_arr.reshape(1, 3)) ** 2, axis=1)
+            )  # [N]
+
+            # [Fix C2] 严格的相邻层匹配：只允许"当前层或其直接邻居"通过过滤。
+            dists_nearby = [dist_to_target]
+            if color_idx + 1 < len(border_colors_arr):
+                next_color_arr = border_colors_arr[color_idx + 1]
+                dist_to_next = np.sqrt(
+                    np.sum((src_pixels - next_color_arr.reshape(1, 3)) ** 2, axis=1)
+                )
+                dists_nearby.append(dist_to_next)
+            if color_idx - 1 >= 0:
+                prev_color_arr = border_colors_arr[color_idx - 1]
+                dist_to_prev = np.sqrt(
+                    np.sum((src_pixels - prev_color_arr.reshape(1, 3)) ** 2, axis=1)
+                )
+                dists_nearby.append(dist_to_prev)
+
+            min_dist_adjacent = np.min(np.stack(dists_nearby, axis=0), axis=0)
+            threshold = TRANSITION_THRESHOLD if len(dists_nearby) > 1 else COLOR_DIST_THRESHOLD
+            match_filter = min_dist_adjacent <= threshold
+
+            # === [Fix D: 混合策略 — 解决细边框(塞纳时光)与厚装饰边框(花漾之约)兼容] ===
+            # 空间分区判断：对当前层 color_idx，根据它在两条直边上的 x/y 条带范围，
+            # 把像素分为"直边扩展带"和"对角内区"两部分：
+            #   1) 直边扩展带：像素落在 x 条带范围内 OR y 条带范围内。这些位置在原图中
+            #      本就应该是该层边框的像素（或其上的装饰花），使用 match_filter
+            #      可以正确保留花朵图案（花漾之约）。
+            #   2) 对角内区：两条直边都覆盖不到的扇形区（例如 45° 附近）。
+            #      细边框 + 大圆角时，此处的原图像素是"内部米色内容"（≠棕色边框色），
+            #      match_filter 会拒绝上色 → 出现 C 形缺口（塞纳时光）。
+            #      当该层颜色≠最内层内容色时（实际是有色边框层，不是内容填充色），
+            #      必须在这里强制绘制该层颜色，以完成"掰弯直线边框为圆弧"。
+            cum_before_i = cumulative_depths[color_idx]
+            cum_after_i = cumulative_depths[color_idx + 1]
+
+            if corner_key == 'tl':
+                x_left, x_right = cum_before_i, cum_after_i
+                y_top, y_bottom = cum_before_i, cum_after_i
+                in_left_strip = (global_x >= x_left) & (global_x < x_right)
+                in_top_strip = (global_y >= y_top) & (global_y < y_bottom)
+                in_extension = in_left_strip | in_top_strip
+            elif corner_key == 'tr':
+                x_left, x_right = w - cum_after_i, w - cum_before_i
+                y_top, y_bottom = cum_before_i, cum_after_i
+                in_right_strip = (global_x >= x_left) & (global_x < x_right)
+                in_top_strip = (global_y >= y_top) & (global_y < y_bottom)
+                in_extension = in_right_strip | in_top_strip
+            elif corner_key == 'bl':
+                x_left, x_right = cum_before_i, cum_after_i
+                y_top, y_bottom = h - cum_after_i, h - cum_before_i
+                in_left_strip = (global_x >= x_left) & (global_x < x_right)
+                in_bottom_strip = (global_y >= y_top) & (global_y < y_bottom)
+                in_extension = in_left_strip | in_bottom_strip
+            else:  # br
+                x_left, x_right = w - cum_after_i, w - cum_before_i
+                y_top, y_bottom = h - cum_after_i, h - cum_before_i
+                in_right_strip = (global_x >= x_left) & (global_x < x_right)
+                in_bottom_strip = (global_y >= y_top) & (global_y < y_bottom)
+                in_extension = in_right_strip | in_bottom_strip
+
+            diagonal_interior = ~in_extension
+
+            # [Fix D 升级] 与「图像中心采样得到的内部内容参考色」比较，
+            # 判断当前层是「有色边框层/设计线条」还是「内容填充色」。
+            # 色差大 → 有色边框层：对角内区强制绘制，把直框掰弯成圆弧（塞纳时光）
+            # 色差小 → 内容填充奶油色：对角内区不强制，防止盖花（花漾之约）
+            # 此判断不依赖 border_layers 的完整性，即使检测漏掉了中间/内层
+            # （细双线框只返回 2 棕色层）也能正确区分「框架棕色 ≠ 内容米色」。
+            layer_to_content_dist = float(np.sqrt(
+                np.sum((target_color_arr - content_ref_arr) ** 2)
+            ))
+            if layer_to_content_dist > COLOR_DIST_THRESHOLD:
+                force_paint = diagonal_interior
+            else:
+                force_paint = np.zeros_like(diagonal_interior, dtype=bool)
+
+            final_mask = match_filter | force_paint
+
+            # 只对判定为"真正边框像素"的坐标应用纯色覆盖
+            # 装饰像素（花朵/点线）不在此范围内 → 保留 result_img 中 paste 过来的原图内容
+            if not np.any(final_mask):
+                continue
+
+            apply_y = global_y[final_mask]
+            apply_x = global_x[final_mask]
+            color_fill = np.array(target_color, dtype=result_arr.dtype)
+            result_arr[apply_y, apply_x, :] = color_fill.reshape(1, 3)
+        else:
+            # Fallback：没有 src_img 时，仍按原逻辑覆盖（避免回归）
+            color_fill = np.array(target_color, dtype=result_arr.dtype)
+            result_arr[global_y, global_x, :] = color_fill.reshape(1, 3)
 
     # 回写结果
     new_img = Image.fromarray(result_arr.astype(np.uint8), mode='RGB')

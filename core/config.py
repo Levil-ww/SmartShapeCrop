@@ -109,6 +109,12 @@ BORDER_BG_SIMILARITY_THRESHOLD: int = 30
 # 边框扫描最大深度（像素）：_detect_border_layers 的 max_scan_depth_px 默认值
 BORDER_SCAN_MAX_DEPTH_PX: int = 300
 
+# [Fix E/S5 延伸] 检测结果的厚度硬上限（防止把内容区/花纹误判为超厚边框层）
+# 单一层最大厚度（厘米）：超过则判定为"内容区污染"，被截断或丢弃
+BORDER_MAX_SINGLE_LAYER_CM: float = 2.0
+# 所有层累计总厚度最大上限（厘米）：超过则丢弃最末层直到符合
+BORDER_MAX_TOTAL_CM: float = 3.0
+
 
 # ============================================================================
 # 单位换算

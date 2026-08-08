@@ -125,49 +125,194 @@ def load_source_image(path: str) -> Image.Image:
         return load_image_rgb(path)
 
 
+def _redraw_outer_border_on_corners(
+    result_img: Image.Image,
+    src_img: Image.Image,
+    corners_px: dict[str, int],
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    validity_mask: Image.Image,
+    bg_color: tuple = (255, 255, 255)
+) -> None:
+    """
+    在圆角裁剪后的结果上，重新绘制最外层的边框线，确保边框在圆角处连续。
+    
+    Args:
+        result_img: 裁剪后的结果图像 (将被原地修改)
+        src_img: 原始图像 (用于获取边框颜色)
+        corners_px: 四角圆角半径字典
+        border_layers: 边框层列表
+        validity_mask: 有效性遮罩
+        bg_color: 背景色
+    """
+    if not border_layers or not corners_px:
+        return
+    
+    w, h = result_img.size
+    arr = np.array(result_img, dtype=np.uint8)
+    mask_arr = np.array(validity_mask, dtype=np.uint8)
+    
+    # 只处理最外层的边框
+    outer_color, outer_thickness = border_layers[0]
+    
+    # 检查边框颜色是否与背景色相似（如果相似，说明可能是误检测，不绘制）
+    color_dist = np.sqrt(sum((a - b) ** 2 for a, b in zip(outer_color, bg_color)))
+    if color_dist < 30:
+        return
+    
+    # 检查边框厚度是否合理（如果太厚，说明可能是误检测，不绘制）
+    # 边框厚度不应超过图像短边的 10%
+    max_reasonable_thickness = min(w, h) * 0.1
+    if outer_thickness > max_reasonable_thickness:
+        return
+    
+    outer_color_arr = np.array(outer_color, dtype=np.uint8)
+    
+    for corner_key, r_px in corners_px.items():
+        if r_px <= 0:
+            continue
+        
+        # 计算该角的圆心位置
+        if corner_key == 'tl':
+            cx, cy = r_px, r_px
+        elif corner_key == 'tr':
+            cx, cy = w - r_px, r_px
+        elif corner_key == 'bl':
+            cx, cy = r_px, h - r_px
+        else:  # br
+            cx, cy = w - r_px, h - r_px
+        
+        # 计算处理区域（扩展到圆角外边缘 + 边框厚度）
+        x1 = max(0, cx - r_px - outer_thickness - 5)
+        y1 = max(0, cy - r_px - outer_thickness - 5)
+        x2 = min(w, cx + r_px + outer_thickness + 5)
+        y2 = min(h, cy + r_px + outer_thickness + 5)
+        
+        if x2 <= x1 or y2 <= y1:
+            continue
+        
+        # 创建坐标网格
+        yy, xx = np.mgrid[y1:y2, x1:x2].astype(np.float64)
+        dx = xx - float(cx)
+        dy = yy - float(cy)
+        dist = np.sqrt(dx * dx + dy * dy)
+        
+        # 计算角度
+        angle = np.degrees(np.arctan2(dy, dx))
+        angle = np.mod(angle, 360.0)
+        
+        ang_min, ang_max = CORNER_ANGLES[corner_key]
+        
+        # 条件1: 在圆角的角度范围内（扩展5度以确保覆盖到直边连接点）
+        in_angle = (angle >= ang_min - 5) & (angle <= ang_max + 5)
+        
+        # 条件2: 在最外层边框的环形区域
+        # 外边: dist <= r_px + border_thickness + 3 (圆角外缘，考虑边框厚度)
+        # 内边: dist >= r_px - outer_thickness - 1 (最外层边框的内缘)
+        outer_bound = r_px + outer_thickness + 3
+        inner_bound = max(0, r_px - outer_thickness - 1)
+        in_ring = (dist <= outer_bound) & (dist >= inner_bound)
+        
+        # 条件3: 在有效性遮罩内，或者在圆角外缘附近（允许绘制到边缘）
+        valid_region = mask_arr[y1:y2, x1:x2] > 0
+        
+        # 圆角外缘附近的区域（允许绘制，不受mask限制）
+        near_outer_edge = (dist >= r_px - outer_thickness - 1) & (dist <= r_px + outer_thickness + 3)
+        
+        # 综合条件：在mask内 OR 在圆角外缘附近
+        should_draw = in_angle & in_ring & (valid_region | near_outer_edge)
+        
+        if np.any(should_draw):
+            # 绘制最外层边框颜色
+            arr[y1:y2, x1:x2][should_draw] = outer_color_arr
+    
+    # 回写结果
+    result_img.paste(Image.fromarray(arr, 'RGB'))
+
+
 def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int = 150, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """
     对整张图片应用四角圆角裁剪。
     裁剪半径 = 指定的圆角半径（不做扩展）。
-    裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
-
-    圆角 mask 算法统一委托给 core.corner.algorithm.carve_corner_on_mask。
-
-    Args:
-        img: 输入图片（RGB 模式）
-        corners: 四角圆角半径(cm)字典，键为 tl/tr/bl/br
-        dpi: DPI，用于将厘米转为像素
-        bg_color: 圆角处背景色
-
-    Returns:
-        应用圆角后的图片
+    
+    [关键修正]：采用 Mask 剪切策略 + 重绘最外层边框
+    - 生成圆角 Mask 裁切原图
+    - 在圆角边缘重新绘制最外层边框，确保边框在圆角处连续
+    - 内部线条保持直线，被圆角自然截断
     """
     w, h = img.size
 
-    # 检测原图边框层（带 fallback）
+    # 检测原图边框层
     border_layers = _get_border_layers_robust(img, bg_color)
 
-    mask = Image.new('L', (w, h), 255)  # 全不透明（保留原图）
+    # 创建一个全黑的遮罩 (0 = 全透明)
+    mask = Image.new('L', (w, h), 0)
+    draw = ImageDraw.Draw(mask)
 
-    # 统一圆角处理：厘米 → 像素，整图 rect=(0,0,w,h)
+    # 统一圆角处理：厘米 → 像素
     corners_px = {}
+    r_cap = max(1, min(w, h) // 2)
     for corner_key, radius_cm in corners.items():
         if radius_cm <= 0:
             continue
-        corners_px[corner_key] = max(1, int(round(radius_cm * dpi / 2.54)))
-    carve_corner_on_mask(mask, (0, 0, w, h), corners_px, canvas_size=(w, h))
+        r_raw = max(1, int(round(radius_cm * dpi / 2.54)))
+        corners_px[corner_key] = min(r_raw, r_cap)
+
+    # 确定各角半径
+    tl_r = corners_px.get('tl', 0)
+    tr_r = corners_px.get('tr', 0)
+    br_r = corners_px.get('br', 0)
+    bl_r = corners_px.get('bl', 0)
+    
+    # 如果四角半径相同，直接使用 PIL 的 rounded_rectangle
+    if tl_r == tr_r == br_r == bl_r:
+        r = tl_r
+        if r > 0:
+            draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
+        else:
+            draw.rectangle([0, 0, w - 1, h - 1], fill=255)
+    else:
+        # 四角半径不同，手动绘制
+        inner_x1 = max(tl_r, bl_r)
+        inner_y1 = max(tl_r, tr_r)
+        inner_x2 = w - 1 - max(tr_r, br_r)
+        inner_y2 = h - 1 - max(bl_r, br_r)
+        
+        # 1. 填充中心区域
+        if inner_x2 > inner_x1 and inner_y2 > inner_y1:
+            draw.rectangle([inner_x1, inner_y1, inner_x2, inner_y2], fill=255)
+            
+        # 2. 填充四条边
+        if inner_x2 > inner_x1 and inner_y1 >= 0:
+            draw.rectangle([inner_x1, 0, inner_x2, inner_y1], fill=255)
+        if inner_x2 > inner_x1 and inner_y2 < h:
+            draw.rectangle([inner_x1, inner_y2, inner_x2, h - 1], fill=255)
+        if inner_y2 > inner_y1 and inner_x1 >= 0:
+            draw.rectangle([0, inner_y1, inner_x1, inner_y2], fill=255)
+        if inner_y2 > inner_y1 and inner_x2 < w:
+            draw.rectangle([inner_x2, inner_y1, w - 1, inner_y2], fill=255)
+            
+        # 3. 绘制四个圆角
+        if tl_r > 0:
+            draw.pieslice([0, 0, tl_r * 2, tl_r * 2], start=180, end=270, fill=255)
+        if tr_r > 0:
+            cx, cy = w - 1 - tr_r, tr_r
+            draw.pieslice([cx - tr_r, cy - tr_r, cx + tr_r, cy + tr_r], start=270, end=360, fill=255)
+        if br_r > 0:
+            cx, cy = w - 1 - br_r, h - 1 - br_r
+            draw.pieslice([cx - br_r, cy - br_r, cx + br_r, cy + br_r], start=0, end=90, fill=255)
+        if bl_r > 0:
+            cx, cy = bl_r, h - 1 - bl_r
+            draw.pieslice([cx - bl_r, cy - bl_r, cx + bl_r, cy + bl_r], start=90, end=180, fill=255)
 
     # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=mask)
 
-    # 在圆角弧线上重新绘制边框层（[Fix A/S1] 传入 mask 作为 validity_mask，
-    # 绝对不允许把已裁成背景色的尖角区域重新涂色，防止扇形向内折叠+色差）
-    if border_layers:
-        for corner_key, r_px in corners_px.items():
-            _redraw_border_on_corner(
-                result, corner_key, r_px, border_layers,
-                src_img=img, validity_mask=mask)
+    # 在圆角边缘重新绘制最外层边框，确保边框在圆角处连续
+    if border_layers and corners_px:
+        _redraw_outer_border_on_corners(
+            result, img, corners_px, border_layers, mask, bg_color
+        )
 
     return result
 
@@ -260,110 +405,97 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
                                pre_detected_layers: list[tuple[tuple[int, int, int], int]] = None) -> Image.Image:
     """
     仅对边框区域应用圆角，内部保持直角。
-    裁剪后会在圆角弧线上重新绘制边框层，确保边框线跟随圆弧轮廓。
-
-    [新版实现] 使用多层边框动态圆角算法：
-    - 检测图像的边框层（颜色、厚度）
-    - 每层有效圆角半径：R_eff_i = max(0, R_total - cumulative_i)
-    - 半径耗尽的层自动变为直角
-    - 内部区域（超过所有边框层累计深度）始终保持直角
-
-    Args:
-        img: 输入图片（RGB 模式）
-        corners: 四角圆角半径(cm)字典，键为 tl/tr/bl/br
-        dpi: DPI
-        bg_color: 圆角处背景色
-        border_width_cm: 边框宽度(cm)（用于 fallback，当检测不到边框层时使用）
-        pre_detected_layers: 预检测的边框层列表 [(color, thickness_px), ...]，
-                            如果提供则使用这些数据而不是重新检测
-
-    Returns:
-        应用边框圆角后的图片
+    
+    [关键修正]：采用 Mask 剪切策略 + 重绘最外层边框
+    - 生成圆角 Mask 裁切原图
+    - 在圆角边缘重新绘制最外层边框，确保边框在圆角处连续
+    - 内部线条保持直线，被圆角自然截断
     """
     w, h = img.size
 
-    # ---- 步骤 1: 获取边框层信息 ----
+    # 获取边框层信息
     if pre_detected_layers:
-        # 使用预检测的边框层（从源图检测并按比例缩放）
         border_layers = pre_detected_layers
     else:
-        # 从当前图像检测边框层
         border_layers = _get_border_layers_robust(img, bg_color)
-    total_border_thickness = sum(t for _, t in border_layers) if border_layers else 0
-
-    # 计算最大圆角半径（像素）
-    max_r = 0
-    for radius_cm in corners.values():
-        if radius_cm > max_r:
-            max_r = radius_cm
-    max_r_px = max(1, int(round(max_r * dpi / 2.54)))
 
     # 构建 corners_px 字典
     corners_px = {}
+    r_cap = max(1, min(w, h) // 2)
     for corner_key, radius_cm in corners.items():
         if radius_cm <= 0:
             continue
-        corners_px[corner_key] = max(1, int(round(radius_cm * dpi / 2.54)))
+        r_raw = max(1, int(round(radius_cm * dpi / 2.54)))
+        corners_px[corner_key] = min(r_raw, r_cap)
 
-    # ---- 安全检查：边框深度不能超过图像一半 ----
-    # 使用检测到的边框层总厚度或默认边框宽度
-    effective_border_depth = max(total_border_thickness,
-                                 int(round(border_width_cm * dpi / 2.54)))
+    if not corners_px:
+        return img
 
-    # 如果边框深度超过图像一半，退化为整体圆角
-    # 注意：对于预检测的边框层，跳过此检查（因为预检测的厚度是准确的）
-    if not pre_detected_layers and (effective_border_depth * 2 >= w or effective_border_depth * 2 >= h):
-        logger.warning(
-            "apply_border_only_corners: effective_border_depth=%d 超过半图（w=%d,h=%d），"
-            "退化为整体圆角。检测层数=%d, 总检测厚度=%dpx",
-            effective_border_depth, w, h, len(border_layers), total_border_thickness,
-        )
-        return apply_rounded_corners(img, corners, dpi, bg_color)
+    # 创建一个全黑的遮罩 (0 = 全透明)
+    mask = Image.new('L', (w, h), 0)
+    draw = ImageDraw.Draw(mask)
 
-    # ---- 步骤 2: 构建多层边框动态圆角遮罩 ----
-    if corners_px:
-        # 使用新的多层动态圆角算法
-        final_mask = _build_multi_layer_corner_mask(
-            w, h, corners_px, border_layers
-        )
+    # 确定各角半径
+    tl_r = corners_px.get('tl', 0)
+    tr_r = corners_px.get('tr', 0)
+    br_r = corners_px.get('br', 0)
+    bl_r = corners_px.get('bl', 0)
+    
+    # 兼容旧版 PIL
+    if tl_r == tr_r == br_r == bl_r:
+        r = tl_r
+        if r > 0:
+            draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
+        else:
+            draw.rectangle([0, 0, w - 1, h - 1], fill=255)
     else:
-        # Fallback：没有检测到边框层或没有圆角时，使用原逻辑
-        logger.info("apply_border_only_corners: 未检测到边框层或无圆角，使用 fallback 逻辑")
-        border_w_px = max(1, int(round(border_width_cm * dpi / 2.54)))
+        # 四角半径不同，手动绘制
+        inner_x1 = max(tl_r, bl_r)
+        inner_y1 = max(tl_r, tr_r)
+        inner_x2 = w - 1 - max(tr_r, br_r)
+        inner_y2 = h - 1 - max(bl_r, br_r)
+        
+        # 1. 填充中心区域
+        if inner_x2 > inner_x1 and inner_y2 > inner_y1:
+            draw.rectangle([inner_x1, inner_y1, inner_x2, inner_y2], fill=255)
+            
+        # 2. 填充四条边
+        if inner_x2 > inner_x1 and inner_y1 >= 0:
+            draw.rectangle([inner_x1, 0, inner_x2, inner_y1], fill=255)
+        if inner_x2 > inner_x1 and inner_y2 < h:
+            draw.rectangle([inner_x1, inner_y2, inner_x2, h - 1], fill=255)
+        if inner_y2 > inner_y1 and inner_x1 >= 0:
+            draw.rectangle([0, inner_y1, inner_x1, inner_y2], fill=255)
+        if inner_y2 > inner_y1 and inner_x2 < w:
+            draw.rectangle([inner_x2, inner_y1, w - 1, inner_y2], fill=255)
+            
+        # 3. 绘制四个圆角
+        if tl_r > 0:
+            draw.pieslice([0, 0, tl_r * 2, tl_r * 2], start=180, end=270, fill=255)
+        if tr_r > 0:
+            cx, cy = w - 1 - tr_r, tr_r
+            draw.pieslice([cx - tr_r, cy - tr_r, cx + tr_r, cy + tr_r], start=270, end=360, fill=255)
+        if br_r > 0:
+            cx, cy = w - 1 - br_r, h - 1 - br_r
+            draw.pieslice([cx - br_r, cy - br_r, cx + br_r, cy + br_r], start=0, end=90, fill=255)
+        if bl_r > 0:
+            cx, cy = bl_r, h - 1 - bl_r
+            draw.pieslice([cx - bl_r, cy - bl_r, cx + bl_r, cy + bl_r], start=90, end=180, fill=255)
 
-        if border_w_px < max_r_px:
-            border_w_px = max_r_px
-
-        full_mask = Image.new('L', (w, h), 255)
-        carve_corner_on_mask(full_mask, (0, 0, w, h), corners_px, canvas_size=(w, h))
-
-        inner_mask = Image.new('L', (w, h), 0)
-        inner_draw = ImageDraw.Draw(inner_mask)
-        inner_x1 = max(0, min(border_w_px, w - 2))
-        inner_y1 = max(0, min(border_w_px, h - 2))
-        inner_x2 = max(inner_x1 + 1, min(w - 1, w - border_w_px))
-        inner_y2 = max(inner_y1 + 1, min(h - 1, h - border_w_px))
-        inner_draw.rectangle([inner_x1, inner_y1, inner_x2, inner_y2], fill=255)
-
-        zero_img = Image.new('L', (w, h), 0)
-        border_region_mask = Image.composite(zero_img, full_mask, inner_mask)
-        final_mask = Image.composite(inner_mask, border_region_mask, inner_mask)
-
-    # ---- 步骤 3: 应用遮罩 ----
+    # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)
-    result.paste(img, mask=final_mask)
+    result.paste(img, mask=mask)
 
-    # ---- 步骤 4: 在圆角弧线上重新绘制边框层 ----
+    # 在圆角边缘重新绘制最外层边框，确保边框在圆角处连续
     if border_layers and corners_px:
-        for corner_key, r_px in corners_px.items():
-            _redraw_border_on_corner(
-                result, corner_key, r_px, border_layers,
-                src_img=img, validity_mask=final_mask)
+        _redraw_outer_border_on_corners(
+            result, img, corners_px, border_layers, mask, bg_color
+        )
 
     return result
 
 
-def _smart_crop(src: Image.Image, target_w_px: int, target_h_px: int,
+def _smart_crop(src: Image.Image, target_w_px: int,
                 max_crop_ratio: float = 0.15, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """
     智能裁剪：当源图和目标比例差异较小时用 cover，差异较大时用 contain。
