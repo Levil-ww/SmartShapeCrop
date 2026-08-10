@@ -9,8 +9,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # 提高像素上限：业务常处理印刷级超大图（如 EPS 栅格化后超过 1 亿像素），
-# 默认 89478485 像素会触发 DecompressionBombWarning，设为 None 关闭限制。
-Image.MAX_IMAGE_PIXELS = None
+# 默认 89478485 像素会触发 DecompressionBombWarning。
+# 改为 2 亿像素上限（约 14142 × 14142），既能覆盖最大印刷图，又能防御恶意超大图。
+Image.MAX_IMAGE_PIXELS = 200_000_000
 
 from .geometry import CropDesign, compute_border_bands
 

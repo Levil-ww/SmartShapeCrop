@@ -14,52 +14,10 @@ core/corner/sector_render.py
 向后兼容：原 core/image_cropper.py 已改为薄重导出 shim，旧导入路径继续可用。
 """
 from __future__ import annotations
-import math
 import numpy as np
 from PIL import Image
 
 from .algorithm import CORNER_ANGLES
-
-
-def _angle_bottom(corner_key: str, R: np.ndarray | float, depth: np.ndarray | float) -> np.ndarray | float:
-    """
-    计算指定深度 depth 处，bottom/top 边的直线与圆弧交点的角度（度）。
-    支持 numpy 数组，向量化。
-
-    历史用途：早期版本使用本函数计算随深度收窄的角度，但会导致内层边框在圆弧上
-    无法覆盖直线到圆弧的连接区域。当前 _build_border_sector_mask 改用固定角度范围
-    （CORNER_ANGLES），本函数仅作为内部辅助保留，未被外部调用。
-    """
-    ratio = (np.asarray(R, dtype=np.float64) - np.asarray(depth, dtype=np.float64)) / np.asarray(R, dtype=np.float64)
-    ratio = np.clip(ratio, -1.0, 1.0)
-    arcsin = np.degrees(np.arcsin(ratio))
-    if corner_key == 'bl':
-        return 180.0 - arcsin
-    elif corner_key == 'br':
-        return arcsin
-    elif corner_key == 'tr':
-        return 360.0 - arcsin
-    else:  # tl
-        return 180.0 + arcsin
-
-
-def _angle_side(corner_key: str, R: np.ndarray | float, depth: np.ndarray | float) -> np.ndarray | float:
-    """
-    计算指定深度 depth 处，left/right 边的直线与圆弧交点的角度（度）。
-    支持 numpy 数组，向量化。
-
-    历史用途：同 _angle_bottom，当前未在固定角度方案中使用。
-    """
-    ratio = (np.asarray(R, dtype=np.float64) - np.asarray(depth, dtype=np.float64)) / np.asarray(R, dtype=np.float64)
-    ratio = np.clip(ratio, -1.0, 1.0)
-    if corner_key == 'bl':
-        return np.degrees(np.arccos(-ratio))
-    elif corner_key == 'br':
-        return np.degrees(np.arccos(ratio))
-    elif corner_key == 'tr':
-        return 360.0 - np.degrees(np.arccos(ratio))
-    else:  # tl
-        return 180.0 + np.degrees(np.arccos(ratio))
 
 
 def _build_border_sector_mask(
@@ -619,77 +577,3 @@ def _redraw_border_on_corner(
     # 回写结果
     new_img = Image.fromarray(result_arr.astype(np.uint8), mode='RGB')
     result_img.paste(new_img)
-
-
-def _sample_line_border_color(
-    src_arr: np.ndarray, corner_key: str,
-    w: int, h: int, depth: int,
-    thickness: int,
-) -> tuple[int, int, int]:
-    """
-    从原图的直线边框区域采样指定深度的颜色。
-
-    Args:
-        src_arr: 原图的 numpy 数组
-        corner_key: 角落标识
-        w: 图像宽度
-        h: 图像高度
-        depth: 采样深度（像素）
-        thickness: 边框厚度（用于确定采样范围）
-
-    Returns:
-        采样的颜色 (R, G, B)
-    """
-    # 确定采样边（与该角相邻的两条直线边）
-    if corner_key == 'tl':
-        edges = ['top', 'left']
-    elif corner_key == 'tr':
-        edges = ['top', 'right']
-    elif corner_key == 'bl':
-        edges = ['bottom', 'left']
-    else:  # br
-        edges = ['bottom', 'right']
-
-    samples = []
-    
-    for edge in edges:
-        if edge == 'top':
-            y = depth
-            if 0 <= y < h:
-                # 采样水平方向中间部分
-                x_start = w // 4
-                x_end = w * 3 // 4
-                if x_end > x_start:
-                    samples.append(src_arr[y, x_start:x_end, :])
-        elif edge == 'bottom':
-            y = h - 1 - depth
-            if 0 <= y < h:
-                x_start = w // 4
-                x_end = w * 3 // 4
-                if x_end > x_start:
-                    samples.append(src_arr[y, x_start:x_end, :])
-        elif edge == 'left':
-            x = depth
-            if 0 <= x < w:
-                y_start = h // 4
-                y_end = h * 3 // 4
-                if y_end > y_start:
-                    samples.append(src_arr[y_start:y_end, x, :])
-        else:  # right
-            x = w - 1 - depth
-            if 0 <= x < w:
-                y_start = h // 4
-                y_end = h * 3 // 4
-                if y_end > y_start:
-                    samples.append(src_arr[y_start:y_end, x, :])
-
-    if not samples:
-        return (0, 0, 0)
-
-    all_pixels = np.concatenate([s.reshape(-1, 3) for s in samples if s.size > 0], axis=0)
-    if all_pixels.shape[0] == 0:
-        return (0, 0, 0)
-
-    # 取中位数作为代表颜色
-    median_color = np.median(all_pixels, axis=0)
-    return tuple(int(round(v)) for v in median_color.tolist())

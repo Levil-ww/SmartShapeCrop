@@ -225,6 +225,9 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
       近背景色被误判为边框层
     - ② 新增相邻同色合并：颜色相近的相邻层自动合并，防止抗锯齿/渐变制造假层数
 
+    [性能优化] 扫描序列提取 + 平滑 + 距离检测全部 numpy 向量化，
+    避免逐像素 Python 循环导致的 300DPI 大图卡顿。
+
     Args:
         img: 输入图片（RGB）
         max_scan_depth_px: 最大扫描深度（像素），默认引用 config.BORDER_SCAN_MAX_DEPTH_PX
@@ -237,14 +240,11 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     w, h = img.size
     arr = np.array(img)
 
-    # 阈值统一引用 config.BORDER_COLOR_DISTANCE_THRESHOLD（欧氏距离）
     COLOR_DIFF_THRESHOLD = BORDER_COLOR_DISTANCE_THRESHOLD
-    # 最小层厚度统一引用 config.BORDER_MIN_LAYER_THICKNESS_PX
     MIN_LAYER_THICKNESS = BORDER_MIN_LAYER_THICKNESS_PX
-    # 背景色相似度阈值（用于过滤背景层）
     BG_THRESHOLD = BORDER_BG_SIMILARITY_THRESHOLD
 
-    # 从4条边的中点向内扫描，取平均结果
+    # --- 向量化扫描：从 4 条边的中点各取一条色序列 ---
     scan_configs = [
         ('bottom', w // 2, None),
         ('top', w // 2, None),
@@ -255,81 +255,67 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     all_color_seqs = []
 
     for edge, pos, _ in scan_configs:
-        colors = []
         if edge in ('bottom', 'top'):
             depth = min(max_scan_depth_px, h // 4)
             if depth < 10:
                 continue
-            for dy in range(depth):
-                if edge == 'bottom':
-                    y = h - 1 - dy
-                else:
-                    y = dy
-                colors.append(tuple(arr[y, pos, :]))
+            if edge == 'bottom':
+                y_indices = np.arange(h - 1, h - 1 - depth, -1)
+            else:
+                y_indices = np.arange(depth)
+            seq = arr[y_indices, pos, :].astype(np.float64)
         else:
             depth = min(max_scan_depth_px, w // 4)
             if depth < 10:
                 continue
-            for dx in range(depth):
-                if edge == 'left':
-                    x = dx
-                else:
-                    x = w - 1 - dx
-                colors.append(tuple(arr[pos, x, :]))
+            if edge == 'left':
+                x_indices = np.arange(depth)
+            else:
+                x_indices = np.arange(w - 1, w - 1 - depth, -1)
+            seq = arr[pos, x_indices, :].astype(np.float64)
 
-        if len(colors) >= 10:
-            all_color_seqs.append(colors)
+        if len(seq) >= 10:
+            all_color_seqs.append(seq)
 
     if not all_color_seqs:
         return []
 
-    # 合并所有扫描结果，检测颜色变化
-    # 主用底边扫描，辅以其他扫描结果验证
-    main_colors = all_color_seqs[0]  # 底边
-
+    # 主用底边扫描
+    main_colors = all_color_seqs[0]
     if len(main_colors) < 10:
         return []
 
-    # 对颜色序列进行平滑处理（减少噪声）
-    smoothed_colors = []
+    # --- 向量化平滑：滑动窗口均值 ---
     window_size = 3
-    for i in range(len(main_colors)):
-        start = max(0, i - window_size // 2)
-        end = min(len(main_colors), i + window_size // 2 + 1)
-        window = main_colors[start:end]
-        avg_color = tuple(int(round(np.mean([c[j] for c in window]))) for j in range(3))
-        smoothed_colors.append(avg_color)
+    pad = window_size // 2
+    padded = np.pad(main_colors, ((pad, pad), (0, 0)), mode='edge')
+    smoothed = np.zeros_like(main_colors)
+    for j in range(3):
+        smoothed[:, j] = np.convolve(padded[:, j], np.ones(window_size) / window_size, mode='valid')
 
-    # 使用颜色距离阈值检测层边界
+    # --- 向量化颜色距离检测 ---
+    diffs = np.sqrt(np.sum(np.diff(smoothed, axis=0) ** 2, axis=1))
+    change_mask = diffs > COLOR_DIFF_THRESHOLD
+    change_indices = np.where(change_mask)[0]
+
+    # 构建层列表
     layers = []
-    current_color = smoothed_colors[0]
-    current_start = 0
-
-    for i in range(1, len(smoothed_colors)):
-        # 计算欧几里得颜色距离
-        dist = np.sqrt(sum((a - b) ** 2 for a, b in zip(smoothed_colors[i], current_color)))
-        if dist > COLOR_DIFF_THRESHOLD:
-            thickness = i - current_start
-            if thickness >= MIN_LAYER_THICKNESS:
-                layers.append((current_color, thickness))
-            current_color = smoothed_colors[i]
-            current_start = i
-
-    # 添加最后一层
-    thickness = len(smoothed_colors) - current_start
-    if thickness >= MIN_LAYER_THICKNESS:
-        layers.append((current_color, thickness))
+    starts = np.concatenate(([0], change_indices + 1, [len(smoothed)]))
+    for k in range(len(starts) - 1):
+        s, e = int(starts[k]), int(starts[k + 1])
+        thickness = e - s
+        if thickness >= MIN_LAYER_THICKNESS:
+            avg_color = np.mean(smoothed[s:e], axis=0)
+            color_tuple = tuple(int(round(v)) for v in avg_color)
+            layers.append((color_tuple, thickness))
 
     # [Fix P0-2 / 修复② 相邻同色合并]
-    # 扫描 colors 时的阈值边界会导致相近颜色被拆成多层（抗锯齿/渐变），
-    # 这里把颜色距离 <= COLOR_DIFF_THRESHOLD 的相邻层重新合并。
     if len(layers) >= 2:
         merged: list[tuple[tuple[int, int, int], int]] = []
         cur_col, cur_t = layers[0]
         for col, t in layers[1:]:
-            d = np.sqrt(sum((a - b) ** 2 for a, b in zip(col, cur_col)))
+            d = float(np.sqrt(sum((a - b) ** 2 for a, b in zip(col, cur_col))))
             if d <= COLOR_DIFF_THRESHOLD:
-                # 颜色相近：按厚度加权合并颜色，厚度累加
                 total_t = cur_t + t
                 if total_t > 0:
                     cur_col = tuple(int(round((cur_col[j] * cur_t + col[j] * t) / total_t)) for j in range(3))
@@ -341,35 +327,30 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
         layers = merged
 
     # [Fix P0-2 / 修复① 背景色过滤]
-    # 如果调用方提供了 bg_color，剔除与背景色过于相似的层（通常是最内层的"假边框"，
-    # 本质是渐变到背景的过渡带），防止 142px / 5 层这类严重虚高。
     if bg_color is not None and layers:
         filtered: list[tuple[tuple[int, int, int], int]] = []
         for col, t in layers:
-            d = np.sqrt(sum((a - b) ** 2 for a, b in zip(col, bg_color)))
+            d = float(np.sqrt(sum((a - b) ** 2 for a, b in zip(col, bg_color))))
             if d <= BG_THRESHOLD:
-                # 视为背景，跳过（通常是最末的内几层，丢掉不会丢失真实边框）
                 continue
             filtered.append((col, t))
         layers = filtered
 
-    # 如果没有检测到层，使用 fallback：取最边缘像素颜色作为第一层
+    # 如果没有检测到层，使用 fallback
     if not layers:
         edge_color = tuple(arr[h - 1, w // 2, :])
-        # 估算边框厚度：扫描到第一个明显颜色变化为止
         est_thickness = 0
         for dy in range(min(50, h // 4)):
             y = h - 1 - dy
             color = tuple(arr[y, w // 2, :])
-            dist = np.sqrt(sum((a - b) ** 2 for a, b in zip(color, edge_color)))
+            dist = float(np.sqrt(sum((a - b) ** 2 for a, b in zip(color, edge_color))))
             if dist > COLOR_DIFF_THRESHOLD * 2:
                 break
             est_thickness += 1
         if est_thickness >= MIN_LAYER_THICKNESS:
             layers.append((edge_color, est_thickness))
 
-    # [Fix E/S5 延伸] 检测最后一步统一施加厚度硬上限，
-    # 防止扫描深度 300px 把末尾层撑到 5cm 厚度，覆盖掉花朵装饰。
+    # [Fix E/S5] 统一施加厚度硬上限
     layers = _enforce_border_thickness_caps(layers)
 
     return layers
@@ -380,6 +361,8 @@ def _scan_edge_boundaries(img_arr: np.ndarray,
                           max_depth_pct: float = 0.45) -> list[int]:
     """
     从某一条边向内扫描，检测颜色突变的边界位置。
+
+    [性能优化] 使用 numpy 数组操作代替逐像素 Python 循环。
 
     Args:
         img_arr: H×W×3 的 numpy 数组（RGB）
@@ -401,16 +384,15 @@ def _scan_edge_boundaries(img_arr: np.ndarray,
         perp_len = H
         max_depth = int(axis_len * max_depth_pct)
 
-    max_depth = max(max_depth, 20)  # 至少扫描 20px
+    max_depth = max(max_depth, 20)
 
-    # 取一条垂/水平中线上的像素，计算每一步的颜色变化
-    # 为更鲁棒，取中线 ±10% 范围内几条线的平均
+    # 取中线 ±10% 范围内 3 条采样线
     perp_mid = perp_len // 2
     perp_span = max(1, int(perp_len * 0.1))
     sample_lines = [perp_mid - perp_span, perp_mid, perp_mid + perp_span]
     sample_lines = [max(_EDGE_IGNORE_PX, min(perp_len - 1 - _EDGE_IGNORE_PX, s)) for s in sample_lines]
 
-    # 构造扫描顺序：从外到内的索引序列
+    # 构造扫描索引序列
     if edge == 'top':
         indices = list(range(_EDGE_IGNORE_PX, min(axis_len - _EDGE_IGNORE_PX, _EDGE_IGNORE_PX + max_depth), _BORDER_SCAN_STEP))
     elif edge == 'bottom':
@@ -427,59 +409,49 @@ def _scan_edge_boundaries(img_arr: np.ndarray,
     if len(indices) < 3:
         return []
 
-    # 对每条采样线计算颜色强度（R+G+B）随深度的变化
-    all_diff = np.zeros(len(indices), dtype=np.float64)
+    # --- 向量化：对所有采样线一次提取所有像素 ---
+    idx_arr = np.array(indices)
+    n_lines = len(sample_lines)
+    n_indices = len(idx_arr)
+    all_diff = np.zeros(n_indices, dtype=np.float64)
+
     for line_pos in sample_lines:
-        values = []
-        for idx in indices:
-            if edge in ('top', 'bottom'):
-                px = img_arr[idx, line_pos, :].astype(np.float64)
-            else:
-                px = img_arr[line_pos, idx, :].astype(np.float64)
-            values.append(px.sum())  # 用亮度总和衡量
-        values = np.array(values, dtype=np.float64)
-        # 计算一阶差分绝对值
+        if edge in ('top', 'bottom'):
+            pixels = img_arr[idx_arr, line_pos, :].astype(np.float64)
+        else:
+            pixels = img_arr[line_pos, idx_arr, :].astype(np.float64)
+        values = pixels.sum(axis=1)
         if len(values) > 1:
             diff = np.abs(np.diff(values))
-            # 差分比索引短1，末尾补0对齐
             diff = np.concatenate([diff, [0.0]])
             all_diff += diff
 
-    # 平均化
-    all_diff /= len(sample_lines)
+    all_diff /= n_lines
 
-    # 寻找显著的差分峰值（颜色突变点 = 边界）
-    threshold = _BORDER_COLOR_DIFF_THRESHOLD * 3  # 因为用的是 R+G+B 总和
-    peak_indices = []
-    for i in range(1, len(all_diff) - 1):
-        if (all_diff[i] >= threshold
-                and all_diff[i] >= all_diff[i - 1]
-                and all_diff[i] >= all_diff[i + 1]):
-            peak_indices.append(i)
+    # --- 向量化找峰值 ---
+    threshold = _BORDER_COLOR_DIFF_THRESHOLD * 3
+    if len(all_diff) < 3:
+        return []
+    prev_vals = all_diff[:-2]
+    curr_vals = all_diff[1:-1]
+    next_vals = all_diff[2:]
+    peak_mask = (curr_vals >= threshold) & (curr_vals >= prev_vals) & (curr_vals >= next_vals)
+    peak_indices = np.where(peak_mask)[0] + 1  # +1 因为 curr_vals 从索引 1 开始
 
-    # 把峰值对应的"扫描索引位置"转换为实际像素坐标，并按距离外边缘从小到大排序
-    boundaries_px = []
-    seen = set()
+    # --- 转换为像素坐标，去重+合并过近的边界 ---
+    boundaries_px: list[int] = []
+    seen: set[int] = set()
     for pi in peak_indices:
-        actual = indices[pi]
-        # 与已有的边界距离过近则合并
-        too_close = False
-        for b in boundaries_px:
-            if abs(actual - b) < _BORDER_MIN_GAP_PX:
-                too_close = True
-                break
+        actual = int(idx_arr[pi])
+        too_close = any(abs(actual - b) < _BORDER_MIN_GAP_PX for b in boundaries_px)
         if not too_close and actual not in seen:
             boundaries_px.append(actual)
             seen.add(actual)
 
     # 统一排序：按"距最外边缘"由近到远
-    if edge == 'top':
+    if edge in ('top', 'left'):
         boundaries_px.sort()
-    elif edge == 'bottom':
-        boundaries_px.sort(reverse=True)
-    elif edge == 'left':
-        boundaries_px.sort()
-    else:  # right
+    else:  # bottom, right
         boundaries_px.sort(reverse=True)
 
     return boundaries_px[:_BORDER_MAX_LAYERS]

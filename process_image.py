@@ -5,7 +5,8 @@
 import os
 from PIL import Image
 
-Image.MAX_IMAGE_PIXELS = None
+# 像素上限设为 2 亿（约 14142×14142），覆盖印刷级大图的同时防御解压缩炸弹
+Image.MAX_IMAGE_PIXELS = 200_000_000
 
 from core.image_cropper import (
     load_source_image,

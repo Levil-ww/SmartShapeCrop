@@ -12,14 +12,14 @@ core/image_cropper.py
 圆角处理统一委托给 core.corner 子包，确保与 geometry.py、
 process_image.py 三处圆角逻辑完全一致。
 
-子包拆分（向后兼容，所有名称在本模块仍可直接导入）：
+子包拆分：
   - core.corner.algorithm: 单步扇形切割算法
   - core.corner.detection: 边框层自动检测（_detect_border_layers /
     detect_nested_rect_layers / _scan_edge_boundaries /
     _get_border_layers_robust + 内部参数常量）
   - core.corner.sector_render: 圆角弧线上的多层边框重绘
     （_redraw_border_on_corner / _build_border_sector_mask /
-    _sample_border_color / _angle_bottom / _angle_side）
+    _sample_border_color）
 """
 from __future__ import annotations
 import os
@@ -51,8 +51,6 @@ from .corner.detection import (
     detect_nested_rect_layers,
 )
 from .corner.sector_render import (
-    _angle_bottom,
-    _angle_side,
     _build_border_sector_mask,
     _sample_border_color,
     _redraw_border_on_corner,
@@ -87,23 +85,7 @@ class CropConfig:
 
 # 向后兼容别名：旧测试脚本可能直接 from core.image_cropper import 这些常量。
 # 内部统一使用 core.config 的定义，此处只是重导出。
-# _DEFAULT_BORDER_WIDTH_CM 保留原名（带下划线），因为 apply_border_only_corners
-# 的默认参数仍引用它。
 _DEFAULT_BORDER_WIDTH_CM = DEFAULT_BORDER_WIDTH_CM
-
-# 向后兼容别名：旧测试脚本可能导入 _CORNER_PARAMS / _CORNER_SQUARE。
-# 内部统一使用 core.corner.algorithm.carve_corner_on_mask，不再使用这两个表。
-# 此处从统一模块派生，确保数据单一来源。
-_CORNER_PARAMS = {
-    k: lambda w, h, r, _k=k: (
-        list(get_corner_pieslice_bbox((0, 0, w, h), _k, r)), *CORNER_ANGLES[_k]
-    )
-    for k in ('tl', 'tr', 'bl', 'br')
-}
-_CORNER_SQUARE = {
-    k: lambda w, h, r, _k=k: get_corner_square((0, 0, w, h), _k, r)
-    for k in ('tl', 'tr', 'bl', 'br')
-}
 
 
 def load_source_image(path: str) -> Image.Image:
@@ -325,22 +307,6 @@ def _redraw_outer_border_on_corners(
     result_img.paste(Image.fromarray(arr, 'RGB'))
 
 
-def _redraw_corners_by_edge_sampling(
-    result_img: Image.Image,
-    src_img: Image.Image,
-    corners_px: dict[str, int],
-    validity_mask: Image.Image,
-    bg_color: tuple = (255, 255, 255)
-) -> None:
-    """
-    [已废弃] 旧版暴力覆盖算法，会造成：
-      1) 点状线边框变实线（消灭间隙） 2) 外层黑边变棕（内层色覆盖外层）
-      3) 背景遮内层直角边框 4) 花朵装饰被覆盖。
-    保留空壳仅为了旧代码导入不报错。所有调用已改为 _redraw_outer_border_on_corners v2。
-    """
-    return
-
-
 def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int = 150, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """
     对整张图片应用四角圆角裁剪。
@@ -435,67 +401,6 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
 
     # Step B: 安全的最外轮廓薄层补绘 v2（只在外缘±5px，缺才补，不破坏间隙）
     #   → 无论是否有间隙层都安全调用，修复外轮廓缺边/漏绘/不连续
-    if corners_px:
-        _redraw_outer_border_on_corners(
-            result, img, corners_px, border_layers, mask, bg_color
-        )
-
-    return result
-
-
-def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
-                               dpi: int = 150, bg_color: tuple = (255, 255, 255),
-                               border_width_cm: float = _DEFAULT_BORDER_WIDTH_CM,
-                               pre_detected_layers: list[tuple[tuple[int, int, int], int]] = None) -> Image.Image:
-    """
-    仅对边框区域应用圆角，内部保持直角。
-
-    [关键修正]：使用 _build_multi_layer_corner_mask 构建正确的遮罩
-    - 每个角独立控制圆角半径，支持 tl=tr=0, bl=br>0 等不对称场景
-    - 统一重绘流程 v2：先多层结构感知重绘，再安全补绘外轮廓薄层
-    """
-    w, h = img.size
-
-    # 获取边框层信息
-    if pre_detected_layers:
-        border_layers = pre_detected_layers
-    else:
-        border_layers = _get_border_layers_robust(img, bg_color)
-
-    # 构建 corners_px 字典
-    corners_px = {}
-    r_cap = max(1, min(w, h) // 2)
-    for corner_key, radius_cm in corners.items():
-        if radius_cm <= 0:
-            continue
-        r_raw = max(1, int(round(radius_cm * dpi / 2.54)))
-        corners_px[corner_key] = min(r_raw, r_cap)
-
-    if not corners_px:
-        return img
-
-    # 使用 _build_multi_layer_corner_mask 构建正确的遮罩（已升级放宽ring_region）
-    mask = _build_multi_layer_corner_mask(w, h, corners_px, border_layers)
-
-    # 应用遮罩
-    result = Image.new('RGB', (w, h), bg_color)
-    result.paste(img, mask=mask)
-
-    # [统一重绘流程 v2] 与 apply_rounded_corners 完全一致
-    # Step A: 多层结构感知重绘 (保留点状线/间隙/花朵装饰, 消灭 C 形缺口)
-    if corners_px and border_layers:
-        from .corner.sector_render import _redraw_border_on_corner
-        for ck, rp in corners_px.items():
-            if rp <= 0:
-                continue
-            _redraw_border_on_corner(
-                result, ck, rp, border_layers,
-                src_img=img, validity_mask=mask
-            )
-
-    # Step B: 始终调用安全的外轮廓补绘 v2
-    #   旧逻辑的 has_gap_layers 跳过分支已移除，因为 v2 只在"真正缺边"时才绘制，
-    #   且不碰内层间隙，对塞纳时光(有间隙)和花漾之约(无间隙)都安全。
     if corners_px:
         _redraw_outer_border_on_corners(
             result, img, corners_px, border_layers, mask, bg_color

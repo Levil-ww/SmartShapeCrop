@@ -35,8 +35,6 @@ from .detection import (
     detect_nested_rect_layers,
 )
 from .sector_render import (
-    _angle_bottom,
-    _angle_side,
     _build_border_sector_mask,
     _sample_border_color,
     _redraw_border_on_corner,
@@ -59,8 +57,6 @@ __all__ = [
     '_scan_edge_boundaries',
     'detect_nested_rect_layers',
     # sector_render
-    '_angle_bottom',
-    '_angle_side',
     '_build_border_sector_mask',
     '_sample_border_color',
     '_redraw_border_on_corner',
