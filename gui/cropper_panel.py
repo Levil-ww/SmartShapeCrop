@@ -199,7 +199,7 @@ class CropperPanel(QWidget):
         
         row_quick = QHBoxLayout()
         row_quick.addWidget(QLabel("快速设置:"))
-        self._sp_quick_r = QDoubleSpinBox(); self._sp_quick_r.setRange(0, 50); self._sp_quick_r.setValue(2); self._sp_quick_r.setDecimals(2); self._sp_quick_r.setSingleStep(0.5)
+        self._sp_quick_r = QDoubleSpinBox(); self._sp_quick_r.setRange(0, 50); self._sp_quick_r.setValue(0); self._sp_quick_r.setDecimals(2); self._sp_quick_r.setSingleStep(0.5)
         self._sp_quick_r.setSuffix(" cm")
         row_quick.addWidget(self._sp_quick_r)
         
@@ -209,9 +209,12 @@ class CropperPanel(QWidget):
         btn_tl_br.clicked.connect(lambda: self._apply_to_corners(['tl', 'br']))
         btn_tr_bl = QPushButton("右上+左下")
         btn_tr_bl.clicked.connect(lambda: self._apply_to_corners(['tr', 'bl']))
+        btn_bl_br = QPushButton("左下+右下")
+        btn_bl_br.clicked.connect(lambda: self._apply_to_corners(['bl', 'br']))
         row_quick.addWidget(btn_all)
         row_quick.addWidget(btn_tl_br)
         row_quick.addWidget(btn_tr_bl)
+        row_quick.addWidget(btn_bl_br)
         row_quick.addStretch(1)
         fc.addLayout(row_quick)
         
@@ -399,13 +402,16 @@ class CropperPanel(QWidget):
             
             # 圆角只从目标文件名获取（模板通常不含圆角信息）
             # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
-            # 仅对文件名中明确指定的角（半径 > 0）加切割损耗，未指定的角保持 0
+            # 文件名中有圆角信息时：指定的角设为对应值，未指定的角强制设为0
+            # 文件名中无圆角信息时：保持现有设置不变
             if target_parsed.corners:
                 self._corner_programmatic = True
                 try:
                     for key in ('tl', 'tr', 'bl', 'br'):
                         if key in target_parsed.corners and target_parsed.corners[key] > 0:
                             self._sp_corners[key].setValue(target_parsed.corners[key] + CORNER_CUT_LOSS_CM)
+                        else:
+                            self._sp_corners[key].setValue(0)
                 finally:
                     self._corner_programmatic = False
 
@@ -452,14 +458,17 @@ class CropperPanel(QWidget):
                 self._sp_w.setValue(parsed.width_cm + CUT_LOSS_CM)
                 self._sp_h.setValue(parsed.height_cm + CUT_LOSS_CM)
             
+            # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
+            # 文件名中有圆角信息时：指定的角设为对应值，未指定的角强制设为0
+            # 文件名中无圆角信息时：保持现有设置不变
             if parsed.corners:
-                # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
-                # 仅对文件名中明确指定的角（半径 > 0）加切割损耗，未指定的角保持 0
                 self._corner_programmatic = True
                 try:
                     for key in ('tl', 'tr', 'bl', 'br'):
                         if key in parsed.corners and parsed.corners[key] > 0:
                             self._sp_corners[key].setValue(parsed.corners[key] + CORNER_CUT_LOSS_CM)
+                        else:
+                            self._sp_corners[key].setValue(0)
                 finally:
                     self._corner_programmatic = False
 
