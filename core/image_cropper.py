@@ -509,37 +509,14 @@ def _build_multi_layer_corner_mask(
             continue
 
         # ===== [A) 基础 outer L-cut + 保守 ring 保护] =====
-        # ring_lower_bound：保守保护，只取 max(检测深度扩展, 小比例半径)
-        # [Fix P0-10 ring 保护不过度扩张 — 升级 P3 再修复]
-        # 旧 bug 场景1 (P0-10)：
-        #   墨上花开 raw_depth=300, r=295 → expanded_depth=300*1.5+20=470 > r=295
-        #   → ring_lower_bound = min(r-1, 470) = 294 → ring_inner = 1
-        #   → ring_region 覆盖 dist∈[1, r] = 几乎整个角区，L-cut 没切任何像素！
-        #
-        # 旧 bug 场景2 (本次 P3)：
-        #   即使 0.8r 钳制后，当 raw_depth > r（边框总深度 > 半径）时：
-        #     raw_bounded = min(raw_depth, r-1) = r-1
-        #     → ring_lower_bound = max(r-1, ...) = r-1
-        #     → ring_inner = r - (r-1) = 1，ring_region 仍覆盖 99% 角区
-        #     → PAT 层 dist = 297 > r = 295 的像素仍被 ring_region & restore 保留
-        #     → 表现为 MASK_WRONG：花纹尖角没被切掉，呈现 dist>r 仍 mask=255
-        #
-        # 本次 P3 修复：
-        #   ring_max_protect_depth = floor(r * 0.5)：真实「在圆弧上的边框层」
-        #   深度最多不会超过 0.5r，因为深度=0.5r 时，45° 对角线上环带宽度 =
-        #   r - sqrt(r² - (r-0.5r)²) = r - r*sqrt(3)/2 ≈ 0.134r 已经很窄。
-        #   超过 0.5r 的"深度"在物理上不是圆弧上的边框层环带，而是直边
-        #   纵深上的内层花纹，不应该被 ring 保护。
-        #   同时 small_ratio_depth 从 20%r 降到 12%r，给 L-cut 留足 88% 的
-        #   纯尖角裁切区域（只在最靠近外轮廓的 12%r 环上做保守保护）。
+        # ring_lower_bound: 精确等于边框总厚度 + 4px 公差
+        # [Fix 0811 精确 ring 保护]：旧版 max(raw_bounded, raw*1.2+6, 0.12r)
+        #   导致 ring 比实际边框厚 20%+6px，过多像素被保护不被切，
+        #   造成白色直角边框线残留。新版 ring_lower_bound = raw_bounded + 4，
+        #   精确匹配边框总厚度，仅给 4px 抗锯齿容错空间。
         RING_MAX_PROTECT = int(r * 0.5) if r > 0 else 0
         raw_bounded = min(raw_depth, RING_MAX_PROTECT)
-        expanded_depth = int(round(raw_bounded * 1.2 + 6))
-        expanded_depth = min(expanded_depth, int(r * 0.55) if r > 0 else 0)
-        small_ratio_depth = int(round(r * 0.12))  # 仅 12% 半径，L-cut 裁切绝大部分尖角
-        ring_lower_bound = max(raw_bounded, expanded_depth, small_ratio_depth)
-        ring_lower_bound = min(int(r * 0.7) if r > 0 else 0, ring_lower_bound)
-        ring_lower_bound = max(0, ring_lower_bound)
+        ring_lower_bound = max(0, min(raw_bounded + 4, int(r * 0.7)))
 
         if corner_key == 'tl':
             cx, cy = r, r

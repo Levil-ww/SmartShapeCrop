@@ -77,7 +77,8 @@ def _build_border_sector_mask(
     # 将角度平移到以 ang_min 为起点的 [0°, 360°) 范围
     shifted_angle = np.mod(angle_p - ang_min, 360.0)
     angular_span = ang_max - ang_min
-    cond_angle = shifted_angle < angular_span
+    # [Fix 白色接缝] 使用 <= 包含边界，确保圆弧与直边完全衔接
+    cond_angle = shifted_angle <= angular_span
 
     roi_mask = cond_r & cond_angle
 
@@ -187,7 +188,7 @@ def _redraw_border_on_corner(
        （避免将内层图案/背景覆盖为边框颜色，消除"折叠"视觉）
     2. 使用 validity_mask 限制绘制区域，禁止向裁剪区（L形区域）绘制
        （确保裁剪区为背景色，边框只在圆弧可见区域内）
-    3. 角度边界与 mask 完全一致（angle < ang_max），消除边界像素偏差
+    3. [已修复] 角度边界包含 ang_max（TR角处理360°→0°环绕），消除圆弧与直边衔接处白色接缝
     4. [P0 Fix 遮挡] 智能保护装饰图案：只有当 src_img 对应像素颜色与目标
        边框色相近时才重绘为纯色边框色；若为花朵/点状线等装饰像素，
        保留原图内容不变（防止 6 万+ 像素被纯色覆盖造成遮挡）。
@@ -341,7 +342,19 @@ def _redraw_border_on_corner(
     # 确定该角的有效绘制区域
     # 条件：角度在范围内 + 在圆弧内部或弧线上（dist <= R_total）
     # 注意：不扩展到圆弧外侧（dist > R_total），因为裁剪区应由 mask 控制
-    valid_region = (angle >= ang_min) & (angle < ang_max) & (dist <= R_total)
+    #
+    # [Fix 白色直角线条] 包含两个角度边界：
+    #   旧版 (angle >= ang_min) & (angle < ang_max) 排除了 ang_max 边界像素，
+    #   导致圆弧与直边衔接处出现 1px 白色接缝。
+    #   修复：使用 <= ang_max 包含边界；对 TR 角（ang_max=360°）处理 360°→0° 环绕。
+    if ang_max == 360:
+        # TR corner: 270°→360°，360° 在 np.mod 后变成 0°
+        # 包含 ang_min (>=270) 和 ang_max (==0)
+        valid_angle = (angle >= ang_min) | (angle < 1)
+    else:
+        # 其他角: [ang_min, ang_max] 包含两端边界
+        valid_angle = (angle >= ang_min) & (angle <= ang_max)
+    valid_region = valid_angle & (dist <= R_total)
 
     # 如果有 validity_mask，进一步限制为 mask 中非零像素
     if validity_arr is not None:
@@ -414,6 +427,21 @@ def _redraw_border_on_corner(
             min_dist_adjacent = np.min(np.stack(dists_nearby, axis=0), axis=0)
             threshold = TRANSITION_THRESHOLD if len(dists_nearby) > 1 else COLOR_DIST_THRESHOLD
             match_filter = min_dist_adjacent <= threshold
+
+            # [Fix 0811 角度边界兜底]：距弧角边界 ±1.5° 内的像素（抗锯齿带）
+            # 对于非间隙的边框层，强制匹配 —— 这些像素在弧线边缘，
+            # 抗锯齿中间色可能不匹配边框颜色，导致白色直角边框线残留。
+            if not is_gap and len(local_coords[0]) > 0:
+                pixel_angles = angle[local_coords]
+                ang_a = ang_min
+                ang_b = ang_max
+                if ang_max == 360:
+                    d_to_max = np.minimum(np.abs(pixel_angles - ang_a), pixel_angles)
+                else:
+                    d_to_max = np.abs(pixel_angles - ang_b)
+                d_to_min = np.abs(pixel_angles - ang_a)
+                near_boundary = (d_to_min <= 1.5) | (d_to_max <= 1.5)
+                match_filter = match_filter | near_boundary
 
             # === [Fix D 升级: 结构感知的混合策略] ===
             # 同时解决三大问题：
@@ -589,7 +617,7 @@ def _redraw_border_on_corner(
                             (fb_src - content_ref_arr.reshape(1, 3)) ** 2, axis=1
                         ))
                         fb_ok = (min_d_border <= WIDE_BORDER_THRESH) & \
-                                (d_cont_fb > COLOR_DIST_THRESH)
+                                (d_cont_fb > COLOR_DIST_THRESHOLD)
                         allow_v[need_fb] |= fb_ok
 
                 structure_allow_idx = structure_allow[force_idx]
@@ -601,7 +629,19 @@ def _redraw_border_on_corner(
             # 再在下面赋值 → UnboundLocalError（花野案例崩溃），且即使不崩溃
             # 也是使用"上一轮循环 d-1 的 force_paint"，导致对角内区双重否定
             # 检测完全错误，出现 C 形缺口（墨上花开）。
+            #
+            # [Fix 0811 强力对角内区兜底]：对于有色边框层（非间隙），
+            # 只要像素位于本层深度区间且在对角内区，无条件强制绘色，
+            # 绕过 structure_allow 的脆弱性。这是解决 C 形缺口的核心修复。
             force_paint = base_force & structure_allow
+
+            # [Fix 0811] 有色边框层：强制所有对角内区本层深度像素
+            if is_colored_border and not is_gap and len(local_coords[0]) > 0:
+                pixel_depths = float(R_total) - dist[local_coords]
+                d_start_layer = cumulative_depths[color_idx]
+                d_end_layer = cumulative_depths[color_idx + 1]
+                in_this_layer_depth = (pixel_depths >= d_start_layer) & (pixel_depths < d_end_layer)
+                force_paint = force_paint | (diagonal_interior & in_this_layer_depth)
 
             # [Fix P0-9 末尾] 对角内区的强制覆盖兜底
             # 规则：
