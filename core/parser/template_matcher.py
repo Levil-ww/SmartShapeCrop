@@ -132,10 +132,8 @@ class TemplateMatcher:
             parsed = parse_filename(filename)
             entry.parsed = parsed
 
-            if parsed.shape_keywords:
-                kw_set = set(parsed.shape_keywords)
-                if '圆形' in kw_set or '圆' in kw_set:
-                    entry.is_circular = True
+            # 优先使用 parsed.is_circular（已经综合考虑了 corners 和直径/圆形关键词）
+            entry.is_circular = parsed.is_circular
 
             entry.is_custom = parsed.is_custom
 
@@ -220,6 +218,21 @@ class TemplateMatcher:
             return 0.0, details
 
         score = 0.0
+
+        # ===== 硬约束：形状排斥（圆形 vs 圆角矩形/方形互斥匹配）=====
+        # 目标有 corners → 一定是圆角矩形，不能匹配圆形模板
+        target_has_corners = bool(target.corners) and any(v > 0 for v in target.corners.values())
+        target_is_circle = target.is_circular and not target_has_corners  # 有圆角时按矩形算
+        template_is_circle = entry.is_circular
+
+        if target_has_corners and template_is_circle:
+            # 目标是圆角矩形，模板是圆形 → 直接排除
+            self._log(f"   ❌ 形状排斥：目标是圆角矩形，排除圆形模板 {os.path.basename(entry.path)}")
+            return 0.0, details
+        if target_is_circle and not template_is_circle:
+            # 目标是圆形，模板不是圆形 → 直接排除
+            self._log(f"   ❌ 形状排斥：目标是圆形，排除非圆形模板 {os.path.basename(entry.path)}")
+            return 0.0, details
 
         # 1. 花型名匹配 (40分)
         target_pattern = target.pattern_name.lower() if target.pattern_name else ""

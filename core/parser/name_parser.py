@@ -30,6 +30,7 @@ class ParsedFilename:
     pattern_name: str = ""          # 花型基础名，如 "简织"
     shape_keywords: list = None     # 形状关键词列表，如 ["竖版"]
     is_custom: bool = False         # 是否为定制类型
+    is_circular: bool = False       # 是否为圆形（有直径/圆形关键词且无圆角信息）
 
 
 # 中文数字映射
@@ -270,6 +271,7 @@ def _extract_size_pair_manual(text: str) -> tuple[float, float] | None:
 def _extract_size_pair(text: str) -> tuple[float, float] | None:
     """
     多层容错的尺寸提取（按可靠性从高到低排序）：
+    S0: 圆形直径格式（直径XXcm / XXcm直径 / XXcm圆形 / 圆形XX）
     S1: 带单位的标准正则
     S2: 无单位的标准正则
     S3: 宽松正则
@@ -279,6 +281,20 @@ def _extract_size_pair(text: str) -> tuple[float, float] | None:
     """
     if not text:
         return None
+
+    # S0: 圆形直径格式（优先于x/y格式）
+    s0_patterns = [
+        r'直径\s*(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)?',
+        r'(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)?\s*直径',
+        r'(\d+(?:[.]\d+)?)\s*(?:cm|厘米|公分)?\s*圆形',
+        r'圆形\s*(\d+(?:[.]\d+)?)',
+    ]
+    for pat in s0_patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            diameter = round(round(float(m.group(1)), 6), 2)
+            logger.debug(f"[name_parser] size strategy S0 (diameter) matched: diameter={diameter}cm")
+            return (diameter, diameter)
 
     strategies = [
         # S1: 带单位的完整格式 —— 强制要求 cm/厘米/公分
@@ -414,11 +430,23 @@ def parse_filename(filename: str) -> ParsedFilename:
     else:
         result.pattern_name = result.product_name
     
-    # 提取形状关键词
-    base_name, shape_kw = normalize_flower_name(result.pattern_name or result.product_name, result.layout or "")
+    # 提取形状关键词：第二个参数传入完整的尺寸规格（含spec+product_name），确保直径/圆形等关键词被识别
+    size_context = f"{spec or ''} {result.product_name or ''} {name or ''}"
+    base_name, shape_kw = normalize_flower_name(result.pattern_name or result.product_name, size_context)
     if base_name:
         result.pattern_name = base_name
     result.shape_keywords = shape_kw
+    
+    # 判定是否为圆形：
+    # 1. 有圆角信息(corners) → 一定是圆角矩形，不是圆形
+    # 2. 否则：shape_keywords 中有 '圆形'/'圆'，或上下文有 '直径' → 判定为圆形
+    if result.corners:
+        result.is_circular = False
+    else:
+        kw_set = set(result.shape_keywords or [])
+        has_circle_kw = '圆形' in kw_set or '圆' in kw_set
+        has_diameter = '直径' in size_context
+        result.is_circular = has_circle_kw or has_diameter
     
     return result
 
