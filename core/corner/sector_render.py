@@ -417,15 +417,27 @@ def _redraw_border_on_corner(
 
             # === [Fix D 升级: 结构感知的混合策略] ===
             # 同时解决三大问题：
-            #   A. 细双线对角内区 C 形缺口（塞纳时光）
+            #   A. 细双线对角内区 C 形缺口（塞纳时光/墨上花开 5cm 圆角）
             #   B. 点状线边框被强制绘成实线（花漾之约）
             #   C. 多层边框最外层颜色被内层覆盖（塞纳时光8cm黑边→棕）
             #
-            # 核心新增：直边真实模式采样(Straight-Edge Pattern Sampling)
-            #   对每个像素深度 d，从它对应的直线边框 SAME DEPTH 处采样真实颜色：
-            #     - 如果直边该处是实心色（与本层色匹配）→ 弧上对角内区也要实心 (force_paint)
-            #     - 如果直边该处是间隙/点状线(与content_ref匹配) → 弧上对角内区保留间隙 (skip)
-            #   这样：点状线 → 弧形点状线；实线 → 弧形实线；双层双线 → 弧形双层双线。
+            # [Fix P0-9 对角内区覆盖兜底]
+            # 核心修改：**对角内区必须与直边同深度区域颜色一致** —— 这是一个
+            # 比 structure_allow 更强的不变量。
+            #
+            #   当 color_idx 是有色边框（非间隙）：
+            #     - 先跑 structure_allow 的深度带 + fallback（尽量保护点线不被
+            #       实心覆盖）；但 structure_allow 全 fail 时也不能让对角内
+            #       区"露花纹色"——改为采用直边同深度的真实颜色填充。
+            #   当 color_idx 是间隙层：
+            #     - 旧版 diagonal_interior 上 base_force=False 且 match_filter
+            #       也可能因为颜色色差（米色 gap ≈ RGB(245,235,215) vs content_ref
+            #       = (245,245,245) Δ=31）而过滤失败 → 结果对角内区留着
+            #       paste 过来的 src 花纹色（视觉上 = 外层黑框的 C 形缺口！
+            #       因为黑框在对角线上本该是连续的，中间被花纹色戳了一段）。
+            #     - 新版：间隙层在 diagonal_interior 上一律用 target_color（
+            #       内容参考色）兜底覆盖。花纹区只属于「深度 > total_border_depth」
+            #       的像素，不会被本循环处理。
             cum_before_i = cumulative_depths[color_idx]
             cum_after_i = cumulative_depths[color_idx + 1]
 
@@ -467,17 +479,20 @@ def _redraw_border_on_corner(
                 else np.zeros_like(diagonal_interior, dtype=bool)
 
             # =========== 结构感知修正: Straight-Edge Pattern Check ===========
-            # 对 base_force=True 的每个像素，都回头看直线边框同深度处的真实模式：
-            #   直边深度 d 是"实心/有色" → 弧上绘制；
-            #   直边深度 d 是"间隙/内容色" → 弧上跳过（保留点状/虚线结构）。
+            # [Fix 墨上花开半角弧线缺口] 升级为深度带采样：
+            #   旧版仅检查 d_int_v 单深度，若刚好命中间隙层/抗锯齿过渡带会误判为间隙
+            #   → 漏绘造成透明弧线缺口（半径 5cm 时对角内区面积大，命中概率高）
+            # 新版：
+            #   A) 对每个 force_paint 候选像素，采样 d_int_v ±2px 的深度带
+            #      只要 ±2px 内任一深度 + 任一边判定为"实心/有色"，就 structure_allow=True
+            #   B) Fallback 兜底：对角内区有色边框像素，若 A) 失败但 src 颜色与任一边框色
+            #      距离 < 更宽阈值(35) 且与内容色距离 > 阈值，仍视为实心（抗锯齿中间色保护）
             structure_allow = np.ones_like(base_force, dtype=bool)
             n_force = int(np.sum(base_force))
             if n_force > 0 and src_arr is not None:
-                # 对每个强制候选像素，取其深度 d_int = round(depth)
                 force_idx = np.where(base_force)
                 y_f = global_y[force_idx]
                 x_f = global_x[force_idx]
-                # 重新计算这些像素的深度值（逐像素精确）
                 cx_map = {
                     'tl': R_total, 'tr': w - R_total,
                     'bl': R_total, 'br': w - R_total,
@@ -493,72 +508,184 @@ def _redraw_border_on_corner(
                 dist_v = np.sqrt(dxv * dxv + dyv * dyv)
                 depth_v = float(R_total) - dist_v
                 d_int_v = np.clip(np.round(depth_v).astype(np.int32), 0, total_border_depth)
+                N = len(d_int_v)
 
-                # 从直线边框"两条相邻边"的同深度处采样真实颜色
-                # 只要任一边该深度像素与本层色匹配（有色），就允许绘制；
-                # 两边都是内容色（间隙）→ 禁止绘制（保留间隙）
+                # ===== [A) 深度带 ±2px 多采样] =====
+                DEPTH_BAND = 2
                 STRUCT_THRESH = max(COLOR_DIST_THRESHOLD + 5.0, 20.0)
-                allow_v = np.zeros(len(d_int_v), dtype=bool)
-                for edge_k in range(2):  # 两条相邻边
-                    if corner_key == 'tl':
-                        # edges: top (row=d, mid col) + left (col=d, mid row)
-                        if edge_k == 0:  # top
-                            sy = np.clip(d_int_v, 0, h - 1)
-                            sx = np.full_like(d_int_v, min(max(R_total + 5, w // 2), w - 1))
-                        else:  # left
-                            sx = np.clip(d_int_v, 0, w - 1)
-                            sy = np.full_like(d_int_v, min(max(R_total + 5, h // 2), h - 1))
-                    elif corner_key == 'tr':
-                        if edge_k == 0:  # top
-                            sy = np.clip(d_int_v, 0, h - 1)
-                            sx = np.full_like(d_int_v, max(w - R_total - 6, w // 2))
-                        else:  # right
-                            sx = np.clip(w - 1 - d_int_v, 0, w - 1)
-                            sy = np.full_like(d_int_v, min(max(R_total + 5, h // 2), h - 1))
-                    elif corner_key == 'bl':
-                        if edge_k == 0:  # left
-                            sx = np.clip(d_int_v, 0, w - 1)
-                            sy = np.full_like(d_int_v, max(h - R_total - 6, h // 2))
-                        else:  # bottom
-                            sy = np.clip(h - 1 - d_int_v, 0, h - 1)
-                            sx = np.full_like(d_int_v, min(max(R_total + 5, w // 2), w - 1))
-                    else:  # br
-                        if edge_k == 0:  # bottom
-                            sy = np.clip(h - 1 - d_int_v, 0, h - 1)
-                            sx = np.full_like(d_int_v, max(w - R_total - 6, w // 2))
-                        else:  # right
-                            sx = np.clip(w - 1 - d_int_v, 0, w - 1)
-                            sy = np.full_like(d_int_v, max(h - R_total - 6, h // 2))
+                allow_v = np.zeros(N, dtype=bool)
 
-                    edge_colors = src_arr[sy, sx, :].astype(np.float64)  # [N,3]
-                    # 与本层 target_color 的欧氏距离
-                    d2layer = np.sqrt(np.sum(
-                        (edge_colors - target_color_arr.reshape(1, 3)) ** 2, axis=1
-                    ))
-                    # 与任意相邻边框层颜色的最小距离（避免抗锯齿过渡带误判为间隙）
-                    min_adj = d2layer.copy()
-                    if color_idx + 1 < len(border_colors_arr):
-                        nc = border_colors_arr[color_idx + 1].reshape(1, 3)
-                        d2n = np.sqrt(np.sum((edge_colors - nc) ** 2, axis=1))
-                        min_adj = np.minimum(min_adj, d2n)
-                    if color_idx - 1 >= 0:
-                        pc = border_colors_arr[color_idx - 1].reshape(1, 3)
-                        d2p = np.sqrt(np.sum((edge_colors - pc) ** 2, axis=1))
-                        min_adj = np.minimum(min_adj, d2p)
-                    # 与内容色的距离
-                    d2cont = np.sqrt(np.sum(
-                        (edge_colors - content_ref_arr.reshape(1, 3)) ** 2, axis=1
-                    ))
-                    # 该边判定为"有色/实心"：(任一边框层色附近) OR (远离内容色)
-                    is_solid = (min_adj <= STRUCT_THRESH) | (d2cont > STRUCT_THRESH + 5)
-                    allow_v |= is_solid
+                for d_off in range(-DEPTH_BAND, DEPTH_BAND + 1):
+                    d_band = np.clip(d_int_v + d_off, 0, total_border_depth)
+                    for edge_k in range(2):  # 两条相邻边
+                        if corner_key == 'tl':
+                            if edge_k == 0:  # top
+                                sy = np.clip(d_band, 0, h - 1)
+                                sx = np.full(N, min(max(R_total + 5, w // 2), w - 1), dtype=np.int64)
+                            else:  # left
+                                sx = np.clip(d_band, 0, w - 1)
+                                sy = np.full(N, min(max(R_total + 5, h // 2), h - 1), dtype=np.int64)
+                        elif corner_key == 'tr':
+                            if edge_k == 0:  # top
+                                sy = np.clip(d_band, 0, h - 1)
+                                sx = np.full(N, max(w - R_total - 6, w // 2), dtype=np.int64)
+                            else:  # right
+                                sx = np.clip(w - 1 - d_band, 0, w - 1)
+                                sy = np.full(N, min(max(R_total + 5, h // 2), h - 1), dtype=np.int64)
+                        elif corner_key == 'bl':
+                            if edge_k == 0:  # left
+                                sx = np.clip(d_band, 0, w - 1)
+                                sy = np.full(N, max(h - R_total - 6, h // 2), dtype=np.int64)
+                            else:  # bottom
+                                sy = np.clip(h - 1 - d_band, 0, h - 1)
+                                sx = np.full(N, min(max(R_total + 5, w // 2), w - 1), dtype=np.int64)
+                        else:  # br
+                            if edge_k == 0:  # bottom
+                                sy = np.clip(h - 1 - d_band, 0, h - 1)
+                                sx = np.full(N, max(w - R_total - 6, w // 2), dtype=np.int64)
+                            else:  # right
+                                sx = np.clip(w - 1 - d_band, 0, w - 1)
+                                sy = np.full(N, max(h - R_total - 6, h // 2), dtype=np.int64)
+
+                        edge_colors = src_arr[sy, sx, :].astype(np.float64)  # [N,3]
+                        d2layer = np.sqrt(np.sum(
+                            (edge_colors - target_color_arr.reshape(1, 3)) ** 2, axis=1
+                        ))
+                        min_adj = d2layer.copy()
+                        if color_idx + 1 < len(border_colors_arr):
+                            nc = border_colors_arr[color_idx + 1].reshape(1, 3)
+                            d2n = np.sqrt(np.sum((edge_colors - nc) ** 2, axis=1))
+                            min_adj = np.minimum(min_adj, d2n)
+                        if color_idx - 1 >= 0:
+                            pc = border_colors_arr[color_idx - 1].reshape(1, 3)
+                            d2p = np.sqrt(np.sum((edge_colors - pc) ** 2, axis=1))
+                            min_adj = np.minimum(min_adj, d2p)
+                        d2cont = np.sqrt(np.sum(
+                            (edge_colors - content_ref_arr.reshape(1, 3)) ** 2, axis=1
+                        ))
+                        is_solid = (min_adj <= STRUCT_THRESH) | (d2cont > STRUCT_THRESH + 5)
+                        allow_v |= is_solid
+
+                # ===== [B) Fallback 兜底：对角内区有色边框像素颜色检查] =====
+                # 深度带采样仍失败（全是间隙判定）时，看 src 弧上像素本身的颜色：
+                # 若该像素离任一边框层近 < WIDE_THRESH 且 离内容色远，说明是抗锯齿中间色
+                # （真实边框像素被平滑处理过），仍然允许绘制，避免缺口
+                WIDE_BORDER_THRESH = 35.0
+                if not np.all(allow_v):
+                    need_fb = ~allow_v
+                    fb_y = y_f[need_fb]
+                    fb_x = x_f[need_fb]
+                    if len(fb_y) > 0:
+                        fb_src = src_arr[fb_y, fb_x, :].astype(np.float64)
+                        # 离所有边框层的最小距离
+                        min_d_border = np.full(len(fb_y), 1e9, dtype=np.float64)
+                        for bc_arr in border_colors_arr:
+                            d_ = np.sqrt(np.sum(
+                                (fb_src - bc_arr.reshape(1, 3)) ** 2, axis=1
+                            ))
+                            min_d_border = np.minimum(min_d_border, d_)
+                        # 离内容色距离
+                        d_cont_fb = np.sqrt(np.sum(
+                            (fb_src - content_ref_arr.reshape(1, 3)) ** 2, axis=1
+                        ))
+                        fb_ok = (min_d_border <= WIDE_BORDER_THRESH) & \
+                                (d_cont_fb > COLOR_DIST_THRESH)
+                        allow_v[need_fb] |= fb_ok
 
                 structure_allow_idx = structure_allow[force_idx]
                 structure_allow_idx &= allow_v
                 structure_allow[force_idx] = structure_allow_idx
 
+            # ===== [先计算 force_paint：双重否定逻辑必须依赖 force_paint 的最终值] =====
+            # [Fix P0] 严重顺序 bug：旧代码在双重否定逻辑（上面）中先枚举 force_paint，
+            # 再在下面赋值 → UnboundLocalError（花野案例崩溃），且即使不崩溃
+            # 也是使用"上一轮循环 d-1 的 force_paint"，导致对角内区双重否定
+            # 检测完全错误，出现 C 形缺口（墨上花开）。
             force_paint = base_force & structure_allow
-            final_mask = match_filter | force_paint
+
+            # [Fix P0-9 末尾] 对角内区的强制覆盖兜底
+            # 规则：
+            #  - 对于有色边框层 (is_colored_border)：diagonal_interior 上如果
+            #    structure_allow 拒绝，但 match_filter 也没通过（= 该像素在 src
+            #    中既不像边框色，也不像直边同深度的实心色 → 典型"花纹色泄漏"），
+            #    这时用「直边同深度的真实像素颜色」覆盖，而不是 target_color
+            #    （直边同深度可能是点状线，这样保留图案）。
+            #  - 对于间隙层 (is_gap)：diagonal_interior 上直接强制
+            #    用 target_color（间隙色 = content_ref）覆盖。match_filter 可能
+            #    因色差(米色 245,235,215 vs 纯白 245,245,245)失败，若不兜底，
+            #    对角内区会露出花纹色 → 视觉上是「外层黑框 C 形缺口」。
+            diagonal_interior_idx = np.where(diagonal_interior)[0]
+            if len(diagonal_interior_idx) > 0:
+                if is_gap:
+                    # 间隙层对角内区：一律兜底覆盖为间隙色（content_ref / target_color）
+                    gap_fill_y = global_y[diagonal_interior_idx]
+                    gap_fill_x = global_x[diagonal_interior_idx]
+                    result_arr[gap_fill_y, gap_fill_x, :] = np.array(
+                        target_color, dtype=result_arr.dtype
+                    ).reshape(1, 3)
+                    # 从后续 match_filter | force_paint 流程中移除这些像素
+                    # (已经手动填好了)
+                    di_mask_set = set(diagonal_interior_idx.tolist())
+                    keep_bool = np.array(
+                        [i not in di_mask_set for i in range(len(global_y))],
+                        dtype=bool
+                    )
+                    global_y = global_y[keep_bool]
+                    global_x = global_x[keep_bool]
+                    # 同步裁剪 force_paint 和 match_filter
+                    if len(force_paint) == len(keep_bool):
+                        force_paint = force_paint[keep_bool]
+                    if len(match_filter) == len(keep_bool):
+                        match_filter = match_filter[keep_bool]
+                    if len(global_y) == 0:
+                        continue
+                elif is_colored_border:
+                    # 有色边框层对角内区：对 (force_paint=False 且
+                    # match_filter=False) 的"双重否定"像素用直边真实色覆盖
+                    # （避免花纹色泄漏，也保留直边的图案性如点线）
+                    d_straight = int(round(np.mean(depth[local_coords][diagonal_interior_idx])))
+                    d_straight = np.clip(d_straight, 0, total_border_depth - 1)
+                    cand_colors = []
+                    if corner_key in ('tl', 'tr'):
+                        ty = min(max(d_straight, 0), h - 1)
+                        tx = min(max(w // 2, 0), w - 1)
+                        cand_colors.append(src_arr[ty, tx, :].astype(np.float64))
+                    if corner_key in ('bl', 'br'):
+                        by = min(max(h - 1 - d_straight, 0), h - 1)
+                        bx = min(max(w // 2, 0), w - 1)
+                        cand_colors.append(src_arr[by, bx, :].astype(np.float64))
+                    if corner_key in ('tl', 'bl'):
+                        ly = min(max(h // 2, 0), h - 1)
+                        lx = min(max(d_straight, 0), w - 1)
+                        cand_colors.append(src_arr[ly, lx, :].astype(np.float64))
+                    if corner_key in ('tr', 'br'):
+                        ry = min(max(h // 2, 0), h - 1)
+                        rx_v = min(max(w - 1 - d_straight, 0), w - 1)
+                        cand_colors.append(src_arr[ry, rx_v, :].astype(np.float64))
+                    if cand_colors:
+                        straight_color = np.median(
+                            np.stack(cand_colors, axis=0), axis=0
+                        )
+                        n_all = len(global_y)
+                        diag_set = set(diagonal_interior_idx.tolist())
+                        double_neg = np.zeros(n_all, dtype=bool)
+                        if len(match_filter) == n_all and len(force_paint) == n_all:
+                            for i in range(n_all):
+                                if i in diag_set and not force_paint[i] and not match_filter[i]:
+                                    double_neg[i] = True
+                            if np.any(double_neg):
+                                dn_y = global_y[double_neg]
+                                dn_x = global_x[double_neg]
+                                sc = np.array(
+                                    [int(round(v)) for v in straight_color],
+                                    dtype=result_arr.dtype
+                                )
+                                result_arr[dn_y, dn_x, :] = sc.reshape(1, 3)
+            # 兼容：如果 global_y 长度 < len(match_filter)（前面间隙层裁剪过），
+            # 则裁剪 match_filter 到相同长度
+            if len(match_filter) > len(global_y):
+                match_filter = match_filter[:len(global_y)]
+            final_mask = match_filter | force_paint[:len(match_filter)] if len(force_paint) >= len(match_filter) else match_filter
 
             # 只对判定为"真正边框像素"的坐标应用纯色覆盖
             # 装饰像素（花朵/点线）不在此范围内 → 保留 result_img 中 paste 过来的原图内容

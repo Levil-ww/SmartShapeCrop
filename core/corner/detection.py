@@ -127,12 +127,104 @@ def _enforce_border_thickness_caps(
     return layers
 
 
+def _estimate_content_reference(img: Image.Image) -> np.ndarray:
+    """
+    估算图片的「内容参考色」——从图片中心区域采样的中位色。
+
+    用途：用于区分真正的边框层（黑/棕/蓝等）与背景内容色（米色/白色等）。
+    当 bg_color 与图片内容色非常接近时（如都是米色），_detect_border_layers
+    无法有效过滤，此时需要用内容参考色来辅助判断。
+
+    Args:
+        img: 输入图片
+
+    Returns:
+        内容参考色的 RGB 数组 (3,)
+    """
+    arr = np.array(img, dtype=np.float64)
+    h, w = arr.shape[:2]
+    # 中心区域 (15%~85%)
+    x_start, x_end = int(w * 0.15), int(w * 0.85)
+    y_start, y_end = int(h * 0.15), int(h * 0.85)
+    if x_end - x_start < 10 or y_end - y_start < 10:
+        return np.array([255.0, 255.0, 255.0])
+    region = arr[y_start:y_end, x_start:x_end, :].reshape(-1, 3)
+    return np.median(region, axis=0)
+
+
+def _filter_layers_by_content_ref(
+    layers: list[tuple[tuple[int, int, int], int]],
+    content_ref: np.ndarray,
+    dist_threshold: float = 35.0,
+) -> list[tuple[tuple[int, int, int], int]]:
+    """
+    [Fix P0-3 新增] 用内容参考色过滤伪边框层。
+
+    问题场景：当 bg_color 与图片内容色很接近时（如都是米色 #F5EBD7），
+    _detect_border_layers 会把内容区也当成边框层。
+
+    解决方案：计算每层颜色与内容参考色的欧氏距离。
+    - 若距离 > dist_threshold → 该层是真正的边框色（黑/棕/蓝）→ 保留
+    - 若距离 <= dist_threshold → 该层是内容/背景色伪装层 → 过滤掉
+
+    额外：若过滤后全部被移除（极端情况），保留原列表。
+
+    Args:
+        layers: 原始边框层列表
+        content_ref: 内容参考色 (3,)
+        dist_threshold: 颜色距离阈值
+
+    Returns:
+        过滤后的边框层列表
+    """
+    if not layers:
+        return layers
+
+    # [Fix P0-6] 结构感知过滤：不要简单地删除内容色相似的层。
+    # 若一层与内容参考色相似，但其相邻层是有效边框（与内容色差异大），
+    # 则该层是边框系统的间隙层（如两圈黑框之间的白色间隙），应保留。
+    # 只有独立存在的、与内容色相似的伪边框层才应被过滤。
+    n = len(layers)
+    layer_valid = []
+    for i, (color, thickness) in enumerate(layers):
+        col_arr = np.array(color, dtype=np.float64)
+        dist = float(np.sqrt(np.sum((col_arr - content_ref) ** 2)))
+        if dist > dist_threshold:
+            # 与内容色差异大 → 肯定是有效边框
+            layer_valid.append(True)
+        else:
+            # 与内容色相似 → 检查相邻层
+            has_valid_neighbor = False
+            for ni in (i - 1, i + 1):
+                if 0 <= ni < n:
+                    nc, _ = layers[ni]
+                    nc_arr = np.array(nc, dtype=np.float64)
+                    nd = float(np.sqrt(np.sum((nc_arr - content_ref) ** 2)))
+                    if nd > dist_threshold:
+                        has_valid_neighbor = True
+                        break
+            # 有有效边框邻居 → 保留作为间隙层
+            layer_valid.append(has_valid_neighbor)
+
+    filtered = [layers[i] for i in range(n) if layer_valid[i]]
+
+    # 若全部被过滤掉（理论上不应发生于有边框的真实图），保留原列表
+    # 以避免完全丢失检测结果
+    if not filtered:
+        return layers
+
+    return filtered
+
+
 def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255)) -> list[tuple[tuple[int, int, int], int]]:
     """
     获取边框层列表，带 fallback 逻辑。
     先尝试 _detect_border_layers，如果失败则从边缘采样寻找非背景色像素。
 
-    [Fix P0-2] 将 bg_color 透传给 _detect_border_layers，使其能执行背景色过滤。
+    [Fix P0-3 增强] 新增内容参考色过滤机制：
+      1. 估算图片内容参考色（中心区域中位色）
+      2. 用内容参考色过滤掉伪装成边框的内容/背景色层
+      3. 这解决了米色背景被误判为边框层的根因问题
 
     Args:
         img: 输入图片（RGB）
@@ -141,11 +233,17 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
     Returns:
         边框层列表 [(color, thickness_px), ...]
     """
-    # 先尝试正常检测（透传 bg_color，启用背景色过滤 + 相邻同色合并）
+    # Step 1: 估算内容参考色（辅助背景过滤）
+    content_ref = _estimate_content_reference(img)
+
+    # Step 2: 正常检测（透传 bg_color，启用背景色过滤 + 相邻同色合并）
     layers = _detect_border_layers(img, bg_color=bg_color)
 
-    # [Fix E/S5 延伸] 无论检测来自哪条路径，一律施加厚度硬上限，
-    # 防止 4.98cm 超厚边框把内容区吞掉并造成纯色填充遮挡。
+    # Step 3: [Fix P0-3] 内容参考色过滤 —— 剔除伪装成边框的内容/背景色层
+    # 这是解决"米色背景被误判为边框层"的关键一步
+    layers = _filter_layers_by_content_ref(layers, content_ref)
+
+    # Step 4: 厚度硬上限，防止超厚边框把内容区吞掉
     layers = _enforce_border_thickness_caps(layers)
 
     if layers:
@@ -190,7 +288,7 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
         color_counts = Counter(edge_colors)
         best_color = color_counts.most_common(1)[0][0]
 
-        # [Fix E/S5] 估算边框厚度：从边缘向内扫描直到颜色变为背景色
+        # 估算边框厚度：从边缘向内扫描直到颜色变为背景色
         # 添加严格上限，防止把背景/花纹误判为厚边框
         fallback_max_thickness = max(
             BORDER_MIN_LAYER_THICKNESS_PX * 2,
@@ -204,7 +302,7 @@ def _get_border_layers_robust(img: Image.Image, bg_color: tuple = (255, 255, 255
             if dist_to_bg <= bg_threshold:
                 break
             thickness += 1
-            # [Fix E/S5] 超过上限立即停止，避免把内层花纹当成边框
+            # 超过上限立即停止，避免把内层花纹当成边框
             if thickness >= fallback_max_thickness:
                 break
 
@@ -298,16 +396,44 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     change_mask = diffs > COLOR_DIFF_THRESHOLD
     change_indices = np.where(change_mask)[0]
 
-    # 构建层列表
-    layers = []
+    # 构建层列表：包含所有色段（包括 < MIN_LAYER_THICKNESS 的过渡带）
+    # 过渡带（1-2px）是抗锯齿像素，需要合并到相邻的厚层中
+    raw_layers = []
     starts = np.concatenate(([0], change_indices + 1, [len(smoothed)]))
     for k in range(len(starts) - 1):
         s, e = int(starts[k]), int(starts[k + 1])
         thickness = e - s
-        if thickness >= MIN_LAYER_THICKNESS:
-            avg_color = np.mean(smoothed[s:e], axis=0)
-            color_tuple = tuple(int(round(v)) for v in avg_color)
-            layers.append((color_tuple, thickness))
+        avg_color = np.mean(smoothed[s:e], axis=0)
+        color_tuple = tuple(int(round(v)) for v in avg_color)
+        raw_layers.append((color_tuple, thickness))
+
+    # [Fix P0-4 抗锯齿带合并]
+    # 将 < MIN_LAYER_THICKNESS 的薄层（抗锯齿过渡带）合并到相邻的厚层中。
+    # 关键修复：合并时**不改变主层颜色**，只累加厚度。
+    # 原因：抗锯齿像素是前景色和背景色的混合，其颜色不应污染任何一侧的纯色。
+    # 正确做法是将过渡带的像素数量加到相邻的纯色层上，保持纯色不变。
+    #
+    # 这修复了因抗锯齿带被丢弃而导致的边框结构断裂问题：
+    #   外层黑(120px) → 抗锯齿(1px) → 背景(30px) → 抗锯齿(1px) → 内层黑(100px)
+    # 之前：抗锯齿被丢弃，变成 黑(120) + 背景(30) + 黑(100)  → 背景合并两段黑
+    # 现在：抗锯齿合并到邻层，黑(121) + 背景(30) + 黑(101) → 结构正确
+    merged_layers = []
+    for col, t in raw_layers:
+        if t < MIN_LAYER_THICKNESS and merged_layers:
+            # 薄层合并到前一个层：只增加厚度，不改变颜色
+            prev_col, prev_t = merged_layers[-1]
+            merged_layers[-1] = (prev_col, prev_t + t)
+        else:
+            merged_layers.append((col, t))
+
+    # 再次检查：如果第一个层就是薄层，向后合并
+    if merged_layers and merged_layers[0][1] < MIN_LAYER_THICKNESS and len(merged_layers) > 1:
+        first_col, first_t = merged_layers[0]
+        second_col, second_t = merged_layers[1]
+        merged_layers[0] = (second_col, first_t + second_t)
+        merged_layers.pop(1)
+
+    layers = [(c, t) for c, t in merged_layers if t >= MIN_LAYER_THICKNESS]
 
     # [Fix P0-2 / 修复② 相邻同色合并]
     if len(layers) >= 2:
@@ -335,6 +461,36 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
                 continue
             filtered.append((col, t))
         layers = filtered
+
+    # [Fix P0-7 花纹周期截断]
+    # 问题：花野/墨上花开 等带规则重复图案（四叶草/花朵线条）的图片，
+    #       _detect_border_layers 会把每行/每朵花纹都识别成独立"边框层"，
+    #       产生 10+ 层交替伪层（如 30,30,30 ↔ 220,200,160 循环），
+    #       导致 sector_render 的 R_eff 递减逻辑、累计深度映射全部错位，
+    #       最终在圆角处渲染出"混乱弧形碎片"（花野截图红框）。
+    #
+    # 判据 1: 连续交替模式 — 从第 2 层开始若出现 color[i]==color[i-2] (±阈值)
+    #         且厚度在相似范围内交替 → 进入花纹重复周期，截断。
+    # 判据 2: 层数硬上限 — 超过 BORDER_MAX_LAYERS (默认 8) 的部分丢弃，
+    #         并回退到最近的"与内容色距离大"的边界，避免在花纹中间截断。
+    # 判据 3: 最小边框系统 — 至少保留前 2 层（外层+间隙），以防误截。
+    if len(layers) > 2:
+        ALT_COLOR_DIST = 20.0  # 判定"同色回归"的距离阈值
+        ALT_THICK_RATIO = 0.5  # 相邻厚度比例 > 此值判定为周期厚度相似
+        cut_idx = len(layers)
+        for i in range(4, len(layers)):
+            ci = np.array(layers[i][0], dtype=np.float64)
+            ci2 = np.array(layers[i - 2][0], dtype=np.float64)
+            d_alt = float(np.sqrt(np.sum((ci - ci2) ** 2)))
+            t_ratio = min(layers[i][1], layers[i - 2][1]) / max(1, max(layers[i][1], layers[i - 2][1]))
+            if d_alt <= ALT_COLOR_DIST and t_ratio >= ALT_THICK_RATIO:
+                # 已进入 A↔B 交替模式，在此之前截断（但至少保留 2 层）
+                cut_idx = max(2, i - 1)
+                break
+        # 硬上限兜底：截断到 max(2, BORDER_MAX_LAYERS - 2) 层（保留安全余量）
+        hard_limit = max(2, _BORDER_MAX_LAYERS - 2)
+        cut_idx = min(cut_idx, hard_limit)
+        layers = layers[:cut_idx]
 
     # 如果没有检测到层，使用 fallback
     if not layers:
@@ -457,16 +613,20 @@ def _scan_edge_boundaries(img_arr: np.ndarray,
     return boundaries_px[:_BORDER_MAX_LAYERS]
 
 
-def detect_nested_rect_layers(img: Image.Image) -> list[tuple[int, int, int, int]]:
+def detect_nested_rect_layers(
+    img: Image.Image,
+    border_layers: list[tuple[tuple[int, int, int], int]] | None = None,
+) -> list[tuple[int, int, int, int]]:
     """
     自动检测图片中嵌套的矩形边框层。
 
-    原理：
-      分别从上/下/左/右 4 条边向内扫描颜色突变点（边界），
-      然后将 4 条边上的边界位置两两配对，构成嵌套矩形。
+    [Fix P0-3 增强] 新增基于 border_layers 的厚度推断：
+      当边缘扫描（_scan_edge_boundaries）因花纹/抗锯齿干扰而检测不到足够层时，
+      使用边框层的累计厚度来推断内层矩形坐标，确保每层边框都有对应的矩形。
 
     Args:
         img: PIL RGB 图片
+        border_layers: 可选，已检测的边框层列表 [(color, thickness_px), ...]
 
     Returns:
         列表：[(x1, y1, x2, y2), ...]  从最外层往最内层排序；
@@ -481,12 +641,12 @@ def detect_nested_rect_layers(img: Image.Image) -> list[tuple[int, int, int, int
     right_xs = _scan_edge_boundaries(arr, 'right')
 
     # 每一层必须有 4 条边共同对应，因此取最少边数
-    n_layers = min(len(top_ys), len(bottom_ys), len(left_xs), len(right_xs))
+    n_layers_from_scan = min(len(top_ys), len(bottom_ys), len(left_xs), len(right_xs))
 
     # 第 0 层 = 最外层边框（扫描到的第一条边）
     # 第 1 层 = 往里的第二条，……
     rects = []
-    for i in range(n_layers):
+    for i in range(n_layers_from_scan):
         x1 = left_xs[i]
         y1 = top_ys[i]
         x2 = right_xs[i]
@@ -494,6 +654,29 @@ def detect_nested_rect_layers(img: Image.Image) -> list[tuple[int, int, int, int
         # 坐标合法性检查（左<右 且 上<下，且有足够面积）
         if x2 - x1 > 20 and y2 - y1 > 20:
             rects.append((x1, y1, x2, y2))
+
+    # [Fix P0-3 新增] 基于 border_layers 的厚度推断
+    # 当边缘扫描层数不足时，用边框累计厚度推算内层矩形坐标
+    if border_layers and len(border_layers) > 0:
+        # 计算边框层的累计厚度
+        cumulative_depths = [0]
+        for _, thickness in border_layers:
+            cumulative_depths.append(cumulative_depths[-1] + thickness)
+        total_depth = cumulative_depths[-1]
+
+        # 如果扫描层数不够，尝试用累计厚度推断内层矩形
+        n_scanned = len(rects)
+        if n_scanned < len(cumulative_depths) - 1:
+            # 需要补充的层数
+            for k in range(n_scanned, len(cumulative_depths) - 1):
+                depth_k = cumulative_depths[k + 1]  # 第 k 层的外边缘距图边的距离
+                # 内层矩形坐标 = 边框外边缘往里 depth_k
+                x1_k = depth_k
+                y1_k = depth_k
+                x2_k = w - 1 - depth_k
+                y2_k = h - 1 - depth_k
+                if x2_k - x1_k > 20 and y2_k - y1_k > 20:
+                    rects.append((x1_k, y1_k, x2_k, y2_k))
 
     # 如果没检测到任何层，退化为整图
     if not rects:
