@@ -1,32 +1,33 @@
 """
 测试边框线在圆角裁剪中是否正确保留。
 验证修复后的 _detect_border_layers 和 _redraw_border_on_corner 功能。
+
+说明：这是**基于真实源图**的集成测试，需要 psd_demo/ 目录下存在指定 JPG。
+如果图片不存在，测试自动跳过（不阻断 CI）。
 """
 import os
 import sys
+import pytest
 import numpy as np
 from PIL import Image
 
-# 添加项目根目录到路径
-sys.path.insert(0, r"/")
-
 from core.image_cropper import (
     _detect_border_layers,
-    _redraw_border_on_corner,
     apply_border_only_corners,
     apply_rounded_corners,
     load_source_image,
 )
 
-# ============ 参数配置 ============
-src_path = r"/psd_demo/双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
-output_dir = r"/psd_demo"
-dpi = 300
+# ============ 参数配置（相对项目根） ============
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_NAME = "双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
+SRC_PATH = os.path.join(PROJECT_ROOT, "psd_demo", SRC_NAME)
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "logs", "test_border_fix_output")
+DPI = 300
 
-# 测试不同的圆角场景
-test_cases = [
+TEST_CASES = [
     {
-        "name": "小圆角-仅边框模式",
+        "name": "small_corner_border_only",
         "target_w_cm": 41.0,
         "target_h_cm": 55.0,
         "corners": {"tl": 0, "tr": 0, "bl": 0, "br": 3.0},
@@ -34,118 +35,101 @@ test_cases = [
     },
 ]
 
-print("=" * 60)
-print("边框线保留功能测试")
-print("=" * 60)
 
-# 1. 加载源图
-print(f"\n源图: {src_path}")
-src = load_source_image(src_path)
-print(f"源图尺寸: {src.size[0]} x {src.size[1]} px")
+@pytest.fixture(scope="module")
+def source_image():
+    if not os.path.exists(SRC_PATH):
+        pytest.skip(f"需要源图才能运行此测试（未找到: {SRC_PATH}）")
+    return load_source_image(SRC_PATH)
 
-# 2. 检测边框层
-print("\n" + "-" * 40)
-print("步骤 1: 检测边框层")
-border_layers = _detect_border_layers(src, max_scan_depth_px=300)
-print(f"检测到 {len(border_layers)} 层边框:")
-for i, (color, thickness) in enumerate(border_layers):
-    print(f"  层{i+1}: 颜色={color}, 厚度={thickness}px")
 
-if not border_layers:
-    print("  ⚠️  未检测到任何边框层！")
-else:
-    total_thickness = sum(t for _, t in border_layers)
-    print(f"  总厚度: {total_thickness}px ({total_thickness * 2.54 / dpi:.2f}cm)")
+@pytest.fixture(scope="module")
+def cropped_image(source_image):
+    target_w_px = int(round(41.0 * DPI / 2.54))
+    target_h_px = int(round(55.0 * DPI / 2.54))
+    return source_image.resize((target_w_px, target_h_px), Image.LANCZOS)
 
-# 3. 对源图进行简单缩放
-target_w_px = int(round(41.0 * dpi / 2.54))
-target_h_px = int(round(55.0 * dpi / 2.54))
-print(f"\n目标尺寸: {target_w_px} x {target_h_px} px")
 
-cropped = src.resize((target_w_px, target_h_px), Image.LANCZOS)
-print(f"缩放后尺寸: {cropped.size[0]} x {cropped.size[1]} px")
+class TestBorderDetection:
+    def test_detect_on_original(self, source_image):
+        layers = _detect_border_layers(source_image, max_scan_depth_px=300)
+        # 简织图必须能检测到至少 1 层边框
+        assert len(layers) >= 1, f"原图应检测到边框层，实际 {len(layers)} 层"
+        total_thick = sum(t for _, t in layers)
+        # 总厚度不得超过硬上限 10 cm (=10 * 300/2.54)
+        max_thick = int(10 * DPI / 2.54)
+        assert total_thick <= max_thick, f"边框总厚度 {total_thick}px 超上限 {max_thick}px"
 
-# 4. 对缩放后的图重新检测边框层
-print("\n" + "-" * 40)
-print("步骤 2: 对缩放后的图检测边框层")
-border_layers_cropped = _detect_border_layers(cropped, max_scan_depth_px=300)
-print(f"检测到 {len(border_layers_cropped)} 层边框:")
-for i, (color, thickness) in enumerate(border_layers_cropped):
-    print(f"  层{i+1}: 颜色={color}, 厚度={thickness}px")
+    def test_detect_after_resize(self, cropped_image):
+        layers = _detect_border_layers(cropped_image, max_scan_depth_px=300)
+        assert len(layers) >= 1, f"缩放后仍应检测到边框，实际 {len(layers)} 层"
 
-# 5. 测试不同圆角场景
-for case in test_cases:
-    print("\n" + "=" * 60)
-    print(f"测试场景: {case['name']}")
-    print(f"圆角: {case['corners']}")
-    
-    corners = case['corners']
-    print(f"圆角模式: 仅边框圆角")
-    print(f"预期模式: {'整体圆角' if case['expected_mode'] == 'full' else '仅边框圆角'}")
 
-    # 执行圆角裁剪
-    result = apply_border_only_corners(cropped, corners, dpi, (255, 255, 255))
-    
-    print(f"输出尺寸: {result.size[0]} x {result.size[1]} px")
-    
-    # 检查边框线是否保留
-    arr = np.array(result)
-    w, h = result.size
-    
-    # 检查右下角圆角区域是否有边框颜色
-    r_px = int(round(corners['br'] * dpi / 2.54))
-    print(f"右下角圆角半径: {r_px}px")
-    
-    # 从右下角向内扫描，检查是否有非背景色像素
-    scan_colors = []
-    for dy in range(min(r_px, 100)):
-        y = h - 1 - dy
-        for dx in range(min(r_px, 100)):
-            x = w - 1 - dx
-            if abs(x - (w - r_px)) <= 5 and abs(y - (h - r_px)) <= 5:
-                # 在圆弧附近采样
-                color = tuple(arr[y, x, :])
-                scan_colors.append(color)
-    
-    # 检查是否有黑色或深色像素（边框颜色）
-    dark_pixels = sum(1 for c in scan_colors if sum(c) < 200)
-    print(f"圆角区域深色像素数: {dark_pixels} / {len(scan_colors)}")
-    
-    if dark_pixels > 0:
-        print("  ✅ 边框线在圆角区域保留")
-    else:
-        print("  ❌ 边框线在圆角区域丢失！")
-    
-    # 保存结果
-    output_path = os.path.join(output_dir, f"test_{case['name']}.jpg")
-    result.save(output_path, 'JPEG', quality=95, optimize=True, dpi=(dpi, dpi))
-    print(f"  已保存: {output_path}")
+class TestApplyBorderOnlyCorners:
+    @pytest.mark.parametrize("case", TEST_CASES, ids=lambda c: c["name"])
+    def test_keeps_border_pixels(self, cropped_image, case):
+        result = apply_border_only_corners(
+            cropped_image, case["corners"], DPI, (255, 255, 255)
+        )
+        assert result.size == cropped_image.size, "输出尺寸必须与输入一致"
 
-# 6. 简单测试 apply_rounded_corners
-print("\n" + "=" * 60)
-print("测试 apply_rounded_corners (整体圆角)")
-corners_test = {'tl': 0, 'tr': 0, 'bl': 0, 'br': 2.0}
-result_test = apply_rounded_corners(cropped, corners_test, dpi, (255, 255, 255))
+        w, h = result.size
+        arr = np.array(result)
+        r_px = int(round(case["corners"]["br"] * DPI / 2.54))
+        cx, cy = w - r_px, h - r_px  # 右下角扇形圆心
 
-r_test = int(round(2.0 * dpi / 2.54))
-arr_test = np.array(result_test)
-dark_in_corner = 0
-total_checked = 0
-for dy in range(min(r_test, 50)):
-    y = h - 1 - dy
-    for dx in range(min(r_test, 50)):
-        x = w - 1 - dx
-        dist_to_arc = abs(np.sqrt((x - (w - r_test))**2 + (y - (h - r_test))**2) - r_test)
-        if dist_to_arc < 3:  # 在圆弧附近
-            total_checked += 1
-            if sum(arr_test[y, x, :]) < 200:
-                dark_in_corner += 1
+        # 在右下角 1/4 圆弧上采样（45°→90° = 右下角弧），步长 1°
+        dark_pixels = 0
+        total_checked = 0
+        for deg in range(0, 91, 1):
+            theta = np.deg2rad(deg)
+            for r_off in range(-2, 3):  # 距圆弧 ±2px
+                rx = cx + (r_px + r_off) * np.cos(theta)
+                ry = cy + (r_px + r_off) * np.sin(theta)
+                x, y = int(round(rx)), int(round(ry))
+                if 0 <= x < w and 0 <= y < h:
+                    total_checked += 1
+                    if sum(arr[y, x, :3]) < 200:
+                        dark_pixels += 1
 
-print(f"圆弧附近深色像素: {dark_in_corner} / {total_checked}")
-if dark_in_corner > 0:
-    print("  ✅ apply_rounded_corners 边框线保留正常")
-else:
-    print("  ❌ apply_rounded_corners 边框线丢失！")
+        assert dark_pixels > 0, (
+            f"场景 {case['name']} 右下角圆弧 90°×±2px 采样 "
+            f"{dark_pixels}/{total_checked} 深色像素，疑似边框丢失"
+        )
 
-print("\n" + "=" * 60)
-print("测试完成")
+    @pytest.mark.parametrize("case", TEST_CASES, ids=lambda c: c["name"])
+    def test_no_exception_save_result(self, cropped_image, case):
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        result = apply_border_only_corners(
+            cropped_image, case["corners"], DPI, (255, 255, 255)
+        )
+        out = os.path.join(OUTPUT_DIR, f"test_{case['name']}.jpg")
+        result.save(out, "JPEG", quality=95, optimize=True, dpi=(DPI, DPI))
+        assert os.path.exists(out) and os.path.getsize(out) > 1000, "结果文件保存失败"
+
+
+class TestApplyRoundedCorners:
+    def test_br_2cm_keeps_border(self, cropped_image):
+        corners = {"tl": 0, "tr": 0, "bl": 0, "br": 2.0}
+        result = apply_rounded_corners(cropped_image, corners, DPI, (255, 255, 255))
+        w, h = result.size
+        r_test = int(round(2.0 * DPI / 2.54))
+        cx, cy = w - r_test, h - r_test
+        arr = np.array(result)
+        dark_in_corner = 0
+        total_checked = 0
+        # 用极坐标在 BR 圆弧 ±3px 上采样，避免大范围空扫
+        for deg in range(0, 91, 1):
+            theta = np.deg2rad(deg)
+            for r_off in range(-3, 4):
+                rx = cx + (r_test + r_off) * np.cos(theta)
+                ry = cy + (r_test + r_off) * np.sin(theta)
+                x, y = int(round(rx)), int(round(ry))
+                if 0 <= x < w and 0 <= y < h:
+                    total_checked += 1
+                    if sum(arr[y, x, :3]) < 200:
+                        dark_in_corner += 1
+        assert dark_in_corner > 0, (
+            f"apply_rounded_corners BR 2cm: 圆弧附近 {dark_in_corner}/{total_checked} "
+            "深色像素，疑似边框丢失"
+        )
