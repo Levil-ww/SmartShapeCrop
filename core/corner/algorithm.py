@@ -11,12 +11,14 @@ PIL 屏幕坐标系（y 向下）pieslice 角度映射：
 单步扇形切割算法（取代早期两步法）：
   1. 先把角落 r×r 正方形设为 0（切掉尖角）
   2. 再用 pieslice 把"矩形内部的 1/4 圆"填回 255（保留圆弧）
+  3. 后处理填充圆弧边界缺失像素（解决 C 形缺口）
   切掉的是 L 形（正方形减去 1/4 圆），即只切掉尖角，保留圆弧。
   圆心在正方形的"内角"顶点（即矩形内部那个角），bbox 以该圆心为中心。
 
 向后兼容：原 core/rounded_corner.py 已改为薄重导出 shim，旧导入路径继续可用。
 """
 from __future__ import annotations
+import numpy as np
 from PIL import Image, ImageDraw
 
 
@@ -97,6 +99,7 @@ def carve_corner_on_mask(
     单步扇形切割算法：
       1. 挖空 r×r 正方形（fill=0）
       2. 填回矩形内部的 1/4 圆（fill=255）
+      3. [Fix C-shaped gap 0812] 后处理：检查圆弧边界像素，填充缺失点
 
     本函数是项目中所有圆角处理的唯一入口，确保 image_cropper.py、
     geometry.py、process_image.py 三处的圆角逻辑完全一致。
@@ -130,9 +133,106 @@ def carve_corner_on_mask(
         if sq_safe[2] > sq_safe[0] and sq_safe[3] > sq_safe[1]:
             draw.rectangle(sq_safe, fill=0)
 
-        # 2. 填回 1/4 圆（保留圆弧）
+        # 2. 计算圆心位置
+        if corner_key == 'tl':
+            cx, cy = x + r_px, y + r_px
+        elif corner_key == 'tr':
+            cx, cy = x + w - r_px, y + r_px
+        elif corner_key == 'bl':
+            cx, cy = x + r_px, y + h - r_px
+        else:  # br
+            cx, cy = x + w - r_px, y + h - r_px
+        
+        # 3. 填回 1/4 圆（保留圆弧）
         bbox = get_corner_pieslice_bbox(rect, corner_key, r_px)
         start_deg, end_deg = CORNER_ANGLES[corner_key]
         safe_bbox = (max(0, bbox[0]), max(0, bbox[1]), min(W, bbox[2]), min(H, bbox[3]))
         if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
             draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
+
+    # 4. [Fix C-shaped gap 0812] 后处理：检查所有角的圆弧边界像素
+    # 在 pieslice 绘制完成后，使用 numpy 数组进行边界像素填充
+    mask_arr = np.array(mask)
+    
+    for corner_key in ('tl', 'tr', 'bl', 'br'):
+        r = corners.get(corner_key, 0)
+        if r is None or r <= 0:
+            continue
+        r_px = max(1, int(round(r)))
+        max_r = max(1, min(w, h) // 2)
+        r_px = min(r_px, max_r)
+        if r_px <= 0:
+            continue
+
+        # 计算圆心位置
+        if corner_key == 'tl':
+            cx, cy = x + r_px, y + r_px
+        elif corner_key == 'tr':
+            cx, cy = x + w - r_px, y + r_px
+        elif corner_key == 'bl':
+            cx, cy = x + r_px, y + h - r_px
+        else:  # br
+            cx, cy = x + w - r_px, y + h - r_px
+
+        # 填充圆弧边界缺失像素
+        _fill_corner_boundary_pixels(mask_arr, cx, cy, r_px, corner_key, W, H)
+
+    # 将修改后的数组保存回 mask
+    mask.paste(Image.fromarray(mask_arr, 'L'))
+
+
+def _fill_corner_boundary_pixels(
+    mask_arr: np.ndarray,
+    cx: int,
+    cy: int,
+    r: int,
+    corner_key: str,
+    W: int,
+    H: int,
+) -> None:
+    """
+    [Fix C-shaped gap 0812] 填充圆角边界上的缺失像素。
+
+    PIL pieslice 在绘制圆弧时，对于距离圆心略大于 r 的像素可能不会填充，
+    导致圆角边界出现细微的 C 形缺口。本函数通过检查 r ± 1.5 像素范围内
+    的所有像素，将应该在圆弧上但值为 0 的像素填充为 255。
+
+    Args:
+        mask_arr: numpy 数组（原地修改）
+        cx: 圆心 x 坐标
+        cy: 圆心 y 坐标
+        r: 圆角半径（像素）
+        corner_key: 角落标识 ('tl' | 'tr' | 'bl' | 'br')
+        W: 图像宽度
+        H: 图像高度
+    """
+    # 确定角度范围（与 CORNER_ANGLES 一致）
+    angle_ranges = {
+        'tl': (180, 270),
+        'tr': (270, 360),
+        'bl': (90, 180),
+        'br': (0, 90),
+    }
+    start_deg, end_deg = angle_ranges[corner_key]
+
+    # 检查 r ± 1.5 像素范围内的所有像素
+    # 使用 1.5 像素容差覆盖边界舍入误差
+    RADIUS_TOLERANCE = 1.5
+
+    for angle in range(start_deg, end_deg + 1):
+        rad = np.radians(angle)
+        for offset in range(-1, 2):  # -1, 0, +1
+            test_r = r + offset
+            px = int(round(cx + test_r * np.cos(rad)))
+            py = int(round(cy + test_r * np.sin(rad)))
+
+            # 检查像素是否在图像范围内
+            if not (0 <= px < W and 0 <= py < H):
+                continue
+
+            # 计算实际距离
+            actual_dist = np.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+
+            # 如果实际距离在 r ± RADIUS_TOLERANCE 范围内，且值为 0，则填充为 255
+            if abs(actual_dist - r) <= RADIUS_TOLERANCE and mask_arr[py, px] == 0:
+                mask_arr[py, px] = 255

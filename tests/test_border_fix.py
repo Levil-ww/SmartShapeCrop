@@ -89,7 +89,9 @@ class TestApplyBorderOnlyCorners:
                 x, y = int(round(rx)), int(round(ry))
                 if 0 <= x < w and 0 <= y < h:
                     total_checked += 1
-                    if sum(arr[y, x, :3]) < 200:
+                    # uint8→uint16 避免 3×255=765 > 255 发生溢出警告
+                    pixel = arr[y, x, :3].astype(np.uint16)
+                    if int(pixel[0]) + int(pixel[1]) + int(pixel[2]) < 200:
                         dark_pixels += 1
 
         assert dark_pixels > 0, (
@@ -127,7 +129,9 @@ class TestApplyRoundedCorners:
                 x, y = int(round(rx)), int(round(ry))
                 if 0 <= x < w and 0 <= y < h:
                     total_checked += 1
-                    if sum(arr[y, x, :3]) < 200:
+                    # uint8→uint16 避免 3×255=765 > 255 发生溢出警告
+                    pixel = arr[y, x, :3].astype(np.uint16)
+                    if int(pixel[0]) + int(pixel[1]) + int(pixel[2]) < 200:
                         dark_in_corner += 1
         assert dark_in_corner > 0, (
             f"apply_rounded_corners BR 2cm: 圆弧附近 {dark_in_corner}/{total_checked} "

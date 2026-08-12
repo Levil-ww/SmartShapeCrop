@@ -323,7 +323,13 @@ class TemplateMatcher:
         return score, details
 
     def get_library_stats(self) -> dict:
-        """获取模板库统计信息"""
+        """获取模板库统计信息。
+
+        若尚未建立缓存（仅 set_template_dir 后未调用 scan/find），则自动触发一次扫描，
+        避免调用方必须显式 scan_library() 才能得到正确 total。
+        """
+        if self._template_dir and (not self._cache or self._needs_refresh()):
+            self.scan_library()
         return {
             'total': len(self._cache),
             'has_pattern': sum(1 for e in self._cache.values()

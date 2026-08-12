@@ -313,18 +313,19 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     裁剪半径 = 指定的圆角半径（不做扩展）。
     
     [关键修正]：采用 Mask 剪切策略 + 重绘最外层边框
-    - 生成圆角 Mask 裁切原图
+    - 使用 carve_corner_on_mask 创建准确的圆角 mask（避免 PIL rounded_rectangle 的边界缺口）
     - 在圆角边缘重新绘制最外层边框，确保边框在圆角处连续
     - 内部线条保持直线，被圆角自然截断
+    
+    [Fix C-shaped gap 0812]：
+    - 使用 carve_corner_on_mask 替代 rounded_rectangle 创建 mask
+    - rounded_rectangle 在圆角边界会产生值为 0 的像素（应该为 255），导致 C 形缺口
+    - carve_corner_on_mask 通过挖空正方形 + 填回四分之一圆的方式，确保所有边界像素正确
     """
     w, h = img.size
 
     # 检测原图边框层
     border_layers = _get_border_layers_robust(img, bg_color)
-
-    # 创建一个全黑的遮罩 (0 = 全透明)
-    mask = Image.new('L', (w, h), 0)
-    draw = ImageDraw.Draw(mask)
 
     # 统一圆角处理：厘米 → 像素
     corners_px = {}
@@ -335,62 +336,27 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
         r_raw = max(1, int(round(radius_cm * dpi / 2.54)))
         corners_px[corner_key] = min(r_raw, r_cap)
 
-    # 确定各角半径
-    tl_r = corners_px.get('tl', 0)
-    tr_r = corners_px.get('tr', 0)
-    br_r = corners_px.get('br', 0)
-    bl_r = corners_px.get('bl', 0)
-    
-    # 如果四角半径相同，直接使用 PIL 的 rounded_rectangle
-    if tl_r == tr_r == br_r == bl_r:
-        r = tl_r
-        if r > 0:
-            draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=255)
-        else:
-            draw.rectangle([0, 0, w - 1, h - 1], fill=255)
-    else:
-        # 四角半径不同，手动绘制
-        inner_x1 = max(tl_r, bl_r)
-        inner_y1 = max(tl_r, tr_r)
-        inner_x2 = w - 1 - max(tr_r, br_r)
-        inner_y2 = h - 1 - max(bl_r, br_r)
-        
-        # 1. 填充中心区域
-        if inner_x2 > inner_x1 and inner_y2 > inner_y1:
-            draw.rectangle([inner_x1, inner_y1, inner_x2, inner_y2], fill=255)
-            
-        # 2. 填充四条边
-        if inner_x2 > inner_x1 and inner_y1 >= 0:
-            draw.rectangle([inner_x1, 0, inner_x2, inner_y1], fill=255)
-        if inner_x2 > inner_x1 and inner_y2 < h:
-            draw.rectangle([inner_x1, inner_y2, inner_x2, h - 1], fill=255)
-        if inner_y2 > inner_y1 and inner_x1 >= 0:
-            draw.rectangle([0, inner_y1, inner_x1, inner_y2], fill=255)
-        if inner_y2 > inner_y1 and inner_x2 < w:
-            draw.rectangle([inner_x2, inner_y1, w - 1, inner_y2], fill=255)
-            
-        # 3. 绘制四个圆角
-        if tl_r > 0:
-            draw.pieslice([0, 0, tl_r * 2, tl_r * 2], start=180, end=270, fill=255)
-        if tr_r > 0:
-            cx, cy = w - 1 - tr_r, tr_r
-            draw.pieslice([cx - tr_r, cy - tr_r, cx + tr_r, cy + tr_r], start=270, end=360, fill=255)
-        if br_r > 0:
-            cx, cy = w - 1 - br_r, h - 1 - br_r
-            draw.pieslice([cx - br_r, cy - br_r, cx + br_r, cy + br_r], start=0, end=90, fill=255)
-        if bl_r > 0:
-            cx, cy = bl_r, h - 1 - bl_r
-            draw.pieslice([cx - bl_r, cy - bl_r, cx + bl_r, cy + bl_r], start=90, end=180, fill=255)
+    # 创建圆角 mask（使用 carve_corner_on_mask 确保边界像素正确）
+    from .corner.algorithm import carve_corner_on_mask
+
+    mask = Image.new('L', (w, h), 255)  # 初始化为全255（保留）
+    rect = (0, 0, w, h)
+    carve_corner_on_mask(mask, rect, corners_px)
 
     # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=mask)
 
-    # [统一重绘流程 v2]
-    # Step A: 用 sector_render._redraw_border_on_corner 做"结构感知"的多层边框重绘
-    #   → 保留点状线/装饰/间隙，细双线自动掰弯成连续圆弧（解决 C 形缺口）
+    # [Fix 安妮森林 v3 — 同步修复 apply_rounded_corners]
+    #
+    # 历史问题：同 apply_border_only_corners — 1) 用 outermost_thickness 计算
+    #   inner_r 导致几乎整圆被清空；2) 只传 border_layers[:1] 给重绘。
+    #
+    # 修复: 1) 移除 _clear_inner_arc_to_bg；2) 传完整 border_layers。
+    #   详见 apply_border_only_corners 内的长篇注释 (Fix 安妮森林 v3)。
+
+    # Step A: 重绘所有边框层在圆弧上（完整 border_layers）
     if corners_px and border_layers:
-        from .corner.sector_render import _redraw_border_on_corner
         for ck, rp in corners_px.items():
             if rp <= 0:
                 continue
@@ -399,8 +365,7 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
                 src_img=img, validity_mask=mask
             )
 
-    # Step B: 安全的最外轮廓薄层补绘 v2（只在外缘±5px，缺才补，不破坏间隙）
-    #   → 无论是否有间隙层都安全调用，修复外轮廓缺边/漏绘/不连续
+    # Step B: 安全的最外轮廓薄层补绘
     if corners_px:
         _redraw_outer_border_on_corners(
             result, img, corners_px, border_layers, mask, bg_color
@@ -510,13 +475,14 @@ def _build_multi_layer_corner_mask(
 
         # ===== [A) 基础 outer L-cut + 保守 ring 保护] =====
         # ring_lower_bound: 精确等于边框总厚度 + 4px 公差
-        # [Fix 0811 精确 ring 保护]：旧版 max(raw_bounded, raw*1.2+6, 0.12r)
-        #   导致 ring 比实际边框厚 20%+6px，过多像素被保护不被切，
-        #   造成白色直角边框线残留。新版 ring_lower_bound = raw_bounded + 4，
+        # [Fix 不对称圆角 0811]：当没有边框层时，ring_lower_bound 必须为 0，
+        #   否则会过度保护应该被切掉的圆角区域，导致圆角不正确。
+        #   当有边框时，ring_lower_bound = min(raw_depth + 4, r*0.5)，
         #   精确匹配边框总厚度，仅给 4px 抗锯齿容错空间。
-        RING_MAX_PROTECT = int(r * 0.5) if r > 0 else 0
-        raw_bounded = min(raw_depth, RING_MAX_PROTECT)
-        ring_lower_bound = max(0, min(raw_bounded + 4, int(r * 0.7)))
+        if raw_depth > 0:
+            ring_lower_bound = max(0, min(raw_depth + 4, int(r * 0.5)))
+        else:
+            ring_lower_bound = 0
 
         if corner_key == 'tl':
             cx, cy = r, r
@@ -547,9 +513,13 @@ def _build_multi_layer_corner_mask(
         outer_cut = (angle >= ang_min) & (angle < ang_max) & (dist > r)
 
         # Step 2: 保守 ring_region 保护外边框条带（防止最外轮廓线缺失）
+        # [Fix C-shaped gap 0811] 扩展 ring_region 到弧外 2px，补偿像素离散化误差：
+        #   当映射连续极坐标(角度+半径)到离散像素坐标时，实际距离可能略大于理想半径，
+        #   导致弧线上的像素被 mask 切掉而未被边框重绘覆盖，形成 C 形缺口。
+        #   增加 2px 容差确保弧线上的像素不被误切。
         ring_inner = float(r) - float(ring_lower_bound)
         ring_region = (angle >= ang_min) & (angle < ang_max) & \
-                      (dist >= ring_inner) & (dist <= float(r))
+                      (dist >= ring_inner) & (dist <= float(r) + 2.0)
         outer_cut = outer_cut & (~ring_region)
 
         mask_local = mask_arr[y1:y2, x1:x2]
@@ -649,6 +619,295 @@ def _build_multi_layer_corner_mask(
     return mask
 
 
+def _post_cleanup_gap_regions(
+    result_img: Image.Image,
+    src_img: Image.Image,
+    corners_px: dict[str, int],
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    validity_mask: Image.Image,
+    bg_color: tuple = (255, 255, 255),
+) -> None:
+    """
+    [Fix 塞纳时光米黄弧线 0812v2] 后处理兜底清扫间隙区域。
+
+    这是对 Step A (sector_render._redraw_border_on_corner) 的补充：
+    - Step A 通过 gap_regions 检测主动清理间隙区域
+    - 本函数通过像素颜色判断被动兜底，确保间隙区域无残留米黄色弧线
+
+    工作原理：
+    1. 计算 content_ref（与 sector_render.py 一致的 15%-85% 密集采样中值）
+    2. 计算边框层累积深度，确定每个间隙区域的深度区间
+    3. 对每个角，在可见扇形区中扫描深度位于间隙区域的像素
+    4. 若像素颜色接近 content_ref（间隙色）且不接近任何边框色 → 清空为 bg_color
+
+    安全性保证：
+    - 不修改最外层边框（depth=0）和最内层内容（depth≥total_border_depth）
+    - 只清理同时满足"间隙色 + 非边框色"条件的像素
+    - 白色点状间隙（花漾之约）：已是 bg_color，距离阈值内跳过
+    """
+    w, h = result_img.size
+    arr = np.array(result_img, dtype=np.uint8)
+
+    # 计算 content_ref
+    src_arr = np.array(src_img, dtype=np.float64)
+    x_start, x_end = int(w * 0.15), int(w * 0.85)
+    y_start, y_end = int(h * 0.15), int(h * 0.85)
+    STEPS = 21
+    xs = np.linspace(x_start, x_end, STEPS, dtype=np.int64).clip(0, w - 1)
+    ys = np.linspace(y_start, y_end, STEPS, dtype=np.int64).clip(0, h - 1)
+    gx, gy = np.meshgrid(xs, ys)
+    samples = src_arr[gy, gx, :].reshape(-1, 3)
+    content_ref = np.median(samples, axis=0)
+    CONTENT_COLOR_DIST = 60.0  # 放宽阈值：覆盖浅色间隙与内容色的差异
+    BORDER_COLOR_DIST = 20.0
+
+    # 边框层累积深度
+    cumulative_depths = [0]
+    for _, thickness in border_layers:
+        cumulative_depths.append(cumulative_depths[-1] + thickness)
+    total_border_depth = cumulative_depths[-1]
+
+    # 边框颜色数组
+    border_colors_arr = np.array(
+        [np.array(c, dtype=np.float64) for c, _ in border_layers]
+    )
+
+    # [Smart Gap Check] 构建不含间隙层的边框颜色数组
+    # 用于间隙区域装饰检测，避免间隙层颜色被误判为边框色
+    # 与 sector_render.py 保持一致的间隙层判定逻辑
+    GAP_MAX_THICKNESS = 30.0
+    is_gap_layer_cleanup = []
+    for i, (c, t) in enumerate(border_layers):
+        dist_to_content = float(np.sqrt(np.sum((np.array(c, dtype=np.float64) - content_ref) ** 2)))
+        is_gap = (dist_to_content < CONTENT_COLOR_DIST and t <= GAP_MAX_THICKNESS and i > 0)
+        is_gap_layer_cleanup.append(is_gap)
+    solid_border_colors_arr = np.array(
+        [np.array(c, dtype=np.float64) for (c, _), ig in zip(border_layers, is_gap_layer_cleanup) if not ig]
+    )
+
+    # 背景色数组
+    bg_arr = np.array(bg_color, dtype=np.float64)
+
+    # 计算间隙区域（与 sector_render.py 一致：逐层判定）
+    gap_regions = []
+    for i, is_gap in enumerate(is_gap_layer_cleanup):
+        if is_gap:
+            gap_regions.append((cumulative_depths[i], cumulative_depths[i + 1]))
+
+    if not gap_regions:
+        return
+
+    for corner_key, r in corners_px.items():
+        if r <= 0:
+            continue
+        r = min(r, max(1, min(w, h) // 2))
+        if r <= 0:
+            continue
+
+        if corner_key == 'tl':
+            cx, cy = r, r
+        elif corner_key == 'tr':
+            cx, cy = w - r, r
+        elif corner_key == 'bl':
+            cx, cy = r, h - r
+        else:
+            cx, cy = w - r, h - r
+
+        roi_x1 = max(0, cx - r)
+        roi_y1 = max(0, cy - r)
+        roi_x2 = min(w, cx + r + 1)
+        roi_y2 = min(h, cy + r + 1)
+
+        if roi_x2 <= roi_x1 or roi_y2 <= roi_y1:
+            continue
+
+        yy, xx = np.mgrid[roi_y1:roi_y2, roi_x1:roi_x2].astype(np.float64)
+        dx = xx - float(cx)
+        dy = yy - float(cy)
+        dist = np.sqrt(dx * dx + dy * dy)
+        depth = float(r) - dist
+        angle = np.degrees(np.arctan2(dy, dx))
+        angle = np.mod(angle, 360.0)
+        ang_min, ang_max = CORNER_ANGLES[corner_key]
+
+        if ang_max == 360:
+            valid_angle = (angle >= ang_min) | (angle < 1)
+        else:
+            valid_angle = (angle >= ang_min) & (angle <= ang_max)
+        valid_region = valid_angle & (dist <= r + 2.0)
+
+        if validity_mask is not None:
+            mask_arr = np.array(validity_mask, dtype=bool)
+            local_validity = mask_arr[roi_y1:roi_y2, roi_x1:roi_x2]
+            valid_region = valid_region & local_validity
+
+        for (gap_start, gap_end) in gap_regions:
+            gap_pixels = valid_region & (depth >= float(gap_start)) & (depth < float(gap_end))
+            count = np.sum(gap_pixels)
+            if count == 0:
+                continue
+
+            yy_g, xx_g = np.where(gap_pixels)
+            global_y = yy_g + roi_y1
+            global_x = xx_g + roi_x1
+            pixel_colors = arr[global_y, global_x, :].astype(np.float64)
+
+            # [Smart Gap Check] 区分"均匀间隙"与"装饰间隙"
+            # 与 sector_render.py 一致：在直边方向采样间隙层颜色
+            # 排除接近 content_ref 的像素后计算标准差
+            COLOR_STD_THRESH = 8.0
+
+            # 在直边方向采样间隙层
+            straight_samples = []
+            if corner_key == 'tl':
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for px in range(cx + r + 5, min(cx + r + 55, w)):
+                        straight_samples.append((d, px))
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for py in range(cy + r + 5, min(cy + r + 55, h)):
+                        straight_samples.append((py, d))
+            elif corner_key == 'tr':
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for px in range(max(0, cx - r - 55), cx - r - 5):
+                        straight_samples.append((d, px))
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for py in range(cy + r + 5, min(cy + r + 55, h)):
+                        straight_samples.append((py, w - 1 - d))
+            elif corner_key == 'bl':
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for px in range(cx + r + 5, min(cx + r + 55, w)):
+                        straight_samples.append((h - 1 - d, px))
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for py in range(max(0, cy - r - 55), cy - r - 5):
+                        straight_samples.append((py, d))
+            else:  # br
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for px in range(max(0, cx - r - 55), cx - r - 5):
+                        straight_samples.append((h - 1 - d, px))
+                for d in range(gap_start, min(gap_end, gap_start + 20)):
+                    for py in range(max(0, cy - r - 55), cy - r - 5):
+                        straight_samples.append((py, w - 1 - d))
+
+            if len(straight_samples) > 20:
+                straight_arr = np.array(straight_samples, dtype=np.int64)
+                straight_colors = src_arr[straight_arr[:, 0], straight_arr[:, 1], :]
+                dist_to_content_s = np.sqrt(
+                    np.sum((straight_colors - content_ref.reshape(1, 3)) ** 2, axis=1)
+                )
+                gap_only = straight_colors[dist_to_content_s > 25.0]
+                if len(gap_only) > 10:
+                    straight_std = float(np.mean(np.std(gap_only, axis=0)))
+                else:
+                    straight_std = 0.0
+            else:
+                straight_std = 0.0
+
+            if straight_std < COLOR_STD_THRESH:
+                # 均匀间隙: 清理所有非边框、非背景的间隙色像素
+                d_bg = np.sqrt(np.sum((pixel_colors - bg_arr.reshape(1, 3)) ** 2, axis=1))
+                is_not_bg = d_bg > 5.0
+
+                # 排除接近边框色的像素
+                not_border_like = np.ones(count, dtype=bool)
+                if len(solid_border_colors_arr) > 0:
+                    for bc_arr in solid_border_colors_arr:
+                        d_border = np.sqrt(np.sum((pixel_colors - bc_arr.reshape(1, 3)) ** 2, axis=1))
+                        not_border_like &= (d_border > 15.0)
+
+                to_clear = not_border_like & is_not_bg
+
+                if np.any(to_clear):
+                    clear_y = global_y[to_clear]
+                    clear_x = global_x[to_clear]
+                    arr[clear_y, clear_x, :] = bg_arr.reshape(1, 3).astype(np.uint8)
+            # 装饰间隙: 完全不修改，保留原状态
+
+    result_img.paste(Image.fromarray(arr, 'RGB'))
+
+
+def _clear_inner_arc_to_bg(
+    result_img: Image.Image,
+    corners_px: dict[str, int],
+    outermost_border_thickness: int,
+    validity_mask: Image.Image,
+    bg_color: tuple = (255, 255, 255),
+) -> None:
+    """
+    清除每个角弧内区域（最外层边框以内）为背景色。
+
+    这确保圆角弧线上只有最外层边框线条可见，内层间隙、装饰、花纹等
+    全部被清除为背景色，与 Photoshop 人工效果一致（图二）。
+
+    算法：
+      对每个角，在弧线区域内，将距离圆心 < (R - T_outermost) 的像素
+      全部设为 bg_color。T_outermost 是最外层边框厚度。
+
+    Args:
+        result_img: 结果图（原地修改）
+        corners_px: 四角圆角半径（像素）
+        outermost_border_thickness: 最外层边框厚度（像素）
+        validity_mask: 有效性遮罩（只清理 mask 允许的区域）
+        bg_color: 背景色
+    """
+    w, h = result_img.size
+    arr = np.array(result_img, dtype=np.uint8)
+
+    for corner_key, r in corners_px.items():
+        if r <= 0:
+            continue
+        r = min(r, max(1, min(w, h) // 2))
+        if r <= 0:
+            continue
+
+        if corner_key == 'tl':
+            cx, cy = r, r
+        elif corner_key == 'tr':
+            cx, cy = w - r, r
+        elif corner_key == 'bl':
+            cx, cy = r, h - r
+        else:
+            cx, cy = w - r, h - r
+
+        inner_r = max(0, r - outermost_border_thickness)
+
+        roi_x1 = max(0, cx - r)
+        roi_y1 = max(0, cy - r)
+        roi_x2 = min(w, cx + r + 1)
+        roi_y2 = min(h, cy + r + 1)
+
+        if roi_x2 <= roi_x1 or roi_y2 <= roi_y1:
+            continue
+
+        yy, xx = np.mgrid[roi_y1:roi_y2, roi_x1:roi_x2].astype(np.float64)
+        dx = xx - float(cx)
+        dy = yy - float(cy)
+        dist = np.sqrt(dx * dx + dy * dy)
+        angle = np.degrees(np.arctan2(dy, dx))
+        angle = np.mod(angle, 360.0)
+
+        ang_min, ang_max = CORNER_ANGLES[corner_key]
+
+        if ang_max == 360:
+            valid_angle = (angle >= ang_min) | (angle < 1)
+        else:
+            valid_angle = (angle >= ang_min) & (angle <= ang_max)
+
+        clear_region = valid_angle & (dist <= float(inner_r))
+
+        if validity_mask is not None:
+            mask_arr = np.array(validity_mask, dtype=bool)
+            local_validity = mask_arr[roi_y1:roi_y2, roi_x1:roi_x2]
+            clear_region = clear_region & local_validity
+
+        if np.any(clear_region):
+            yy_c, xx_c = np.where(clear_region)
+            global_y = yy_c + roi_y1
+            global_x = xx_c + roi_x1
+            arr[global_y, global_x, :] = np.array(bg_color, dtype=np.uint8).reshape(1, 3)
+
+    result_img.paste(Image.fromarray(arr, 'RGB'))
+
+
 def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
                                dpi: int = 150, bg_color: tuple = (255, 255, 255),
                                border_width_cm: float = _DEFAULT_BORDER_WIDTH_CM,
@@ -656,7 +915,12 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     """
     仅对边框区域应用圆角，内部保持直角。
 
-    [关键修正]：使用 _build_multi_layer_corner_mask 构建正确的遮罩
+    [关键修正 v3]：只重绘最外层边框线条为圆角
+    - 清除弧内区域（最外层边框以内）为背景色
+    - 只重绘最外层边框层在圆角弧线上
+    - 确保圆角处只有最外层边框可见，与 Photoshop 效果一致（图二）
+
+    [关键修正 v2]：使用 _build_multi_layer_corner_mask 构建正确的遮罩
     - 每个角独立控制圆角半径，支持 tl=tr=0, bl=br>0 等不对称场景
     - 生成圆角 Mask 裁切原图
     - 在圆角边缘重新绘制边框层，确保边框在圆角处连续
@@ -670,15 +934,10 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         border_layers = _get_border_layers_robust(img, bg_color)
 
     # ===== [新增] 检测嵌套矩形层（用于逐层有效半径递减 + 内层直角保护）=====
-    # 这是婉卉案例（内层黑框不该出现圆弧缺口）和花野案例（外→内半径递减）
-    # 的共同基础：detect_nested_rect_layers 基于四边亮度突变扫描边界，
-    # 能准确得到每层嵌套矩形的实际坐标，比 border_layers 的纯厚度更可靠。
-    # [Fix P0-3 增强] 传入 border_layers，当边缘扫描层数不足时用边框厚度推断
     try:
         nested_rects = detect_nested_rect_layers(img, border_layers=border_layers)
     except Exception:
         nested_rects = []
-    # 确保 rects[0] 总是存在（至少包含整图），防止迭代器空
     if not nested_rects:
         nested_rects = [(0, 0, w - 1, h - 1)]
 
@@ -694,14 +953,6 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     if not corners_px:
         return img
 
-    # [Fix G/S7] 边框层分离使用：
-    # 1. 原始 border_layers（含间隙层）：
-    #    - 用于 _build_multi_layer_corner_mask 计算 total_border_depth
-    #    - 用于 _redraw_border_on_corner 计算正确的环带边界
-    # 2. 间隙层（高亮度）在重绘时特殊处理：用内容色填充，而非边框色
-    #    - 这实现了双层边框（黑-间隙-棕）在圆角处的正确分离
-    #    - 间隙区域在直边由原图保留，在角部由重绘用内容色填充
-
     # 使用原始 border_layers + nested_rects 构建分层感知的 mask
     mask = _build_multi_layer_corner_mask(
         w, h, corners_px, border_layers, nested_rects=nested_rects
@@ -711,25 +962,47 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=mask)
 
-    # [统一重绘流程 v2] 始终按两步执行：
+    # [Fix 安妮森林 v3 — 彻底移除内部过清空]
+    #
+    # 历史问题：之前版本先"暴力清空弧内"再"只重绘最外层边框"，只适用于
+    #   极少数"纯边框+纯白内部"的模板（中古花园边框打印版）。
+    #
+    #   但对于安妮森林（文字带边框）、墨上花开（花纹+米色间隙）、花幔
+    #   （多层同心边框）等绝大多数产品，边框检测只识别外沿的 1~2 层薄边
+    #   （~15px 总厚度），导致 inner_r = R - 15 ≈ 整圆内部被清空为白色，
+    #   边框带内的文字/花纹/装饰全部被抹掉（安妮森林右下角红框 bug 的根因）。
+    #
+    # 新策略：完全移除"清空弧内"这一步骤 (_clear_inner_arc_to_bg 不再调用)。
+    # 依靠：
+    #   1. mask.paste(img)              → 弧内正确保留原图内容
+    #   2. _redraw_border_on_corner    → 边框同心圆弧的结构感知重绘
+    #   3. Smart Gap Check v2          → 真空间隙清空 / 装饰间隙保留
+    #
+    # 结果：
+    #   ✅ 安妮森林文字带 → 保留原图内容（非间隙）不被误删
+    #   ✅ 墨上花开米色间隙 → Smart v2 识别为真空间隙，正确清空
+    #   ✅ 花幔多层彩色边框 → 完整的多层边框重绘，弧线衔接正确
+    #
+    # 注意：若将来需要支持"边框打印 + 内部强制纯白"的严格场景，建议新增
+    #   参数显式开启强清空模式，而不是默认破坏绝大多数产品。
+
+    # Step A: 重绘所有边框层在圆弧上（完整 border_layers，不再只取最外层1层）
+    #
+    # 由 sector_render.py 的 Smart Gap Check v2 负责智能区分：
+    #   - 真空间隙（墨上花开/塞纳时光米色带，颜色均匀纯色）→ 清空为背景色
+    #   - 装饰间隙（安妮森林文字带 / 花漾之约点状线，含非均匀装饰）→ 保留原贴图
+    #   - 有色边框层 → 结构感知的同心圆弧重绘，保护装饰像素不被覆盖
     if border_layers and corners_px:
-        # Step A: sector_render._redraw_border_on_corner 结构感知多层重绘
-        #   (保留点状线间隙/花朵装饰/间隙层颜色，细双线对角内区缺口自动填补)
         for corner_key, r_px in corners_px.items():
             if r_px <= 0:
                 continue
             _redraw_border_on_corner(
                 result, corner_key, r_px, border_layers,
-                src_img=img, validity_mask=mask
+                src_img=img, validity_mask=mask,
+                only_outermost=True,  # [Fix] 仅保留最外层黑色边框（匹配 PS 效果）
             )
 
-    # Step B: 始终调用安全补绘 v2（不区分 has_gap_layers）
-    #   旧版暴力覆盖算法在"有间隙层"时确实会破坏结构，因此过去跳过。
-    #   新版 _redraw_outer_border_on_corners v2:
-    #     1) 只触碰外轮廓 ±5px 薄层（不碰内层间隙/装饰）
-    #     2) 缺才补 (当前是背景色/内容色，且直边同深度是有色边框才绘)
-    #     3) 代表色是间隙色(点状线中间白)时自动跳过 → 保留点状结构
-    #   故对「塞纳时光(黑-间隙-棕)」和「花漾之约(厚奶油+圆点线)」均安全。
+    # Step B: 安全补绘外轮廓
     if corners_px:
         _redraw_outer_border_on_corners(
             result, img, corners_px, border_layers, mask, bg_color

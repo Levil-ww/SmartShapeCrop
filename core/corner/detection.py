@@ -58,6 +58,8 @@ def _enforce_border_thickness_caps(
 
     [Fix E/S5 延伸]：解决 _detect_border_layers 最末层吃掉 300px 扫描深度的问题。
     规则：
+      0. 若某层厚度接近上限且是前一层厚度的 3 倍以上 → 判定为内容区伪边框，丢弃
+         （花幔/墨上花开等场景：内容区被误判为边框层，厚度接近上限）
       1. 若某单层厚度 > BORDER_MAX_SINGLE_LAYER_CM → 截断到该上限
          （单层太厚几乎可确定是"内容区 + 边框"混在一起被误判）
       2. 若所有层累计总厚度 > BORDER_MAX_TOTAL_CM → 从最末层开始丢弃，
@@ -79,6 +81,45 @@ def _enforce_border_thickness_caps(
     MAX_SINGLE_PX = int(round(BORDER_MAX_SINGLE_LAYER_CM * px_per_cm))
     MAX_TOTAL_PX = int(round(BORDER_MAX_TOTAL_CM * px_per_cm))
     MIN_PX = BORDER_MIN_LAYER_THICKNESS_PX
+
+    # Step 0: 丢弃"内容区伪边框层"
+    # 识别规则：如果某层厚度接近上限（>= 85% of MAX_SINGLE_PX），
+    # 且是前一层厚度的 3 倍以上，则判定为内容区被误判为边框，直接丢弃。
+    # 典型场景：花幔/墨上花开的"黑边框(5px) + 间隙(8px) + 内容区(118px)"
+    # 中，内容区(118px)被误判为边框层，需要丢弃。
+    if len(layers) >= 2:
+        filtered_layers = [layers[0]]  # 保留第一层（最外层边框）
+        for i in range(1, len(layers)):
+            cur_color, cur_t = layers[i]
+            prev_color, prev_t = filtered_layers[-1]
+            
+            # [Fix Moshang 5cm 圆角过厚] 更敏感的伪边框检测
+            # 场景：墨上花开/花幔等有花卉图案的图片，内容区被误判为边框层
+            # 规则 A：厚度接近上限(>=85%) 且是前一层3倍以上 → 伪边框
+            # 规则 B：当前层是前一层3倍以上 且 前一层是薄边框(<=1cm) → 伪边框
+            #   - 薄边框(如黑边框5-10px)之后出现一个3倍厚的层(内容区48px)
+            #   - 这几乎可以确定是内容区被误判，因为真正的多层边框厚度是渐进的
+            cur_is_fake = False
+            
+            # 规则 A：原逻辑（保留）
+            if cur_t >= MAX_SINGLE_PX * 0.85 and prev_t > 0 and cur_t >= prev_t * 3:
+                cur_is_fake = True
+            
+            # 规则 B：新增 - 薄边框后的3倍跃变
+            # 前一层是薄边框(<=1cm)，当前层突然3倍以上 → 内容区伪装
+            THIN_BORDER_PX = int(round(1.0 * px_per_cm))  # 1cm in pixels
+            if not cur_is_fake and prev_t >= 2 and prev_t <= THIN_BORDER_PX:
+                if cur_t >= prev_t * 3 and cur_t >= 3 * BORDER_MIN_LAYER_THICKNESS_PX:
+                    cur_is_fake = True
+            
+            # 规则 C：新增 - 累计深度检查
+            # 如果当前累计深度已超过2cm，且当前层厚度与内容参考色接近 → 伪边框
+            # （此规则在 _filter_layers_by_content_ref 之后生效）
+            
+            if not cur_is_fake:
+                filtered_layers.append((cur_color, cur_t))
+        
+        layers = filtered_layers
 
     # Step 1: 单层厚度上限（截断过厚的层）
     step1: list[tuple[tuple[int, int, int], int]] = []
@@ -123,6 +164,13 @@ def _enforce_border_thickness_caps(
 
     # Step 3: 清理厚度小于最小阈值的层
     layers = [(c, t) for c, t in layers if t >= MIN_PX]
+    
+    # Step 4: [Fix Moshang] 最大层数限制
+    # 真实边框通常不超过 4 层（如 塞纳时光 = 3 层），超过则极可能是内容花纹被误判
+    # 保留最外层的层（它们最可能是真实边框）
+    MAX_LAYERS_HARD = 4
+    if len(layers) > MAX_LAYERS_HARD:
+        layers = layers[:MAX_LAYERS_HARD]
 
     return layers
 

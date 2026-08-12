@@ -133,7 +133,9 @@ def parse_size_dims(size_str: str) -> tuple | None:
         diameter = float(circle_match.group(1))
         return (diameter, diameter)
 
-    size_match = re.search(r'(\d+(?:[.]\d+)?)\s*[xX]\s*(\d+(?:[.]\d+)?)', s, flags=re.IGNORECASE)
+    # 与 _extract_size_pair 的 strategies 保持分隔符一致：
+    # x / X / * / × / Ｘ / ｘ / ✕ / · / ⋅  均视为尺寸分隔符
+    size_match = re.search(r'(\d+(?:[.]\d+)?)\s*[xX*×Ｘｘ✕·⋅]\s*(\d+(?:[.]\d+)?)', s, flags=re.IGNORECASE)
     if size_match:
         dim1 = float(size_match.group(1))
         dim2 = float(size_match.group(2))

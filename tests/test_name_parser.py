@@ -109,10 +109,10 @@ class TestParseFilename:
     def test_decimal_in_full_filename(self):
         """完整文件名中含小数尺寸（bug 回归用例）"""
         parsed = parse_filename("双面格-定制-定制尺寸-戴安娜;49.5x114.5cm左下角做3cm半径圆弧角")
-        # 竖版判定（49.5 < 114.5，长边 114.5 为高）
-        assert parsed.width_cm == 49.5
-        assert parsed.height_cm == 114.5
-        assert parsed.layout == '竖版'
+        # 无显式方向默认横版：长边(114.5)为宽，短边(49.5)为高
+        assert parsed.width_cm == 114.5
+        assert parsed.height_cm == 49.5
+        assert parsed.layout == '横版'
 
     def test_material_extraction(self):
         """材质（双面格）应被提取"""

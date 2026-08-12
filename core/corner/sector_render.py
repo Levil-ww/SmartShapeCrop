@@ -179,6 +179,7 @@ def _redraw_border_on_corner(
     border_layers: list[tuple[tuple[int, int, int], int]],
     src_img: Image.Image | None = None,
     validity_mask: Image.Image | None = None,
+    only_outermost: bool = False,
 ) -> None:
     """
     在圆角区域重新绘制边框颜色。
@@ -298,21 +299,47 @@ def _redraw_border_on_corner(
     if content_ref_arr is None:
         content_ref_arr = _sample_content_ref(result_arr, w, h)
 
-    # [Fix G/S7] 基于内容参考色检测间隙层
-    # 间隙层：与内容参考色颜色距离 < 30 的层
-    # 典型场景：「塞纳时光」双层边框 (黑-间隙-棕)
-    #   检测返回: [(25,22,20):17, (245,235,220):15, (150,95,65):45]
-    #   content_ref ≈ (245,235,220) (内容米色)
-    #   -> 第二层 (245,235,220) 被识别为间隙层
-    GAP_COLOR_DIST = 30.0
-    is_gap_layer = [
-        float(np.sqrt(np.sum((np.array(c, dtype=np.float64) - content_ref_arr) ** 2))) < GAP_COLOR_DIST
-        for c, _ in border_layers
-    ]
+    # [Fix 墨上花开 5cm 圆角过厚 + Fix 安妮森林装饰文字被误清] 基于内容参考色检测间隙层
+    # 间隙层：与内容参考色颜色距离 < 60 的层，且不是最外层边框
+    # 同时新增规则：如果累计深度已超过最大边框深度(圆角半径的70% 或 5cm上限)，
+    # 则后续层视为内容层 —— 但仍走 Smart Gap Check v2，有装饰的话会保留。
+    GAP_COLOR_DIST = 60.0
+    GAP_MAX_THICKNESS = 30.0
+    # [Fix 安妮森林] 从 50% → 70% 放宽：避免窄图(如安妮森林 43cm高+5cm半径)
+    #   的文字装饰带被过深地强制归为间隙；即使强制为间隙，v2也会区分装饰，
+    #   但放宽能减少不必要的边界效应。同时加硬上限 ~3cm (150DPI下 ~177px)。
+    MAX_BORDER_DEPTH_RATIO = 0.7
+    MAX_BORDER_DEPTH_HARD_PX = 177  # 约 3cm @ 150DPI，绝对上限
+    
+    # 计算有效边框深度
+    capped_by_ratio = MAX_BORDER_DEPTH_RATIO * R_total
+    effective_border_depth = min(MAX_BORDER_DEPTH_HARD_PX, capped_by_ratio, total_border_depth)
+    
+    is_gap_layer = []
+    for i, (c, t) in enumerate(border_layers):
+        dist_to_content = float(np.sqrt(np.sum((np.array(c, dtype=np.float64) - content_ref_arr) ** 2)))
+        # 条件：颜色距离 < 阈值 AND 厚度 < 阈值 AND 不是最外层
+        # 新增：如果累计深度已超过有效边框深度，后面的层一律视为间隙
+        cum_before = cumulative_depths[i]
+        forced_gap = cum_before >= effective_border_depth
+        
+        is_gap = (
+            dist_to_content < GAP_COLOR_DIST and
+            t <= GAP_MAX_THICKNESS and
+            i > 0  # 最外层（黑边框）不作为间隙层
+        ) or forced_gap
+        is_gap_layer.append(is_gap)
+    
     gap_regions: list[tuple[int, int]] = []
     for i, is_gap in enumerate(is_gap_layer):
         if is_gap:
             gap_regions.append((cumulative_depths[i], cumulative_depths[i + 1]))
+
+    # [Smart Gap Check] 构建不含间隙层的边框颜色数组，用于间隙区域装饰检测
+    # 间隙层颜色与 content_ref 相同，若包含会导致间隙像素被误判为"接近边框色"
+    solid_border_colors_arr = np.array(
+        [np.array(c, dtype=np.float64) for (c, _), ig in zip(border_layers, is_gap_layer) if not ig]
+    )
 
     # 各角的角度范围（与 carve_corner_on_mask / _build_multi_layer_corner_mask 完全一致）
     ang_min, ang_max = CORNER_ANGLES[corner_key]
@@ -340,8 +367,14 @@ def _redraw_border_on_corner(
     depth = float(R_total) - dist
 
     # 确定该角的有效绘制区域
-    # 条件：角度在范围内 + 在圆弧内部或弧线上（dist <= R_total）
-    # 注意：不扩展到圆弧外侧（dist > R_total），因为裁剪区应由 mask 控制
+    # 条件：角度在范围内 + 在圆弧内部、弧线上或弧外 2px 容差带（dist <= R_total + 2.0）
+    # 注意：扩展到弧外 2px 是为了补偿像素离散化误差，确保弧线上的像素被正确着色
+    #
+    # [Fix C-shaped gap 0811] 扩展 2px 容差：
+    #   当映射连续极坐标(角度+半径)到离散像素坐标时，实际距离可能略大于理想半径，
+    #   导致弧线上的像素未被边框重绘覆盖，形成 C 形缺口。
+    #   增加 2px 容差确保这些像素被包含在绘制区域内，同时 validity_mask
+    #   会限制实际修改范围不超过应有区域。
     #
     # [Fix 白色直角线条] 包含两个角度边界：
     #   旧版 (angle >= ang_min) & (angle < ang_max) 排除了 ang_max 边界像素，
@@ -354,27 +387,53 @@ def _redraw_border_on_corner(
     else:
         # 其他角: [ang_min, ang_max] 包含两端边界
         valid_angle = (angle >= ang_min) & (angle <= ang_max)
-    valid_region = valid_angle & (dist <= R_total)
+    valid_region = valid_angle & (dist <= R_total + 2.0)
 
     # 如果有 validity_mask，进一步限制为 mask 中非零像素
     if validity_arr is not None:
         local_validity = validity_arr[y1:y2, x1:x2]
         valid_region = valid_region & local_validity
 
-    # === [Fix 遮挡 + G/S7 间隙层处理] 智能重绘 ===
+    # [Fix 白色扇形角遮挡问题 0812v2]
+    # 根因分析：
+    #   旧代码将间隙层和内层边框层清除为背景色(白色)，导致白色扇形角遮挡原图内容
+    #   - 间隙层清除：将米色/白色间隙填充为白色 → 白色遮挡
+    #   - inner_clear_mask：将最外层以外所有像素填充为白色 → 白色扇形角
+    #
+    # 修复策略：
+    #   1. 不清除任何间隙层或内层边框为背景色
+    #   2. 让原图内容(间隙、内层边框、图案)自然显示
+    #   3. 仅通过 skip 逻辑跳过间隙层和内层边框的绘制
+    #   4. 最外层黑色边框正常绘制为圆弧
+    #
+    # 效果：
+    #   - 花漾之约：小圆点装饰保留
+    #   - 奥斯汀：棕色边框颜色保留
+    #   - 中古大花：花纹图案保留
+    #   - 塞纳时光：内层米色边框保留
+    #   - 中古花园：第二层黑色边框保留
+
+    # === [Fix 只保留最外层边框] 智能重绘 ===
     for d in range(total_border_depth):
         d_region = valid_region & (depth >= d) & (depth < d + 1)
         if not np.any(d_region):
             continue
 
         color_idx = depth_mapping.get(d, 0)
-
-        # [Fix G/S7] 间隙层：用内容色填充，而非边框色
         is_gap = is_gap_layer[color_idx] if color_idx < len(is_gap_layer) else False
-        if is_gap and content_ref_arr is not None:
-            target_color = tuple(int(round(v)) for v in content_ref_arr)
-        else:
-            target_color = border_layers[color_idx][0] if color_idx < len(border_layers) else (255, 255, 255)
+
+        # [Fix 白色扇形角遮挡 0812v2]
+        # 间隙层(is_gap=True) AND 非最外层边框层(color_idx!=0) 都跳过绘制
+        # - 间隙层：跳过绘制，让原图间隙颜色自然显示（不产生独立弧线）
+        # - 内层边框层：跳过绘制，让原图边框颜色自然显示
+        # 结果：仅最外层黑色边框被绘制为圆弧，其余内容保持原图状态
+        if is_gap:
+            continue
+        if only_outermost and color_idx != 0:
+            continue
+
+        # [Fix G/S7] 非间隙层：使用该层颜色作为目标绘制色
+        target_color = border_layers[color_idx][0] if color_idx < len(border_layers) else (255, 255, 255)
         target_color_arr = np.array(target_color, dtype=np.float64)
 
         # 获取本层所有候选像素的坐标
@@ -657,28 +716,45 @@ def _redraw_border_on_corner(
             diagonal_interior_idx = np.where(diagonal_interior)[0]
             if len(diagonal_interior_idx) > 0:
                 if is_gap:
-                    # 间隙层对角内区：一律兜底覆盖为间隙色（content_ref / target_color）
-                    gap_fill_y = global_y[diagonal_interior_idx]
-                    gap_fill_x = global_x[diagonal_interior_idx]
-                    result_arr[gap_fill_y, gap_fill_x, :] = np.array(
-                        target_color, dtype=result_arr.dtype
-                    ).reshape(1, 3)
-                    # 从后续 match_filter | force_paint 流程中移除这些像素
-                    # (已经手动填好了)
-                    di_mask_set = set(diagonal_interior_idx.tolist())
-                    keep_bool = np.array(
-                        [i not in di_mask_set for i in range(len(global_y))],
-                        dtype=bool
-                    )
-                    global_y = global_y[keep_bool]
-                    global_x = global_x[keep_bool]
-                    # 同步裁剪 force_paint 和 match_filter
-                    if len(force_paint) == len(keep_bool):
-                        force_paint = force_paint[keep_bool]
-                    if len(match_filter) == len(keep_bool):
-                        match_filter = match_filter[keep_bool]
-                    if len(global_y) == 0:
-                        continue
+                    # [Fix 堇色素颜内层底色弧形缺口]
+                    # 间隙层对角内区兜底填充必须限制在本层深度区间内！
+                    # 旧代码：对所有 diagonal_interior 像素（可能覆盖整个扇形 99% 面积）
+                    #   一律填间隙色。即使间隙层只有 0.3cm 厚，也会把装饰带区域
+                    #   （depth 1~7.5cm，远超间隙层厚度）的花纹全填成米色（内容色），
+                    #   形成用户看到的"内层底色弧形缺口"。
+                    # 新代码：仅当像素 depth ∈ [cumulative_depths[color_idx],
+                    #   cumulative_depths[color_idx+1])，即深度真正落在本间隙层
+                    #   的厚度范围内时，才填间隙色进行兜底。
+                    gap_pixel_depths_all = float(R_total) - dist[local_coords]
+                    di_depths = gap_pixel_depths_all[diagonal_interior_idx]
+                    d_start_layer = cumulative_depths[color_idx]
+                    d_end_layer = cumulative_depths[color_idx + 1]
+                    in_this_layer = (di_depths >= d_start_layer) & \
+                                    (di_depths < d_end_layer)
+                    fill_idx = diagonal_interior_idx[in_this_layer]
+
+                    if len(fill_idx) > 0:
+                        gap_fill_y = global_y[fill_idx]
+                        gap_fill_x = global_x[fill_idx]
+                        result_arr[gap_fill_y, gap_fill_x, :] = np.array(
+                            target_color, dtype=result_arr.dtype
+                        ).reshape(1, 3)
+                        # 从后续 match_filter | force_paint 流程中移除这些像素
+                        # (已经手动填好了)
+                        di_mask_set = set(fill_idx.tolist())
+                        keep_bool = np.array(
+                            [i not in di_mask_set for i in range(len(global_y))],
+                            dtype=bool
+                        )
+                        global_y = global_y[keep_bool]
+                        global_x = global_x[keep_bool]
+                        # 同步裁剪 force_paint 和 match_filter
+                        if len(force_paint) == len(keep_bool):
+                            force_paint = force_paint[keep_bool]
+                        if len(match_filter) == len(keep_bool):
+                            match_filter = match_filter[keep_bool]
+                        if len(global_y) == 0:
+                            continue
                 elif is_colored_border:
                     # 有色边框层对角内区：对 (force_paint=False 且
                     # match_filter=False) 的"双重否定"像素用直边真实色覆盖
@@ -725,7 +801,18 @@ def _redraw_border_on_corner(
             # 则裁剪 match_filter 到相同长度
             if len(match_filter) > len(global_y):
                 match_filter = match_filter[:len(global_y)]
-            final_mask = match_filter | force_paint[:len(match_filter)] if len(force_paint) >= len(match_filter) else match_filter
+
+            # [Fix 最外层边框弧线绘制 0812v3]
+            # 问题：match_filter/force_paint 逻辑对最外层边框(color_idx=0)过于严格，
+            #       因为圆角弧线上的原始像素通常是内容色而非边框色，导致黑色边框弧线
+            #       无法绘制，圆角处露出原图内容色而非黑色边框。
+            # 修复：最外层边框(color_idx=0)始终绘制，跳过 match_filter/force_paint 过滤。
+            #       最外层边框定义了图像边界，必须在圆角弧线上完整绘制。
+            if color_idx == 0 and not is_gap:
+                # 最外层非间隙边框：绘制整个 d_region 区域
+                final_mask = np.ones(len(global_y), dtype=bool)
+            else:
+                final_mask = match_filter | force_paint[:len(match_filter)] if len(force_paint) >= len(match_filter) else match_filter
 
             # 只对判定为"真正边框像素"的坐标应用纯色覆盖
             # 装饰像素（花朵/点线）不在此范围内 → 保留 result_img 中 paste 过来的原图内容
