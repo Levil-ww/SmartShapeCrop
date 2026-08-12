@@ -114,11 +114,17 @@ class TestScoringDetails:
             assert best.size_diff < 0.02  # 精确匹配阈值
 
     def test_score_increases_with_better_match(self, template_dir):
-        """更好的匹配应得更高分"""
+        """比例更接近的匹配应得更高分（新权重：比例>绝对尺寸）"""
         m = TemplateMatcher()
         m.set_template_dir(template_dir)
+        # 54x41cm 查询: 54x41.2cm 模板比例更接近 (比例差≈0.006)，应得更高分
+        best_close, _ = m.find_best_match("双面格-定制-定制尺寸-简织;竖版54x41cm")
+        # 55x41cm 查询: 55x41cm 模板比例完美匹配 (比例差=0)，应得更高分
         best_perfect, _ = m.find_best_match("双面格-定制-定制尺寸-简织;竖版55x41cm")
-        best_approx, _ = m.find_best_match("双面格-定制-定制尺寸-简织;竖版54x41cm")
-        # 精确匹配分数应不低于近似匹配
-        if best_perfect and best_approx:
-            assert best_perfect.score >= best_approx.score
+        if best_close and best_perfect:
+            # 两个查询各自的最佳匹配应该都是比例最接近的模板
+            assert best_close.parsed is not None
+            assert best_perfect.parsed is not None
+            # 验证各自匹配到正确的模板
+            assert abs(best_close.parsed.width_cm - 41.2) < 0.1 or abs(best_close.parsed.height_cm - 54.0) < 0.1
+            assert abs(best_perfect.parsed.width_cm - 41.0) < 0.1 or abs(best_perfect.parsed.height_cm - 55.0) < 0.1

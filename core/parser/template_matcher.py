@@ -234,37 +234,47 @@ class TemplateMatcher:
             self._log(f"   ❌ 形状排斥：目标是圆形，排除非圆形模板 {os.path.basename(entry.path)}")
             return 0.0, details
 
-        # 1. 花型名匹配 (40分)
+        # ===== 硬约束：花型名排斥 =====
+        # 仅当目标为结构化命名（含'-'分隔，即material非空）时，花型名才作为硬约束
+        # 目标有明确花型名 → 只匹配相同花型名的模板（子串关系视为匹配）
         target_pattern = target.pattern_name.lower() if target.pattern_name else ""
         template_pattern = parsed.pattern_name.lower() if parsed.pattern_name else ""
 
+        # 只有结构化命名（含material）才强制花型名匹配
+        if target.material and target_pattern:
+            if not template_pattern:
+                # 目标有花型名，模板无花型名 → 排除（无法验证花型匹配）
+                self._log(f"   ❌ 花型名排斥：目标有[{target_pattern}]，模板无花型名")
+                return 0.0, details
+            if target_pattern != template_pattern and not (
+                target_pattern in template_pattern or template_pattern in target_pattern
+            ):
+                # 花型名完全不同（无子串关系）→ 直接排除
+                self._log(f"   ❌ 花型名排斥：目标[{target_pattern}] 与 模板[{template_pattern}] 完全不同")
+                return 0.0, details
+
+        # 1. 花型名匹配 (30分)
         if target_pattern and template_pattern:
             if target_pattern == template_pattern:
-                score += 40
+                score += 30
                 details['name_match'] = True
             elif target_pattern in template_pattern or template_pattern in target_pattern:
-                score += 25
+                score += 20
                 details['name_match'] = True
                 self._log(f"   部分花型匹配: {target_pattern} vs {template_pattern}")
 
-        # 2. 形状关键词匹配 (10分)
+        # 2. 形状关键词匹配 (5分)
         target_kw = set(target.shape_keywords or [])
         template_kw = set(parsed.shape_keywords or [])
         if target_kw and template_kw:
             if target_kw.issubset(template_kw) or template_kw.issubset(target_kw):
-                score += 10
-                details['shape_match'] = True
-            elif target_kw & template_kw:
                 score += 5
                 details['shape_match'] = True
+            elif target_kw & template_kw:
+                score += 3
+                details['shape_match'] = True
 
-        # 3. 材质匹配 (10分)
-        if target.material and parsed.material:
-            if target.material.lower() == parsed.material.lower():
-                score += 10
-                details['material_match'] = True
-
-        # 4. 尺寸比例接近度 (25分)
+        # 3. 尺寸比例接近度 (40分) — 核心权重
         if (target.width_cm > 0 and target.height_cm > 0 and
                 parsed.width_cm > 0 and parsed.height_cm > 0):
 
@@ -274,18 +284,20 @@ class TemplateMatcher:
             ratio_diff = abs(target_ratio - template_ratio)
             details['ratio_diff'] = ratio_diff
 
-            if ratio_diff < 0.05:
-                score += 25
+            if ratio_diff < 0.02:
+                score += 40
+            elif ratio_diff < 0.05:
+                score += 38
             elif ratio_diff < 0.1:
-                score += 20
+                score += 32
             elif ratio_diff < 0.2:
-                score += 15
+                score += 24
             elif ratio_diff < 0.3:
-                score += 10
+                score += 16
             elif ratio_diff < 0.5:
-                score += 5
+                score += 8
 
-        # 5. 绝对尺寸差 (15分)
+        # 4. 绝对尺寸差 (10分)
         if (target.width_cm > 0 and target.height_cm > 0 and
                 parsed.width_cm > 0 and parsed.height_cm > 0):
 
@@ -298,13 +310,19 @@ class TemplateMatcher:
             details['size_diff'] = size_diff
 
             if size_diff < 0.02:
-                score += 15
+                score += 10
             elif size_diff < 0.05:
-                score += 12
-            elif size_diff < 0.1:
                 score += 8
+            elif size_diff < 0.1:
+                score += 5
             elif size_diff < 0.2:
-                score += 4
+                score += 2
+
+        # 5. 材质匹配 (5分)
+        if target.material and parsed.material:
+            if target.material.lower() == parsed.material.lower():
+                score += 5
+                details['material_match'] = True
 
         # 6. 方向匹配 (10分)
         if target.layout and parsed.layout:
