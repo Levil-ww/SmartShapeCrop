@@ -108,18 +108,22 @@ def render_design(design: CropDesign) -> Image.Image:
 
     canvas_arr = np.array(canvas, dtype=np.uint8)
 
-    # 2. 渲染水池边框（多层 band）
-    bands = compute_border_bands(design)
-    for band_mask, layer in bands:
-        # 该层的填充颜色/图像
-        if layer.fill_type == 'image' and layer.image_path and os.path.isfile(layer.image_path):
-            mode = 'tile' if layer.tile_mode else 'cover'
-            fill_img = load_and_fit(layer.image_path, W, H, mode=mode)
-            fill_arr = np.array(fill_img, dtype=np.uint8)
-        else:
-            fill_arr = np.full((H, W, 3), layer.color, dtype=np.uint8)
-        # 把 band_mask=True 的像素写入 canvas
-        canvas_arr[band_mask] = fill_arr[band_mask]
+    # 2. 渲染边框 band（水池模式且有素材图时跳过——素材本身就是外框）
+    is_pool_with_material = (design.pool_hole_transparent
+                             and design.pool_outer_material_image
+                             and os.path.isfile(design.pool_outer_material_image))
+    if not is_pool_with_material:
+        bands = compute_border_bands(design)
+        for band_mask, layer in bands:
+            # 该层的填充颜色/图像
+            if layer.fill_type == 'image' and layer.image_path and os.path.isfile(layer.image_path):
+                mode = 'tile' if layer.tile_mode else 'cover'
+                fill_img = load_and_fit(layer.image_path, W, H, mode=mode)
+                fill_arr = np.array(fill_img, dtype=np.uint8)
+            else:
+                fill_arr = np.full((H, W, 3), layer.color, dtype=np.uint8)
+            # 把 band_mask=True 的像素写入 canvas
+            canvas_arr[band_mask] = fill_arr[band_mask]
 
     # 3. 挖洞后的内部区域（内矩形/椭圆/L形内部）填背景色或素材
     inner_fill = _render_inner_area(design)

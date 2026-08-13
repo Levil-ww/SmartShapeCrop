@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
 )
 from PyQt5.QtGui import QColor
+from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 
 from core.geometry import CropDesign, BorderLayer, BorderText
 from core.parser.name_parser import parse_filename
@@ -149,10 +150,12 @@ class PoolRenderWorker(QThread):
                     self._log(f"草图解析异常（忽略，仍可继续手动输入）：{e}")
 
             # 4) 构建 CropDesign
+            #    画布尺寸 = 目标尺寸 + 1cm 损耗（裁剪余料用）
+            TRIM_CM = 1.0
             self.progress.emit(85, "构建设计参数…")
             design = CropDesign()
-            design.canvas_w_cm = parsed.width_cm
-            design.canvas_h_cm = parsed.height_cm
+            design.canvas_w_cm = parsed.width_cm + TRIM_CM
+            design.canvas_h_cm = parsed.height_cm + TRIM_CM
             design.dpi = 150
             design.mode = 'rect_hole'
             design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
@@ -194,6 +197,21 @@ class PropertyPanel(QWidget):
     design_changed = pyqtSignal(object)   # 发送更新后的 CropDesign
     save_requested = pyqtSignal()
     export_psd_requested = pyqtSignal(str)
+
+    def get_output_filename(self) -> str:
+        """返回用于导出 JPG 的建议文件名（不含扩展名），水池模式优先用输出文件名框"""
+        # 水池模式输出文件名
+        pool_name = getattr(self, '_pool_output_name', None)
+        if pool_name is not None:
+            s = pool_name.text().strip()
+            if s:
+                # 去掉扩展名（用户可能手动填了 .jpg）
+                base, ext = os.path.splitext(s)
+                if ext.lower() in {'.jpg', '.jpeg', '.png'}:
+                    return base
+                return s
+        # 回退：尺寸命名
+        return f"SmartShapeCrop_{int(self.design.canvas_w_cm)}x{int(self.design.canvas_h_cm)}cm"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -273,8 +291,10 @@ class PropertyPanel(QWidget):
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
         self._inner_layout.addWidget(self._gb_l)
 
-        # 4.5) 圆角设置
+        # 4.5) 圆角设置（支持折叠：勾选=展开，取消勾选=折叠）
         self._gb_corner = QGroupBox("圆角设置（厘米）")
+        self._gb_corner.setCheckable(True)
+        self._gb_corner.setChecked(False)  # 默认折叠，需要用时再展开
         fc = QVBoxLayout(self._gb_corner)
         grid_corner = QGridLayout()
         self._sp_design_corners = {}
@@ -286,6 +306,10 @@ class PropertyPanel(QWidget):
             self._sp_design_corners[key] = sp
         fc.addLayout(grid_corner)
         self._inner_layout.addWidget(self._gb_corner)
+        # 折叠时隐藏内容（Qt 的 checkable 默认只禁用不禁内容显示，这里手动控制可见性）
+        self._gb_corner.toggled.connect(lambda c: self._toggle_group_content(self._gb_corner, c))
+        # 初始化时保持折叠
+        self._toggle_group_content(self._gb_corner, self._gb_corner.isChecked())
 
         # 5) 椭圆参数
         self._gb_e = QGroupBox("椭圆参数")
@@ -297,7 +321,7 @@ class PropertyPanel(QWidget):
         self._inner_layout.addWidget(self._gb_e)
 
         # 6) 边框层
-        gb_b = QGroupBox("多层边框")
+        gb_b = QGroupBox("多层边框", self)  # 设parent防止GC删除子控件
         fb = QVBoxLayout(gb_b)
         self._layers_label = QLabel()
         fb.addWidget(self._layers_label)
@@ -307,10 +331,12 @@ class PropertyPanel(QWidget):
         self._btn_edit_layers = QPushButton("编辑层…")
         row_l.addWidget(btn_add_layer); row_l.addWidget(btn_del_layer); row_l.addWidget(self._btn_edit_layers)
         fb.addLayout(row_l)
-        self._inner_layout.addWidget(gb_b)
+        self._gb_hidden_layers = gb_b  # 保持引用，防止被GC
+        gb_b.hide()  # 显式隐藏，避免父widget样式导致边框/文字残留
+        # self._inner_layout.addWidget(gb_b)  # 多层边框 - 智能匹配后不再需要
 
         # 7) 背景色 / 素材
-        gb_bg = QGroupBox("背景设置")
+        gb_bg = QGroupBox("背景设置", self)  # 设parent防止GC删除子控件
         fbg = QVBoxLayout(gb_bg)
         row_ob = QHBoxLayout(); self._btn_outer_color = ColorButton(self.design.outer_bg_color)
         self._ed_outer_img = QLineEdit(); self._ed_outer_img.setPlaceholderText("外框素材JPG（可选）")
@@ -325,10 +351,12 @@ class PropertyPanel(QWidget):
         row_hb.addWidget(QLabel("内")); row_hb.addWidget(self._btn_hole_color)
         row_hb.addWidget(self._ed_hole_img, 1); row_hb.addWidget(btn_op2)
         fbg.addLayout(row_hb)
-        self._inner_layout.addWidget(gb_bg)
+        self._gb_hidden_bg = gb_bg  # 保持引用，防止被GC
+        gb_bg.hide()  # 显式隐藏，避免父widget样式导致边框/文字残留
+        # self._inner_layout.addWidget(gb_bg)  # 背景设置 - 智能匹配后不再需要
 
         # 8) 边框文字
-        self._gb_txt = QGroupBox("边框环绕文字")
+        self._gb_txt = QGroupBox("边框环绕文字", self)  # 补parent
         self._gb_txt.setCheckable(True); self._gb_txt.setChecked(False)
         ft = QVBoxLayout(self._gb_txt)
         self._ed_txt = QLineEdit("Cross the stars over the moon to meet your better self.")
@@ -339,10 +367,11 @@ class PropertyPanel(QWidget):
         ft.addLayout(self._row("字号(px)", self._sp_fs))
         ft.addLayout(self._row("颜色", self._btn_txt_color))
         ft.addWidget(self._ck_mirror)
-        self._inner_layout.addWidget(self._gb_txt)
+        self._gb_txt.hide()  # 显式隐藏，避免父widget样式导致边框/文字残留
+        # self._inner_layout.addWidget(self._gb_txt)  # 边框环绕文字 - 智能匹配后不再需要
 
         # 9) PSD 批量导入
-        gb_psd = QGroupBox("PSD素材导入")
+        gb_psd = QGroupBox("PSD素材导入", self)  # 设parent防止GC删除子控件
         fp = QVBoxLayout(gb_psd)
         self._ed_psd = QLineEdit(); self._ed_psd.setPlaceholderText("PSD文件…")
         row_psd = QHBoxLayout()
@@ -352,7 +381,9 @@ class PropertyPanel(QWidget):
         self._psd_info = QLabel("（将PSD中每个可见图层导出为独立JPG，自动裁掉透明边）")
         self._psd_info.setWordWrap(True); self._psd_info.setStyleSheet("color:#666;")
         fp.addWidget(self._psd_info)
-        self._inner_layout.addWidget(gb_psd)
+        self._gb_hidden_psd = gb_psd  # 保持引用，防止被GC
+        gb_psd.hide()  # 显式隐藏，避免父widget样式导致边框/文字残留
+        # self._inner_layout.addWidget(gb_psd)  # PSD素材导入 - 智能匹配后不再需要
 
         # 10) 底部按钮
         row_btns = QHBoxLayout()
@@ -365,15 +396,16 @@ class PropertyPanel(QWidget):
 
         # 连接信号
         self._cb_mode.currentIndexChanged.connect(self._on_mode_change)
-        btn_add_layer.clicked.connect(self._add_layer)
-        btn_del_layer.clicked.connect(self._del_layer)
-        self._btn_edit_layers.clicked.connect(self._edit_layers)
-        self._btn_outer_color.changed.connect(lambda c: self._apply_quiet())
-        self._btn_hole_color.changed.connect(lambda c: self._apply_quiet())
-        btn_op1.clicked.connect(lambda: self._pick_file(self._ed_outer_img, "JPG/PSD 素材 (*.jpg *.jpeg *.psd)"))
-        btn_op2.clicked.connect(lambda: self._pick_file(self._ed_hole_img, "JPG/PSD 素材 (*.jpg *.jpeg *.psd)"))
-        btn_psd.clicked.connect(lambda: self._pick_file(self._ed_psd, "PSD 文件 (*.psd *.psb)"))
-        btn_psd2.clicked.connect(self._export_psd_layers)
+        # 以下信号对应的UI区块已隐藏（智能匹配后自动处理）
+        # btn_add_layer.clicked.connect(self._add_layer)
+        # btn_del_layer.clicked.connect(self._del_layer)
+        # self._btn_edit_layers.clicked.connect(self._edit_layers)
+        # self._btn_outer_color.changed.connect(lambda c: self._apply_quiet())
+        # self._btn_hole_color.changed.connect(lambda c: self._apply_quiet())
+        # btn_op1.clicked.connect(lambda: self._pick_file(self._ed_outer_img, "JPG/PSD 素材 (*.jpg *.jpeg *.psd)"))
+        # btn_op2.clicked.connect(lambda: self._pick_file(self._ed_hole_img, "JPG/PSD 素材 (*.jpg *.jpeg *.psd)"))
+        # btn_psd.clicked.connect(lambda: self._pick_file(self._ed_psd, "PSD 文件 (*.psd *.psb)"))
+        # btn_psd2.clicked.connect(self._export_psd_layers)
         self._btn_apply.clicked.connect(self.apply)
         self._btn_save.clicked.connect(self.save_requested.emit)
 
@@ -395,10 +427,11 @@ class PropertyPanel(QWidget):
     # ---- 智能水池模式 UI ----
     def _build_pool_box(self):
         gb = QGroupBox("🏊 智能水池模式（文件名匹配 + 草图解析 → 一键生成）")
+        # 调整：提高 margin-top（原10→14）、title left（原12→14），避免标题与边框重叠
         gb.setStyleSheet("QGroupBox { font-weight: bold; border: 2px solid #4A90E2; "
-                         "border-radius: 6px; margin-top: 10px; padding-top: 10px; }"
-                         "QGroupBox::title { subcontrol-origin: margin; left: 12px; "
-                         "padding: 0 6px; color: #4A90E2; }")
+                         "border-radius: 6px; margin-top: 14px; padding-top: 8px; }"
+                         "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; "
+                         "left: 14px; top: 0px; padding: 0 6px; color: #4A90E2; }")
         f = QVBoxLayout(gb)
         f.setSpacing(6)
 
@@ -432,14 +465,10 @@ class PropertyPanel(QWidget):
         row_fn.addWidget(btn_fn2, 0)
         f.addLayout(row_fn)
 
-        # C) 尺寸草图上传 + 缩略预览
+        # C) 尺寸草图上传 + 缩略预览（支持拖拽）
         row_sk = QHBoxLayout()
-        self._pool_sk_preview = QLabel("（未上传）")
-        self._pool_sk_preview.setFixedSize(96, 72)
-        self._pool_sk_preview.setStyleSheet(
-            "QLabel { border: 1px dashed #888; color: #888; background:#f7f7f7;"
-            " qproperty-alignment: AlignCenter; }")
-        self._pool_sk_preview.setScaledContents(True)
+        self._pool_sk_preview = _SketchDropLabel("（未上传）\n或拖入图片")
+        self._pool_sk_preview.fileDropped.connect(self._pool_load_sketch_from_path)  # 拖拽上传
         sk_btns = QVBoxLayout()
         btn_sk1 = QPushButton("上传尺寸草图…")
         btn_sk1.clicked.connect(self._pool_pick_sketch)
@@ -449,7 +478,8 @@ class PropertyPanel(QWidget):
         sk_btns.addWidget(btn_sk2)
         sk_desc = QLabel(
             "草图格式示例（红色线标注上下左右边距即可，\n"
-            "自动识别失败时可在下方【内挖边距】手动调整）")
+            "自动识别失败时可在下方【内挖边距】手动调整）\n"
+            "💡 支持：点击上传按钮 或 直接将图片拖入左侧框")
         sk_desc.setStyleSheet("color:#666;")
         sk_desc.setWordWrap(True)
         row_sk.addWidget(self._pool_sk_preview, 0)
@@ -484,14 +514,62 @@ class PropertyPanel(QWidget):
         self._pool_status.setStyleSheet("color:#555; padding: 4px 6px;")
         f.addWidget(self._pool_status)
 
+        # G) 输出文件名（默认与目标文件名同步，用于导出JPG命名）
+        row_out = QHBoxLayout()
+        row_out.addWidget(QLabel("输出文件名:"), 0)
+        self._pool_output_name = QLineEdit()
+        self._pool_output_name.setPlaceholderText("导出 JPG 时使用的文件名（不含扩展名），默认跟随【目标文件】")
+        row_out.addWidget(self._pool_output_name, 1)
+        btn_sync = QPushButton("同步目标名")
+        btn_sync.setFixedWidth(80)
+        btn_sync.clicked.connect(self._pool_sync_output_from_target)
+        row_out.addWidget(btn_sync, 0)
+        f.addLayout(row_out)
+
         self._inner_layout.addWidget(gb)
+
+        # —— 连接目标文件名 textChanged：自动解析尺寸 + 同步输出名 ——
+        self._pool_target.textChanged.connect(self._on_pool_target_changed)
 
     # -------------- 智能水池：事件处理 --------------
 
-    def _on_pool_hole_mode_change(self):
-        mode = self._pool_hole_mode.currentData()
-        # 只改 design.pool_hole_transparent 默认值；后续真正 apply 时 _collect 里再同步
-        self._set_pool_status(f"挖空方式切换为：{self._pool_hole_mode.currentText()}")
+    def _on_pool_target_changed(self, text: str):
+        """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高"""
+        # 1) 默认同步输出文件名（用户手动修改过输出名时，可通过按钮重新同步）
+        self._pool_sync_output_from_target()
+
+        # 2) 解析尺寸并回填（解析失败不报错，静默忽略）
+        name = text.strip()
+        if not name:
+            return
+        try:
+            parsed = parse_filename(name)
+            w, h = parsed.width_cm, parsed.height_cm
+            if w > 0 and h > 0:
+                # 校验在 SpinBox 合法范围内
+                w = max(5.0, min(200.0, float(w)))
+                h = max(5.0, min(200.0, float(h)))
+                self._sp_w.setValue(w)
+                self._sp_h.setValue(h)
+                self._set_pool_status(
+                    f"已自动识别尺寸：{w:.1f} × {h:.1f} cm（可在画布尺寸中微调）")
+        except Exception:
+            # 解析异常静默忽略
+            pass
+
+    def _pool_sync_output_from_target(self):
+        """把目标文件名（去掉扩展名 + 尺寸后缀清理）同步到输出文件名框"""
+        t = self._pool_target.text().strip()
+        if not t:
+            return
+        # 去掉扩展名
+        base, ext = os.path.splitext(t)
+        if ext.lower() in {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.psd', '.psb', '.webp'}:
+            t = base
+        # 如果目标名有路径（少见），只取 basename
+        t = os.path.basename(t)
+        if t and t != self._pool_output_name.text():
+            self._pool_output_name.setText(t)
 
     def _pool_pick_template_dir(self):
         d = QFileDialog.getExistingDirectory(self, "选择模板库目录")
@@ -516,23 +594,35 @@ class PropertyPanel(QWidget):
         )
         if not p:
             return
+        self._pool_load_sketch_from_path(p)
+
+    def _pool_load_sketch_from_path(self, p: str):
+        """通用：加载草图路径 → 保存 + 预览更新（按钮上传 & 拖拽上传共用）"""
+        if not p or not os.path.isfile(p):
+            return
         self._sketch_path = p
-        # 预览
+        # 预览（注意 setPixmap 后会覆盖文字/样式，但拖入提示会在清除时恢复）
         pm = QPixmap(p)
         if not pm.isNull():
             self._pool_sk_preview.setPixmap(pm.scaled(
                 self._pool_sk_preview.size(),
                 Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            self._pool_sk_preview.setText("")
+            # 有图片时把虚线改为普通实线避免视觉混乱
+            self._pool_sk_preview.setStyleSheet(
+                "QLabel { border: 1px solid #888; background:#fff; border-radius: 6px; }")
         else:
             self._pool_sk_preview.clear()
-            self._pool_sk_preview.setText("（预览失败）")
+            self._pool_sk_preview.setText("（预览失败）\n或拖入图片")
         self._set_pool_status(f"已上传草图：{os.path.basename(p)}")
 
     def _pool_clear_sketch(self):
         self._sketch_path = ""
         self._pool_sk_preview.clear()
-        self._pool_sk_preview.setText("（未上传）")
+        # 恢复默认的拖拽提示样式和文字
+        self._pool_sk_preview.setText("（未上传）\n或拖入图片")
+        self._pool_sk_preview.setStyleSheet(
+            "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
+            " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
         self._set_pool_status("草图已清除，将按默认 10% 短边距推断")
 
     def _set_pool_status(self, msg: str, is_error: bool = False):
@@ -746,6 +836,62 @@ class PropertyPanel(QWidget):
             self.export_psd_requested.emit(out_dir)
         except Exception as e:
             QMessageBox.critical(self, "导出失败", str(e))
+
+
+# ---- 草图预览：支持拖拽上传的 QLabel ----
+class _SketchDropLabel(QLabel):
+    """带拖拽支持的草图预览标签；拖入图片文件或点击按钮均可上传"""
+
+    fileDropped = pyqtSignal(str)  # 拖入文件成功时发出路径
+
+    _ACCEPT_EXT = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp'}
+
+    def __init__(self, text="（未上传）\n或拖入图片", parent=None):
+        super().__init__(text, parent)
+        self.setAcceptDrops(True)
+        self.setFixedSize(96, 96)  # 略微加高，便于拖入
+        self.setStyleSheet(
+            "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
+            " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
+        self.setScaledContents(True)
+
+    # ---- 拖拽事件 ----
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls and urls[0].isLocalFile():
+                ext = os.path.splitext(urls[0].toLocalFile())[1].lower()
+                if ext in self._ACCEPT_EXT:
+                    event.acceptProposedAction()
+                    # 拖入时高亮边框提示
+                    self.setStyleSheet(
+                        "QLabel { border: 2px dashed #2E7DD1; color: #2E7DD1; background:#DBEAFE;"
+                        " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
+                    return
+        event.ignore()
+
+    def dragLeaveEvent(self, event):
+        # 恢复默认样式
+        self.setStyleSheet(
+            "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
+            " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if not urls or not urls[0].isLocalFile():
+            event.ignore()
+            return
+        path = urls[0].toLocalFile()
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in self._ACCEPT_EXT:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        # 恢复样式并通知
+        self.setStyleSheet(
+            "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
+            " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
+        self.fileDropped.emit(path)
 
 
 # ---- 边框层编辑对话框 ----

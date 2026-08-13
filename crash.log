@@ -1,0 +1,116 @@
+============================================================
+崩溃时间: 2026-08-13 15:27:26
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
+    def paintEvent(self, event):
+    
+KeyboardInterrupt
+
+============================================================
+崩溃时间: 2026-08-13 15:27:33
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 366, in <module>
+    main()
+    ~~~~^^
+  File "D:\SmartShapeCrop\main.py", line 360, in main
+    w = MainWindow()
+  File "D:\SmartShapeCrop\main.py", line 143, in __init__
+    self.panel = PropertyPanel()
+                 ~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
+    self._load_from_design()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
+    self._update_layers_label()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
+    self._layers_label.setText(" / ".join(names) if names else "（空）")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type QLabel has been deleted
+
+============================================================
+崩溃时间: 2026-08-13 15:27:38
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 366, in <module>
+    main()
+    ~~~~^^
+  File "D:\SmartShapeCrop\main.py", line 360, in main
+    w = MainWindow()
+  File "D:\SmartShapeCrop\main.py", line 143, in __init__
+    self.panel = PropertyPanel()
+                 ~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
+    self._load_from_design()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
+    self._update_layers_label()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
+    self._layers_label.setText(" / ".join(names) if names else "（空）")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type QLabel has been deleted
+
+============================================================
+崩溃时间: 2026-08-13 15:28:18
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 366, in <module>
+    main()
+    ~~~~^^
+  File "D:\SmartShapeCrop\main.py", line 360, in main
+    w = MainWindow()
+  File "D:\SmartShapeCrop\main.py", line 143, in __init__
+    self.panel = PropertyPanel()
+                 ~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
+    self._load_from_design()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
+    self._update_layers_label()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
+    self._layers_label.setText(" / ".join(names) if names else "（空）")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type QLabel has been deleted
+
+============================================================
+崩溃时间: 2026-08-13 15:28:28
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\DLLs']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 366, in <module>
+    main()
+    ~~~~^^
+  File "D:\SmartShapeCrop\main.py", line 360, in main
+    w = MainWindow()
+  File "D:\SmartShapeCrop\main.py", line 143, in __init__
+    self.panel = PropertyPanel()
+                 ~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
+    self._load_from_design()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
+    self._update_layers_label()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
+    self._layers_label.setText(" / ".join(names) if names else "（空）")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type QLabel has been deleted
+

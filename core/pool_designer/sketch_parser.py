@@ -63,59 +63,121 @@ def _safe_import_cv2():
         return None
 
 
-def _find_two_largest_rectangles(cv2, gray_image, min_area_ratio: float = 0.10):
-    """在灰度图上找两个最大的矩形轮廓（近似 4 边形）。
+def _find_two_largest_rectangles(cv2, gray_image, min_area_ratio: float = 0.005):
+    """在图上找两个最大的嵌套矩形轮廓（内外框）。
 
-    返回 [(outer_rect, outer_area), (inner_rect, inner_area)]，按面积降序；
+    多策略检测：
+      A. HSV 红色线检测（宽阈值，兼容淡红）
+      B. Canny 边缘 + 形态学闭运算（兜底，不限颜色）
+      C. 直接灰度阈值 + 形态学（白底黑线场景）
+
+    返回 [(outer_rect, area), (inner_rect, area)]，按面积降序；
     找不到两个时返回空列表。
     """
-    # 取红色线条（典型标注颜色）：如果输入是 BGR 3 通道，用 HSL S 通道过滤
     h, w = gray_image.shape[:2]
     full_area = h * w
-    min_area = int(full_area * min_area_ratio)
+    # 细线条轮廓的面积很小（约为周长×线宽），阈值需要很低
+    min_area = max(100, int(full_area * min_area_ratio))
 
-    # 多策略二值化，保证至少有一种能出线
+    # —— 构建多策略 mask ——
     masks = []
     if len(gray_image.shape) == 3:
         hsv = cv2.cvtColor(gray_image, cv2.COLOR_BGR2HSV)
-        # 红色线（两个范围：低 Hue + 高 Hue）
-        lower1 = (0, 80, 60); upper1 = (10, 255, 255)
-        lower2 = (160, 80, 60); upper2 = (180, 255, 255)
+        # 红色范围：低 Hue (0-15) + 高 Hue (165-180)，放宽 S/V
+        lower1 = (0, 20, 30); upper1 = (15, 255, 255)
+        lower2 = (165, 20, 30); upper2 = (180, 255, 255)
         mask_r1 = cv2.inRange(hsv, lower1, upper1)
         mask_r2 = cv2.inRange(hsv, lower2, upper2)
-        masks.append(cv2.bitwise_or(mask_r1, mask_r2))
-        # 再兜底：Canny 灰度边缘
+        mask_red = cv2.bitwise_or(mask_r1, mask_r2)
+        masks.append(('red', mask_red))
+
+        # Canny 边缘（低阈值，抓细线条）
         gray = cv2.cvtColor(gray_image, cv2.COLOR_BGR2GRAY)
-        masks.append(cv2.Canny(gray, 50, 150))
+        edges = cv2.Canny(gray, 20, 80)
+        masks.append(('canny', edges))
+
+        # 白色背景上的暗线（灰度反转）
+        _, binary_dark = cv2.threshold(gray, 210, 255, cv2.THRESH_BINARY_INV)
+        masks.append(('dark', binary_dark))
     else:
         gray = gray_image
-        masks.append(cv2.Canny(gray, 50, 150))
+        masks.append(('canny', cv2.Canny(gray, 20, 80)))
+        _, binary_dark = cv2.threshold(gray, 210, 255, cv2.THRESH_BINARY_INV)
+        masks.append(('dark', binary_dark))
 
-    rects = []
-    seen = set()
-    for mask in masks:
-        # 膨胀一下，断线连接
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        mask_d = cv2.dilate(mask, kernel, iterations=2)
-        contours, _ = cv2.findContours(mask_d, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # —— 第一轮：用 RETR_CCOMP 检测所有轮廓（包括嵌套的）——
+    rects_raw = []
+    for mask_name, mask in masks:
+        # 用 RETR_CCOMP 检测所有层级轮廓
+        contours, _ = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area < min_area:
                 continue
-            peri = cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-            if len(approx) != 4:
+            x, y, rw, rh = cv2.boundingRect(cnt)
+            if rw < 20 or rh < 20:
                 continue
-            x, y, rw, rh = cv2.boundingRect(approx)
-            key = (x, y, rw, rh)
-            if key in seen:
+            # 同一个矩形会产生 2 个 contour（外边界+内边界），面积近似
+            # 用 boundingRect 面积做参考
+            rect_area = rw * rh
+            if rect_area <= 0:
                 continue
-            seen.add(key)
-            rects.append((x, y, rw, rh, area))
+            rects_raw.append((x, y, rw, rh, area, rect_area))
 
-    rects.sort(key=lambda r: r[4], reverse=True)
-    top2 = rects[:2]
-    return top2
+        # 第二轮：轻度形态学处理（连接断线）
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        mask_closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close, iterations=1)
+        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        mask_final = cv2.dilate(mask_closed, kernel_dilate, iterations=1)
+
+        contours2, _ = cv2.findContours(mask_final, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours2:
+            area = cv2.contourArea(cnt)
+            if area < min_area:
+                continue
+            x, y, rw, rh = cv2.boundingRect(cnt)
+            if rw < 20 or rh < 20:
+                continue
+            rect_area = rw * rh
+            if rect_area <= 0:
+                continue
+            rects_raw.append((x, y, rw, rh, area, rect_area))
+
+    # —— 去重：用 boundingRect 尺寸去重（同一矩形的内外 contour 近似）——
+    rects_raw.sort(key=lambda r: r[5], reverse=True)  # sort by rect_area
+    rects_dedup = []
+    for r in rects_raw:
+        x, y, rw, rh, area, rect_area = r
+        duplicate = False
+        for d in rects_dedup:
+            dx, dy, dw, dh = d[0], d[1], d[2], d[3]
+            if abs(x - dx) < 15 and abs(y - dy) < 15 and abs(rw - dw) < 15 and abs(rh - dh) < 15:
+                duplicate = True
+                break
+        if not duplicate:
+            rects_dedup.append((x, y, rw, rh, area))
+
+    # —— 按面积排序，取最大的两个（外框最大，内框次之）——
+    rects_dedup.sort(key=lambda r: r[4], reverse=True)
+
+    # —— 找嵌套关系：验证第二份矩形确实在第一份内部 ——
+    if len(rects_dedup) >= 2:
+        outer = rects_dedup[0]
+        ox, oy, ow, oh, oa = outer
+        inner = rects_dedup[1]
+        ix, iy, iw, ih, ia = inner
+        # 验证嵌套关系：内框在外框内部
+        if ix >= ox - 10 and iy >= oy - 10 and ix + iw <= ox + ow + 10 and iy + ih <= oy + oh + 10:
+            return [outer, inner]
+        # 未嵌套：尝试在外框内部找一个更好的内框
+        for r in rects_dedup[2:]:
+            rx, ry, rw, rh, ra = r
+            if rx >= ox - 10 and ry >= oy - 10 and rx + rw <= ox + ow + 10 and ry + rh <= oy + oh + 10:
+                if ra > ia:
+                    return [outer, r]
+
+    # 兜底：直接返回面积最大的两个
+    return rects_dedup[:2]
 
 
 def parse_sketch_geometry(
