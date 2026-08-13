@@ -19,6 +19,8 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的桌面工具，核心�
 - **PSD 分层支持**：读取 PSD 图层，自动裁剪透明边距，合成扁平 JPG
 - **印刷切割损耗补偿**：自动为目标尺寸加 1cm 扫描余量，圆角半径加 0.5cm 切割损耗
 - **LANCZOS 高质量缩放**：默认 `simple_resize` 模式，不裁剪不留白，最小质量损失
+- **大图性能优化**：圆角重绘采用 ROI（仅处理角区域）+ 向量化运算，支持 1-2 亿像素印刷级大图
+- **GUI 不阻塞**：大图裁剪/导出运行于 QThread 后台线程，带进度反馈，避免界面冻结
 
 ---
 
@@ -332,7 +334,7 @@ python main.py
 
 ### 测试
 
-测试位于 `tests/` 目录，使用 pytest 框架（当前 114 项测试全部通过）：
+测试位于 `tests/` 目录，使用 pytest 框架（当前 **114 项测试全部通过**）：
 
 ```bash
 # 全部测试
@@ -371,6 +373,51 @@ python -m pytest tests/test_rounded_corner.py::TestApplyRoundedCorners -v
 双面格-定制-定制尺寸-塞纳时光;78.5x128.5cm4个圆角半径4cm.jpg
 双面格-定制-定制尺寸-花漾之约;38.5x186cm左下角和右下角圆角半径5cm.jpg
 ```
+
+---
+
+## 程序检测报告（2026-08-13）
+
+### 功能验证
+
+| 项目 | 结果 |
+|---|---|
+| 单元测试 | ✅ 114/114 全部通过 |
+| 圆角裁剪算法 | ✅ 单步扇形切割，四角角度映射正确 |
+| 多层边框检测 | ✅ 双算法并行（颜色距离 + 亮度突变） |
+| 文件名解析 | ✅ 6 层容错策略，全角/特殊字符兼容 |
+| 模板匹配 | ✅ 形状 + 方向关键词严格匹配 |
+| PSD 分层读取 | ✅ 自动裁剪透明边 + 合成 RGB |
+| GUI 后台线程 | ✅ 大图裁剪/导出不阻塞主界面 |
+
+### 代码质量检测
+
+| 类别 | 状态 | 说明 |
+|---|---|---|
+| 异常处理 | ⚠️ 低风险 | 核心代码 28 处 `except Exception` 均带日志记录或用户反馈，无裸 `except: pass` 静默吞没 |
+| 资源管理 | ⚠️ 中风险 | 核心代码存在 **5 处** `Image.open()` 未使用上下文管理器，处理超大图（>5000px）时可能累积文件句柄 |
+| 类型注解 | ✅ 良好 | 核心模块函数均带类型标注（`__future__ annotations`） |
+| 日志配置 | ✅ 良好 | 统一 `log_setup.py`，滚动文件 + 控制台双输出 |
+| 配置集中 | ✅ 良好 | 常量统一在 `core/config.py`，阈值单源管理 |
+
+### 资源泄漏待修复点（建议）
+
+| 文件 | 行号 | 函数 | 修复建议 |
+|---|---|---|---|
+| [image_ops.py](file:///D:/SmartShapeCrop/core/image_ops.py#L24-L29) | 26 | `load_image_rgb` | 使用 `with Image.open(path) as img:` |
+| [loader.py](file:///D:/SmartShapeCrop/core/psd/loader.py#L144) | 144 | `load_psd_flat` fallback | 使用 `with Image.open(path) as img:` + `.copy()` |
+| [name_parser.py](file:///D:/SmartShapeCrop/core/parser/name_parser.py#L739) | 739 | `get_image_info` | 使用 `with Image.open(path) as img:` |
+| [loader.py](file:///D:/SmartShapeCrop/core/psd/loader.py#L86) | 86 | `load_psd_layers` | `PSDImage.open` 建议确保资源释放 |
+| [loader.py](file:///D:/SmartShapeCrop/core/psd/loader.py#L133) | 133 | `load_psd_flat` | `PSDImage.open` 建议确保资源释放 |
+
+### 已修复的历史 P0 问题
+
+| 问题 | 修复方式 | 修复位置 |
+|---|---|---|
+| 大图逐像素处理导致性能瓶颈 | 改为 ROI 角区域限制 + 向量化索引 | `sector_render.py::_redraw_border_on_corner` |
+| GUI 裁剪/导出时界面冻结 | 移入 QThread 后台线程 + 进度对话框 | `cropper_panel.py::CropWorkerThread` |
+| 嵌套层圆角半径计算错误（白色扇角） | `max(横距,纵距)` 替代 `min` | `image_cropper.py::_compute_layer_effective_radius` |
+| PIL `rounded_rectangle` 边界像素缺失 | 改用 `carve_corner_on_mask` 自制 mask | `corner/algorithm.py` |
 
 ---
 
