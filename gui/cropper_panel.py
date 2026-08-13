@@ -5,12 +5,14 @@ gui/cropper_panel.py
 """
 from __future__ import annotations
 import os
+import time
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QColor
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QDoubleSpinBox,
     QSpinBox, QPushButton, QFileDialog, QLineEdit, QComboBox, QCheckBox,
-    QScrollArea, QMessageBox, QGridLayout, QSizePolicy, QColorDialog
+    QScrollArea, QMessageBox, QGridLayout, QSizePolicy, QColorDialog,
+    QToolButton, QMenu, QAction,
 )
 from PIL import Image
 
@@ -18,6 +20,7 @@ from core.name_parser import parse_filename, generate_filename, format_corner_sp
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
 from core.template_matcher import TemplateMatcher, TemplateEntry
 from core.config import CUT_LOSS_CM, CORNER_CUT_LOSS_CM, DEFAULT_DPI
+from core.app_settings import get_app_settings, TemplateDirHistory
 
 
 def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
@@ -45,7 +48,11 @@ class CropperPanel(QWidget):
         self._target_parsed = None  # 目标文件名解析结果（保存原始尺寸，不含损耗）
         # 程序设置圆角 spinbox 时为 True，避免触发手动覆盖逻辑
         self._corner_programmatic = False
+        # App 持久化设置（单例）
+        self._app_settings = get_app_settings()
         self._build_ui()
+        # UI 构建后，恢复上次的模板库目录 + 填充历史菜单
+        self._restore_last_template_dir()
     
     def _on_matcher_log(self, msg: str):
         """接收匹配引擎日志"""
@@ -69,13 +76,26 @@ class CropperPanel(QWidget):
         gb_file = QGroupBox("1. 选择源图")
         fg = QVBoxLayout(gb_file)
         
-        # 1a) 模板库目录
+        # 1a) 模板库目录（可编辑 ComboBox + 历史记录下拉按钮 + 浏览）
         row_tpl_dir = QHBoxLayout()
         row_tpl_dir.addWidget(QLabel("模板库:"))
-        self._ed_template_dir = QLineEdit()
-        self._ed_template_dir.setPlaceholderText("模板库目录路径…")
-        self._ed_template_dir.textChanged.connect(self._on_template_dir_changed)
+        self._ed_template_dir = QComboBox()
+        self._ed_template_dir.setEditable(True)
+        self._ed_template_dir.setPlaceholderText("模板库目录路径…（点右侧 ▾ 选择历史记录）")
+        # 下拉：显示历史记录；编辑：手动输入路径
+        le = self._ed_template_dir.lineEdit()
+        le.textChanged.connect(self._on_template_dir_changed)
+        self._ed_template_dir.currentIndexChanged.connect(self._on_template_history_selected)
         row_tpl_dir.addWidget(self._ed_template_dir, 1)
+        # 历史记录按钮（小箭头菜单）
+        self._btn_tpl_history = QToolButton()
+        self._btn_tpl_history.setText("▾")
+        self._btn_tpl_history.setPopupMode(QToolButton.InstantPopup)
+        self._btn_tpl_history.setToolTip("最近打开的模板库")
+        self._tpl_history_menu = QMenu(self._btn_tpl_history)
+        self._btn_tpl_history.setMenu(self._tpl_history_menu)
+        row_tpl_dir.addWidget(self._btn_tpl_history)
+        # 浏览按钮
         btn_tpl_dir = QPushButton("浏览…")
         btn_tpl_dir.clicked.connect(self._pick_template_dir)
         row_tpl_dir.addWidget(btn_tpl_dir)
@@ -340,49 +360,172 @@ class CropperPanel(QWidget):
         except Exception as e:
             self._lbl_src_info.setText(f"读取失败: {e}")
     
+    # ================================================================
+    # 模板库目录：历史记录 + 自动恢复
+    # ================================================================
+
+    def _restore_last_template_dir(self):
+        """启动时：恢复上次使用的模板库目录 + 填充历史记录下拉/菜单"""
+        self._refresh_template_history_ui()
+        # 恢复上次使用的目录
+        last_dir = self._app_settings.get_default_template_dir()
+        if last_dir and os.path.isdir(last_dir):
+            self._set_template_dir_ui(last_dir)
+            # 不立即扫描，避免启动卡；用户点"自动匹配"时再扫描或走磁盘缓存
+
+    def _refresh_template_history_ui(self):
+        """刷新历史记录：ComboBox 下拉项 + 历史菜单"""
+        history = self._app_settings.get_template_history()
+        # -- ComboBox 下拉：清空后重建（保留当前编辑框文本）--
+        current_text = self._ed_template_dir.lineEdit().text()
+        # block 信号避免在 setCurrentIndex 时触发 currentIndexChanged -> _on_template_history_selected
+        self._ed_template_dir.blockSignals(True)
+        try:
+            self._ed_template_dir.clear()
+            for h in history:
+                label = h.display_name
+                if h.total_files:
+                    label += f"  ({h.total_files} 张)"
+                label += "    " + h.path
+                self._ed_template_dir.addItem(label, h.path)
+            self._ed_template_dir.lineEdit().setText(current_text)
+        finally:
+            self._ed_template_dir.blockSignals(False)
+
+        # -- 历史菜单（带"清除历史记录"）--
+        self._tpl_history_menu.clear()
+        if not history:
+            a_empty = QAction("（暂无历史记录）", self._tpl_history_menu)
+            a_empty.setEnabled(False)
+            self._tpl_history_menu.addAction(a_empty)
+        else:
+            for i, h in enumerate(history):
+                label = h.display_name
+                if h.total_files:
+                    label += f"   ({h.total_files} 张图)"
+                sub = f"\n{h.path}"
+                a = QAction(label, self._tpl_history_menu)
+                a.setToolTip(h.path)
+                a.setData(h.path)
+                a.triggered.connect(lambda _=False, p=h.path: self._apply_template_dir_from_history(p))
+                self._tpl_history_menu.addAction(a)
+            # 分隔线 + 清除
+            self._tpl_history_menu.addSeparator()
+            a_clear = QAction("清除历史记录", self._tpl_history_menu)
+            a_clear.triggered.connect(self._clear_template_history)
+            self._tpl_history_menu.addAction(a_clear)
+
+    def _apply_template_dir_from_history(self, path: str):
+        """从历史记录选中：写入 ComboBox 并同步 matcher"""
+        self._set_template_dir_ui(path)
+        self._on_template_dir_changed(path)  # 手动触发一次
+
+    def _set_template_dir_ui(self, path: str):
+        """只改 UI 文本（不触发信号）"""
+        le = self._ed_template_dir.lineEdit()
+        le.blockSignals(True)
+        try:
+            le.setText(path)
+        finally:
+            le.blockSignals(False)
+
+    def _clear_template_history(self):
+        """清空历史记录（仅菜单/下拉清空，当前目录文本保留）"""
+        self._app_settings.clear_template_history()
+        self._refresh_template_history_ui()
+
     def _pick_template_dir(self):
-        """选择模板库目录"""
+        """选择模板库目录（浏览...）"""
         dir_path = QFileDialog.getExistingDirectory(self, "选择模板库目录")
-        if dir_path:
-            self._ed_template_dir.setText(dir_path)
-    
+        if not dir_path:
+            return
+        self._set_template_dir_ui(dir_path)
+        self._on_template_dir_changed(dir_path)
+        # 记录到历史
+        self._app_settings.add_template_history(dir_path)
+        self._refresh_template_history_ui()
+
+    def _on_template_history_selected(self, idx: int):
+        """用户从 ComboBox 下拉选了一条历史"""
+        if idx < 0:
+            return
+        path = self._ed_template_dir.itemData(idx)
+        if isinstance(path, str) and path:
+            # 写入编辑框（触发 textChanged -> _on_template_dir_changed）
+            self._set_template_dir_ui(path)
+            self._on_template_dir_changed(path)
+            self._app_settings.add_template_history(path)
+            self._refresh_template_history_ui()
+
     def _on_template_dir_changed(self, text: str):
-        """模板库目录变更时更新匹配引擎"""
-        if text and os.path.isdir(text):
-            self._matcher.set_template_dir(text)
-    
+        """模板库目录变更时更新匹配引擎。
+
+        关键点：只有目录真正不同才调用 set_template_dir，否则会清掉内存缓存 + 索引。
+        """
+        text = (text or "").strip()
+        if not text:
+            return
+        if not os.path.isdir(text):
+            return
+        abs_dir = os.path.abspath(text)
+        if self._matcher.get_template_dir() != abs_dir:
+            # 只有不同时才设置（避免清空缓存）
+            self._matcher.set_template_dir(abs_dir)
+
     def _auto_match(self):
-        """从目标文件名自动匹配模板库中的源图"""
+        """从目标文件名自动匹配模板库中的源图（高性能版）。
+
+        性能关键点：
+        - **不要**每次都 set_template_dir：它会清空内存缓存和倒排索引
+        - 磁盘缓存 + 增量扫描：第二次起几乎瞬间完成
+        - 倒排索引预过滤：从 20 万全量降到几百条候选再评分
+        """
         target_name = self._ed_target_name.text().strip()
         if not target_name:
             QMessageBox.information(self, "提示", "请输入目标文件名")
             return
-        
-        template_dir = self._ed_template_dir.text().strip()
+
+        template_dir = self._ed_template_dir.lineEdit().text().strip()
         if not template_dir or not os.path.isdir(template_dir):
             QMessageBox.information(self, "提示", "请先设置模板库目录")
             return
-        
+        template_dir = os.path.abspath(template_dir)
+
         self._lbl_match_log.setText("正在匹配中...")
-        
-        self._matcher.set_template_dir(template_dir)
-        self._matcher.scan_library()
-        
+
+        # 确保 matcher 目录正确（仅当不同时设置，避免清空缓存）
+        if self._matcher.get_template_dir() != template_dir:
+            self._matcher.set_template_dir(template_dir)
+
+        t0 = time.time()
+        # 这里 scan_library 是增量/磁盘缓存的：第一次慢，之后几百毫秒
+        # 但 _auto_match 没必要强扫；find_best_match 内部会按需 scan
+        self._matcher.scan_library(force=False)
         best, candidates = self._matcher.find_best_match(target_name)
-        
+        match_dt = time.time() - t0
+
+        # 记录到历史（带扫描后的总数），并写默认目录
+        try:
+            stats = self._matcher.get_library_stats()
+            total = stats.get("total", 0)
+        except Exception:
+            total = 0
+        self._app_settings.add_template_history(template_dir, total_files=int(total))
+        self._refresh_template_history_ui()
+
         # 解析目标文件名获取完整裁剪参数（含圆角）
         target_parsed = parse_filename(target_name)
         self._target_parsed = target_parsed  # 保存原始解析结果（含目标尺寸，不含损耗）
-        
+
         if best:
             self._set_source_path(best.path)
-            
+
             # 优先使用目标文件名中的参数，模板参数作为回退
             if target_parsed.product_name:
                 self._ed_product.setText(target_parsed.product_name)
             elif best.parsed and best.parsed.product_name:
                 self._ed_product.setText(best.parsed.product_name)
-            
+
             if target_parsed.layout:
                 idx = self._cb_layout.findData(target_parsed.layout)
                 if idx >= 0:
@@ -391,7 +534,7 @@ class CropperPanel(QWidget):
                 idx = self._cb_layout.findData(best.parsed.layout)
                 if idx >= 0:
                     self._cb_layout.setCurrentIndex(idx)
-            
+
             # 尺寸自动识别 + 切割损耗（CUT_LOSS_CM）
             if target_parsed.width_cm > 0 and target_parsed.height_cm > 0:
                 self._sp_w.setValue(target_parsed.width_cm + CUT_LOSS_CM)
@@ -399,11 +542,8 @@ class CropperPanel(QWidget):
             elif best.parsed and best.parsed.width_cm > 0:
                 self._sp_w.setValue(best.parsed.width_cm + CUT_LOSS_CM)
                 self._sp_h.setValue(best.parsed.height_cm + CUT_LOSS_CM)
-            
+
             # 圆角只从目标文件名获取（模板通常不含圆角信息）
-            # 实际裁剪半径 = 命名半径 + CORNER_CUT_LOSS_CM(0.5cm)，以补偿切割损耗
-            # 文件名中有圆角信息时：指定的角设为对应值，未指定的角强制设为0
-            # 文件名中无圆角信息时：保持现有设置不变
             if target_parsed.corners:
                 self._corner_programmatic = True
                 try:
@@ -415,7 +555,7 @@ class CropperPanel(QWidget):
                 finally:
                     self._corner_programmatic = False
 
-            msg = (f"✅ 匹配成功！\n\n"
+            msg = (f"✅ 匹配成功！(耗时 {match_dt:.2f}s)\n\n"
                    f"源图: {os.path.basename(best.path)}\n"
                    f"匹配得分: {best.score:.2f}\n\n"
                    f"已自动填充裁剪参数（尺寸 +1cm / 圆角 +0.5cm 切割损耗）：\n"
@@ -424,7 +564,7 @@ class CropperPanel(QWidget):
                    f"- 圆角(命名→裁剪): {self._format_corners_for_msg(target_parsed.corners)} → {self._format_corners_for_msg(self._get_corners_config())}")
             QMessageBox.information(self, "匹配成功", msg)
         else:
-            self._lbl_match_log.setText("❌ 未找到匹配的模板")
+            self._lbl_match_log.setText(f"❌ 未找到匹配的模板（耗时 {match_dt:.2f}s）")
             QMessageBox.warning(self, "匹配失败",
                                 "未在模板库中找到匹配的源图。\n\n请检查：\n"
                                 "1. 模板库目录是否正确\n"
