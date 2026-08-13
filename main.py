@@ -316,7 +316,39 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "保存失败", str(e))
 
 
+def _write_crash_log(exc_type, exc_value, tb) -> None:
+    """
+    全局异常处理器：将崩溃信息写入 exe 同目录的 crash.log。
+    PyInstaller --windowed 打包后没有控制台，用户双击 exe 若崩溃毫无提示，
+    通过此日志即可定位根因（缺 DLL、缺模块、资源路径问题等）。
+    """
+    import traceback
+    try:
+        if getattr(sys, 'frozen', False):
+            log_dir = os.path.dirname(sys.executable)
+        else:
+            log_dir = os.path.dirname(os.path.abspath(__file__))
+        log_path = os.path.join(log_dir, "crash.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("=" * 60 + "\n")
+            from datetime import datetime
+            f.write(f"崩溃时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"sys.frozen: {getattr(sys, 'frozen', False)}\n")
+            f.write(f"sys.executable: {sys.executable}\n")
+            if hasattr(sys, '_MEIPASS'):
+                f.write(f"sys._MEIPASS: {sys._MEIPASS}\n")
+            f.write(f"sys.path[:3]: {sys.path[:3]}\n")
+            f.write("-" * 60 + "\n")
+            traceback.print_exception(exc_type, exc_value, tb, file=f)
+            f.write("\n")
+    except Exception:
+        pass
+
+
 def main():
+    # 注册全局异常钩子（必须放在最前面）
+    sys.excepthook = _write_crash_log
+
     # 初始化结构化日志（程序入口调用一次即可，幂等保护）
     # 调试时设置环境变量 LOG_LEVEL=DEBUG 即可输出详细日志
     setup_logging()
