@@ -5,7 +5,7 @@ main.py
 from __future__ import annotations
 import sys
 import os
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QHBoxLayout,
@@ -134,16 +134,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SmartShapeCrop - 水池圆角裁剪设计器")
 
-        # [自适应窗口] 根据屏幕尺寸动态调整默认窗口大小
-        screen = QApplication.primaryScreen()
-        if screen:
-            available = screen.availableGeometry()
-            target_w = min(1400, int(available.width() * 0.92))
-            target_h = min(900, int(available.height() * 0.88))
-        else:
-            target_w, target_h = 1400, 900
-        self.resize(target_w, target_h)
-
         # 中央：左边画布 + 右边标签页（属性面板/裁剪面板）
         splitter = QSplitter(Qt.Horizontal)
         self.canvas = PreviewCanvas()
@@ -159,9 +149,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._tabs)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
-        # 右侧面板最小宽度保证所有按钮完整显示
-        self._tabs.setMinimumWidth(480)
-        splitter.setSizes([900, 520])
+        # 右侧面板最小宽度——保证"自动匹配"等按钮完整显示
+        self._tabs.setMinimumWidth(500)
+        splitter.setSizes([820, 580])
 
         central = QWidget()
         lay = QHBoxLayout(central); lay.setContentsMargins(0, 0, 0, 0)
@@ -184,8 +174,43 @@ class MainWindow(QMainWindow):
         # 裁剪面板信号
         self.cropper.image_cropped.connect(self._on_cropped_image)
 
-        # 初始不自动预览，等待用户点击"生成预览"按钮
-        pass
+        # [自适应窗口] 所有 UI 构建完成后再调整大小和位置
+        self._init_window_geometry()
+
+    def _init_window_geometry(self):
+        """
+        初始化窗口大小和位置。
+        使用 QTimer.singleShot(0, ...) 延迟到事件循环第一帧执行，
+        确保 showMaximized() 在窗口真正显示后生效。
+        """
+        QTimer.singleShot(0, self._do_init_geometry)
+
+    def _do_init_geometry(self):
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.resize(1400, 900)
+            self._center_on_screen()
+            return
+
+        available = screen.availableGeometry()
+        screen_w = available.width()
+        screen_h = available.height()
+
+        # 默认窗口尺寸为屏幕可用区域的 80%，保证一眼看到所有按钮
+        target_w = min(1600, int(screen_w * 0.82))
+        target_h = min(1000, int(screen_h * 0.80))
+        self.resize(target_w, target_h)
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        """将窗口居中到屏幕中央"""
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        frame = self.frameGeometry()
+        frame.moveCenter(available.center())
+        self.move(frame.topLeft())
 
     # -------- 菜单 --------
     def _build_menu(self):
