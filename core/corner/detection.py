@@ -183,17 +183,33 @@ def _estimate_content_reference(img: Image.Image) -> np.ndarray:
     当 bg_color 与图片内容色非常接近时（如都是米色），_detect_border_layers
     无法有效过滤，此时需要用内容参考色来辅助判断。
 
+    [性能优化] 对大图自动降采样到 200px 级别再转换，
+    避免 2 亿像素 × 3 通道 × 8 字节 = 4.8GB 的内存开销。
+    中位色在降采样后仍然稳定（奶油色/米色不会改变）。
+
     Args:
         img: 输入图片
 
     Returns:
         内容参考色的 RGB 数组 (3,)
     """
-    arr = np.array(img, dtype=np.float64)
-    h, w = arr.shape[:2]
+    w, h = img.size
+    # 降采样：最长边 > 200px 时，缩放到 200px 级别
+    MAX_SIDE = 200
+    if max(w, h) > MAX_SIDE:
+        scale = MAX_SIDE / max(w, h)
+        img_small = img.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            Image.BILINEAR
+        )
+        arr = np.array(img_small, dtype=np.float64)
+    else:
+        arr = np.array(img, dtype=np.float64)
+
+    h_arr, w_arr = arr.shape[:2]
     # 中心区域 (15%~85%)
-    x_start, x_end = int(w * 0.15), int(w * 0.85)
-    y_start, y_end = int(h * 0.15), int(h * 0.85)
+    x_start, x_end = int(w_arr * 0.15), int(w_arr * 0.85)
+    y_start, y_end = int(h_arr * 0.15), int(h_arr * 0.85)
     if x_end - x_start < 10 or y_end - y_start < 10:
         return np.array([255.0, 255.0, 255.0])
     region = arr[y_start:y_end, x_start:x_end, :].reshape(-1, 3)

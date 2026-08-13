@@ -63,7 +63,7 @@ class AppSettings:
     KEY_HISTORY_MAX = "template/history_max"
     KEY_MATCHER_CACHE_ENABLED = "matcher/cache_enabled"
 
-    DEFAULT_HISTORY_MAX = 10
+    DEFAULT_HISTORY_MAX = 5
 
     def __init__(self, organization: str = "SmartShapeCrop", app_name: str = "SmartShapeCrop"):
         self._history_max = self.DEFAULT_HISTORY_MAX
@@ -160,13 +160,12 @@ class AppSettings:
                     total_files=int(d.get("total_files", 0) or 0),
                     display_name=d.get("display_name") or os.path.basename(p.rstrip(os.sep)) or p,
                 ))
+        # 历史上限：单一来源 = DEFAULT_HISTORY_MAX（不受旧配置/遗留值干扰）
+        self._history_max = self.DEFAULT_HISTORY_MAX
+        # 读入后立即裁剪一次，确保即使原来的持久化里存了多于上限的条目也被修剪
+        if len(items) > self._history_max:
+            items = items[:self._history_max]
         self._history = items
-        # 读取 history_max
-        try:
-            mv = self._read(self.KEY_HISTORY_MAX, self.DEFAULT_HISTORY_MAX)
-            self._history_max = int(mv) if mv else self.DEFAULT_HISTORY_MAX
-        except (TypeError, ValueError):
-            self._history_max = self.DEFAULT_HISTORY_MAX
 
     def _save_history(self):
         # 序列化

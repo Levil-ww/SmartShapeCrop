@@ -6,13 +6,13 @@ gui/cropper_panel.py
 from __future__ import annotations
 import os
 import time
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QColor
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QDoubleSpinBox,
     QSpinBox, QPushButton, QFileDialog, QLineEdit, QComboBox, QCheckBox,
     QScrollArea, QMessageBox, QGridLayout, QSizePolicy, QColorDialog,
-    QToolButton, QMenu, QAction,
+    QToolButton, QMenu, QAction, QProgressDialog,
 )
 from PIL import Image
 
@@ -32,6 +32,31 @@ def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
     return QPixmap.fromImage(qimg)
 
 
+class CropWorker(QThread):
+    """
+    [PERF] 异步裁剪 Worker — 将大图裁剪操作移至后台线程。
+
+    对于印刷级大图（1-2亿像素），裁剪操作（边框检测、圆角重绘）
+    在 UI 主线程执行会导致界面卡死。通过 QThread 异步执行，
+    同时发送进度信号更新 UI。
+    """
+
+    finished_ok = pyqtSignal(object)
+    finished_err = pyqtSignal(str)
+    progress = pyqtSignal(int, str)
+
+    def __init__(self, config: CropConfig, parent=None):
+        super().__init__(parent)
+        self._config = config
+
+    def run(self):
+        try:
+            result = crop_image(self._config)
+            self.finished_ok.emit(result)
+        except Exception as e:
+            self.finished_err.emit(str(e))
+
+
 class CropperPanel(QWidget):
     """裁剪操作面板"""
     
@@ -45,13 +70,12 @@ class CropperPanel(QWidget):
         self._bg_color: tuple[int, int, int] = (255, 255, 255)
         self._matcher = TemplateMatcher()
         self._matcher.set_log_callback(self._on_matcher_log)
-        self._target_parsed = None  # 目标文件名解析结果（保存原始尺寸，不含损耗）
-        # 程序设置圆角 spinbox 时为 True，避免触发手动覆盖逻辑
+        self._target_parsed = None
         self._corner_programmatic = False
-        # App 持久化设置（单例）
         self._app_settings = get_app_settings()
+        self._worker: CropWorker | None = None
+        self._progress: QProgressDialog | None = None
         self._build_ui()
-        # UI 构建后，恢复上次的模板库目录 + 填充历史菜单
         self._restore_last_template_dir()
     
     def _on_matcher_log(self, msg: str):
@@ -715,69 +739,112 @@ class CropperPanel(QWidget):
         )
     
     def _generate_preview(self):
-        """生成预览（不保存文件）"""
+        """生成预览（异步，不阻塞 UI）"""
         if not self._src_path:
             QMessageBox.warning(self, "提示", "请先选择源图")
             return
-        
-        try:
-            config = self._build_crop_config()
-            config.output_path = ""
-            
-            result = crop_image(config)
-            self._last_result = result
-            
-            self.image_cropped.emit(result)
-            
-            QMessageBox.information(
-                self, "预览生成",
-                f"裁剪完成！\n\n"
-                f"输出尺寸: {result.width}×{result.height} px\n"
-                f"目标: {self._sp_w.value()}×{self._sp_h.value()}cm @ {self._sp_dpi.value()} DPI\n"
-                f"模式: {get_mode_description(self._cb_mode.currentData())}"
-            )
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "裁剪失败", str(e))
-    
+
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, "提示", "正在处理中，请稍候...")
+            return
+
+        config = self._build_crop_config()
+        config.output_path = ""
+
+        self._worker = CropWorker(config)
+        self._worker.finished_ok.connect(self._on_preview_done)
+        self._worker.finished_err.connect(self._on_crop_error)
+        self._worker.progress.connect(self._on_progress)
+
+        self._show_progress("正在生成预览...")
+        self._worker.start()
+
+    def _on_preview_done(self, result: Image.Image):
+        self._hide_progress()
+        self._last_result = result
+        self.image_cropped.emit(result)
+        self._worker = None
+
+        QMessageBox.information(
+            self, "预览生成",
+            f"裁剪完成！\n\n"
+            f"输出尺寸: {result.width}×{result.height} px\n"
+            f"目标: {self._sp_w.value()}×{self._sp_h.value()}cm @ {self._sp_dpi.value()} DPI\n"
+            f"模式: {get_mode_description(self._cb_mode.currentData())}"
+        )
+
     def _export(self):
-        """导出 JPG"""
+        """导出 JPG（异步，不阻塞 UI）"""
         if not self._src_path:
             QMessageBox.warning(self, "提示", "请先选择源图")
             return
-        
+
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, "提示", "正在处理中，请稍候...")
+            return
+
         if self._ck_auto_name.isChecked():
             output_name = self._lbl_name_preview.text()
         else:
             output_name = self._ed_custom_name.text().strip() or "output.jpg"
-        
+
         default_dir = os.path.dirname(self._src_path) if self._src_path else ""
         default_path = os.path.join(default_dir, output_name)
-        
+
         path, _ = QFileDialog.getSaveFileName(
             self, "导出为 JPG", default_path,
             "JPEG 图片 (*.jpg *.jpeg)"
         )
         if not path:
             return
-        
-        try:
-            config = self._build_crop_config()
-            config.output_path = path
-            
-            crop_image(config)
-            self._last_result = None
-            
-            QMessageBox.information(
-                self, "导出成功",
-                f"已导出:\n{path}\n\n"
-                f"尺寸: {config.target_w_cm}×{config.target_h_cm}cm @ {config.dpi} DPI"
-            )
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "导出失败", str(e))
+
+        config = self._build_crop_config()
+        config.output_path = path
+
+        self._worker = CropWorker(config)
+        self._worker.finished_ok.connect(lambda _: self._on_export_done(path, config))
+        self._worker.finished_err.connect(self._on_crop_error)
+        self._worker.progress.connect(self._on_progress)
+
+        self._show_progress("正在导出 JPG...")
+        self._worker.start()
+
+    def _on_export_done(self, path: str, config: CropConfig):
+        self._hide_progress()
+        self._last_result = None
+        self._worker = None
+
+        QMessageBox.information(
+            self, "导出成功",
+            f"已导出:\n{path}\n\n"
+            f"尺寸: {config.target_w_cm}×{config.target_h_cm}cm @ {config.dpi} DPI"
+        )
+
+    def _on_crop_error(self, err_msg: str):
+        self._hide_progress()
+        self._worker = None
+        import traceback
+        traceback.print_exc()
+        QMessageBox.critical(self, "裁剪失败", err_msg)
+
+    def _on_progress(self, value: int, msg: str):
+        if self._progress is not None:
+            self._progress.setLabelText(msg)
+            if value > 0:
+                self._progress.setValue(value)
+
+    def _show_progress(self, msg: str):
+        self._progress = QProgressDialog(msg, None, 0, 0, self)
+        self._progress.setWindowTitle("请稍候")
+        self._progress.setWindowModality(Qt.WindowModal)
+        self._progress.setMinimumDuration(0)
+        self._progress.setCancelButton(None)
+        self._progress.show()
+
+    def _hide_progress(self):
+        if self._progress is not None:
+            self._progress.close()
+            self._progress = None
     
     def get_last_result(self) -> Image.Image | None:
         return self._last_result
