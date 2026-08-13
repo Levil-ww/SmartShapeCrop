@@ -6,11 +6,11 @@ from __future__ import annotations
 import sys
 import os
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QHBoxLayout,
     QAction, QFileDialog, QMessageBox, QStatusBar, QLabel, QTabWidget,
 )
-from PyQt5.QtGui import QKeySequence
 
 from core.geometry import CropDesign, BorderLayer
 from core.log_setup import setup_logging
@@ -18,6 +18,31 @@ from core.image_ops import save_jpg
 from gui.canvas_widget import PreviewCanvas
 from gui.property_panel import PropertyPanel
 from gui.cropper_panel import CropperPanel
+
+
+def resource_path(relative_path: str) -> str:
+    """
+    获取资源文件的绝对路径。
+    支持两种运行模式：
+      1) 源码模式：基于 main.py 所在目录
+      2) 打包模式（PyInstaller one-folder/one-file）：基于 sys._MEIPASS 临时目录
+    """
+    if hasattr(sys, '_MEIPASS'):
+        base = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, relative_path)
+
+
+def set_app_icon(app: QApplication) -> None:
+    """
+    设置全局应用图标。
+    QApplication.setWindowIcon 会影响所有未单独设置图标的顶级窗口（QMainWindow/QDialog）。
+    图标来源：images/logo.png（打包时由 .spec 收集到内部资源目录）
+    """
+    logo_path = resource_path(os.path.join('images', 'logo.png'))
+    if os.path.isfile(logo_path):
+        app.setWindowIcon(QIcon(logo_path))
 
 
 # 内置模板：对应你 5 张示例图的常用样式
@@ -108,7 +133,16 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SmartShapeCrop - 水池圆角裁剪设计器")
-        self.resize(1400, 900)
+
+        # [自适应窗口] 根据屏幕尺寸动态调整默认窗口大小
+        screen = QApplication.primaryScreen()
+        if screen:
+            available = screen.availableGeometry()
+            target_w = min(1400, int(available.width() * 0.92))
+            target_h = min(900, int(available.height() * 0.88))
+        else:
+            target_w, target_h = 1400, 900
+        self.resize(target_w, target_h)
 
         # 中央：左边画布 + 右边标签页（属性面板/裁剪面板）
         splitter = QSplitter(Qt.Horizontal)
@@ -125,7 +159,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._tabs)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
-        splitter.setSizes([900, 500])
+        # 右侧面板最小宽度保证所有按钮完整显示
+        self._tabs.setMinimumWidth(480)
+        splitter.setSizes([900, 520])
 
         central = QWidget()
         lay = QHBoxLayout(central); lay.setContentsMargins(0, 0, 0, 0)
@@ -262,6 +298,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    # [图标] 设置全局窗口图标，所有顶级窗口(QMainWindow/QDialog)自动继承
+    set_app_icon(app)
     w = MainWindow()
     w.show()
     sys.exit(app.exec_())
