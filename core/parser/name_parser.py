@@ -31,6 +31,9 @@ class ParsedFilename:
     shape_keywords: list = None     # 形状关键词列表，如 ["竖版"]
     is_custom: bool = False         # 是否为定制类型
     is_circular: bool = False       # 是否为圆形（有直径/圆形关键词且无圆角信息）
+    # —— 水池设计器新增字段（默认值保持旧行为）——
+    pool_mode: bool = False         # 是否为水池裁剪有图模式（含"裁剪有图"关键词）
+    pool_pattern_name: str = ""     # 水池模式下的花型名（-分隔最后一段，如"克罗印花"）
 
 
 # 中文数字映射
@@ -427,10 +430,30 @@ def parse_filename(filename: str) -> ParsedFilename:
                 if '定制' in part:
                     result.is_custom = True
                     break
+            # —— 水池设计器：识别"裁剪有图"关键词 + 提取花型名 ——
+            for part in name_parts:
+                if '裁剪有图' in part:
+                    result.pool_mode = True
+                    break
+            if result.pool_mode:
+                # 从后往前找：第一个不是"裁剪有图"/"定制"等功能词的段，作为花型名
+                for part in reversed(name_parts):
+                    p = part.strip()
+                    if not p:
+                        continue
+                    if '裁剪有图' in p or '定制' in p:
+                        continue
+                    result.pool_pattern_name = get_base_pattern_name(p)
+                    break
         else:
             result.pattern_name = result.product_name
+            # 兜底：整段包含"裁剪有图"时也标记
+            if '裁剪有图' in result.product_name:
+                result.pool_mode = True
     else:
         result.pattern_name = result.product_name
+        if result.product_name and '裁剪有图' in result.product_name:
+            result.pool_mode = True
     
     # 提取形状关键词：第二个参数传入完整的尺寸规格（含spec+product_name），确保直径/圆形等关键词被识别
     size_context = f"{spec or ''} {result.product_name or ''} {name or ''}"

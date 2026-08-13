@@ -805,6 +805,9 @@ class TemplateMatcher:
                 tgt_is_circle=tgt_is_circle,
                 has_size=has_size,
                 t_w=t_w, t_h=t_h, t_ratio=t_ratio,
+                # —— 水池模式 ——
+                tgt_pool_mode=tgt.pool_mode,
+                tgt_pool_pattern=(tgt.pool_pattern_name or "").lower(),
             )
             scored_count += 1
             if score > 0:
@@ -993,6 +996,9 @@ class TemplateMatcher:
         t_w: float,
         t_h: float,
         t_ratio: Optional[float],
+        # —— 水池设计器新增参数（默认保持旧行为）——
+        tgt_pool_mode: bool = False,
+        tgt_pool_pattern: str = "",
     ) -> tuple[float, dict]:
         details = {
             'name_match': False,
@@ -1001,17 +1007,28 @@ class TemplateMatcher:
             'shape_match': False,
             'size_diff': float('inf'),
             'ratio_diff': float('inf'),
+            'pool_mode': tgt_pool_mode,
         }
         score = 0.0
 
         tpl_pat = e._pattern_key
-        if tgt_pattern and tpl_pat:
-            if tgt_pattern == tpl_pat:
-                score += 30
-                details['name_match'] = True
-            elif tgt_pattern in tpl_pat or tpl_pat in tgt_pattern:
-                score += 20
-                details['name_match'] = True
+        # 水池模式：优先用 pool_pattern（花型名更精确，如"克罗印花"），权重更高
+        effective_pattern = (tgt_pool_pattern or "").lower() if (tgt_pool_mode and tgt_pool_pattern) else tgt_pattern
+        if effective_pattern and tpl_pat:
+            if tgt_pool_mode:
+                if effective_pattern == tpl_pat:
+                    score += 50
+                    details['name_match'] = True
+                elif effective_pattern in tpl_pat or tpl_pat in effective_pattern:
+                    score += 35
+                    details['name_match'] = True
+            else:
+                if effective_pattern == tpl_pat:
+                    score += 30
+                    details['name_match'] = True
+                elif effective_pattern in tpl_pat or tpl_pat in effective_pattern:
+                    score += 20
+                    details['name_match'] = True
 
         pw, ph = e._width_cm, e._height_cm
         if has_size and pw > 0 and ph > 0:
@@ -1019,6 +1036,7 @@ class TemplateMatcher:
             ratio_diff = abs(t_ratio - tpl_ratio) if t_ratio is not None else float('inf')
             details['ratio_diff'] = ratio_diff
 
+            # 比例分（水池模式和普通模式权重一致）
             if ratio_diff < 0.02:
                 score += 40
             elif ratio_diff < 0.05:
@@ -1037,14 +1055,30 @@ class TemplateMatcher:
             size_diff = min(norm1, norm2)
             details['size_diff'] = size_diff
 
-            if size_diff < 0.02:
-                score += 10
-            elif size_diff < 0.05:
-                score += 8
-            elif size_diff < 0.1:
-                score += 5
-            elif size_diff < 0.2:
-                score += 2
+            if tgt_pool_mode:
+                # 水池：尺寸绝对值不敏感，降级；重点是素材够大（≥目标80%）可以缩放不糊
+                if size_diff < 0.02:
+                    score += 5
+                elif size_diff < 0.05:
+                    score += 4
+                elif size_diff < 0.1:
+                    score += 2
+                elif size_diff < 0.2:
+                    score += 1
+                # 额外加分：模板面积 ≥ 目标面积 × 0.64（=单边×0.8）
+                tgt_area = t_w * t_h
+                tpl_area = pw * ph
+                if tgt_area > 0 and tpl_area >= tgt_area * 0.64:
+                    score += 10
+            else:
+                if size_diff < 0.02:
+                    score += 10
+                elif size_diff < 0.05:
+                    score += 8
+                elif size_diff < 0.1:
+                    score += 5
+                elif size_diff < 0.2:
+                    score += 2
 
         tpl_mat = (e._material or "").lower()
         if tgt_material and tpl_mat:
@@ -1120,6 +1154,9 @@ class TemplateMatcher:
             tgt_is_circle=target_is_circle,
             has_size=has_size,
             t_w=target.width_cm, t_h=target.height_cm, t_ratio=t_ratio,
+            # —— 水池模式 ——
+            tgt_pool_mode=target.pool_mode,
+            tgt_pool_pattern=(target.pool_pattern_name or "").lower(),
         )
 
     def get_library_stats(self) -> dict:

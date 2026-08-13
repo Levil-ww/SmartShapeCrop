@@ -4,15 +4,19 @@ gui/property_panel.py
 """
 from __future__ import annotations
 import logging
-from PyQt5.QtCore import Qt, pyqtSignal
+import os
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize
+from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
     QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
-    QColorDialog, QFrame, QScrollArea, QMessageBox,
+    QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
 )
 from PyQt5.QtGui import QColor
 
 from core.geometry import CropDesign, BorderLayer, BorderText
+from core.parser.name_parser import parse_filename
+from core.parser.template_matcher import TemplateMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +62,132 @@ class ColorButton(QPushButton):
         self._update_style()
 
 
+# ---------------------------------------------------------------------------
+# 水池设计器：后台 Worker（防止大图匹配/解析/渲染卡死 UI）
+# ---------------------------------------------------------------------------
+
+class PoolRenderWorker(QThread):
+    """智能水池一键流程：解析文件名 → 匹配模板 → 解析草图 → 构建 CropDesign。
+
+    输出：
+        finished_ok(design: CropDesign, sketch_result, log_text)
+            → UI 把边距/尺寸写回控件，再触发预览
+        finished_err(str)  → QMessageBox 提示
+        progress(int, str) → QProgressDialog 更新
+    """
+    progress = pyqtSignal(int, str)
+    finished_ok = pyqtSignal(object, object, str)   # design, sketch_result, log_text
+    finished_err = pyqtSignal(str)
+
+    def __init__(self,
+                 matcher: TemplateMatcher,
+                 template_dir: str,
+                 target_filename: str,
+                 sketch_path: str = "",
+                 parent=None):
+        super().__init__(parent)
+        self._matcher = matcher
+        self._template_dir = template_dir
+        self._target = target_filename
+        self._sketch = sketch_path
+        self._log_lines: list[str] = []
+
+    def _log(self, msg: str):
+        self._log_lines.append(msg)
+        logger.info(f"[PoolWorker] {msg}")
+
+    def run(self):
+        try:
+            # 1) 解析文件名
+            self.progress.emit(5, "解析目标文件名…")
+            parsed = parse_filename(self._target)
+            self._log(
+                f"解析结果：产品={parsed.product_name}, 花型={parsed.pattern_name}, "
+                f"水池模式={parsed.pool_mode}, 水池花型={parsed.pool_pattern_name}, "
+                f"尺寸={parsed.width_cm}x{parsed.height_cm}cm"
+            )
+            if parsed.width_cm <= 0 or parsed.height_cm <= 0:
+                self.finished_err.emit(
+                    "文件名中未解析出尺寸（格式示例：吸水皮革-定制-裁剪有图-克罗印花;60.5x133CM）。\n"
+                    "请检查文件名是否包含尺寸，或先在画布尺寸区手动填入。"
+                )
+                return
+
+            # 2) 匹配模板
+            self.progress.emit(25, "扫描模板库并匹配最佳素材…")
+            if not self._template_dir or not os.path.isdir(self._template_dir):
+                self.finished_err.emit("请先选择模板库目录")
+                return
+            if self._matcher.get_template_dir() != os.path.abspath(self._template_dir):
+                self._matcher.set_template_dir(os.path.abspath(self._template_dir))
+            self._matcher.scan_library(force=False)
+            best, candidates = self._matcher.find_best_match(self._target)
+            if best is None:
+                self.finished_err.emit(
+                    f"在模板库中未找到匹配的花型（目标花型={parsed.pool_pattern_name or parsed.pattern_name}）。\n"
+                    "请确认模板库目录是否正确，或模板文件名包含该花型名。"
+                )
+                return
+            self._log(
+                f"最佳匹配：{os.path.basename(best.path)}  "
+                f"(score={best.score:.1f}, 比例差={best.ratio_diff:.3f})"
+            )
+
+            # 3) 解析草图（如果提供了）
+            sketch_result = None
+            if self._sketch and os.path.isfile(self._sketch):
+                self.progress.emit(60, "解析尺寸草图几何…")
+                try:
+                    from core.pool_designer import parse_sketch
+                    sketch_result = parse_sketch(
+                        self._sketch,
+                        target_outer_w_cm=parsed.width_cm,
+                        target_outer_h_cm=parsed.height_cm,
+                    )
+                    self._log(f"草图解析结果：success={sketch_result.success}, msg={sketch_result.message}")
+                except Exception as e:
+                    self._log(f"草图解析异常（忽略，仍可继续手动输入）：{e}")
+
+            # 4) 构建 CropDesign
+            self.progress.emit(85, "构建设计参数…")
+            design = CropDesign()
+            design.canvas_w_cm = parsed.width_cm
+            design.canvas_h_cm = parsed.height_cm
+            design.dpi = 150
+            design.mode = 'rect_hole'
+            design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
+
+            # 边距优先用草图，否则用默认等比例值（10% 短边）
+            if sketch_result and sketch_result.success:
+                design.inner_margin_top_cm = sketch_result.margin_top_cm
+                design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm
+                design.inner_margin_left_cm = sketch_result.margin_left_cm
+                design.inner_margin_right_cm = sketch_result.margin_right_cm
+            else:
+                default_m = min(parsed.width_cm, parsed.height_cm) * 0.10
+                design.inner_margin_top_cm = default_m
+                design.inner_margin_bottom_cm = default_m
+                design.inner_margin_left_cm = default_m
+                design.inner_margin_right_cm = default_m
+
+            # 水池模式开关 + 外框素材图
+            design.pool_hole_transparent = True
+            design.pool_outer_material_image = best.path
+            # 同时也写到外框素材字段（方便用户在"背景设置"里看到并编辑）
+            design.outer_bg_image = best.path
+
+            # 多层边框：水池一键生成默认清空（花纹素材图本身就是完整的、自带圆角/层级边框的矩形图，
+            # 再叠代码画的黑/白/黑边框会遮挡素材）；用户仍可在【多层边框】区手动加层。
+            design.borders = []
+
+            self.progress.emit(100, "完成！")
+            self.finished_ok.emit(design, sketch_result, "\n".join(self._log_lines))
+
+        except Exception as e:
+            logger.exception("PoolRenderWorker 异常终止")
+            self.finished_err.emit(f"处理失败：{e}")
+
+
 class PropertyPanel(QWidget):
     """右侧属性面板"""
 
@@ -68,6 +198,11 @@ class PropertyPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.design = CropDesign()
+        # —— 智能水池：共享的 TemplateMatcher（独立缓存，不影响圆角裁剪工具）——
+        self._matcher = TemplateMatcher()
+        self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
+        self._pool_worker = None  # type: PoolRenderWorker | None
+        self._sketch_path = ""
         self._build_ui()
         self._load_from_design()
 
@@ -84,6 +219,9 @@ class PropertyPanel(QWidget):
         self._inner_layout.setSpacing(10)
         scroll.setWidget(inner)
         root.addWidget(scroll)
+
+        # 0) 智能水池模式（一键：匹配模板 + 解析草图 + 生成预览）
+        self._build_pool_box()
 
         # 1) 画布尺寸与 DPI
         gb1 = QGroupBox("画布尺寸 (厘米)")
@@ -254,6 +392,241 @@ class PropertyPanel(QWidget):
         if path:
             target_edit.setText(path)
 
+    # ---- 智能水池模式 UI ----
+    def _build_pool_box(self):
+        gb = QGroupBox("🏊 智能水池模式（文件名匹配 + 草图解析 → 一键生成）")
+        gb.setStyleSheet("QGroupBox { font-weight: bold; border: 2px solid #4A90E2; "
+                         "border-radius: 6px; margin-top: 10px; padding-top: 10px; }"
+                         "QGroupBox::title { subcontrol-origin: margin; left: 12px; "
+                         "padding: 0 6px; color: #4A90E2; }")
+        f = QVBoxLayout(gb)
+        f.setSpacing(6)
+
+        # A) 模板库目录
+        row_tpl = QHBoxLayout()
+        row_tpl.addWidget(QLabel("模板库:"), 0)
+        self._pool_tpl_dir = QLineEdit()
+        self._pool_tpl_dir.setPlaceholderText("选择模板图的根目录（含完整矩形花纹图）")
+        btn_tpl = QPushButton("选目录")
+        btn_tpl.setFixedWidth(64)
+        btn_tpl.clicked.connect(self._pool_pick_template_dir)
+        row_tpl.addWidget(self._pool_tpl_dir, 1)
+        row_tpl.addWidget(btn_tpl, 0)
+        f.addLayout(row_tpl)
+
+        # B) 目标文件名
+        row_fn = QHBoxLayout()
+        row_fn.addWidget(QLabel("目标文件:"), 0)
+        self._pool_target = QLineEdit()
+        self._pool_target.setPlaceholderText(
+            "例：吸水皮革-定制-裁剪有图-克罗印花;60.5x133CM  （花型名+尺寸必须写）"
+        )
+        btn_fn1 = QPushButton("选文件")
+        btn_fn1.setFixedWidth(64)
+        btn_fn1.clicked.connect(self._pool_pick_target_file)
+        btn_fn2 = QPushButton("清空")
+        btn_fn2.setFixedWidth(48)
+        btn_fn2.clicked.connect(lambda: self._pool_target.clear())
+        row_fn.addWidget(self._pool_target, 1)
+        row_fn.addWidget(btn_fn1, 0)
+        row_fn.addWidget(btn_fn2, 0)
+        f.addLayout(row_fn)
+
+        # C) 尺寸草图上传 + 缩略预览
+        row_sk = QHBoxLayout()
+        self._pool_sk_preview = QLabel("（未上传）")
+        self._pool_sk_preview.setFixedSize(96, 72)
+        self._pool_sk_preview.setStyleSheet(
+            "QLabel { border: 1px dashed #888; color: #888; background:#f7f7f7;"
+            " qproperty-alignment: AlignCenter; }")
+        self._pool_sk_preview.setScaledContents(True)
+        sk_btns = QVBoxLayout()
+        btn_sk1 = QPushButton("上传尺寸草图…")
+        btn_sk1.clicked.connect(self._pool_pick_sketch)
+        btn_sk2 = QPushButton("清除草图")
+        btn_sk2.clicked.connect(self._pool_clear_sketch)
+        sk_btns.addWidget(btn_sk1)
+        sk_btns.addWidget(btn_sk2)
+        sk_desc = QLabel(
+            "草图格式示例（红色线标注上下左右边距即可，\n"
+            "自动识别失败时可在下方【内挖边距】手动调整）")
+        sk_desc.setStyleSheet("color:#666;")
+        sk_desc.setWordWrap(True)
+        row_sk.addWidget(self._pool_sk_preview, 0)
+        row_sk.addLayout(sk_btns, 0)
+        row_sk.addWidget(sk_desc, 1)
+        f.addLayout(row_sk)
+
+        # D) 挖空方式
+        row_mode = QHBoxLayout()
+        self._pool_hole_mode = QComboBox()
+        self._pool_hole_mode.addItem("✂️ 空白(挖去不留白)", "blank")
+        self._pool_hole_mode.addItem("🎨 纯色填充（用内部背景色）", "solid")
+        self._pool_hole_mode.addItem("🖼 素材填充（用内部背景图）", "image")
+        self._pool_hole_mode.currentIndexChanged.connect(self._on_pool_hole_mode_change)
+        row_mode.addWidget(QLabel("挖空方式:"), 0)
+        row_mode.addWidget(self._pool_hole_mode, 1)
+        f.addLayout(row_mode)
+
+        # E) 匹配并生成 大按钮
+        self._pool_btn_generate = QPushButton("🔍 匹配模板 → 解析草图 → 生成预览")
+        self._pool_btn_generate.setStyleSheet(
+            "QPushButton { padding: 10px 12px; font-weight: bold; font-size: 14px;"
+            " background: #4A90E2; color: white; border: none; border-radius: 5px; }"
+            "QPushButton:hover { background: #357ABD; }"
+            "QPushButton:disabled { background: #A0BFE0; color: #eee; }")
+        self._pool_btn_generate.clicked.connect(self._pool_run_generate)
+        f.addWidget(self._pool_btn_generate)
+
+        # F) 提示信息
+        self._pool_status = QLabel("（填写以上参数后点击大按钮）")
+        self._pool_status.setWordWrap(True)
+        self._pool_status.setStyleSheet("color:#555; padding: 4px 6px;")
+        f.addWidget(self._pool_status)
+
+        self._inner_layout.addWidget(gb)
+
+    # -------------- 智能水池：事件处理 --------------
+
+    def _on_pool_hole_mode_change(self):
+        mode = self._pool_hole_mode.currentData()
+        # 只改 design.pool_hole_transparent 默认值；后续真正 apply 时 _collect 里再同步
+        self._set_pool_status(f"挖空方式切换为：{self._pool_hole_mode.currentText()}")
+
+    def _pool_pick_template_dir(self):
+        d = QFileDialog.getExistingDirectory(self, "选择模板库目录")
+        if d:
+            self._pool_tpl_dir.setText(d)
+            self._set_pool_status(f"模板库目录已设置：{d}")
+
+    def _pool_pick_target_file(self):
+        p, _ = QFileDialog.getOpenFileName(
+            self, "选择目标文件（或任意文件，程序只用文件名解析）",
+            "", "所有文件 (*.*);;JPG 图片 (*.jpg *.jpeg);;PNG 图片 (*.png)"
+        )
+        if p:
+            # 只取文件名（不包含路径）做解析，和 CropperPanel 保持一致
+            self._pool_target.setText(os.path.basename(p))
+            self._set_pool_status(f"已选择目标文件名：{os.path.basename(p)}")
+
+    def _pool_pick_sketch(self):
+        p, _ = QFileDialog.getOpenFileName(
+            self, "选择尺寸草图",
+            "", "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
+        )
+        if not p:
+            return
+        self._sketch_path = p
+        # 预览
+        pm = QPixmap(p)
+        if not pm.isNull():
+            self._pool_sk_preview.setPixmap(pm.scaled(
+                self._pool_sk_preview.size(),
+                Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self._pool_sk_preview.setText("")
+        else:
+            self._pool_sk_preview.clear()
+            self._pool_sk_preview.setText("（预览失败）")
+        self._set_pool_status(f"已上传草图：{os.path.basename(p)}")
+
+    def _pool_clear_sketch(self):
+        self._sketch_path = ""
+        self._pool_sk_preview.clear()
+        self._pool_sk_preview.setText("（未上传）")
+        self._set_pool_status("草图已清除，将按默认 10% 短边距推断")
+
+    def _set_pool_status(self, msg: str, is_error: bool = False):
+        color = "#B00020" if is_error else "#388E3C"
+        self._pool_status.setText(msg)
+        self._pool_status.setStyleSheet(
+            f"color:{color}; padding:4px 6px; background: {'#FFEBEE' if is_error else '#E8F5E9'};"
+            " border-radius: 4px;")
+
+    def _pool_run_generate(self):
+        if self._pool_worker is not None and self._pool_worker.isRunning():
+            QMessageBox.information(self, "提示", "正在处理中，请稍候…")
+            return
+
+        target_name = self._pool_target.text().strip()
+        if not target_name:
+            self._set_pool_status("请先填写或选择目标文件名", is_error=True)
+            return
+
+        tpl_dir = self._pool_tpl_dir.text().strip()
+        if not tpl_dir or not os.path.isdir(tpl_dir):
+            self._set_pool_status("请先选择正确的模板库目录", is_error=True)
+            return
+
+        # 启动 Worker
+        self._pool_btn_generate.setEnabled(False)
+        self._pool_btn_generate.setText("处理中…请稍候")
+        worker = PoolRenderWorker(
+            self._matcher, tpl_dir, target_name, self._sketch_path, self)
+        worker.progress.connect(self._on_pool_progress)
+        worker.finished_ok.connect(self._on_pool_finished_ok)
+        worker.finished_err.connect(self._on_pool_finished_err)
+        worker.finished.connect(lambda: (
+            self._pool_btn_generate.setEnabled(True),
+            self._pool_btn_generate.setText("🔍 匹配模板 → 解析草图 → 生成预览"),
+        ))
+        self._pool_worker = worker
+        worker.start()
+
+    def _on_pool_progress(self, pct: int, msg: str):
+        # 简单显示在 status 里，避免 QProgressDialog 抢焦点；另外写 debug log
+        self._set_pool_status(f"[{pct}%] {msg}")
+
+    def _on_pool_finished_err(self, msg: str):
+        self._set_pool_status(msg, is_error=True)
+        QMessageBox.critical(self, "智能水池：失败", msg)
+
+    def _on_pool_finished_ok(self, design: CropDesign, sketch_result, log_text: str):
+        # 1) 把 Worker 构建的设计写回 self.design，并同步到所有 SpinBox / 控件
+        self.design = design
+        # 同步挖空方式 ComboBox
+        hm = self._pool_hole_mode.currentData()
+        if hm == "blank":
+            self.design.pool_hole_transparent = True
+        elif hm == "solid":
+            self.design.pool_hole_transparent = False
+            self.design.hole_bg_image = None
+        elif hm == "image":
+            self.design.pool_hole_transparent = False
+
+        # 2) 把数值写回 UI 控件（让用户看到并能继续编辑）
+        self._sp_w.setValue(max(5.0, design.canvas_w_cm))
+        self._sp_h.setValue(max(5.0, design.canvas_h_cm))
+        self._sp_dpi.setValue(max(72, design.dpi))
+        # 裁剪模式
+        idx = self._cb_mode.findData(design.mode)
+        if idx >= 0:
+            self._cb_mode.setCurrentIndex(idx)
+        self._on_mode_change()
+        self._sp_outer_margin.setValue(max(0, design.outer_margin_cm))
+        self._sp_mt.setValue(max(0, design.inner_margin_top_cm))
+        self._sp_mb.setValue(max(0, design.inner_margin_bottom_cm))
+        self._sp_ml.setValue(max(0, design.inner_margin_left_cm))
+        self._sp_mr.setValue(max(0, design.inner_margin_right_cm))
+        # 外框素材路径写到"背景设置"编辑框
+        if design.outer_bg_image:
+            self._ed_outer_img.setText(design.outer_bg_image)
+
+        # 3) 结果提示
+        info = f"✅ 生成成功！\n"
+        info += f"画布：{design.canvas_w_cm:.1f} × {design.canvas_h_cm:.1f} cm\n"
+        info += (f"内挖边距：上{design.inner_margin_top_cm:.1f}/下{design.inner_margin_bottom_cm:.1f}/"
+                 f"左{design.inner_margin_left_cm:.1f}/右{design.inner_margin_right_cm:.1f} cm\n")
+        if sketch_result is not None and sketch_result.success:
+            info += f"草图：{sketch_result.message}\n"
+        elif sketch_result is not None and not sketch_result.success:
+            info += f"草图未识别（请检查/手动调整边距）：{sketch_result.message}\n"
+        if design.pool_outer_material_image:
+            info += f"匹配素材：{os.path.basename(design.pool_outer_material_image)}\n"
+        self._set_pool_status(info)
+
+        # 4) 触发预览
+        self._apply_quiet()
+
     # ---- 模式切换显示/隐藏 L 形 / 椭圆 ----
     def _on_mode_change(self):
         mode = self._cb_mode.currentData()
@@ -326,6 +699,23 @@ class PropertyPanel(QWidget):
             d.border_text = bt
         else:
             d.border_text = None
+        # —— 水池模式字段同步 ——
+        try:
+            hm = self._pool_hole_mode.currentData()
+            if hm == "blank":
+                d.pool_hole_transparent = True
+            elif hm == "solid":
+                d.pool_hole_transparent = False
+            elif hm == "image":
+                d.pool_hole_transparent = False
+        except Exception:
+            # 控件未初始化（_build_ui 中途），忽略
+            pass
+        # 外框素材：如果用户在"背景设置"里直接改了路径，同步到 pool_outer_material_image
+        # （否则水池一键生成路径是反向写入 pool_outer_material_image → outer_bg_image）
+        if d.outer_bg_image and (d.pool_outer_material_image is None
+                                 or d.pool_outer_material_image != d.outer_bg_image):
+            d.pool_outer_material_image = d.outer_bg_image
 
     def _apply_quiet(self):
         """属性变动时：静默触发预览，按钮统一 apply 也会调用"""

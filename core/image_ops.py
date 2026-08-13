@@ -96,7 +96,11 @@ def render_design(design: CropDesign) -> Image.Image:
     """
     W, H = design.canvas_w_px, design.canvas_h_px
     # 1. 整体背景（最外层）
-    if design.outer_bg_image and os.path.isfile(design.outer_bg_image):
+    #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
+    if design.pool_outer_material_image and os.path.isfile(design.pool_outer_material_image):
+        canvas = load_and_fit(design.pool_outer_material_image, W, H,
+                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover')
+    elif design.outer_bg_image and os.path.isfile(design.outer_bg_image):
         canvas = load_and_fit(design.outer_bg_image, W, H,
                               mode='tile' if _looks_like_tile(design.outer_bg_image) else 'cover')
     else:
@@ -182,8 +186,11 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
 
 
 def _render_inner_area(design: CropDesign) -> Image.Image:
-    """渲染内部填充（纯色 或 适配素材图）"""
+    """渲染内部填充（纯色 或 适配素材图 或 水池挖空=纯白）"""
     W, H = design.canvas_w_px, design.canvas_h_px
+    # 水池模式：内部挖空留白 = 纯白色（JPG 不支持透明，白色即显示为"空"）
+    if design.pool_hole_transparent:
+        return Image.new('RGB', (W, H), (255, 255, 255))
     if design.hole_bg_image and os.path.isfile(design.hole_bg_image):
         return load_and_fit(design.hole_bg_image, W, H,
                             mode='tile' if _looks_like_tile(design.hole_bg_image) else 'cover')
