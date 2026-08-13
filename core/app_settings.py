@@ -11,10 +11,13 @@ core/app_settings.py
 """
 from __future__ import annotations
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass, field, asdict
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Qt 是可选依赖：无 GUI 的脚本环境下退化为 JSON 文件存储
 try:
@@ -90,8 +93,8 @@ class AppSettings:
         try:
             if os.access(project_root, os.W_OK):
                 return candidate
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"项目目录写入权限检测失败 root={project_root}: {e}")
         # 否则放到用户目录
         home = os.path.expanduser("~")
         return os.path.join(home, ".smartshapecrop_settings.json")

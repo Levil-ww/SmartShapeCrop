@@ -5,6 +5,7 @@ gui/cropper_panel.py
 """
 from __future__ import annotations
 import os
+import logging
 import time
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QColor
@@ -16,11 +17,13 @@ from PyQt5.QtWidgets import (
 )
 from PIL import Image
 
-from core.name_parser import parse_filename, generate_filename, format_corner_spec, get_image_info, _fmt_num
+from core.parser.name_parser import parse_filename, generate_filename, format_corner_spec, get_image_info, _fmt_num
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
-from core.template_matcher import TemplateMatcher, TemplateEntry
+from core.parser.template_matcher import TemplateMatcher, TemplateEntry
 from core.config import CUT_LOSS_CM, CORNER_CUT_LOSS_CM, DEFAULT_DPI
 from core.app_settings import get_app_settings, TemplateDirHistory
+
+logger = logging.getLogger(__name__)
 
 
 def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
@@ -85,14 +88,15 @@ class CropperPanel(QWidget):
     
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(6)
         
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         inner = QWidget()
         lay = QVBoxLayout(inner)
-        lay.setSpacing(10)
+        lay.setSpacing(6)
+        lay.setContentsMargins(4, 4, 4, 4)
         scroll.setWidget(inner)
         root.addWidget(scroll)
         
@@ -131,8 +135,9 @@ class CropperPanel(QWidget):
         self._ed_target_name = QLineEdit()
         self._ed_target_name.setPlaceholderText("如: 双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角半径2厘米")
         row_target.addWidget(self._ed_target_name, 1)
-        btn_match = QPushButton("🔍 自动匹配")
-        btn_match.setStyleSheet("background:#e67e22; color:white; font-weight:bold; padding:5px 10px;")
+        btn_match = QPushButton("自动匹配")
+        btn_match.setStyleSheet("background:#e67e22; color:white; font-weight:bold; padding:4px 8px;")
+        btn_match.setFixedWidth(80)
         btn_match.clicked.connect(self._auto_match)
         row_target.addWidget(btn_match)
         fg.addLayout(row_target)
@@ -160,8 +165,8 @@ class CropperPanel(QWidget):
         fg.addWidget(self._lbl_match_log)
         
         # 1f) 自动识别按钮
-        btn_parse = QPushButton("2. 从文件名自动识别尺寸/圆角")
-        btn_parse.setStyleSheet("padding:6px; background:#4a90d9; color:white; font-weight:bold;")
+        btn_parse = QPushButton("2. 自动识别尺寸/圆角")
+        btn_parse.setStyleSheet("padding:5px; background:#4a90d9; color:white; font-weight:bold;")
         btn_parse.clicked.connect(self._auto_parse)
         fg.addWidget(btn_parse)
         
@@ -295,15 +300,16 @@ class CropperPanel(QWidget):
         
         lay.addWidget(gb_name)
         
-        # ===== 6) 操作按钮 =====
-        row_actions = QHBoxLayout()
+        # ===== 6) 操作按钮（放在滚动区域外，始终可见） =====
         btn_preview = QPushButton("生成预览")
-        btn_preview.setStyleSheet("padding:10px; font-weight:bold;")
+        btn_preview.setStyleSheet("padding:8px; font-weight:bold;")
         btn_export = QPushButton("导出 JPG")
-        btn_export.setStyleSheet("padding:10px; background:#27ae60; color:white; font-weight:bold;")
-        row_actions.addWidget(btn_preview, 1)
-        row_actions.addWidget(btn_export, 1)
-        lay.addLayout(row_actions)
+        btn_export.setStyleSheet("padding:8px; background:#27ae60; color:white; font-weight:bold;")
+        root_actions = QHBoxLayout()
+        root_actions.setSpacing(8)
+        root_actions.addWidget(btn_preview, 1)
+        root_actions.addWidget(btn_export, 1)
+        root.addLayout(root_actions)
         
         btn_preview.clicked.connect(self._generate_preview)
         btn_export.clicked.connect(self._export)
@@ -331,7 +337,8 @@ class CropperPanel(QWidget):
         if text:
             try:
                 self._target_parsed = parse_filename(text)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"目标文件名解析失败 text={text}: {e}")
                 self._target_parsed = None
         else:
             self._target_parsed = None
@@ -532,7 +539,8 @@ class CropperPanel(QWidget):
         try:
             stats = self._matcher.get_library_stats()
             total = stats.get("total", 0)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"获取模板库统计信息失败: {e}")
             total = 0
         self._app_settings.add_template_history(template_dir, total_files=int(total))
         self._refresh_template_history_ui()

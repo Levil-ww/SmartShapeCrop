@@ -459,7 +459,8 @@ def _build_multi_layer_corner_mask(
             # 注意：此函数在调用方 apply_border_only_corners 中已传入 img，
             # 但此处没有，所以先 fallback 为空列表；调用方应优先传入预检测结果。
             nested_rects = []  # 调用方会通过新参数传入
-        except Exception:
+        except Exception as e:
+            logger.warning(f"嵌套矩形层检测导入失败: {e}")
             nested_rects = []
 
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
@@ -941,7 +942,8 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # ===== [新增] 检测嵌套矩形层（用于逐层有效半径递减 + 内层直角保护）=====
     try:
         nested_rects = detect_nested_rect_layers(img, border_layers=border_layers)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"嵌套矩形层检测失败: {e}")
         nested_rects = []
     if not nested_rects:
         nested_rects = [(0, 0, w - 1, h - 1)]
@@ -1188,6 +1190,7 @@ def batch_crop(configs: list[CropConfig]) -> list[tuple[str, bool, str]]:
             crop_image(cfg)
             results.append((cfg.output_path, True, "OK"))
         except Exception as e:
+            logger.error(f"批量裁剪失败 output_path={cfg.output_path}: {e}")
             results.append((cfg.output_path, False, str(e)))
     return results
 

@@ -65,7 +65,8 @@ def _try_import_psd_tools():
     try:
         from psd_tools import PSDImage
         return PSDImage
-    except Exception:
+    except Exception as e:
+        logger.warning(f"psd-tools 导入失败: {e}")
         return None
 
 
@@ -97,11 +98,13 @@ def load_psd_layers(path: str) -> list[PsdLayer]:
                     visible = False
                 else:
                     visible = True
-            except Exception:
+            except Exception as e:
+                logger.warning(f"PSD 图层可见性检测失败 layer={obj.name}: {e}")
                 visible = True
             try:
                 rgba = obj.composite()  # 多数情况下能合成 RGBA PIL.Image
-            except Exception:
+            except Exception as e:
+                logger.warning(f"PSD 图层合成失败 layer={obj.name}: {e}")
                 rgba = None
             if rgba is not None:
                 layers.append(PsdLayer(
@@ -142,8 +145,9 @@ def load_psd_flattened(path: str, bg=(255, 255, 255)) -> Image.Image:
         if img.mode != 'RGB':
             img = img.convert('RGB')
         return img
-    except Exception:
+    except Exception as e:
         # 最后手段：返回同尺寸占位图
+        logger.warning(f"PSD 回退 PIL 直接读取也失败 path={path}: {e}")
         return Image.new('RGB', (1000, 1000), (240, 240, 240))
 
 

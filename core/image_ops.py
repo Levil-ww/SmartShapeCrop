@@ -5,8 +5,11 @@ core/image_ops.py
 """
 from __future__ import annotations
 import os
+import logging
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+logger = logging.getLogger(__name__)
 
 # 提高像素上限：业务常处理印刷级超大图（如 EPS 栅格化后超过 1 亿像素），
 # 默认 89478485 像素会触发 DecompressionBombWarning。
@@ -79,7 +82,8 @@ def load_and_fit(path: str, tw: int, th: int, mode: str = 'cover') -> Image.Imag
         if not os.path.isfile(path):
             return Image.new('RGB', (tw, th), (220, 220, 220))
         return fit_image_to_rect(load_image_rgb(path), tw, th, mode)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"素材加载适配失败 path={path}: {e}")
         return Image.new('RGB', (tw, th), (220, 220, 220))
 
 

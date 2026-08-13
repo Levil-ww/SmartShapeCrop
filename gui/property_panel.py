@@ -3,6 +3,7 @@ gui/property_panel.py
 右侧属性面板：修改 CropDesign 参数后，通知主窗口重新渲染。
 """
 from __future__ import annotations
+import logging
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
@@ -12,6 +13,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QColor
 
 from core.geometry import CropDesign, BorderLayer, BorderText
+
+logger = logging.getLogger(__name__)
 
 
 def _color_to_tuple(qc: QColor) -> tuple[int, int, int]:
@@ -403,8 +406,8 @@ class _LayersDialog(QDialog):
             self.result_layers[i].fill_type = 'solid' if self.tbl.item(i, 1).text() == '纯色' else 'image'
             self.result_layers[i].image_path = self.tbl.item(i, 3).text().strip() or None
             self.result_layers[i].tile_mode = self.tbl.item(i, 4).text() == '是'
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"边框层表格第 {i} 行读取失败: {e}")
 
     def _on_cell(self, row, col):
         l = self.result_layers[row]

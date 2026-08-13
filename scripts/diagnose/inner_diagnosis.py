@@ -75,7 +75,8 @@ result_arr = np.array(result)
 corners_px = {'bl': corner_r_px, 'br': corner_r_px}
 try:
     nested_rects = detect_nested_rect_layers(test_img, border_layers=border_layers)
-except:
+except Exception as e:
+    print(f"[WARN] 嵌套矩形层检测失败: {e}")
     nested_rects = [(0, 0, w - 1, h - 1)]
 mask = _build_multi_layer_corner_mask(w, h, corners_px, border_layers, nested_rects=nested_rects)
 mask_arr = np.array(mask)
