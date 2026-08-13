@@ -305,10 +305,14 @@ def _redraw_border_on_corner(
     # 则后续层视为内容层 —— 但仍走 Smart Gap Check v2，有装饰的话会保留。
     GAP_COLOR_DIST = 60.0
     GAP_MAX_THICKNESS = 30.0
-    # [Fix 安妮森林] 从 50% → 70% 放宽：避免窄图(如安妮森林 43cm高+5cm半径)
-    #   的文字装饰带被过深地强制归为间隙；即使强制为间隙，v2也会区分装饰，
-    #   但放宽能减少不必要的边界效应。同时加硬上限 ~3cm (150DPI下 ~177px)。
-    MAX_BORDER_DEPTH_RATIO = 0.7
+    # [Fix 克罗印花厚边框圆角弧线变细 0402]：从 70% → 100% 放宽有效边框深度
+    #   旧逻辑 0.7 * R_total：当边框厚≈圆角半径时(如 2cm厚边框+2cm圆角)，
+    #   圆角内侧 30% 的边框层被强制为 gap，多层边框时内层弧线无法正确绘制；
+    #   对于 only_outermost=True 虽然不直接影响最外层，但 forced_gap 会扰乱
+    #   Smart Gap Check 的装饰保护判定。放宽到 100%，让真实检测到的边框层
+    #   全部在有效深度内；仍保留 MAX_BORDER_DEPTH_HARD_PX (~3cm) 作为安全上限，
+    #   防止边框检测误判时把内容花纹也当成边框无限绘制。
+    MAX_BORDER_DEPTH_RATIO = 1.0
     MAX_BORDER_DEPTH_HARD_PX = 177  # 约 3cm @ 150DPI，绝对上限
     
     # 计算有效边框深度

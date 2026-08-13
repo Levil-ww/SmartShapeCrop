@@ -474,13 +474,18 @@ def _build_multi_layer_corner_mask(
             continue
 
         # ===== [A) 基础 outer L-cut + 保守 ring 保护] =====
-        # ring_lower_bound: 精确等于边框总厚度 + 4px 公差
+        # ring_lower_bound: 精确等于边框总厚度 + 8px 公差
+        # [Fix 克罗印花厚边框圆角弧线变细 0402]：
+        #   旧逻辑用 min(raw_depth + 4, r*0.5) — 当边框厚≈圆角半径时(如2cm厚边框+2cm圆角)，
+        #   r*0.5 只有边框厚度的一半，导致 validity_mask 只覆盖边框的最外 1cm，
+        #   内层边框花纹无法被 sector_render 染成边框色，视觉上弧线比直边细一半。
+        #   新逻辑放宽为 min(raw_depth + 8, r - 2)：
+        #     - raw_depth + 8：确保整条边框厚度都在 ring_region 内，含抗锯齿容差
+        #     - 上限 r-2：允许接近圆心，同时保留 2px 圆心直角区不被污染
         # [Fix 不对称圆角 0811]：当没有边框层时，ring_lower_bound 必须为 0，
         #   否则会过度保护应该被切掉的圆角区域，导致圆角不正确。
-        #   当有边框时，ring_lower_bound = min(raw_depth + 4, r*0.5)，
-        #   精确匹配边框总厚度，仅给 4px 抗锯齿容错空间。
         if raw_depth > 0:
-            ring_lower_bound = max(0, min(raw_depth + 4, int(r * 0.5)))
+            ring_lower_bound = max(0, min(raw_depth + 8, r - 2))
         else:
             ring_lower_bound = 0
 
