@@ -9,7 +9,7 @@
   - format_corner_spec 命名格式
 """
 import pytest
-from core.name_parser import (
+from core.parser.name_parser import (
     parse_filename,
     parse_size_dims,
     generate_filename,

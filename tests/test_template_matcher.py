@@ -12,8 +12,8 @@ import shutil
 import pytest
 from PIL import Image
 
-from core.template_matcher import TemplateMatcher
-from core.name_parser import parse_filename
+from core.parser.template_matcher import TemplateMatcher
+from core.parser.name_parser import parse_filename
 
 
 @pytest.fixture

@@ -19,12 +19,15 @@ core/parser/template_matcher.py
 from __future__ import annotations
 import hashlib
 import json
+import logging
 import os
 import pickle
 import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 from .name_parser import (
     ParsedFilename,
@@ -235,7 +238,8 @@ class DiskCache:
                 pickle.dump(data, f, protocol=4)
             os.replace(tmp_pkl, pkl_path)
             wrote_pickle = True
-        except Exception:
+        except Exception as e:
+            logger.warning(f"磁盘缓存 pickle 写入失败 path={pkl_path}: {e}")
             try:
                 if os.path.exists(tmp_pkl):
                     os.remove(tmp_pkl)
@@ -267,7 +271,8 @@ class DiskCache:
             try:
                 with open(pkl_path, "rb") as f:
                     data = pickle.load(f)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"磁盘缓存 pickle 加载失败 path={pkl_path}: {e}")
                 data = None
         if data is None:
             json_path = path_without_ext + ".json"
@@ -310,7 +315,8 @@ class DiskCache:
             cache.last_scan_at = float(data.get("last_scan_at", 0) or 0)
             cache.last_full_walk_at = float(data.get("last_full_walk_at", 0) or 0)
             return cache
-        except Exception:
+        except Exception as e:
+            logger.warning(f"磁盘缓存反序列化失败: {e}")
             return None
 
 
@@ -429,7 +435,8 @@ class TemplateMatcher:
             return False
         try:
             current_mtime = os.path.getmtime(self._template_dir)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"获取模板目录 mtime 失败(quick_skip): {e}")
             return False
         if abs(current_mtime - self._dir_mtime) > 1e-6:
             return False
@@ -504,7 +511,8 @@ class TemplateMatcher:
 
         try:
             self._dir_mtime = os.path.getmtime(self._template_dir)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"获取模板目录 mtime 失败(scan_library): {e}")
             self._dir_mtime = 0
 
         if did_full_walk:
@@ -730,7 +738,8 @@ class TemplateMatcher:
             entry.parsed = parsed
             entry.is_circular = parsed.is_circular
             entry.is_custom = parsed.is_custom
-        except Exception:
+        except Exception as e:
+            logger.warning(f"模板条目文件名解析失败 filename={filename}: {e}")
             entry.parsed = None
         return entry
 
@@ -1130,7 +1139,8 @@ class TemplateMatcher:
         try:
             current_mtime = os.path.getmtime(self._template_dir)
             return current_mtime != self._dir_mtime or not self._cache
-        except Exception:
+        except Exception as e:
+            logger.warning(f"获取模板目录 mtime 失败(needs_refresh): {e}")
             return True
 
     def clear_cache(self):
