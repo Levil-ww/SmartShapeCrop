@@ -114,3 +114,49 @@ Traceback (most recent call last):
     ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 RuntimeError: wrapped C/C++ object of type QLabel has been deleted
 
+============================================================
+崩溃时间: 2026-08-13 15:52:47
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
+    inner_mask = _get_inner_pixel_mask(design)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 176, in _get_inner_pixel_mask
+    cut_corner = design.l_shape_px().cut_corner
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LShape' object has no attribute 'cut_corner'
+
+============================================================
+崩溃时间: 2026-08-13 15:52:54
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
+    inner_mask = _get_inner_pixel_mask(design)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 176, in _get_inner_pixel_mask
+    cut_corner = design.l_shape_px().cut_corner
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LShape' object has no attribute 'cut_corner'
+

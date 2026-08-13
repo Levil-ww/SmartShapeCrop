@@ -302,7 +302,9 @@ class MainWindow(QMainWindow):
         if img is None:
             QMessageBox.warning(self, "无法保存", "请先生成预览再保存")
             return
-        default_name = f"SmartShapeCrop_{int(self.panel.design.canvas_w_cm)}x{int(self.panel.design.canvas_h_cm)}cm.jpg"
+        # 优先使用水池设计器中的"输出文件名"，否则回退尺寸命名
+        base_name = self.panel.get_output_filename()
+        default_name = base_name + ".jpg"
         path, _ = QFileDialog.getSaveFileName(
             self, "导出为 JPG", default_name, "JPEG 图片 (*.jpg *.jpeg)")
         if not path:

@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
     QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
     QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
+    QToolButton, QMenu, QAction,
 )
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
@@ -18,6 +19,7 @@ from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from core.geometry import CropDesign, BorderLayer, BorderText
 from core.parser.name_parser import parse_filename
 from core.parser.template_matcher import TemplateMatcher
+from core.app_settings import get_app_settings
 
 logger = logging.getLogger(__name__)
 
@@ -221,8 +223,11 @@ class PropertyPanel(QWidget):
         self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
         self._pool_worker = None  # type: PoolRenderWorker | None
         self._sketch_path = ""
+        # —— 持久化设置（与圆角裁剪工具共用同一份 QSettings）——
+        self._app_settings = get_app_settings()
         self._build_ui()
         self._load_from_design()
+        self._pool_restore_last_template_dir()
 
     # ---- UI ----
     def _build_ui(self):
@@ -435,15 +440,29 @@ class PropertyPanel(QWidget):
         f = QVBoxLayout(gb)
         f.setSpacing(6)
 
-        # A) 模板库目录
+        # A) 模板库目录（可编辑 ComboBox + 历史记录下拉 + 浏览）
         row_tpl = QHBoxLayout()
         row_tpl.addWidget(QLabel("模板库:"), 0)
-        self._pool_tpl_dir = QLineEdit()
+        self._pool_tpl_dir = QComboBox()
+        self._pool_tpl_dir.setEditable(True)
         self._pool_tpl_dir.setPlaceholderText("选择模板图的根目录（含完整矩形花纹图）")
+        le_tpl = self._pool_tpl_dir.lineEdit()
+        le_tpl.textChanged.connect(self._pool_on_template_dir_changed)
+        self._pool_tpl_dir.currentIndexChanged.connect(self._pool_on_template_history_selected)
+        row_tpl.addWidget(self._pool_tpl_dir, 1)
+
+        # 历史记录下拉按钮
+        self._pool_btn_tpl_history = QToolButton()
+        self._pool_btn_tpl_history.setText("▾")
+        self._pool_btn_tpl_history.setPopupMode(QToolButton.InstantPopup)
+        self._pool_btn_tpl_history.setToolTip("历史记录")
+        self._pool_tpl_history_menu = QMenu(self._pool_btn_tpl_history)
+        self._pool_btn_tpl_history.setMenu(self._pool_tpl_history_menu)
+        row_tpl.addWidget(self._pool_btn_tpl_history, 0)
+
         btn_tpl = QPushButton("选目录")
         btn_tpl.setFixedWidth(64)
         btn_tpl.clicked.connect(self._pool_pick_template_dir)
-        row_tpl.addWidget(self._pool_tpl_dir, 1)
         row_tpl.addWidget(btn_tpl, 0)
         f.addLayout(row_tpl)
 
@@ -533,6 +552,11 @@ class PropertyPanel(QWidget):
 
     # -------------- 智能水池：事件处理 --------------
 
+    def _on_pool_hole_mode_change(self):
+        mode = self._pool_hole_mode.currentData()
+        # 只改 design.pool_hole_transparent 默认值；后续真正 apply 时 _collect 里再同步
+        self._set_pool_status(f"挖空方式切换为：{self._pool_hole_mode.currentText()}")
+
     def _on_pool_target_changed(self, text: str):
         """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高"""
         # 1) 默认同步输出文件名（用户手动修改过输出名时，可通过按钮重新同步）
@@ -574,8 +598,104 @@ class PropertyPanel(QWidget):
     def _pool_pick_template_dir(self):
         d = QFileDialog.getExistingDirectory(self, "选择模板库目录")
         if d:
-            self._pool_tpl_dir.setText(d)
+            self._pool_set_template_dir_ui(d)
+            self._pool_on_template_dir_changed(d)
+            # 记录到历史
+            self._app_settings.add_template_history(d)
+            self._pool_refresh_template_history_ui()
             self._set_pool_status(f"模板库目录已设置：{d}")
+
+    # ================================================================
+    # 模板库目录：持久化 / 历史记录（与圆角裁剪工具共用 AppSettings）
+    # ================================================================
+
+    def _pool_restore_last_template_dir(self):
+        """启动时：恢复上次使用的模板库目录 + 填充历史记录下拉/菜单"""
+        self._pool_refresh_template_history_ui()
+        last_dir = self._app_settings.get_default_template_dir()
+        if last_dir and os.path.isdir(last_dir):
+            self._pool_set_template_dir_ui(last_dir)
+            # 同步到 matcher（不立即扫描，用户点"生成"时再走磁盘缓存）
+            self._pool_on_template_dir_changed(last_dir)
+
+    def _pool_refresh_template_history_ui(self):
+        """刷新历史记录：ComboBox 下拉项 + 历史菜单"""
+        history = self._app_settings.get_template_history()
+        current_text = self._pool_tpl_dir.lineEdit().text()
+        self._pool_tpl_dir.blockSignals(True)
+        try:
+            self._pool_tpl_dir.clear()
+            for h in history:
+                label = h.display_name
+                if h.total_files:
+                    label += f"  ({h.total_files} 张)"
+                label += "    " + h.path
+                self._pool_tpl_dir.addItem(label, h.path)
+            self._pool_tpl_dir.lineEdit().setText(current_text)
+        finally:
+            self._pool_tpl_dir.blockSignals(False)
+
+        # 历史菜单
+        self._pool_tpl_history_menu.clear()
+        if not history:
+            a_empty = QAction("（暂无历史记录）", self._pool_tpl_history_menu)
+            a_empty.setEnabled(False)
+            self._pool_tpl_history_menu.addAction(a_empty)
+        else:
+            for h in history:
+                label = h.display_name
+                if h.total_files:
+                    label += f"   ({h.total_files} 张图)"
+                a = QAction(label, self._pool_tpl_history_menu)
+                a.setToolTip(h.path)
+                a.setData(h.path)
+                a.triggered.connect(lambda _=False, p=h.path: self._pool_apply_template_dir_from_history(p))
+                self._pool_tpl_history_menu.addAction(a)
+            self._pool_tpl_history_menu.addSeparator()
+            a_clear = QAction("清除历史记录", self._pool_tpl_history_menu)
+            a_clear.triggered.connect(self._pool_clear_template_history)
+            self._pool_tpl_history_menu.addAction(a_clear)
+
+    def _pool_apply_template_dir_from_history(self, path: str):
+        """从历史记录选中：写入 ComboBox 并同步 matcher"""
+        self._pool_set_template_dir_ui(path)
+        self._pool_on_template_dir_changed(path)
+        self._app_settings.add_template_history(path)
+        self._pool_refresh_template_history_ui()
+
+    def _pool_set_template_dir_ui(self, path: str):
+        """只改 UI 文本（不触发信号）"""
+        le = self._pool_tpl_dir.lineEdit()
+        le.blockSignals(True)
+        try:
+            le.setText(path)
+        finally:
+            le.blockSignals(False)
+
+    def _pool_clear_template_history(self):
+        """清空历史记录（仅菜单/下拉清空，当前目录文本保留）"""
+        self._app_settings.clear_template_history()
+        self._pool_refresh_template_history_ui()
+
+    def _pool_on_template_history_selected(self, idx: int):
+        """用户从 ComboBox 下拉选了一条历史"""
+        if idx < 0:
+            return
+        path = self._pool_tpl_dir.itemData(idx)
+        if isinstance(path, str) and path:
+            self._pool_set_template_dir_ui(path)
+            self._pool_on_template_dir_changed(path)
+            self._app_settings.add_template_history(path)
+            self._pool_refresh_template_history_ui()
+
+    def _pool_on_template_dir_changed(self, text: str):
+        """模板库目录变更时更新匹配引擎（只有目录真正不同才 set）"""
+        text = (text or "").strip()
+        if not text or not os.path.isdir(text):
+            return
+        abs_dir = os.path.abspath(text)
+        if self._matcher.get_template_dir() != abs_dir:
+            self._matcher.set_template_dir(abs_dir)
 
     def _pool_pick_target_file(self):
         p, _ = QFileDialog.getOpenFileName(
@@ -642,7 +762,7 @@ class PropertyPanel(QWidget):
             self._set_pool_status("请先填写或选择目标文件名", is_error=True)
             return
 
-        tpl_dir = self._pool_tpl_dir.text().strip()
+        tpl_dir = self._pool_tpl_dir.lineEdit().text().strip()
         if not tpl_dir or not os.path.isdir(tpl_dir):
             self._set_pool_status("请先选择正确的模板库目录", is_error=True)
             return
@@ -722,6 +842,28 @@ class PropertyPanel(QWidget):
         mode = self._cb_mode.currentData()
         self._gb_l.setVisible(mode == 'rect_lshape')
         self._gb_e.setVisible(mode == 'ellipse_hole')
+
+    # ---- QGroupBox 折叠/展开辅助 ----
+    def _toggle_group_content(self, gb: QGroupBox, show: bool):
+        """控制 QGroupBox 内部子控件的显示/隐藏（真正的折叠效果，不是只禁用）"""
+        # 控制 layout 中的 item
+        lay = gb.layout()
+        if lay is None:
+            return
+        for i in range(lay.count()):
+            item = lay.itemAt(i)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.setVisible(show)
+            elif item.layout() is not None:
+                # 遍历嵌套 layout
+                sub = item.layout()
+                for j in range(sub.count()):
+                    sw = sub.itemAt(j).widget()
+                    if sw is not None:
+                        sw.setVisible(show)
 
     # ---- 边框层增删改 ----
     def _update_layers_label(self):
