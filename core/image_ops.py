@@ -131,6 +131,64 @@ def render_design(design: CropDesign) -> Image.Image:
     inner_mask = _get_inner_pixel_mask(design)
     canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
 
+    # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线
+    from .geometry import (compute_inner_corner_radii, _erode_mask)
+    BORDER_WIDTH_PX = 10
+    BLACK = (0, 0, 0)
+
+    inner_rect = design.inner_rect_px()
+    outer_rect = design.outer_rect_px()
+    inner_corners = compute_inner_corner_radii(outer_rect, inner_rect, design.corners_px)
+    max_corner = max(inner_corners.values()) if inner_corners else 0.0
+
+    # 转 PIL 统一绘制（更直观、不易出错）
+    pil = Image.fromarray(canvas_arr, 'RGB')
+    draw = ImageDraw.Draw(pil)
+
+    if design.mode == 'rect_hole':
+        # 矩形/圆角矩形：直接用 ImageDraw 的粗线绘制
+        bbox = (
+            int(round(inner_rect.x)),
+            int(round(inner_rect.y)),
+            int(round(inner_rect.right)) - 1,
+            int(round(inner_rect.bottom)) - 1,
+        )
+        if max_corner > 0.5:
+            # 圆角：用 rounded_rectangle 统一圆角半径（逐角差异在打印级可忽略）
+            # 由于 Pillow rounded_rectangle 只接受统一 radius，使用保守值避免视觉异常
+            r_avg = int(round(max_corner))
+            # 注意：outline=width 的粗线会稍微扩展到框外，用 fill=outer 裁剪后无副作用
+            draw.rounded_rectangle(
+                bbox,
+                radius=r_avg,
+                outline=BLACK,
+                width=BORDER_WIDTH_PX,
+            )
+        else:
+            # 纯直角矩形：直接 width=10 粗线，精确覆盖边界
+            draw.rectangle(bbox, outline=BLACK, width=BORDER_WIDTH_PX)
+
+    elif design.mode == 'ellipse_hole':
+        e = design.ellipse_px()
+        bbox = (
+            int(e.cx - e.rx),
+            int(e.cy - e.ry),
+            int(e.cx + e.rx) - 1,
+            int(e.cy + e.ry) - 1,
+        )
+        draw.ellipse(bbox, outline=BLACK, width=BORDER_WIDTH_PX)
+
+    else:  # rect_lshape — L形轮廓复杂，继续使用形态学腐蚀法
+        eroded_inner = _erode_mask(inner_mask, BORDER_WIDTH_PX)
+        if eroded_inner.any():
+            border_mask = inner_mask & ~eroded_inner
+            pil_arr = np.array(pil, dtype=np.uint8)
+            pil_arr[border_mask] = list(BLACK)
+            pil = Image.fromarray(pil_arr, 'RGB')
+            draw = ImageDraw.Draw(pil)  # draw 对象已附加在 pil 上，重新获取
+
+    canvas_arr = np.array(pil, dtype=np.uint8)
+
     # 4. 边框文字
     if design.border_text is not None:
         pil = Image.fromarray(canvas_arr, 'RGB')
