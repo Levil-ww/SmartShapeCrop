@@ -22980,3 +22980,27 @@
 [2026-08-14 15:43:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石7号;56x195CM裁剪有图'
 [2026-08-14 15:43:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;竖版59x27CM剪裁有图余料也发'
 [2026-08-14 15:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石1;60.5x133cm裁剪图'
+[2026-08-14 15:53:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(485x332=1.46) 与目标宽高比(50.0x70.0=0.71) 差异过大(51.1%)，像素尺寸可能不可靠
+[2026-08-14 15:53:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 外框宽 69.6 与目标 50.0 偏差过大(1.39)，使用目标值
+[2026-08-14 15:53:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 左右边距: b=42.44214 远超预期和 21.500000000000004，视为异常，清零
+[2026-08-14 15:53:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 上下边距: b=52.0 远超预期和 17.760000000000005，视为异常，清零
+[2026-08-14 15:53:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60x159.4CM剪裁有图余料也发'
+[2026-08-14 15:53:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(485x332=1.46) 与目标宽高比(159.4x60.0=2.66) 差异过大(45.0%)，像素尺寸可能不可靠
+[2026-08-14 15:53:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 上下边距: b=52.0 远超预期和 17.557859999999998，视为异常，清零
+[2026-08-14 15:53:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距和(6.40)与预期(89.84)偏差 93% 过大，重置水平边距
+[2026-08-14 15:53:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60x159.4CM剪裁有图余料也发'
+[2026-08-14 15:54:17] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-中古雨林;40.5x180CM裁剪有图'
+[2026-08-14 15:54:17] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-庄园秘;43.2x120CM剪裁有图'
+[2026-08-14 15:54:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60x159.4CM剪裁有图余料也发'
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '60.CM剪裁有图余料也发'
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '吸水皮革-定制-裁剪有图-克罗印花;60.CM剪裁有图余料也发'
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] FINAL: no dimensions parsed, default layout=横版
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60.CM剪裁有图余料也发'
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '60.5CM剪裁有图余料也发'
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '吸水皮革-定制-裁剪有图-克罗印花;60.5CM剪裁有图余料也发'
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] FINAL: no dimensions parsed, default layout=横版
+[2026-08-14 15:56:41] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60.5CM剪裁有图余料也发'
+[2026-08-14 15:56:44] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60.5x133CM剪裁有图余料也发'
+[2026-08-14 15:56:59] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(485x332=1.46) 与目标宽高比(133.0x60.5=2.20) 差异过大(33.5%)，像素尺寸可能不可靠
+[2026-08-14 15:56:59] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 上下边距: b=52.0 远超预期和 18.057859999999998，视为异常，清零
+[2026-08-14 15:56:59] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距和(6.40)与预期(63.44)偏差 90% 过大，重置水平边距
