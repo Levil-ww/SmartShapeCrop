@@ -132,62 +132,36 @@ def render_design(design: CropDesign) -> Image.Image:
     canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
 
     # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线
-    from .geometry import (compute_inner_corner_radii, _erode_mask)
+    #
+    # [因果说明 2026-08-14] 形态学腐蚀法 ≠ 圆角裁剪！ 两者严格解耦：
+    # ┌─────────────────────────────────────────────────────────────────────┐
+    # │  阶段 1 · 圆角裁剪（已在上一步 3.4 完成，结果锁死为 inner_mask）     │
+    # │    inner_mask = _get_inner_pixel_mask(design)                       │
+    # │       → fill_rect_mask 填充像素对齐矩形                             │
+    # │       → carve_corner_on_mask（纯 numpy 距离场，几何精确）切四角      │
+    # │    canvas_arr[inner_mask] = inner_fill  ← 挖空形状、尺寸、圆角       │
+    # │            全部在这一行写入 canvas，自此不可被后续代码修改！          │
+    # ├─────────────────────────────────────────────────────────────────────┤
+    # │  阶段 2 · 边框绘制（本步骤，仅定位 + 染色，不碰裁剪）                │
+    # │    计算：                                                           │
+    # │      dist_to_edge = _edt(inner_mask)  ← 纯 numpy，无 scipy 依赖    │
+    # │      border_mask = inner_mask & (dist_to_edge ≤ 10)                 │
+    # │    含义：对每个 True(挖空)像素，dist_to_edge = 到最近 False(外框)    │
+    # │          像素的欧氏距离。取 dist ≤ 10 的 True 像素 = 精确 10px 等距  │
+    # │          边界环，法线方向严格 10px，无对角延伸                        │
+    # │    执行：canvas_arr[border_mask] = (0,0,0) ← 只改颜色，不改形状     │
+    # └─────────────────────────────────────────────────────────────────────┘
+    #
+    # 使用纯 numpy 实现的欧氏距离变换（Two-pass 算法，Felzenszwalb & Huttenlocher 2012）
+    # 无需 scipy 依赖，适用于 .venv 环境。
+    #
+    # 通用：rect_hole / ellipse_hole / rect_lshape 全部适用。
     BORDER_WIDTH_PX = 10
-    BLACK = (0, 0, 0)
-
-    inner_rect = design.inner_rect_px()
-    outer_rect = design.outer_rect_px()
-    inner_corners = compute_inner_corner_radii(outer_rect, inner_rect, design.corners_px)
-    max_corner = max(inner_corners.values()) if inner_corners else 0.0
-
-    # 转 PIL 统一绘制（更直观、不易出错）
-    pil = Image.fromarray(canvas_arr, 'RGB')
-    draw = ImageDraw.Draw(pil)
-
-    if design.mode == 'rect_hole':
-        # 矩形/圆角矩形：直接用 ImageDraw 的粗线绘制
-        bbox = (
-            int(round(inner_rect.x)),
-            int(round(inner_rect.y)),
-            int(round(inner_rect.right)) - 1,
-            int(round(inner_rect.bottom)) - 1,
-        )
-        if max_corner > 0.5:
-            # 圆角：用 rounded_rectangle 统一圆角半径（逐角差异在打印级可忽略）
-            # 由于 Pillow rounded_rectangle 只接受统一 radius，使用保守值避免视觉异常
-            r_avg = int(round(max_corner))
-            # 注意：outline=width 的粗线会稍微扩展到框外，用 fill=outer 裁剪后无副作用
-            draw.rounded_rectangle(
-                bbox,
-                radius=r_avg,
-                outline=BLACK,
-                width=BORDER_WIDTH_PX,
-            )
-        else:
-            # 纯直角矩形：直接 width=10 粗线，精确覆盖边界
-            draw.rectangle(bbox, outline=BLACK, width=BORDER_WIDTH_PX)
-
-    elif design.mode == 'ellipse_hole':
-        e = design.ellipse_px()
-        bbox = (
-            int(e.cx - e.rx),
-            int(e.cy - e.ry),
-            int(e.cx + e.rx) - 1,
-            int(e.cy + e.ry) - 1,
-        )
-        draw.ellipse(bbox, outline=BLACK, width=BORDER_WIDTH_PX)
-
-    else:  # rect_lshape — L形轮廓复杂，继续使用形态学腐蚀法
-        eroded_inner = _erode_mask(inner_mask, BORDER_WIDTH_PX)
-        if eroded_inner.any():
-            border_mask = inner_mask & ~eroded_inner
-            pil_arr = np.array(pil, dtype=np.uint8)
-            pil_arr[border_mask] = list(BLACK)
-            pil = Image.fromarray(pil_arr, 'RGB')
-            draw = ImageDraw.Draw(pil)  # draw 对象已附加在 pil 上，重新获取
-
-    canvas_arr = np.array(pil, dtype=np.uint8)
+    BLACK_RGB = (0, 0, 0)
+    dist_to_edge = _edt(inner_mask)
+    border_mask = inner_mask & (dist_to_edge <= BORDER_WIDTH_PX)
+    if border_mask.any():
+        canvas_arr[border_mask] = BLACK_RGB
 
     # 4. 边框文字
     if design.border_text is not None:
@@ -216,7 +190,9 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     corners = design.corners_px
 
     # 使用正确的算法计算内层圆角半径（每个角落独立计算）
-    inner_corners = compute_inner_corner_radii(outer, inner_rect, corners)
+    # 水池模式：direct=True 跳过边距缩减，圆角设置直接作用于内挖区域
+    inner_corners = compute_inner_corner_radii(outer, inner_rect, corners,
+                                                direct=design.pool_hole_transparent)
 
     if design.mode == 'rect_hole':
         fill_rect_mask(m, inner_rect, 255)

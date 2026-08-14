@@ -256,37 +256,65 @@ def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
 
     圆角算法统一委托给 core.rounded_corner.carve_corner_on_mask，
     确保与 image_cropper.py 的 apply_rounded_corners 完全一致。
+
+    [Fix TR/BR 白色竖线 2026-08-14]
+    关键：**圆角切割必须与 fill_rect_mask 使用像素对齐后的同一整数矩形**。
+    fill_rect_mask 内部使用 RectShape.to_int_tuple()（即 x/y/right/bottom 全 int(round)）
+    生成像素级矩形；如果此处把 float (x,y,w,h) 传给 carve_corner_on_mask，
+    当 inner_rect.right / inner_rect.bottom 是小数（常见于 DPI*cm 换算或非整数边距），
+    TR/BR 角的 corner square 右/下边界会被 PIL draw.rectangle 默默 int() 截断 0.9px，
+    导致最后一(几)列 mask 漏填为 0 → 仍是 255(挖空白) → 视觉上是紧贴右边缘的白竖线。
+    TL/BL 因截断方向向内不外露所以看不出来。修复方式是：在此处先把 float 矩形
+    对齐到与 fill_rect_mask 完全相同的整数网格，再把整数版 (x_i, y_i, w_i, h_i) 传下去。
     """
+    # 与 fill_rect_mask 用完全相同的整数对齐策略
+    x_i = int(round(inner_rect.x))
+    y_i = int(round(inner_rect.y))
+    right_i = int(round(inner_rect.right))
+    bottom_i = int(round(inner_rect.bottom))
+    w_i = right_i - x_i
+    h_i = bottom_i - y_i
     _carve_corner_on_mask(
         mask_img,
-        (inner_rect.x, inner_rect.y, inner_rect.w, inner_rect.h),
+        (x_i, y_i, w_i, h_i),
         corners,
         canvas_size=mask_img.size,
     )
 
 
 def compute_inner_corner_radii(outer_rect: RectShape, inner_rect: RectShape,
-                                outer_corners: dict[str, float]) -> dict[str, float]:
+                                outer_corners: dict[str, float],
+                                *,
+                                direct: bool = False) -> dict[str, float]:
     """
-    计算内层矩形的有效圆角半径，基于每个角落到外层矩形的实际距离。
+    计算内层矩形的有效圆角半径。
 
-    正确算法：对每个角落，计算内层矩形到外层矩形在 x 和 y 方向的距离，
-    取较大值作为缩减量，确保内层裁剪区域被外层完全包含。
+    direct=False（默认，普通多层边框模式）：
+        基于每个角落到外层矩形的实际距离做缩减，确保内层圆角被外层完全包含。
+        示例：左上角有效半径 = max(0, R - max(T_left, T_top))
 
-    示例：左上角有效半径 = max(0, R - max(T_left, T_top))
+    direct=True（水池设计器模式）：
+        跳过边距缩减，直接把 outer_corners 的值作为内层的圆角，
+        仅做最小边一半的上界保护，防止半径过大导致中心区域被异常染色。
+        1:1 角映射：TL→TL, TR→TR, BL→BL, BR→BR。
     """
+    inner_corners = {}
+    max_safe = min(inner_rect.w, inner_rect.h) / 2.0
     T_left = inner_rect.x - outer_rect.x
     T_right = outer_rect.right - inner_rect.right
     T_top = inner_rect.y - outer_rect.y
     T_bottom = outer_rect.bottom - inner_rect.bottom
 
-    inner_corners = {}
     for ck in ('tl', 'tr', 'bl', 'br'):
-        R = outer_corners.get(ck, 0.0)
+        R = max(0.0, outer_corners.get(ck, 0.0))
+        if direct:
+            inner_corners[ck] = min(R, max_safe)
+            continue
+
         if R <= 0:
             inner_corners[ck] = 0.0
             continue
-        
+
         if ck == 'tl':
             dist = max(T_left, T_top)
         elif ck == 'tr':
@@ -295,9 +323,9 @@ def compute_inner_corner_radii(outer_rect: RectShape, inner_rect: RectShape,
             dist = max(T_left, T_bottom)
         else:  # br
             dist = max(T_right, T_bottom)
-        
-        inner_corners[ck] = max(0.0, R - dist)
-    
+
+        inner_corners[ck] = min(max(0.0, R - dist), max_safe)
+
     return inner_corners
 
 

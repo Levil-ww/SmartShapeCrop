@@ -96,24 +96,29 @@ def carve_corner_on_mask(
     """
     在已有的 L 模式 mask 上，对指定矩形的四个角刻出圆角（原地修改）。
 
-    单步扇形切割算法：
-      1. 挖空 r×r 正方形（fill=0）
-      2. 填回矩形内部的 1/4 圆（fill=255）
-      3. [Fix C-shaped gap 0812] 后处理：检查圆弧边界像素，填充缺失点
+    纯 numpy 距离场算法（v2，2026-08-14 重写）：
+      对每个圆角 r、圆心 (cx, cy)：
+        1. 将 r×r corner square 内的所有像素先设为 0（挖掉尖角）
+        2. 用距离公式 dist(px,py) ≤ r 且 px/py 在对应象限 → 填回 255（保留 1/4 圆弧）
+      几何上保证过渡点无 C 形缺口、无过绘、对 TR/BR 角不外溢到外框交界。
+      不再依赖 PIL pieslice 的栅格化（其在 R 较大时会产生锯齿与过画）。
 
     本函数是项目中所有圆角处理的唯一入口，确保 image_cropper.py、
     geometry.py、process_image.py 三处的圆角逻辑完全一致。
 
     Args:
         mask: PIL 'L' 模式 mask（255=保留, 0=裁掉）
-        rect: (x, y, w, h) 目标矩形坐标（左上角 + 宽高）
-        corners: {corner_key: radius_px} 圆角半径（像素）；
-                None 或 <= 0 的角跳过
+        rect: (x, y, w, h) 目标矩形坐标（左上角 + 宽高，整数对齐）
+        corners: {corner_key: radius_px} 圆角半径（像素）；None 或 <= 0 的角跳过
         canvas_size: 可选，用于 clip 坐标到合法范围；None 则用 mask.size
     """
     W, H = canvas_size if canvas_size is not None else mask.size
     x, y, w, h = rect
-    draw = ImageDraw.Draw(mask)
+
+    # 以 numpy 数组为唯一真源，最后再回写 PIL Image
+    mask_arr = np.array(mask)
+    if mask_arr.dtype != np.uint8:
+        mask_arr = mask_arr.astype(np.uint8)
 
     for corner_key in ('tl', 'tr', 'bl', 'br'):
         r = corners.get(corner_key, 0)
@@ -127,57 +132,54 @@ def carve_corner_on_mask(
         if r_px <= 0:
             continue
 
-        # 1. 挖空 r×r 正方形（切掉尖角）
+        # 圆心位置（与 PIL 版本完全一致）
+        if corner_key == 'tl':
+            cx, cy = x + r_px, y + r_px
+        elif corner_key == 'tr':
+            cx, cy = x + w - r_px, y + r_px
+        elif corner_key == 'bl':
+            cx, cy = x + r_px, y + h - r_px
+        else:  # br
+            cx, cy = x + w - r_px, y + h - r_px
+
+        # 1. 挖空 r×r corner square（切掉尖角）
+        #    范围外扩 1px 以覆盖 PIL inclusive 语义的右/下边界列
         sq = get_corner_square(rect, corner_key, r_px)
-        sq_safe = (max(0, sq[0]), max(0, sq[1]), min(W, sq[2]), min(H, sq[3]))
-        if sq_safe[2] > sq_safe[0] and sq_safe[3] > sq_safe[1]:
-            draw.rectangle(sq_safe, fill=0)
+        sq_x0 = max(0, int(sq[0]))
+        sq_y0 = max(0, int(sq[1]))
+        sq_x1 = min(W, int(sq[2]) + 1)  # +1 使 inclusive
+        sq_y1 = min(H, int(sq[3]) + 1)
 
-        # 2. 计算圆心位置
+        if sq_x1 > sq_x0 and sq_y1 > sq_y0:
+            mask_arr[sq_y0:sq_y1, sq_x0:sq_x1] = 0
+
+        # 2. 用距离场公式把 1/4 圆弧像素填回 255（纯几何，无栅格化伪影）
+        ys = np.arange(sq_y0, sq_y1)
+        xs = np.arange(sq_x0, sq_x1)
+        yy, xx = np.meshgrid(ys, xs, indexing='ij')
+
+        # 计算到圆心的距离平方
+        dist_sq = (xx - cx) ** 2 + (yy - cy) ** 2
+        r_sq = float(r_px) * float(r_px)
+
+        # 象限约束：每个角只保留对应象限内的圆弧
         if corner_key == 'tl':
-            cx, cy = x + r_px, y + r_px
+            quadrant_mask = (xx <= cx) & (yy <= cy)
         elif corner_key == 'tr':
-            cx, cy = x + w - r_px, y + r_px
+            quadrant_mask = (xx >= cx) & (yy <= cy)
         elif corner_key == 'bl':
-            cx, cy = x + r_px, y + h - r_px
+            quadrant_mask = (xx <= cx) & (yy >= cy)
         else:  # br
-            cx, cy = x + w - r_px, y + h - r_px
-        
-        # 3. 填回 1/4 圆（保留圆弧）
-        bbox = get_corner_pieslice_bbox(rect, corner_key, r_px)
-        start_deg, end_deg = CORNER_ANGLES[corner_key]
-        safe_bbox = (max(0, bbox[0]), max(0, bbox[1]), min(W, bbox[2]), min(H, bbox[3]))
-        if safe_bbox[2] > safe_bbox[0] and safe_bbox[3] > safe_bbox[1]:
-            draw.pieslice(safe_bbox, start=start_deg, end=end_deg, fill=255)
+            quadrant_mask = (xx >= cx) & (yy >= cy)
 
-    # 4. [Fix C-shaped gap 0812] 后处理：检查所有角的圆弧边界像素
-    # 在 pieslice 绘制完成后，使用 numpy 数组进行边界像素填充
-    mask_arr = np.array(mask)
-    
-    for corner_key in ('tl', 'tr', 'bl', 'br'):
-        r = corners.get(corner_key, 0)
-        if r is None or r <= 0:
-            continue
-        r_px = max(1, int(round(r)))
-        max_r = max(1, min(w, h) // 2)
-        r_px = min(r_px, max_r)
-        if r_px <= 0:
-            continue
+        # 圆内 AND 对应象限 = 真正应保留的 1/4 圆弧像素
+        inside_circle = dist_sq <= r_sq
+        fill_mask = inside_circle & quadrant_mask
 
-        # 计算圆心位置
-        if corner_key == 'tl':
-            cx, cy = x + r_px, y + r_px
-        elif corner_key == 'tr':
-            cx, cy = x + w - r_px, y + r_px
-        elif corner_key == 'bl':
-            cx, cy = x + r_px, y + h - r_px
-        else:  # br
-            cx, cy = x + w - r_px, y + h - r_px
+        if fill_mask.any():
+            mask_arr[sq_y0:sq_y1, sq_x0:sq_x1][fill_mask] = 255
 
-        # 填充圆弧边界缺失像素
-        _fill_corner_boundary_pixels(mask_arr, cx, cy, r_px, corner_key, W, H)
-
-    # 将修改后的数组保存回 mask
+    # 回写 PIL Image（L 模式）
     mask.paste(Image.fromarray(mask_arr, 'L'))
 
 
@@ -189,6 +191,7 @@ def _fill_corner_boundary_pixels(
     corner_key: str,
     W: int,
     H: int,
+    rect_bounds: tuple[int, int, int, int] | None = None,
 ) -> None:
     """
     [Fix C-shaped gap 0812] 填充圆角边界上的缺失像素。
@@ -196,6 +199,12 @@ def _fill_corner_boundary_pixels(
     PIL pieslice 在绘制圆弧时，对于距离圆心略大于 r 的像素可能不会填充，
     导致圆角边界出现细微的 C 形缺口。本函数通过检查 r ± 1.5 像素范围内
     的所有像素，将应该在圆弧上但值为 0 的像素填充为 255。
+
+    [Fix TR/BR 白色泄漏线 2026-08-14] 新增 rect_bounds 约束：
+    rect_bounds = (rx0, ry0, rx1, ry1) 是与 fill_rect_mask 完全对齐的整数矩形
+    （rx1/ry1 为 exclusive）。补全的像素必须落在 rect_bounds 内，否则：
+    对于 TR / BR 角，刚好贴在外框交界的 x = rx1 列或 y = ry1 行会被错误地填回 255
+    （这些像素其实属于外框区域，根本不在挖空 rect 内）→ 视觉上就是 1~2 条白竖/横线。
 
     Args:
         mask_arr: numpy 数组（原地修改）
@@ -205,6 +214,7 @@ def _fill_corner_boundary_pixels(
         corner_key: 角落标识 ('tl' | 'tr' | 'bl' | 'br')
         W: 图像宽度
         H: 图像高度
+        rect_bounds: 可选，(rx0, ry0, rx1, ry1) 像素对齐的合法范围（rx1/ry1 exclusive）
     """
     # 确定角度范围（与 CORNER_ANGLES 一致）
     angle_ranges = {
@@ -214,6 +224,11 @@ def _fill_corner_boundary_pixels(
         'br': (0, 90),
     }
     start_deg, end_deg = angle_ranges[corner_key]
+
+    rx0 = ry0 = -10_000
+    rx1 = ry1 = 10_000_000
+    if rect_bounds is not None:
+        rx0, ry0, rx1, ry1 = rect_bounds
 
     # 检查 r ± 1.5 像素范围内的所有像素
     # 使用 1.5 像素容差覆盖边界舍入误差
@@ -226,8 +241,12 @@ def _fill_corner_boundary_pixels(
             px = int(round(cx + test_r * np.cos(rad)))
             py = int(round(cy + test_r * np.sin(rad)))
 
-            # 检查像素是否在图像范围内
+            # 1) 图像范围
             if not (0 <= px < W and 0 <= py < H):
+                continue
+            # 2) [Fix TR/BR 泄漏] 必须落在 fill_rect_mask 的整数矩形内
+            #    (rx1 / ry1 为 exclusive，与 PIL draw.rectangle 语义对齐)
+            if not (rx0 <= px < rx1 and ry0 <= py < ry1):
                 continue
 
             # 计算实际距离

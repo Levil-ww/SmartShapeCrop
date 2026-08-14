@@ -160,3 +160,243 @@ Traceback (most recent call last):
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 AttributeError: 'LShape' object has no attribute 'cut_corner'
 
+============================================================
+崩溃时间: 2026-08-14 09:56:55
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:57:25
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:57:44
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:57:57
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:57:58
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:57:59
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:58:01
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:58:07
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:58:12
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 09:59:43
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 10:00:01
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
+============================================================
+崩溃时间: 2026-08-14 10:00:13
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
+    from scipy.ndimage import distance_transform_edt
+ModuleNotFoundError: No module named 'scipy'
+
