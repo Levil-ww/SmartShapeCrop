@@ -420,7 +420,7 @@ def parse_filename(filename: str) -> ParsedFilename:
     corners = _parse_corners(name)
     result.corners = corners if corners else None
     
-    # 提取材质和花型名
+    # 先检测 pool_mode（后续会根据它修正尺寸方向）
     if result.product_name and '-' in result.product_name:
         name_parts = result.product_name.split('-')
         if len(name_parts) >= 2:
@@ -430,7 +430,6 @@ def parse_filename(filename: str) -> ParsedFilename:
                 if '定制' in part:
                     result.is_custom = True
                     break
-            # —— 水池设计器：识别"裁剪有图"关键词 + 提取花型名 ——
             for part in name_parts:
                 if '裁剪有图' in part:
                     result.pool_mode = True
@@ -472,6 +471,21 @@ def parse_filename(filename: str) -> ParsedFilename:
         has_circle_kw = '圆形' in kw_set or '圆' in kw_set
         has_diameter = '直径' in size_context
         result.is_circular = has_circle_kw or has_diameter
+    
+    # —— 水池模式修正：使用原始尺寸顺序，不强制横版/竖版
+    # 水池的 "a x b CM" 通常表示 宽×高，不应对调
+    # pool_mode 触发条件：文件名包含 "裁剪有图" 或 "水池"
+    is_pool = result.pool_mode or ('水池' in (result.product_name or '') or '水池' in (name or ''))
+    if is_pool and dims:
+        a, b = dims
+        # 仅当没有显式方向关键词时，使用原始顺序
+        if not explicit_layout:
+            # 若第一个数较小（通常是宽度），则直接用原始顺序
+            # 对于水池，用户通常写 "宽 x 高"，例如 "60.5 x 133"
+            result.width_cm = a
+            result.height_cm = b
+            result.layout = '竖版' if a < b else '横版'
+            logger.debug(f"[name_parser] pool_mode 修正: 使用原始顺序 a={a}(宽), b={b}(高), layout={result.layout}")
     
     return result
 

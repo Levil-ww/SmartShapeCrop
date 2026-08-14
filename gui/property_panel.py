@@ -87,12 +87,14 @@ class PoolRenderWorker(QThread):
                  template_dir: str,
                  target_filename: str,
                  sketch_path: str = "",
+                 pre_parsed_result=None,
                  parent=None):
         super().__init__(parent)
         self._matcher = matcher
         self._template_dir = template_dir
         self._target = target_filename
         self._sketch = sketch_path
+        self._pre_parsed = pre_parsed_result  # 预解析结果（来自 PropertyPanel 自动解析）
         self._log_lines: list[str] = []
 
     def _log(self, msg: str):
@@ -116,6 +118,21 @@ class PoolRenderWorker(QThread):
                 )
                 return
 
+            # —— 水池/裁剪有图 模式：修正尺寸方向 ——
+            # 文件名 "a x b CM" 在草图中标注为：a 是竖边(高)、b 是横边(宽)
+            # name_parser 中 width_cm=a(首个数值=竖边), height_cm=b(第二个数=横边)
+            # 水池模式需要交换：file_w(横边)=b=parsed.height_cm，file_h(竖边)=a=parsed.width_cm
+            # 此交换必须与 _pool_set_target_size 和 _pool_auto_parse_sketch 中保持一致
+            is_pool = parsed.pool_mode or ('裁剪有图' in self._target) or ('水池' in self._target)
+            if is_pool:
+                file_w, file_h = parsed.height_cm, parsed.width_cm
+                self._log(
+                    f"水池模式尺寸修正：文件名数值 {parsed.width_cm}x{parsed.height_cm} "
+                    f"→ 外框参考 宽{file_w} x 高{file_h}（与草图横/竖标注一致）"
+                )
+            else:
+                file_w, file_h = parsed.width_cm, parsed.height_cm
+
             # 2) 匹配模板
             self.progress.emit(25, "扫描模板库并匹配最佳素材…")
             if not self._template_dir or not os.path.isdir(self._template_dir):
@@ -138,26 +155,39 @@ class PoolRenderWorker(QThread):
 
             # 3) 解析草图（如果提供了）
             sketch_result = None
+            canvas_w_cm = file_w   # 原始文件名外框宽（横边）
+            canvas_h_cm = file_h   # 原始文件名外框高（竖边）
             if self._sketch and os.path.isfile(self._sketch):
-                self.progress.emit(60, "解析尺寸草图几何…")
-                try:
-                    from core.pool_designer import parse_sketch
-                    sketch_result = parse_sketch(
-                        self._sketch,
-                        target_outer_w_cm=parsed.width_cm,
-                        target_outer_h_cm=parsed.height_cm,
-                    )
-                    self._log(f"草图解析结果：success={sketch_result.success}, msg={sketch_result.message}")
-                except Exception as e:
-                    self._log(f"草图解析异常（忽略，仍可继续手动输入）：{e}")
+                # 优先使用 PropertyPanel 预解析结果（避免重复解析、保留用户调整）
+                if self._pre_parsed is not None and self._pre_parsed.success:
+                    sketch_result = self._pre_parsed
+                    self._log("使用界面已解析的草图结果（跳过重复解析）")
+                else:
+                    self.progress.emit(60, "解析尺寸草图（几何检测 + OCR 识别）…")
+                    try:
+                        from core.pool_designer import parse_sketch
+                        sketch_result = parse_sketch(
+                            self._sketch,
+                            target_outer_w_cm=file_w,   # 外框参考宽（横边，无损耗）
+                            target_outer_h_cm=file_h,   # 外框参考高（竖边，无损耗）
+                        )
+                        self._log(f"草图解析：success={sketch_result.success}")
+                        self._log(f"  {sketch_result.message}")
+                    except Exception as e:
+                        self._log(f"草图解析异常（忽略，仍可继续手动输入）：{e}")
+                # 如果草图识别出了外框总尺寸，优先使用（以草图为准）
+                if sketch_result and sketch_result.success and sketch_result.outer_w_cm > 0:
+                    canvas_w_cm = sketch_result.outer_w_cm
+                if sketch_result and sketch_result.success and sketch_result.outer_h_cm > 0:
+                    canvas_h_cm = sketch_result.outer_h_cm
 
             # 4) 构建 CropDesign
             #    画布尺寸 = 目标尺寸 + 1cm 损耗（裁剪余料用）
             TRIM_CM = 1.0
             self.progress.emit(85, "构建设计参数…")
             design = CropDesign()
-            design.canvas_w_cm = parsed.width_cm + TRIM_CM
-            design.canvas_h_cm = parsed.height_cm + TRIM_CM
+            design.canvas_w_cm = canvas_w_cm + TRIM_CM
+            design.canvas_h_cm = canvas_h_cm + TRIM_CM
             design.dpi = 150
             design.mode = 'rect_hole'
             design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
@@ -169,7 +199,7 @@ class PoolRenderWorker(QThread):
                 design.inner_margin_left_cm = sketch_result.margin_left_cm
                 design.inner_margin_right_cm = sketch_result.margin_right_cm
             else:
-                default_m = min(parsed.width_cm, parsed.height_cm) * 0.10
+                default_m = min(canvas_w_cm, canvas_h_cm) * 0.10
                 design.inner_margin_top_cm = default_m
                 design.inner_margin_bottom_cm = default_m
                 design.inner_margin_left_cm = default_m
@@ -223,6 +253,7 @@ class PropertyPanel(QWidget):
         self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
         self._pool_worker = None  # type: PoolRenderWorker | None
         self._sketch_path = ""
+        self._sketch_parse_result = None  # 草图解析缓存，供实时回填 UI
         # —— 持久化设置（与圆角裁剪工具共用同一份 QSettings）——
         self._app_settings = get_app_settings()
         self._build_ui()
@@ -273,10 +304,10 @@ class PropertyPanel(QWidget):
         # 3) 内挖参数（矩形/L形共用）
         gb_inner = QGroupBox("内挖边距 (厘米)")
         fi = QVBoxLayout(gb_inner)
-        self._sp_mt = self._dspin(0, 50, self.design.inner_margin_top_cm)
-        self._sp_mb = self._dspin(0, 50, self.design.inner_margin_bottom_cm)
-        self._sp_ml = self._dspin(0, 50, self.design.inner_margin_left_cm)
-        self._sp_mr = self._dspin(0, 50, self.design.inner_margin_right_cm)
+        self._sp_mt = self._dspin(0, 200, self.design.inner_margin_top_cm)
+        self._sp_mb = self._dspin(0, 200, self.design.inner_margin_bottom_cm)
+        self._sp_ml = self._dspin(0, 200, self.design.inner_margin_left_cm)
+        self._sp_mr = self._dspin(0, 200, self.design.inner_margin_right_cm)
         fi.addLayout(self._row("上", self._sp_mt))
         fi.addLayout(self._row("下", self._sp_mb))
         fi.addLayout(self._row("左", self._sp_ml))
@@ -559,27 +590,57 @@ class PropertyPanel(QWidget):
         self._set_pool_status(f"挖空方式切换为：{self._pool_hole_mode.currentText()}")
 
     def _on_pool_target_changed(self, text: str):
-        """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高"""
-        # 1) 默认同步输出文件名（用户手动修改过输出名时，可通过按钮重新同步）
+        """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高；3) 若有草图则自动识别边距"""
+        # 1) 默认同步输出文件名
         self._pool_sync_output_from_target()
 
-        # 2) 解析尺寸并回填（解析失败不报错，静默忽略）
+        # 2) 解析尺寸并回填
         name = text.strip()
         if not name:
             return
         try:
             parsed = parse_filename(name)
+            # 检测水池设计模式（裁剪有图）
+            is_pool = parsed.pool_mode or ('裁剪有图' in name) or ('水池' in name)
+            self._pool_mode = is_pool
+
             w, h = parsed.width_cm, parsed.height_cm
             if w > 0 and h > 0:
-                # 校验在 SpinBox 合法范围内
-                w = max(5.0, min(200.0, float(w)))
-                h = max(5.0, min(200.0, float(h)))
-                self._sp_w.setValue(w)
-                self._sp_h.setValue(h)
-                self._set_pool_status(
-                    f"已自动识别尺寸：{w:.1f} × {h:.1f} cm（可在画布尺寸中微调）")
+                if is_pool:
+                    # —— 水池模式：文件名 "a x b CM" 按 (高 x 宽) 顺序解释 ——
+                    # 例：60.5x133cm  →  外框 高(竖)=60.5, 宽(横)=133
+                    # 画布显示尺寸 = 外框 + 1cm 损耗（裁剪余料）
+                    raw_outer_w = h   # 横边（第二个数）→ 宽
+                    raw_outer_h = w   # 竖边（第一个数）→ 高
+                    gui_w = raw_outer_w + 1.0
+                    gui_h = raw_outer_h + 1.0
+                    # 范围夹取
+                    gui_w = max(5.0, min(200.0, float(gui_w)))
+                    gui_h = max(5.0, min(200.0, float(gui_h)))
+                    raw_outer_w = max(5.0, min(200.0, float(raw_outer_w)))
+                    raw_outer_h = max(5.0, min(200.0, float(raw_outer_h)))
+                    # 保存原始外框尺寸（无损耗），供草图解析像素→厘米换算用
+                    self._pool_raw_outer_w = raw_outer_w
+                    self._pool_raw_outer_h = raw_outer_h
+                    self._sp_w.setValue(gui_w)
+                    self._sp_h.setValue(gui_h)
+                    self._set_pool_status(
+                        f"已自动识别尺寸：画布 {gui_w:.1f} × {gui_h:.1f} cm"
+                        f"（含1cm损耗，目标外框 {raw_outer_w:.1f}×{raw_outer_h:.1f} cm，可在画布尺寸中微调）")
+                else:
+                    # 普通模式：直接使用解析结果，无 +1cm
+                    w = max(5.0, min(200.0, float(w)))
+                    h = max(5.0, min(200.0, float(h)))
+                    self._pool_raw_outer_w = w
+                    self._pool_raw_outer_h = h
+                    self._sp_w.setValue(w)
+                    self._sp_h.setValue(h)
+                    self._set_pool_status(
+                        f"已自动识别尺寸：{w:.1f} × {h:.1f} cm（可在画布尺寸中微调）")
+                # 3) 如果有草图，自动解析边距
+                if self._sketch_path and os.path.isfile(self._sketch_path):
+                    self._pool_auto_parse_sketch()
         except Exception:
-            # 解析异常静默忽略
             pass
 
     def _pool_sync_output_from_target(self):
@@ -718,17 +779,16 @@ class PropertyPanel(QWidget):
         self._pool_load_sketch_from_path(p)
 
     def _pool_load_sketch_from_path(self, p: str):
-        """通用：加载草图路径 → 保存 + 预览更新（按钮上传 & 拖拽上传共用）"""
+        """通用：加载草图路径 → 保存 + 预览更新 + 自动解析回填边距"""
         if not p or not os.path.isfile(p):
             return
         self._sketch_path = p
-        # 预览（注意 setPixmap 后会覆盖文字/样式，但拖入提示会在清除时恢复）
+        # 预览
         pm = QPixmap(p)
         if not pm.isNull():
             self._pool_sk_preview.setPixmap(pm.scaled(
                 self._pool_sk_preview.size(),
                 Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            # 有图片时把虚线改为普通实线避免视觉混乱，并标记可点击状态
             self._pool_sk_preview.setStyleSheet(
                 "QLabel { border: 1px solid #888; background:#fff; border-radius: 6px; }")
             self._pool_sk_preview.set_has_image(True)
@@ -736,10 +796,81 @@ class PropertyPanel(QWidget):
             self._pool_sk_preview.clear()
             self._pool_sk_preview.setText("（预览失败）\n或拖入图片")
             self._pool_sk_preview.set_has_image(False)
-        self._set_pool_status(f"已上传草图：{os.path.basename(p)}（点击缩略图查看大图）")
+        self._set_pool_status(f"已上传草图：{os.path.basename(p)}")
+        # 自动解析草图（若目标尺寸已知）
+        self._pool_auto_parse_sketch()
+
+    def _pool_auto_parse_sketch(self):
+        """当草图和目标尺寸都已知时，自动解析并回填边距 UI。
+        
+        草图像素→厘米换算参考：使用文件名解析出的「原始外框尺寸」（不含1cm损耗），
+        因为草图上的外框标注与目标文件名尺寸一一对应，不包含裁剪余料。
+        """
+        if not self._sketch_path or not os.path.isfile(self._sketch_path):
+            return
+        # 优先使用「原始外框尺寸」（文件名解析得到的、无1cm损耗的尺寸）
+        # 因为草图的外框尺寸与目标文件名一致，不含裁剪余料
+        raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
+        raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
+        if raw_w > 0 and raw_h > 0:
+            target_w, target_h = raw_w, raw_h
+        else:
+            # 回退：使用当前画布尺寸 SpinBox 的值
+            target_w = self._sp_w.value()
+            target_h = self._sp_h.value()
+        if target_w <= 0 or target_h <= 0:
+            self._set_pool_status("已上传草图，请先填写或选择目标尺寸以启用自动识别")
+            return
+        try:
+            from core.pool_designer import parse_sketch
+            result = parse_sketch(
+                self._sketch_path,
+                target_outer_w_cm=target_w,
+                target_outer_h_cm=target_h,
+            )
+            self._sketch_parse_result = result
+            if result.success:
+                # —— 回填 4 个边距（核心需求）——
+                self._sp_mt.setValue(max(0.0, result.margin_top_cm))
+                self._sp_mb.setValue(max(0.0, result.margin_bottom_cm))
+                self._sp_ml.setValue(max(0.0, result.margin_left_cm))
+                self._sp_mr.setValue(max(0.0, result.margin_right_cm))
+                # 只有非水池模式，才用草图识别的外框覆盖画布尺寸
+                # 水池模式画布已按「文件名+1cm损耗」回填，不应被草图覆盖
+                if not getattr(self, '_pool_mode', False):
+                    if result.outer_w_cm > 0:
+                        self._sp_w.setValue(result.outer_w_cm)
+                    if result.outer_h_cm > 0:
+                        self._sp_h.setValue(result.outer_h_cm)
+                self._set_pool_status(
+                    f"✅ 草图识别成功：外框参考 {target_w:.1f}×{target_h:.1f} cm，"
+                    f"内挖 {result.inner_w_cm:.1f}×{result.inner_h_cm:.1f} cm，"
+                    f"边距 → 上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/"
+                    f"左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f} cm"
+                    f"（已自动填入【内挖边距】栏）"
+                )
+            else:
+                self._set_pool_status(
+                    f"⚠️ 草图解析未成功：{result.message}（可手动在【内挖边距】栏输入）")
+        except Exception as e:
+            self._set_pool_status(f"草图解析异常：{e}")
+
+    def _pool_apply_sketch_to_design(self):
+        """把草图解析结果应用到 design（供 PoolRenderWorker 调用前使用）。"""
+        if self._sketch_parse_result and self._sketch_parse_result.success:
+            r = self._sketch_parse_result
+            self.design.inner_margin_top_cm = r.margin_top_cm
+            self.design.inner_margin_bottom_cm = r.margin_bottom_cm
+            self.design.inner_margin_left_cm = r.margin_left_cm
+            self.design.inner_margin_right_cm = r.margin_right_cm
+            if r.outer_w_cm > 0:
+                self.design.canvas_w_cm = r.outer_w_cm + 1.0
+            if r.outer_h_cm > 0:
+                self.design.canvas_h_cm = r.outer_h_cm + 1.0
 
     def _pool_clear_sketch(self):
         self._sketch_path = ""
+        self._sketch_parse_result = None
         self._pool_sk_preview.clear()
         # 恢复默认的拖拽提示样式和文字
         self._pool_sk_preview.setText("（未上传）\n或拖入图片")
@@ -787,7 +918,9 @@ class PropertyPanel(QWidget):
         self._pool_btn_generate.setEnabled(False)
         self._pool_btn_generate.setText("处理中…请稍候")
         worker = PoolRenderWorker(
-            self._matcher, tpl_dir, target_name, self._sketch_path, self)
+            self._matcher, tpl_dir, target_name, self._sketch_path,
+            pre_parsed_result=self._sketch_parse_result,
+            parent=self)
         worker.progress.connect(self._on_pool_progress)
         worker.finished_ok.connect(self._on_pool_finished_ok)
         worker.finished_err.connect(self._on_pool_finished_err)
