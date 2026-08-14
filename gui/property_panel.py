@@ -277,7 +277,8 @@ class PropertyPanel(QWidget):
         # 0) 智能水池模式（一键：匹配模板 + 解析草图 + 生成预览）
         self._build_pool_box()
 
-        # 1) 画布尺寸与 DPI
+        # 1) + 2) 画布尺寸 与 裁剪模式 同行排列
+        row_size_mode = QHBoxLayout()
         gb1 = QGroupBox("画布尺寸 (厘米)")
         f = QVBoxLayout(gb1)
         self._sp_w = self._dspin(5, 200, self.design.canvas_w_cm, decimals=1)
@@ -286,9 +287,7 @@ class PropertyPanel(QWidget):
         f.addLayout(self._row("宽(cm)", self._sp_w))
         f.addLayout(self._row("高(cm)", self._sp_h))
         f.addLayout(self._row("DPI", self._sp_dpi))
-        self._inner_layout.addWidget(gb1)
 
-        # 2) 裁剪模式
         gb_mode = QGroupBox("裁剪模式")
         fm = QVBoxLayout(gb_mode)
         self._cb_mode = QComboBox()
@@ -299,7 +298,10 @@ class PropertyPanel(QWidget):
 
         self._sp_outer_margin = self._dspin(0, 20, self.design.outer_margin_cm)
         fm.addLayout(self._row("外框留白(cm)", self._sp_outer_margin))
-        self._inner_layout.addWidget(gb_mode)
+
+        row_size_mode.addWidget(gb1)
+        row_size_mode.addWidget(gb_mode)
+        self._inner_layout.addLayout(row_size_mode)
 
         # 3) 内挖参数（矩形/L形共用）
         gb_inner = QGroupBox("内挖边距 (厘米)")
@@ -327,10 +329,8 @@ class PropertyPanel(QWidget):
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
         self._inner_layout.addWidget(self._gb_l)
 
-        # 4.5) 圆角设置（支持折叠：勾选=展开，取消勾选=折叠）
+        # 4.5) 圆角设置（常驻显示）
         self._gb_corner = QGroupBox("圆角设置（厘米）")
-        self._gb_corner.setCheckable(True)
-        self._gb_corner.setChecked(False)  # 默认折叠，需要用时再展开
         fc = QVBoxLayout(self._gb_corner)
         grid_corner = QGridLayout()
         self._sp_design_corners = {}
@@ -342,10 +342,6 @@ class PropertyPanel(QWidget):
             self._sp_design_corners[key] = sp
         fc.addLayout(grid_corner)
         self._inner_layout.addWidget(self._gb_corner)
-        # 折叠时隐藏内容（Qt 的 checkable 默认只禁用不禁内容显示，这里手动控制可见性）
-        self._gb_corner.toggled.connect(lambda c: self._toggle_group_content(self._gb_corner, c))
-        # 初始化时保持折叠
-        self._toggle_group_content(self._gb_corner, self._gb_corner.isChecked())
 
         # 5) 椭圆参数
         self._gb_e = QGroupBox("椭圆参数")
@@ -991,28 +987,6 @@ class PropertyPanel(QWidget):
         mode = self._cb_mode.currentData()
         self._gb_l.setVisible(mode == 'rect_lshape')
         self._gb_e.setVisible(mode == 'ellipse_hole')
-
-    # ---- QGroupBox 折叠/展开辅助 ----
-    def _toggle_group_content(self, gb: QGroupBox, show: bool):
-        """控制 QGroupBox 内部子控件的显示/隐藏（真正的折叠效果，不是只禁用）"""
-        # 控制 layout 中的 item
-        lay = gb.layout()
-        if lay is None:
-            return
-        for i in range(lay.count()):
-            item = lay.itemAt(i)
-            if item is None:
-                continue
-            w = item.widget()
-            if w is not None:
-                w.setVisible(show)
-            elif item.layout() is not None:
-                # 遍历嵌套 layout
-                sub = item.layout()
-                for j in range(sub.count()):
-                    sw = sub.itemAt(j).widget()
-                    if sw is not None:
-                        sw.setVisible(show)
 
     # ---- 边框层增删改 ----
     def _update_layers_label(self):
