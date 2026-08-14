@@ -144,7 +144,7 @@ def render_design(design: CropDesign) -> Image.Image:
     # ├─────────────────────────────────────────────────────────────────────┤
     # │  阶段 2 · 边框绘制（本步骤，仅定位 + 染色，不碰裁剪）                │
     # │    计算：                                                           │
-    # │      dist_to_edge = _edt(inner_mask)  ← 纯 numpy，无 scipy 依赖    │
+    # │      dist_to_edge = distance_transform_edt(~inner_mask)            │
     # │      border_mask = inner_mask & (dist_to_edge ≤ 10)                 │
     # │    含义：对每个 True(挖空)像素，dist_to_edge = 到最近 False(外框)    │
     # │          像素的欧氏距离。取 dist ≤ 10 的 True 像素 = 精确 10px 等距  │
@@ -152,13 +152,20 @@ def render_design(design: CropDesign) -> Image.Image:
     # │    执行：canvas_arr[border_mask] = (0,0,0) ← 只改颜色，不改形状     │
     # └─────────────────────────────────────────────────────────────────────┘
     #
-    # 使用纯 numpy 实现的欧氏距离变换（Two-pass 算法，Felzenszwalb & Huttenlocher 2012）
-    # 无需 scipy 依赖，适用于 .venv 环境。
+    # distance_transform_edt 用法：
+    #   输入 = ~inner_mask（True=外框，False=挖空）
+    #   输出 = 每个 True(外框) 像素到最近 False(挖空) 像素的距离
+    #   但我们需要的是"挖空像素到外框的距离"，所以应该用 inner_mask 作为输入
+    #   inner_mask 作为输入时，dist[i] = 每个 True(挖空) 像素到最近 False(外框) 像素的距离
+    #   取 dist ≤ 10 的像素 = 挖空区域最外圈 10px 的等距环
     #
     # 通用：rect_hole / ellipse_hole / rect_lshape 全部适用。
     BORDER_WIDTH_PX = 10
     BLACK_RGB = (0, 0, 0)
-    dist_to_edge = _edt(inner_mask)
+    from scipy.ndimage import distance_transform_edt
+    # 输入 = inner_mask：每个 True(挖空) 像素到最近 False(外框) 像素的距离
+    dist_to_edge = distance_transform_edt(inner_mask)
+    # 取 dist ≤ 10 的 True 像素 = 精确 10px 等距边界环
     border_mask = inner_mask & (dist_to_edge <= BORDER_WIDTH_PX)
     if border_mask.any():
         canvas_arr[border_mask] = BLACK_RGB

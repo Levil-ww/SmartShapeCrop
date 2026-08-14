@@ -22602,3 +22602,22 @@
 [2026-08-14 10:04:56] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-蔓生花;方形70x120CM'
 [2026-08-14 10:04:56] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-裁剪有图-安妮森林（方形）;竖版140x123CM裁剪有图'
 [2026-08-14 10:04:59] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石7号;64x88CM裁剪有图'
+[2026-08-14 10:10:12] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石7号;64x88CM裁剪有图'
+[2026-08-14 10:10:18] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石7号;64x88CM裁剪有图'
+[2026-08-14 10:10:36] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石7号;64x88CM裁剪有图'
+[2026-08-14 10:14:09] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '上传草图'
+[2026-08-14 10:14:09] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '上传草图'
+[2026-08-14 10:14:09] [WARNING] [core.parser.name_parser] [name_parser] FINAL: no dimensions parsed, default layout=横版
+[2026-08-14 10:14:09] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '上传草图'
+[2026-08-14 10:15:01] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古花园;48x150cm裁剪图余料一起发'
+[2026-08-14 10:15:12] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '6cm裁剪图余料一起发'
+[2026-08-14 10:15:12] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '吸水皮革-定制-裁剪有图-中古花园;6cm裁剪图余料一起发'
+[2026-08-14 10:15:12] [WARNING] [core.parser.name_parser] [name_parser] FINAL: no dimensions parsed, default layout=横版
+[2026-08-14 10:15:12] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古花园;6cm裁剪图余料一起发'
+[2026-08-14 10:15:13] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '64cm裁剪图余料一起发'
+[2026-08-14 10:15:13] [WARNING] [core.parser.name_parser] [name_parser] size parsing FAILED for text: '吸水皮革-定制-裁剪有图-中古花园;64cm裁剪图余料一起发'
+[2026-08-14 10:15:13] [WARNING] [core.parser.name_parser] [name_parser] FINAL: no dimensions parsed, default layout=横版
+[2026-08-14 10:15:13] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古花园;64cm裁剪图余料一起发'
+[2026-08-14 10:15:15] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古花园;64x88cm裁剪图余料一起发'
+[2026-08-14 10:15:16] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古花园;64x88cm裁剪图余料一起发'
+[2026-08-14 10:15:38] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古花园;64x88cm裁剪图余料一起发'

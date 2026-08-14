@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
     QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
     QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
-    QToolButton, QMenu, QAction,
+    QToolButton, QMenu, QAction, QDialog,
 )
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
@@ -484,12 +484,13 @@ class PropertyPanel(QWidget):
         row_fn.addWidget(btn_fn2, 0)
         f.addLayout(row_fn)
 
-        # C) 尺寸草图上传 + 缩略预览（支持拖拽）
+        # C) 尺寸草图上传 + 缩略预览（支持拖拽 + 点击查看大图）
         row_sk = QHBoxLayout()
         self._pool_sk_preview = _SketchDropLabel("（未上传）\n或拖入图片")
         self._pool_sk_preview.fileDropped.connect(self._pool_load_sketch_from_path)  # 拖拽上传
+        self._pool_sk_preview.clicked.connect(self._pool_view_sketch)               # 点击查看大图
         sk_btns = QVBoxLayout()
-        btn_sk1 = QPushButton("上传尺寸草图…")
+        btn_sk1 = QPushButton("上传草图…")
         btn_sk1.clicked.connect(self._pool_pick_sketch)
         btn_sk2 = QPushButton("清除草图")
         btn_sk2.clicked.connect(self._pool_clear_sketch)
@@ -727,13 +728,15 @@ class PropertyPanel(QWidget):
             self._pool_sk_preview.setPixmap(pm.scaled(
                 self._pool_sk_preview.size(),
                 Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            # 有图片时把虚线改为普通实线避免视觉混乱
+            # 有图片时把虚线改为普通实线避免视觉混乱，并标记可点击状态
             self._pool_sk_preview.setStyleSheet(
                 "QLabel { border: 1px solid #888; background:#fff; border-radius: 6px; }")
+            self._pool_sk_preview.set_has_image(True)
         else:
             self._pool_sk_preview.clear()
             self._pool_sk_preview.setText("（预览失败）\n或拖入图片")
-        self._set_pool_status(f"已上传草图：{os.path.basename(p)}")
+            self._pool_sk_preview.set_has_image(False)
+        self._set_pool_status(f"已上传草图：{os.path.basename(p)}（点击缩略图查看大图）")
 
     def _pool_clear_sketch(self):
         self._sketch_path = ""
@@ -743,7 +746,20 @@ class PropertyPanel(QWidget):
         self._pool_sk_preview.setStyleSheet(
             "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
             " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
+        self._pool_sk_preview.set_has_image(False)
         self._set_pool_status("草图已清除，将按默认 10% 短边距推断")
+
+    def _pool_view_sketch(self):
+        """点击缩略图：打开大图查看对话框"""
+        if not self._sketch_path or not os.path.isfile(self._sketch_path):
+            self._set_pool_status("当前没有可查看的草图", is_error=True)
+            return
+        try:
+            dlg = _SketchViewerDialog(self._sketch_path, self)
+            dlg.exec_()
+        except Exception as e:
+            logger.warning(f"打开草图大图失败: {e}")
+            QMessageBox.warning(self, "查看草图失败", f"无法打开草图：\n{e}")
 
     def _set_pool_status(self, msg: str, is_error: bool = False):
         color = "#B00020" if is_error else "#388E3C"
@@ -980,11 +996,12 @@ class PropertyPanel(QWidget):
             QMessageBox.critical(self, "导出失败", str(e))
 
 
-# ---- 草图预览：支持拖拽上传的 QLabel ----
+# ---- 草图预览：支持拖拽上传 + 点击查看大图的 QLabel ----
 class _SketchDropLabel(QLabel):
-    """带拖拽支持的草图预览标签；拖入图片文件或点击按钮均可上传"""
+    """带拖拽支持的草图预览标签；拖入图片文件或点击按钮均可上传；有图时点击可查看大图。"""
 
-    fileDropped = pyqtSignal(str)  # 拖入文件成功时发出路径
+    fileDropped = pyqtSignal(str)   # 拖入文件成功时发出路径
+    clicked = pyqtSignal()          # 点击时发出（用于打开大图预览）
 
     _ACCEPT_EXT = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp'}
 
@@ -996,6 +1013,25 @@ class _SketchDropLabel(QLabel):
             "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
             " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
         self.setScaledContents(True)
+        self._has_image = False
+
+    # ---- 公开：设置/清除图片状态 ----
+    def set_has_image(self, has: bool):
+        """设置是否已有图片，影响点击光标、悬浮提示与样式。"""
+        self._has_image = has
+        if has:
+            self.setCursor(Qt.PointingHandCursor)
+            self.setToolTip("点击查看草图大图")
+        else:
+            self.setCursor(Qt.ArrowCursor)
+            self.setToolTip("")
+
+    # ---- 点击事件：有图时触发 clicked 信号 ----
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self._has_image:
+            self.clicked.emit()
+        else:
+            super().mousePressEvent(event)
 
     # ---- 拖拽事件 ----
     def dragEnterEvent(self, event):
@@ -1013,10 +1049,14 @@ class _SketchDropLabel(QLabel):
         event.ignore()
 
     def dragLeaveEvent(self, event):
-        # 恢复默认样式
-        self.setStyleSheet(
-            "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
-            " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
+        # 恢复默认样式（根据是否有图片）
+        if self._has_image:
+            self.setStyleSheet(
+                "QLabel { border: 1px solid #888; background:#fff; border-radius: 6px; }")
+        else:
+            self.setStyleSheet(
+                "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
+                " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
 
     def dropEvent(self, event):
         urls = event.mimeData().urls()
@@ -1029,15 +1069,178 @@ class _SketchDropLabel(QLabel):
             event.ignore()
             return
         event.acceptProposedAction()
-        # 恢复样式并通知
+        # 恢复样式（无图状态）并通知；具体样式/has_image 由主逻辑 setPixmap 后设置
         self.setStyleSheet(
             "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
             " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
         self.fileDropped.emit(path)
 
 
+# ---- 草图大图查看对话框 ----
+class _SketchViewerDialog(QDialog):
+    """查看上传草图的大图对话框：支持适应窗口、原尺寸、放大缩小、滚动查看。"""
+
+    def __init__(self, image_path: str, parent=None):
+        super().__init__(parent)
+        self._image_path = image_path
+        self._scale_factor = 1.0
+        self._pm_original = QPixmap(image_path)
+
+        # —— 窗口基础设置 ——
+        self.setWindowTitle(f"查看草图 - {os.path.basename(image_path)}")
+        self.resize(900, 700)
+        self.setMinimumSize(400, 300)
+
+        # —— 顶部工具栏 ——
+        toolbar = QHBoxLayout()
+        self._btn_fit = QPushButton("🔍 适应窗口")
+        self._btn_actual = QPushButton("📐 原尺寸 (100%)")
+        self._btn_zoom_in = QPushButton("➕ 放大")
+        self._btn_zoom_out = QPushButton("➖ 缩小")
+        self._btn_close = QPushButton("✕ 关闭")
+        self._btn_close.setStyleSheet("background:#f44336;color:white;padding:6px 12px;border-radius:4px;")
+        toolbar.addWidget(self._btn_fit)
+        toolbar.addWidget(self._btn_actual)
+        toolbar.addWidget(self._btn_zoom_in)
+        toolbar.addWidget(self._btn_zoom_out)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self._btn_close)
+
+        # —— 图片信息栏 ——
+        self._info_label = QLabel()
+        self._info_label.setStyleSheet("color:#555;padding:4px 8px;background:#f5f5f5;border-radius:4px;")
+
+        # —— 滚动区 + 图片显示 ——
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(False)  # 图片自己控制缩放
+        self._img_label = QLabel()
+        self._img_label.setAlignment(Qt.AlignCenter)
+        self._img_label.setStyleSheet("background:#2b2b2b;")
+        self._scroll.setWidget(self._img_label)
+
+        # —— 布局 ——
+        root = QVBoxLayout(self)
+        root.setSpacing(6)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.addLayout(toolbar)
+        root.addWidget(self._info_label)
+        root.addWidget(self._scroll, 1)
+
+        # —— 连接按钮 ——
+        self._btn_fit.clicked.connect(self._zoom_fit)
+        self._btn_actual.clicked.connect(self._zoom_actual)
+        self._btn_zoom_in.clicked.connect(lambda: self._zoom_step(1.25))
+        self._btn_zoom_out.clicked.connect(lambda: self._zoom_step(1 / 1.25))
+        self._btn_close.clicked.connect(self.accept)
+
+        # —— 初始化显示 ——
+        if self._pm_original.isNull():
+            self._info_label.setText(f"❌ 无法加载图片：{image_path}")
+            self._img_label.setText("图片加载失败")
+        else:
+            self._update_info()
+            # 首次显示：延迟到事件循环后执行适应窗口，因为布局尺寸还没确定
+            QTimer(self).singleShot(0, self._zoom_fit)
+
+    # ---- 辅助：更新图片信息 ----
+    def _update_info(self):
+        if self._pm_original.isNull():
+            return
+        w, h = self._pm_original.width(), self._pm_original.height()
+        try:
+            fsize = os.path.getsize(self._image_path)
+            if fsize >= 1024 * 1024:
+                fsize_str = f"{fsize / 1024 / 1024:.2f} MB"
+            else:
+                fsize_str = f"{fsize / 1024:.2f} KB"
+        except Exception:
+            fsize_str = "未知大小"
+        self._info_label.setText(
+            f"📄 {os.path.basename(self._image_path)}　|　"
+            f"📏 原始尺寸：{w} × {h} px　|　"
+            f"🗂 文件大小：{fsize_str}　|　"
+            f"🔎 当前缩放：{self._scale_factor * 100:.0f}%"
+        )
+
+    # ---- 辅助：应用当前缩放系数到图片显示 ----
+    def _apply_scale(self):
+        if self._pm_original.isNull():
+            return
+        new_w = int(self._pm_original.width() * self._scale_factor)
+        new_h = int(self._pm_original.height() * self._scale_factor)
+        if new_w <= 0 or new_h <= 0:
+            return
+        scaled = self._pm_original.scaled(
+            new_w, new_h,
+            Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self._img_label.setPixmap(scaled)
+        self._img_label.resize(scaled.size())
+        self._update_info()
+
+    # ---- 缩放：适应窗口 ----
+    def _zoom_fit(self):
+        if self._pm_original.isNull():
+            return
+        # 用滚动区 viewport 的可用尺寸计算
+        vw = self._scroll.viewport().width() - 4
+        vh = self._scroll.viewport().height() - 4
+        if vw <= 0 or vh <= 0:
+            return
+        sw = vw / self._pm_original.width()
+        sh = vh / self._pm_original.height()
+        self._scale_factor = min(sw, sh, 3.0)  # 适应窗口，但不超过 300% 避免过模糊
+        self._apply_scale()
+
+    # ---- 缩放：原尺寸 100% ----
+    def _zoom_actual(self):
+        self._scale_factor = 1.0
+        self._apply_scale()
+
+    # ---- 缩放：按倍率步进 ----
+    def _zoom_step(self, factor: float):
+        if self._pm_original.isNull():
+            return
+        new_scale = self._scale_factor * factor
+        # 限制在 10% ~ 800% 范围内
+        new_scale = max(0.1, min(8.0, new_scale))
+        # 没有实质变化就不重绘
+        if abs(new_scale - self._scale_factor) < 0.001:
+            return
+        self._scale_factor = new_scale
+        self._apply_scale()
+
+    # ---- 滚轮缩放（辅助体验）----
+    def wheelEvent(self, event):
+        # 只有在光标位于图片区域附近时才触发；这里简化为整窗口支持 Ctrl+滚轮
+        if event.modifiers() & Qt.ControlModifier:
+            if event.angleDelta().y() > 0:
+                self._zoom_step(1.15)
+            else:
+                self._zoom_step(1 / 1.15)
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+    # ---- 窗口大小变化时，如果之前是"适应窗口"模式，重新适应 ----
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # 如果当前缩放比例非常接近当前视口下的适应值，就重新适应
+        if not self._pm_original.isNull():
+            vw = max(1, self._scroll.viewport().width() - 4)
+            vh = max(1, self._scroll.viewport().height() - 4)
+            sw = vw / self._pm_original.width()
+            sh = vh / self._pm_original.height()
+            fit_factor = min(sw, sh, 3.0)
+            # 若当前系数与 fit_factor 偏差在 1% 内，认为处于"适应窗口"状态，随窗口大小重新适应
+            if abs(self._scale_factor - fit_factor) / max(0.0001, fit_factor) < 0.01:
+                self._scale_factor = fit_factor
+                self._apply_scale()
+
+
 # ---- 边框层编辑对话框 ----
 from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
+from PyQt5.QtCore import QTimer
 
 
 class _LayersDialog(QDialog):
