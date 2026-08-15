@@ -1298,6 +1298,21 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
         if old_tw and old_th:
             used_values['total_w'] = (tw_val, old_th[1])
             used_values['total_h'] = (th_val, old_tw[1])
+        # —— 修复：同步交换 inner_w ↔ inner_h ——
+        # 阶段2的方向矫正基于「像素横版 vs 数值横版」的一致性判断。
+        # 如果 total_w/total_h 的空间锚点搞反了（total_w 读了竖边值），
+        # 那么 inner_w/inner_h 的空间锚点也必然是同样搞反的（因为
+        # inner_w 锚点在内框上半=水平读，inner_h 锚点在内框下半=水平读，
+        # 方向错配的模式与 total 完全相同）。
+        # 因此：交换 total 时必须同步交换 inner，否则 outer 与 inner
+        # 的宽高语义不一致，会破坏 parse_sketch 中的「双向自洽性检测」。
+        old_iw = used_values.get('inner_w')
+        old_ih = used_values.get('inner_h')
+        if old_iw and old_ih and old_iw[0] > 0 and old_ih[0] > 0:
+            used_values['inner_w'] = (old_ih[0], old_ih[1])
+            used_values['inner_h'] = (old_iw[0], old_iw[1])
+            logger.debug(f"[sketch_parser] 阶段2同步交换 inner 宽高："
+                         f"{old_iw[0]:.1f}x{old_ih[0]:.1f} → {old_ih[0]:.1f}x{old_iw[0]:.1f}")
 
     # ====== 阶段 3：若 total_w / total_h 仍缺失，从 alternates 填充 ======
     if tw_val <= 0 or th_val <= 0:
@@ -1411,13 +1426,271 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
             ocr_hits, outer_rect, inner_rect,
             target_w_hint, target_h_hint
         )
-        # 比较两种分配的几何自洽性，使用更好的那个
+        # —— 修复 Bug 6：伪自洽检测 + 三档阈值覆盖策略 ——
+        # 空间映射（阶段1）基于图像位置锚点，但偶尔会发生"数值位置接近字段锚点
+        # 边界"导致的分配错位（如左右边距值42.4分配到inner_h，内挖44.5分配到
+        # margin_right），此时 outer-inner 与 margin_sum 在数学上仍碰巧自洽
+        # （sc_spatial>=0.7 即被判定"高度自洽"），但语义上字段值大小完全错乱
+        # （如 margin_right=44.5 > inner_h，inner_w=14.6 < margin_left）。
+        # 检测方法：显式检查 6 条语义大小约束，任意违反即认定"伪自洽"，
+        # 将 sc_spatial 强制降档至 <=0.5 以允许数值穷举覆盖。
+        def _semantic_sanity_score(assign):
+            """返回 (是否语义合理, 详细说明)"""
+            tw = assign.get('total_w', (0, 0))[0]
+            th = assign.get('total_h', (0, 0))[0]
+            iw = assign.get('inner_w', (0, 0))[0]
+            ih = assign.get('inner_h', (0, 0))[0]
+            mt = assign.get('margin_top', (0, 0))[0]
+            mb = assign.get('margin_bottom', (0, 0))[0]
+            ml = assign.get('margin_left', (0, 0))[0]
+            mr_ = assign.get('margin_right', (0, 0))[0]
+            reasons = []
+            # 语义1：total（外框）应该是所有值中最大的两个，>= 20
+            for n, v in [('total_w', tw), ('total_h', th)]:
+                if 0 < v < 20:
+                    reasons.append(f"{n}={v:.1f}(<20,太小不像外框)")
+            # 语义2：inner（内挖）应该中等尺寸，且必须 < total（哪怕双向）
+            if iw > 0 and tw > 0 and ih > 0 and th > 0:
+                # 允许方向反（双向都检查）
+                _fits_w = (iw < tw) and (ih < th)       # 正常方向
+                _fits_r = (iw < th) and (ih < tw)       # 反向全交换
+                if not (_fits_w or _fits_r):
+                    reasons.append(
+                        f"inner={iw:.1f}x{ih:.1f} 不小于 outer={tw:.1f}x{th:.1f}"
+                    )
+            # 语义3：边距应该是小值（上限取 80cm 足够所有大型泳池），
+            # 且通常边距不可能大于 inner 的对应边长
+            _any_margin_big = False
+            for mn, mv, iv, tv in [
+                ('margin_top', mt, ih, th),
+                ('margin_bottom', mb, ih, th),
+                ('margin_left', ml, iw, tw),
+                ('margin_right', mr_, iw, tw),
+            ]:
+                if mv > 80:
+                    _any_margin_big = True
+                    reasons.append(f"{mn}={mv:.1f}(>80,远超常规边距)")
+                if mv > 0 and iv > 0 and mv > iv * 1.5:
+                    _any_margin_big = True
+                    reasons.append(f"{mn}={mv:.1f}(>inner边{iv:.1f}的1.5倍)")
+            # 语义4：边距值不应该超过 outer 对应方向的 70%
+            for mn, mv, tv in [
+                ('margin_left', ml, tw),
+                ('margin_right', mr_, tw),
+                ('margin_top', mt, th),
+                ('margin_bottom', mb, th),
+            ]:
+                if mv > 0 and tv > 0 and mv > tv * 0.7:
+                    _any_margin_big = True
+                    reasons.append(f"{mn}={mv:.1f}(>outer对应边{tv:.1f}的70%)")
+            return (len(reasons) == 0), "; ".join(reasons)
+
         sc_spatial = _score_assignment_consistency(result)
         sc_value = _score_assignment_consistency(result_vb)
-        if sc_value > sc_spatial:
-            logger.info(f"[sketch_parser] 数值大小分配比空间位置分配更自洽 "
-                        f"(score {sc_value:.3f} vs {sc_spatial:.3f})，采用数值分配")
+        _spatial_sane, _spatial_reason = _semantic_sanity_score(result)
+        _value_sane, _value_reason = _semantic_sanity_score(result_vb)
+        # 伪自洽打破：空间得分虽高，但语义不合理 → 强制降档 sc_spatial
+        _pseudo_self_consistent = False
+        if sc_spatial >= 0.7 and not _spatial_sane:
+            _pseudo_self_consistent = True
+            logger.warning(
+                f"[sketch_parser] 空间分配检测为「伪自洽」(sc={sc_spatial:.3f}，"
+                f"但语义错误：{_spatial_reason})。打破sc>=0.7档保护，允许数值穷举覆盖"
+            )
+            sc_spatial = 0.5  # 强制降到 0.3~0.7 档，可被显著更好的数值穷举覆盖
+
+        # —— 修复 Bug 6+ 终极：伪自洽或 OCR 8 值全部已知时，暴力搜索最优 8 字段分配 ——
+        # _value_based_assignment 依赖 target 方向（反向时只得到 sc=0.65 次优解），
+        # 而用户真实调用时 target 经常方向反（如文件名先60.5后133）。
+        # 暴力搜索完全不依赖 target：从 8 个 OCR 数值出发，按"语义大小分层+双向
+        # 几何自洽"枚举所有合理组合（最多 40320 种，毫秒级完成），
+        # 直接找到 sc=1.0 的几何完全自洽组合（就是草图标注本身！）。
+        # 触发条件：伪自洽 或 空间/数值分配得分都未达到 sc>=0.95 的完全自洽。
+        _brute_used = False
+        try:
+            _uniq_vals = []
+            _seen = set()
+            for _vh in ocr_hits:
+                _rv = round(_vh[0], 2)
+                if _rv <= 0:
+                    continue
+                _key = round(_rv * 10)  # 按 0.1cm 精度去重
+                if _key in _seen:
+                    continue
+                _seen.add(_key)
+                _uniq_vals.append(_vh[0])
+
+            if 6 <= len(_uniq_vals) <= 10:
+                _need_brute = _pseudo_self_consistent or (sc_spatial < 0.95 and sc_value < 0.95)
+                if _need_brute:
+                    import itertools
+                    _best_sc = -1.0
+                    _best_assign = None
+                    _confidence_map = {round(v[0]*10): max(1, min(10, int(v[3]*10))) for v in ocr_hits}
+
+                    def _mk(v):
+                        _ck = round(v * 10)
+                        return (v, _confidence_map.get(_ck, 5))
+
+                    # 第一步：如果正好 8 个唯一值 → 严格 8 选 2 / 6 选 2 / 4 margin
+                    #        否则（多值或少值）允许 total/inner 用不同选择放宽
+                    _strict8 = (len(_uniq_vals) == 8)
+                    _indices = list(range(len(_uniq_vals)))
+                    _iter_count = 0
+                    for _total_idx in itertools.combinations(_indices, 2):
+                        _t1, _t2 = _uniq_vals[_total_idx[0]], _uniq_vals[_total_idx[1]]
+                        if _t1 < 20 or _t2 < 20:
+                            continue  # 语义：外框不能小于 20cm
+                        _rem1 = [i for i in _indices if i not in _total_idx]
+                        for _inner_idx in itertools.combinations(_rem1, 2):
+                            _i1, _i2 = _uniq_vals[_inner_idx[0]], _uniq_vals[_inner_idx[1]]
+                            # 语义：inner 必须 < total（至少一个方向）
+                            _fits = False
+                            for _tw, _th in [(_t1, _t2), (_t2, _t1)]:
+                                for _iw, _ih in [(_i1, _i2), (_i2, _i1)]:
+                                    if _iw < _tw and _ih < _th:
+                                        _fits = True
+                                        break
+                                if _fits:
+                                    break
+                            if not _fits:
+                                continue
+                            _margin_idx = [i for i in _rem1 if i not in _inner_idx]
+                            if len(_margin_idx) < 4:
+                                continue
+                            # 如果有超过 4 个剩余值（非严格8值），取最小 4 个作为 margin
+                            _margin_idx.sort(key=lambda i: _uniq_vals[i])
+                            _m_vals = [_uniq_vals[i] for i in _margin_idx[:4]]
+                            # 语义：边距常规上限 80cm，且不超过自身外框对应边 70%
+                            _any_big = False
+                            for _mv in _m_vals:
+                                if _mv > 80:
+                                    _any_big = True
+                                    break
+                                for _tv in (_t1, _t2):
+                                    if _tv > 0 and _mv > _tv * 0.7:
+                                        _any_big = True
+                                        break
+                                if _any_big:
+                                    break
+                            if _any_big:
+                                continue
+                            # total 双向 × inner 双向
+                            for _tw, _th in [(_t1, _t2), (_t2, _t1)]:
+                                for _iw, _ih in [(_i1, _i2), (_i2, _i1)]:
+                                    if not (_iw < _tw and _ih < _th):
+                                        continue
+                                    # margins 4 值的水平/垂直分对（C(4,2)=6种分法，每对2个内序）
+                                    for _mpair in itertools.combinations(range(4), 2):
+                                        _lr_idx = list(_mpair)
+                                        _tb_idx = [i for i in range(4) if i not in _mpair]
+                                        _lrv1, _lrv2 = _m_vals[_lr_idx[0]], _m_vals[_lr_idx[1]]
+                                        _tbv1, _tbv2 = _m_vals[_tb_idx[0]], _m_vals[_tb_idx[1]]
+                                        _expected_lr = _tw - _iw
+                                        _expected_tb = _th - _ih
+                                        # 快速剪枝：每对的和应该（近似）等于 expected
+                                        _sum_lr = _lrv1 + _lrv2
+                                        _sum_tb = _tbv1 + _tbv2
+                                        if abs(_sum_lr - _expected_lr) > 2.0:
+                                            continue
+                                        if abs(_sum_tb - _expected_tb) > 2.0:
+                                            continue
+                                        # 每对内序：(a,b) 和 (b,a) → 2*2 = 4 种
+                                        for _mlv, _mrv in ((_lrv1, _lrv2), (_lrv2, _lrv1)):
+                                            for _mtv, _mbv in ((_tbv1, _tbv2), (_tbv2, _tbv1)):
+                                                _cand = {
+                                                    'total_w': _mk(_tw),
+                                                    'total_h': _mk(_th),
+                                                    'inner_w': _mk(_iw),
+                                                    'inner_h': _mk(_ih),
+                                                    'margin_top': _mk(_mtv),
+                                                    'margin_bottom': _mk(_mbv),
+                                                    'margin_left': _mk(_mlv),
+                                                    'margin_right': _mk(_mrv),
+                                                }
+                                                _iter_count += 1
+                                                _sc_cand = _score_assignment_consistency(_cand)
+                                                if _sc_cand > _best_sc:
+                                                    _best_sc = _sc_cand
+                                                    _best_assign = dict(_cand)
+                                                if _best_sc >= 0.999:
+                                                    break
+                                            if _best_sc >= 0.999:
+                                                break
+                                        if _best_sc >= 0.999:
+                                            break
+                                    if _best_sc >= 0.999:
+                                        break
+                                if _best_sc >= 0.999:
+                                    break
+                            if _best_sc >= 0.999:
+                                break
+                        if _best_sc >= 0.999:
+                            break
+
+                    if _best_assign is not None and _best_sc > sc_spatial and _best_sc > sc_value:
+                        _b_sane, _b_reason = _semantic_sanity_score(_best_assign)
+                        if _b_sane and _best_sc > sc_value:
+                            logger.info(
+                                f"[sketch_parser] Bug6+暴力搜索：从{len(_uniq_vals)}个OCR值中"
+                                f"枚举(~{_iter_count})找到sc={_best_sc:.3f}的"
+                                f"{'完全自洽' if _best_sc>0.99 else '最优'}分配"
+                                f"(语义合理:{_b_sane})，采用为数值穷举解"
+                            )
+                            # 用暴力最优解替换掉 target 方向依赖的 result_vb
+                            result_vb = _best_assign
+                            sc_value = _best_sc
+                            _value_sane = _b_sane
+                            _value_reason = _b_reason
+                            _brute_used = True
+        except Exception as _be:
+            logger.debug(f"[sketch_parser] Bug6+暴力搜索跳过：{_be}")
+        override_reason = ""
+        should_override = False
+        if sc_spatial >= 0.7:
+            override_reason = (
+                f"空间分配已高度自洽(sc={sc_spatial:.3f})且语义合理，"
+                f"不允许数值覆盖(sc={sc_value:.3f})"
+            )
+            should_override = False
+        elif sc_spatial >= 0.3:
+            if sc_value > sc_spatial + 0.20:
+                override_reason = (
+                    f"数值分配得分(sc={sc_value:.3f}, 语义:{_value_sane})"
+                    f"显著高于空间(sc={sc_spatial:.3f}, 语义:{_spatial_sane})，"
+                    f"采用数值分配"
+                )
+                should_override = True
+            else:
+                override_reason = (
+                    f"数值分配(sc={sc_value:.3f})优势不足(需>{sc_spatial+0.2:.3f})，"
+                    f"保留空间映射(sc={sc_spatial:.3f})"
+                )
+                should_override = False
+        else:
+            if sc_value > sc_spatial:
+                override_reason = (
+                    f"空间分配严重不自洽(sc={sc_spatial:.3f})，"
+                    f"采用数值分配(sc={sc_value:.3f})"
+                )
+                should_override = True
+            else:
+                override_reason = (
+                    f"两者得分都低(sc_spatial={sc_spatial:.3f}, sc_value={sc_value:.3f})，"
+                    f"保留空间映射"
+                )
+                should_override = False
+        if _pseudo_self_consistent and should_override and not _value_sane:
+            # 附加保护：数值穷举方案本身也语义不合理时，不盲目覆盖
+            override_reason += (
+                f" → 取消覆盖（数值穷举本身语义不合理：{_value_reason}）"
+            )
+            should_override = False
+        if should_override:
+            logger.info(f"[sketch_parser] {override_reason}")
             result = result_vb
+        else:
+            logger.debug(f"[sketch_parser] {override_reason}")
 
     return result
 
@@ -2079,23 +2352,41 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
             continue
         # 几何合理性校验：用 cm/pixel 换算检查边距值是否超出实际间隙
         # 例如 top_margin 像素间隙只有 51px，OCR 给出 16cm ≈ 128px，明显超出
-        cm_per_px_w = target_w_hint / ow if (target_w_hint > 0 and ow > 0) else 0
-        cm_per_px_h = target_h_hint / oh if (target_h_hint > 0 and oh > 0) else 0
+        #
+        # —— 修复 Bug 5：target 方向可能传入相反（如文件"60.5x133CM"，
+        # _pool_auto_parse_sketch 首次调用时传 target=(60.5,133) 是竖版，
+        # 但实际 OCR 草图是横版 133×60.5），导致 cm_per_px_w/h 计算错误：
+        #   cm_per_px_w = 60.5/485 = 0.125（太小），左/右 margin 上限被低估
+        #     → 14.6/42.4 等正确大值被判定超出间隙 → 被跳过！
+        #   cm_per_px_h = 133/332 = 0.401（太大），上/下 margin 上限被高估
+        #     → 可能放过荒谬的大值。
+        # 修复方案：双向计算 cm/px（正方向和全反方向），取 max(双向) 的宽松
+        # expected_max_cm，确保无论 target 方向对与错都不会误跳过正确的标注值。
+        cm_per_px_w_a = target_w_hint / ow if (target_w_hint > 0 and ow > 0) else 0
+        cm_per_px_h_a = target_h_hint / oh if (target_h_hint > 0 and oh > 0) else 0
+        cm_per_px_w_b = target_h_hint / ow if (target_h_hint > 0 and ow > 0) else 0
+        cm_per_px_h_b = target_w_hint / oh if (target_w_hint > 0 and oh > 0) else 0
         skip_due_to_geometry = False
-        if key in ('margin_top', 'margin_bottom') and cm_per_px_h > 0:
+        if key in ('margin_top', 'margin_bottom'):
             gap_px = (iy - oy) if key == 'margin_top' else ((oy + oh) - (iy + ih))
-            expected_max_cm = gap_px * cm_per_px_h * 1.3  # 允许 30% 误差
-            if val > expected_max_cm and val > 3:
-                logger.debug(f"[sketch_parser] {key}: OCR 值 {val:.1f}cm 超出像素间隙限制 "
-                            f"(最大 {expected_max_cm:.1f}cm), 跳过")
-                skip_due_to_geometry = True
-        elif key in ('margin_left', 'margin_right') and cm_per_px_w > 0:
+            _max_cm_a = gap_px * cm_per_px_h_a * 1.5  # 放宽到 50% 误差
+            _max_cm_b = gap_px * cm_per_px_h_b * 1.5
+            expected_max_cm = max(_max_cm_a, _max_cm_b)
+            if cm_per_px_h_a > 0 or cm_per_px_h_b > 0:
+                if val > expected_max_cm and val > 3:
+                    logger.debug(f"[sketch_parser] {key}: OCR 值 {val:.1f}cm 超出像素间隙限制 "
+                                f"(双向宽松最大 {expected_max_cm:.1f}cm), 跳过")
+                    skip_due_to_geometry = True
+        elif key in ('margin_left', 'margin_right'):
             gap_px = (ix - ox) if key == 'margin_left' else ((ox + ow) - (ix + iw))
-            expected_max_cm = gap_px * cm_per_px_w * 1.3
-            if val > expected_max_cm and val > 3:
-                logger.debug(f"[sketch_parser] {key}: OCR 值 {val:.1f}cm 超出像素间隙限制 "
-                            f"(最大 {expected_max_cm:.1f}cm), 跳过")
-                skip_due_to_geometry = True
+            _max_cm_a = gap_px * cm_per_px_w_a * 1.5
+            _max_cm_b = gap_px * cm_per_px_w_b * 1.5
+            expected_max_cm = max(_max_cm_a, _max_cm_b)
+            if cm_per_px_w_a > 0 or cm_per_px_w_b > 0:
+                if val > expected_max_cm and val > 3:
+                    logger.debug(f"[sketch_parser] {key}: OCR 值 {val:.1f}cm 超出像素间隙限制 "
+                                f"(双向宽松最大 {expected_max_cm:.1f}cm), 跳过")
+                    skip_due_to_geometry = True
         if skip_due_to_geometry:
             continue
         # 优先使用检测到的值：如果检测到的边距值与旧值差异较大，用检测到的替换
@@ -2344,11 +2635,14 @@ def parse_sketch(
             outer_h = oh * cm_per_px_h
 
     # ---- 目标尺寸验证：当 OCR 外框尺寸与目标偏差过大时，以目标为准 ----
-    # 核心策略变更（修复 Bug 4）：
+    # 核心策略变更（再修复 Bug 4 —— target 方向与 OCR 方向相反导致的覆盖灾难）：
     #   - 如果 OCR 值本身几何自洽（8字段全正 + 内外边距和 ≈ 外框差）：
-    #     → 仅覆盖 outer，不强制重算 inner/margins，由 Phase 3 做方向矫正
-    #     → 原因：OCR 正确识别了数值，只是 total_w/h 映射方向反了。强制重算会
-    #       依赖像素比例，而几何检测的矩形坐标可能有误差
+    #     → 【OCR 草图本身是权威！绝不直接覆盖 outer_w/h 的数值！】
+    #     → 检查 target 是否只是方向反了（swap(target) 后≈OCR outer值）：
+    #       如果是 → 交换 target 方向定义（让后续像素换算用正确比例），OCR值保持不变
+    #       如果不是（数值确实不同）→ 信任自洽的 OCR 草图，不替换 outer 值
+    #     → 旧代码Bug：target方向反时直接覆盖outer→outer变成竖值/inner还是横值→
+    #       delta_h<0 → Phase3错误交换inner → 几何彻底错乱 → 强制重算 → 边距清零！
     #   - 如果 OCR 不自洽（出现 11.5x5.1、边距52等荒谬值）：
     #     → 覆盖 outer 并强制用像素比例重算 inner 和 margins
     #     → 原因：OCR 映射锚点完全错位，语义值不可靠
@@ -2359,12 +2653,51 @@ def parse_sketch(
         _w_over20 = _ratio_w > 1.20 or _ratio_w < 0.83
         _h_over20 = _ratio_h > 1.20 or _ratio_h < 0.83
 
-        if _w_over20:
-            logger.warning(f"[sketch_parser] 外框宽 {outer_w:.1f} 与目标 {target_outer_w_cm:.1f} 偏差过大({_ratio_w:.2f})，使用目标值")
-            outer_w = target_outer_w_cm
-        if _h_over20:
-            logger.warning(f"[sketch_parser] 外框高 {outer_h:.1f} 与目标 {target_outer_h_cm:.1f} 偏差过大({_ratio_h:.2f})，使用目标值")
-            outer_h = target_outer_h_cm
+        # ============================================================
+        # 【Bug 4 修复 —— 分支A：OCR 已完全自洽 → 信任草图！】
+        # ============================================================
+        if _ocr_fully_consistent and outer_w > 0 and outer_h > 0:
+            # 检查 target 是否只是方向与 OCR 相反（数值相同、方向反）
+            # 例如: target=(60.5, 133) 而 OCR_outer=(133, 60.5)
+            _swap_ratio_w = outer_w / target_outer_h_cm if target_outer_h_cm > 0 else 1.0
+            _swap_ratio_h = outer_h / target_outer_w_cm if target_outer_w_cm > 0 else 1.0
+            _swap_match_w = 0.83 <= _swap_ratio_w <= 1.20
+            _swap_match_h = 0.83 <= _swap_ratio_h <= 1.20
+            _target_is_swapped_version = _swap_match_w and _swap_match_h
+
+            if (_w_over20 or _h_over20) and _target_is_swapped_version:
+                # 只是 target 方向反了！交换 target 的定义，让后续像素比例计算正确，
+                # 但绝对不修改 OCR 得出的 outer/inner/margins 值（它们是自洽、正确的！）
+                logger.info(
+                    f"[sketch_parser] OCR 完全自洽，检测到 target 方向定义相反 "
+                    f"(target={target_outer_w_cm:.1f}x{target_outer_h_cm:.1f}, "
+                    f"OCR_outer={outer_w:.1f}x{outer_h:.1f})。"
+                    f"仅交换 target 方向定义为 {target_outer_h_cm:.1f}x{target_outer_w_cm:.1f}，"
+                    f"保留 OCR 草图值不变（不覆盖 outer）")
+                target_outer_w_cm, target_outer_h_cm = target_outer_h_cm, target_outer_w_cm
+                # 重新计算偏差（方向对齐后，偏差应该很小）
+                _ratio_w = outer_w / target_outer_w_cm if target_outer_w_cm > 0 else 1.0
+                _ratio_h = outer_h / target_outer_h_cm if target_outer_h_cm > 0 else 1.0
+                _w_over20 = _ratio_w > 1.20 or _ratio_w < 0.83
+                _h_over20 = _ratio_h > 1.20 or _ratio_h < 0.83
+            elif (_w_over20 or _h_over20):
+                # OCR 自洽但 target 数值确实不同（不是方向问题）→ 信任草图（OCR自洽更权威）
+                logger.info(
+                    f"[sketch_parser] OCR 完全自洽(sc=✓)，即使与 target 偏差>20% "
+                    f"(w_ratio={_ratio_w:.2f}, h_ratio={_ratio_h:.2f})，"
+                    f"仍信任 OCR 草图 outer={outer_w:.1f}x{outer_h:.1f}（不覆盖）")
+            # else: 偏差<20%，完全一致，无需操作
+
+        # ============================================================
+        # 分支B：OCR 不自洽 → 以 target 为准（保持原逻辑）
+        # ============================================================
+        else:
+            if _w_over20:
+                logger.warning(f"[sketch_parser] 外框宽 {outer_w:.1f} 与目标 {target_outer_w_cm:.1f} 偏差过大({_ratio_w:.2f})，使用目标值")
+                outer_w = target_outer_w_cm
+            if _h_over20:
+                logger.warning(f"[sketch_parser] 外框高 {outer_h:.1f} 与目标 {target_outer_h_cm:.1f} 偏差过大({_ratio_h:.2f})，使用目标值")
+                outer_h = target_outer_h_cm
 
         # 决定是否需要强制重算：只有当 OCR 不自洽或近似正方形画布时才强制
         _need_square_forced = False
@@ -2373,6 +2706,7 @@ def parse_sketch(
         if (abs(_ocr_aspect - 1.0) < 0.15  # OCR 结果近似正方形
                 and abs(_target_aspect - 1.0) > 0.4  # 目标尺寸长宽比差异大
                 and max(target_outer_w_cm, target_outer_h_cm) > 0):
+            # 注：此分支仅在 OCR 不自洽时才可能触发（自洽时上面已不覆盖 outer）
             logger.warning(
                 f"[sketch_parser] OCR 产生近正方形画布({outer_w:.1f}x{outer_h:.1f}, 长宽比={_ocr_aspect:.2f})，"
                 f"但目标为非正方形({target_outer_w_cm:.1f}x{target_outer_h_cm:.1f}, 长宽比={_target_aspect:.2f})，"
@@ -2384,6 +2718,7 @@ def parse_sketch(
         # 最终强制重算决策：
         #  - (OCR 偏差 > 20% AND OCR 不自洽) → 语义值不可靠
         #  - 或 近正方形画布被强制覆盖 → 典型的 OCR 锚点全错
+        #  注意：如果 _ocr_fully_consistent = True，绝对不触发强制重算！
         if (_w_over20 or _h_over20) and not _ocr_fully_consistent:
             _need_recalc_from_target = True
             logger.info(f"[sketch_parser] OCR 偏差>20%且几何不自洽 → 将按目标尺寸强制重算内框和边距")
@@ -2391,10 +2726,9 @@ def parse_sketch(
             _need_recalc_from_target = True
             logger.info(f"[sketch_parser] 近正方形画布触发强制覆盖 → 将按目标尺寸强制重算内框和边距")
         elif (_w_over20 or _h_over20) and _ocr_fully_consistent:
-            # 关键路径：OCR 值自洽但尺寸偏差大 → 只是方向反了，不强制重算
-            # Phase 3 会做方向矫正（当 delta 为负时交换内框）
-            logger.info(f"[sketch_parser] OCR 偏差>20%但几何自洽 → 仅覆盖外框尺寸，"
-                        f"不强制重算，交 Phase 3 做方向矫正")
+            # OCR 完全自洽 → 不重算，交给后续 Phase 方向矫正（即使这时 outer 仍与 target 偏差大）
+            logger.info(f"[sketch_parser] OCR 偏差>20%但几何自洽 → 保留 OCR 草图值，"
+                        f"不强制重算 inner/边距，交 Phase 3 做方向矫正")
         else:
             _need_recalc_from_target = False
     # 注意：target_outer_w/h 无效时，_need_recalc_from_target 保持 False
@@ -2456,6 +2790,36 @@ def parse_sketch(
         logger.info(f"[sketch_parser] 重算结果：内框 {inner_w:.2f}x{inner_h:.2f}，"
                     f"边距 上{mt:.2f}/下{mb:.2f}/左{ml:.2f}/右{mr:.2f}")
         _need_recalc_from_target = False
+
+    # —— 修复 Bug 7 保护1：OCR 完全自洽的最终权威性 ——
+    # 如果 fused 原始 8 字段已经几何自洽（_ocr_fully_consistent=True），
+    # 那么无论强制重算 / Phase2 交换 / 后续修正怎么改动 inner/margins，
+    # 只要它们与原始 OCR 值不一致，就无条件恢复为原始 OCR 值！
+    # 原因：如果 8 个标注数字本身 outer-inner = margin_sum，那么这套值就
+    # 是草图设计者明确给出的，任何基于像素/target的计算都不应该覆盖它。
+    if _ocr_fully_consistent:
+        _saved_iw, _saved_ih, _saved_mt, _saved_mb, _saved_ml, _saved_mr = (
+            inner_w, inner_h, mt, mb, ml, mr
+        )
+        if _ocr_inner_w > 0: inner_w = _ocr_inner_w
+        if _ocr_inner_h > 0: inner_h = _ocr_inner_h
+        if _ocr_mt > 0: mt = _ocr_mt
+        if _ocr_mb > 0: mb = _ocr_mb
+        if _ocr_ml > 0: ml = _ocr_ml
+        if _ocr_mr > 0: mr = _ocr_mr
+        _changed = (
+            abs(inner_w - _saved_iw) > 0.05 or
+            abs(inner_h - _saved_ih) > 0.05 or
+            abs(mt - _saved_mt) > 0.05 or abs(mb - _saved_mb) > 0.05 or
+            abs(ml - _saved_ml) > 0.05 or abs(mr - _saved_mr) > 0.05
+        )
+        if _changed:
+            logger.warning(
+                f"[sketch_parser] Bug7保护1：原始OCR已完全自洽→强制恢复为标注值 "
+                f"inner={inner_w:.2f}x{inner_h:.2f}, 边距"
+                f"上{mt:.2f}/下{mb:.2f}/左{ml:.2f}/右{mr:.2f} "
+                f"(覆盖掉强制重算/Phase产生的偏离)"
+            )
 
     # --- 方向矫正 Phase 2：同步 Phase 1 的外框 swap 到内框和边距 ---
     # 当 Phase 1 交换了 outer_w/outer_h，内框宽高也必须同步交换，
@@ -2582,36 +2946,53 @@ def parse_sketch(
         # 两边都有且 sum 合理 → 信任 OCR
         return a, b
 
-    if outer_w > 0 and inner_w > 0:
-        expected_ml_mr = outer_w - inner_w
-        ml, mr = _validate_pair(ml, mr, expected_ml_mr, '左右边距')
+    # —— 修复 Bug 7 保护2：OCR 完全自洽时跳过所有破坏性修正 ——
+    # 若原始 8 字段已几何自洽，任何"边距推导/清零/超限裁剪"都只会破坏正确标注。
+    # Guard 变量跳过：_validate_pair、inner>outer修正、单边距>80%修正、
+    #   最终>50%偏差边距清零、单侧边距35%裁剪。
+    _skip_destructive_corrections = _ocr_fully_consistent
 
-    if outer_h > 0 and inner_h > 0:
-        expected_mt_mb = outer_h - inner_h
-        mt, mb = _validate_pair(mt, mb, expected_mt_mb, '上下边距')
+    if not _skip_destructive_corrections:
+        if outer_w > 0 and inner_w > 0:
+            expected_ml_mr = outer_w - inner_w
+            ml, mr = _validate_pair(ml, mr, expected_ml_mr, '左右边距')
+
+        if outer_h > 0 and inner_h > 0:
+            expected_mt_mb = outer_h - inner_h
+            mt, mb = _validate_pair(mt, mb, expected_mt_mb, '上下边距')
+    else:
+        logger.debug(
+            f"[sketch_parser] Bug7保护2：OCR自洽→跳过_validate_pair"
+            f"(边距上{mt}/下{mb}/左{ml}/右{mr})"
+        )
 
     # ---- 最终三角验证：外框 = 内框 + 边距 ----
     # 确保 inner 尺寸 <= outer 尺寸，边距和不超过对应外框边长
-    if inner_w > outer_w > 0:
-        logger.warning(f"[sketch_parser] 内框宽 {inner_w} > 外框宽 {outer_w}，修正为外框宽 - 最小边距")
-        inner_w = max(0, outer_w - max(ml + mr, 0))
-    if inner_h > outer_h > 0:
-        logger.warning(f"[sketch_parser] 内框高 {inner_h} > 外框高 {outer_h}，修正为外框高 - 最小边距")
-        inner_h = max(0, outer_h - max(mt + mb, 0))
+    if not _skip_destructive_corrections:
+        if inner_w > outer_w > 0:
+            logger.warning(f"[sketch_parser] 内框宽 {inner_w} > 外框宽 {outer_w}，修正为外框宽 - 最小边距")
+            inner_w = max(0, outer_w - max(ml + mr, 0))
+        if inner_h > outer_h > 0:
+            logger.warning(f"[sketch_parser] 内框高 {inner_h} > 外框高 {outer_h}，修正为外框高 - 最小边距")
+            inner_h = max(0, outer_h - max(mt + mb, 0))
 
-    # 确保单边距不超过对应外框边长的一半（合理上限）
-    if ml > outer_w * 0.8 and outer_w > 0:
-        logger.warning(f"[sketch_parser] 左边距 {ml} > 外框宽 80%({outer_w*0.8:.1f})，修正")
-        ml = outer_w * 0.5
-    if mr > outer_w * 0.8 and outer_w > 0:
-        logger.warning(f"[sketch_parser] 右边距 {mr} > 外框宽 80%({outer_w*0.8:.1f})，修正")
-        mr = outer_w * 0.5
-    if mt > outer_h * 0.8 and outer_h > 0:
-        logger.warning(f"[sketch_parser] 上边距 {mt} > 外框高 80%({outer_h*0.8:.1f})，修正")
-        mt = outer_h * 0.5
-    if mb > outer_h * 0.8 and outer_h > 0:
-        logger.warning(f"[sketch_parser] 下边距 {mb} > 外框高 80%({outer_h*0.8:.1f})，修正")
-        mb = outer_h * 0.5
+        # 确保单边距不超过对应外框边长的一半（合理上限）
+        if ml > outer_w * 0.8 and outer_w > 0:
+            logger.warning(f"[sketch_parser] 左边距 {ml} > 外框宽 80%({outer_w*0.8:.1f})，修正")
+            ml = outer_w * 0.5
+        if mr > outer_w * 0.8 and outer_w > 0:
+            logger.warning(f"[sketch_parser] 右边距 {mr} > 外框宽 80%({outer_w*0.8:.1f})，修正")
+            mr = outer_w * 0.5
+        if mt > outer_h * 0.8 and outer_h > 0:
+            logger.warning(f"[sketch_parser] 上边距 {mt} > 外框高 80%({outer_h*0.8:.1f})，修正")
+            mt = outer_h * 0.5
+        if mb > outer_h * 0.8 and outer_h > 0:
+            logger.warning(f"[sketch_parser] 下边距 {mb} > 外框高 80%({outer_h*0.8:.1f})，修正")
+            mb = outer_h * 0.5
+    else:
+        logger.debug(
+            f"[sketch_parser] Bug7保护2：OCR自洽→跳过inner>outer修正&单边距>80%修正"
+        )
 
     # 边距回退：不再使用几何均分回退（见 _geometry_fallback_values 设计说明）。
     # 边距必须由 OCR 检出或用户手动输入，几何回退可能产生严重错误的边距值。
@@ -2626,30 +3007,36 @@ def parse_sketch(
     # === 最终几何自洽性验证 ===
     # 如果边距和与 (外框-内框) 的偏差过大（>50%），说明结果仍然不可信，
     # 将不可信方向的边距置 0（由用户手动填写），避免把错误值展示给用户
-    if outer_w > 0 and inner_w > 0:
-        expected_lr = outer_w - inner_w
-        if expected_lr > 0:
-            actual_lr = ml + mr
-            lr_deviation = abs(actual_lr - expected_lr) / expected_lr
-            if lr_deviation > 0.5 and actual_lr > 0:
-                logger.warning(
-                    f"[sketch_parser] 水平边距和({actual_lr:.2f})与预期({expected_lr:.2f})"
-                    f"偏差 {lr_deviation:.0%} 过大，重置水平边距")
-                # 保留单边较小的那个（可能是正确的），清零另一边
-                # 简单策略：两边都清 0，让用户手动输入
-                ml = 0.0
-                mr = 0.0
-    if outer_h > 0 and inner_h > 0:
-        expected_tb = outer_h - inner_h
-        if expected_tb > 0:
-            actual_tb = mt + mb
-            tb_deviation = abs(actual_tb - expected_tb) / expected_tb
-            if tb_deviation > 0.5 and actual_tb > 0:
-                logger.warning(
-                    f"[sketch_parser] 垂直边距和({actual_tb:.2f})与预期({expected_tb:.2f})"
-                    f"偏差 {tb_deviation:.0%} 过大，重置垂直边距")
-                mt = 0.0
-                mb = 0.0
+    if not _skip_destructive_corrections:
+        if outer_w > 0 and inner_w > 0:
+            expected_lr = outer_w - inner_w
+            if expected_lr > 0:
+                actual_lr = ml + mr
+                lr_deviation = abs(actual_lr - expected_lr) / expected_lr
+                if lr_deviation > 0.5 and actual_lr > 0:
+                    logger.warning(
+                        f"[sketch_parser] 水平边距和({actual_lr:.2f})与预期({expected_lr:.2f})"
+                        f"偏差 {lr_deviation:.0%} 过大，重置水平边距"
+                    )
+                    ml = 0.0
+                    mr = 0.0
+        if outer_h > 0 and inner_h > 0:
+            expected_tb = outer_h - inner_h
+            if expected_tb > 0:
+                actual_tb = mt + mb
+                tb_deviation = abs(actual_tb - expected_tb) / expected_tb
+                if tb_deviation > 0.5 and actual_tb > 0:
+                    logger.warning(
+                        f"[sketch_parser] 垂直边距和({actual_tb:.2f})与预期({expected_tb:.2f})"
+                        f"偏差 {tb_deviation:.0%} 过大，重置垂直边距"
+                    )
+                    mt = 0.0
+                    mb = 0.0
+    else:
+        logger.debug(
+            f"[sketch_parser] Bug7保护2：OCR自洽→跳过最终边距和偏差清零"
+            f"(水平和:{ml+mr:.1f}, 垂直和:{mt+mb:.1f})"
+        )
 
     # === 最终单侧边距合理性裁剪（第二道防线）===
     def _final_clip(v, outer_side):
@@ -2660,12 +3047,17 @@ def parse_sketch(
             return 0.0
         return v
 
-    if outer_w > 0:
-        ml = _final_clip(ml, outer_w)
-        mr = _final_clip(mr, outer_w)
-    if outer_h > 0:
-        mt = _final_clip(mt, outer_h)
-        mb = _final_clip(mb, outer_h)
+    if not _skip_destructive_corrections:
+        if outer_w > 0:
+            ml = _final_clip(ml, outer_w)
+            mr = _final_clip(mr, outer_w)
+        if outer_h > 0:
+            mt = _final_clip(mt, outer_h)
+            mb = _final_clip(mb, outer_h)
+    else:
+        logger.debug(
+            f"[sketch_parser] Bug7保护2：OCR自洽→跳过单侧边距35%裁剪"
+        )
 
     # 判定成功
     if outer_w > 0 and outer_h > 0 and mt >= 0 and mb >= 0 and ml >= 0 and mr >= 0:
