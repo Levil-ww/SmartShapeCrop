@@ -284,8 +284,8 @@ class PropertyPanel(QWidget):
         row_size_mode = QHBoxLayout()
         gb1 = QGroupBox("画布尺寸 (厘米)")
         f = QVBoxLayout(gb1)
-        self._sp_w = self._dspin(5, 200, self.design.canvas_w_cm, decimals=1)
-        self._sp_h = self._dspin(5, 200, self.design.canvas_h_cm, decimals=1)
+        self._sp_w = self._dspin(5, 450, self.design.canvas_w_cm, decimals=1)
+        self._sp_h = self._dspin(5, 450, self.design.canvas_h_cm, decimals=1)
         self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(self.design.dpi)
         f.addLayout(self._row("宽(cm)", self._sp_w))
         f.addLayout(self._row("高(cm)", self._sp_h))
@@ -309,10 +309,10 @@ class PropertyPanel(QWidget):
         # 3) 内挖参数（矩形/L形共用）
         gb_inner = QGroupBox("内挖边距 (厘米)")
         fi = QVBoxLayout(gb_inner)
-        self._sp_mt = self._dspin(0, 200, self.design.inner_margin_top_cm)
-        self._sp_mb = self._dspin(0, 200, self.design.inner_margin_bottom_cm)
-        self._sp_ml = self._dspin(0, 200, self.design.inner_margin_left_cm)
-        self._sp_mr = self._dspin(0, 200, self.design.inner_margin_right_cm)
+        self._sp_mt = self._dspin(0, 450, self.design.inner_margin_top_cm)
+        self._sp_mb = self._dspin(0, 450, self.design.inner_margin_bottom_cm)
+        self._sp_ml = self._dspin(0, 450, self.design.inner_margin_left_cm)
+        self._sp_mr = self._dspin(0, 450, self.design.inner_margin_right_cm)
         fi.addLayout(self._row("上", self._sp_mt))
         fi.addLayout(self._row("下", self._sp_mb))
         fi.addLayout(self._row("左", self._sp_ml))
@@ -614,10 +614,10 @@ class PropertyPanel(QWidget):
                     gui_w = raw_outer_w + 1.0
                     gui_h = raw_outer_h + 1.0
                     # 范围夹取
-                    gui_w = max(5.0, min(200.0, float(gui_w)))
-                    gui_h = max(5.0, min(200.0, float(gui_h)))
-                    raw_outer_w = max(5.0, min(200.0, float(raw_outer_w)))
-                    raw_outer_h = max(5.0, min(200.0, float(raw_outer_h)))
+                    gui_w = max(5.0, min(450.0, float(gui_w)))
+                    gui_h = max(5.0, min(450.0, float(gui_h)))
+                    raw_outer_w = max(5.0, min(450.0, float(raw_outer_w)))
+                    raw_outer_h = max(5.0, min(450.0, float(raw_outer_h)))
                     # 保存原始外框尺寸（无损耗），供草图解析像素→厘米换算用
                     self._pool_raw_outer_w = raw_outer_w
                     self._pool_raw_outer_h = raw_outer_h
@@ -628,8 +628,8 @@ class PropertyPanel(QWidget):
                         f"（含1cm损耗，目标外框 {raw_outer_w:.1f}×{raw_outer_h:.1f} cm，可在画布尺寸中微调）")
                 else:
                     # 普通模式：直接使用解析结果，无 +1cm
-                    w = max(5.0, min(200.0, float(w)))
-                    h = max(5.0, min(200.0, float(h)))
+                    w = max(5.0, min(450.0, float(w)))
+                    h = max(5.0, min(450.0, float(h)))
                     self._pool_raw_outer_w = w
                     self._pool_raw_outer_h = h
                     self._sp_w.setValue(w)
