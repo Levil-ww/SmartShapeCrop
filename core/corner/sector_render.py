@@ -275,8 +275,8 @@ def _redraw_border_on_corner(
 
     GAP_COLOR_DIST = 60.0
     GAP_MAX_THICKNESS = 30.0
-    MAX_BORDER_DEPTH_RATIO = 1.0
-    MAX_BORDER_DEPTH_HARD_PX = 177
+    MAX_BORDER_DEPTH_RATIO = 2.0
+    MAX_BORDER_DEPTH_HARD_PX = 500
 
     capped_by_ratio = MAX_BORDER_DEPTH_RATIO * R_total
     effective_border_depth = min(MAX_BORDER_DEPTH_HARD_PX, capped_by_ratio, total_border_depth)

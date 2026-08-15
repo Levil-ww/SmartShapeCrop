@@ -1246,7 +1246,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             _redraw_border_on_corner(
                 result, corner_key, r_px, border_layers,
                 src_img=img, validity_mask=validity_mask,
-                only_outermost=True,  # [Fix] 仅保留最外层黑色边框（匹配 PS 效果）
+                only_outermost=False,  # 绘制所有边框层（gap层由Smart Gap Check自动跳过）
             )
 
     # Step B: 安全补绘外轮廓
