@@ -571,7 +571,12 @@ def _build_multi_layer_corner_mask(
                 else:  # br
                     Dk = max((w - 1) - rx2, (h - 1) - ry2)
 
-                R_eff_k = max(0, r - int(round(Dk)))
+                # 如果该层矩形已超出边框厚度范围（即属于内部图案/花纹区域），
+                # 则强制保持直角，不进行圆角裁剪
+                if raw_depth > 0 and Dk > raw_depth:
+                    R_eff_k = 0
+                else:
+                    R_eff_k = max(0, r - int(round(Dk)))
                 # 钳制有效半径 <= min(rect_w, rect_h)//2（局部半径不变量）
                 local_max = max(1, min(rx2 - rx1, ry2 - ry1) // 2)
                 R_eff_k = min(R_eff_k, local_max)
