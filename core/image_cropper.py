@@ -413,7 +413,7 @@ def _build_multi_layer_corner_mask(
     corners_px: dict[str, int],
     border_layers: list[tuple[tuple[int, int, int], int]],
     nested_rects: list[tuple[int, int, int, int]] | None = None,
-    protect_content: bool = False,
+    protect_content: dict[str, bool] | bool = False,
 ) -> Image.Image:
     """
     构建多层边框动态圆角遮罩。[升级：嵌套矩形层感知 + 内容区保护]
@@ -519,7 +519,12 @@ def _build_multi_layer_corner_mask(
         # Step 1: 标准 L 形裁切（外层半径 r）
         # 当 protect_content=True 时，只在边框条带内裁切（内容区保持直角）
         # 当 protect_content=False 时，裁掉整个扇形外部（正常圆角）
-        if protect_content and raw_depth > 0:
+        # 支持 per-corner dict 或 全局 bool
+        if isinstance(protect_content, dict):
+            corner_protect = protect_content.get(corner_key, False)
+        else:
+            corner_protect = protect_content
+        if corner_protect and raw_depth > 0:
             T_plus = raw_depth + 4  # +4px 抗锯齿容差
             if corner_key == 'tl':
                 border_zone = (xx <= T_plus) | (yy <= T_plus)
@@ -643,6 +648,111 @@ def _build_multi_layer_corner_mask(
 
     mask = Image.fromarray(mask_arr, mode='L')
     return mask
+
+
+def _analyze_corner_sector_content(
+    img: Image.Image,
+    corner_key: str,
+    r: int,
+    raw_depth: int,
+    bg_color: tuple = (255, 255, 255),
+) -> bool:
+    """
+    分析角落扇形区域是否包含需要保护的内容（花纹、图案等）。
+
+    通过在扇形区域（圆角外侧）采样像素的颜色复杂度来判断：
+    - 颜色种类多 / 方差高 → 有实际内容（如森夜私语的叶子花纹）→ 应保护
+    - 颜色单一 / 方差低 → 仅为背景色（如安妮森林的纯色角落） → 应完全裁切
+
+    Args:
+        img: 原图（RGB）
+        corner_key: 角标记 ('tl','tr','bl','br')
+        r: 圆角半径（像素）
+        raw_depth: 边框总厚度（像素）
+        bg_color: 背景色（用于判断"内容"与"背景"的差异）
+
+    Returns:
+        True = 该角存在内容，需要保护（只裁边框条带）
+        False = 该角为纯色背景，应完全裁掉整个扇形
+    """
+    w, h = img.size
+    r = min(r, max(1, min(w, h) // 2))
+    if r <= 0:
+        return False
+
+    # 扇形区域中心
+    if corner_key == 'tl':
+        cx, cy = r, r
+    elif corner_key == 'tr':
+        cx, cy = w - r, r
+    elif corner_key == 'bl':
+        cx, cy = r, h - r
+    else:
+        cx, cy = w - r, h - r
+
+    # 计算扇形区域（L 形 → 两个矩形）
+    # tl 角：矩形A = [0, r] x [0, r]（完整的角方块）
+    # 扇形 = 角方块内 dist > r 的部分
+    # 为了高效分析，我们在扇形区域采样像素
+
+    sample_step = max(2, r // 15)  # 自适应采样步长
+    pixels = []
+
+    if corner_key == 'tl':
+        for y in range(0, r, sample_step):
+            for x in range(0, r, sample_step):
+                dx, dy = x - r, y - r
+                if dx * dx + dy * dy > r * r:  # dist > r (outside circle)
+                    pixels.append(img.getpixel((x, y)))
+    elif corner_key == 'tr':
+        for y in range(0, r, sample_step):
+            for x in range(w - r, w, sample_step):
+                dx, dy = x - (w - r), y - r
+                if dx * dx + dy * dy > r * r:
+                    pixels.append(img.getpixel((x, y)))
+    elif corner_key == 'bl':
+        for y in range(h - r, h, sample_step):
+            for x in range(0, r, sample_step):
+                dx, dy = x - r, y - (h - r)
+                if dx * dx + dy * dy > r * r:
+                    pixels.append(img.getpixel((x, y)))
+    else:  # br
+        for y in range(h - r, h, sample_step):
+            for x in range(w - r, w, sample_step):
+                dx, dy = x - (w - r), y - (h - r)
+                if dx * dx + dy * dy > r * r:
+                    pixels.append(img.getpixel((x, y)))
+
+    if len(pixels) < 10:
+        return False
+
+    # 分析颜色复杂度
+    pixels_arr = np.array(pixels, dtype=np.float32)
+
+    # 1. 计算背景色相似度：与 bg_color 距离小于30的像素占比
+    bg_diff = np.sqrt(np.sum((pixels_arr - np.array(bg_color, dtype=np.float32)) ** 2, axis=1))
+    bg_ratio = np.mean(bg_diff < 30)
+
+    # 如果超过 85% 的像素接近背景色 → 认为无内容
+    if bg_ratio > 0.85:
+        return False
+
+    # 2. 计算唯一颜色数（量化到 20 个 bin）
+    quantized = (pixels_arr // 20).astype(np.int32)
+    unique_colors = len(set(map(tuple, quantized)))
+
+    # 如果唯一颜色数多 → 有内容（花纹、渐变等）
+    if unique_colors >= 8:
+        return True
+
+    # 3. 计算像素间方差（高方差 = 有图案细节）
+    variance = np.mean(np.var(pixels_arr, axis=0))
+
+    # 高方差 → 有内容
+    if variance > 800:
+        return True
+
+    return False
 
 
 def _build_border_paint_mask(
@@ -1057,21 +1167,40 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     if not corners_px:
         return img
 
-    # 判断是否需要保护内容区：当所有圆角半径都 <= 边框总厚度的 2 倍时，
-    # 只裁边框区域，内容区保持直角。否则正常裁整个扇形。
+    # 智能判断每个角是否需要保护内容区
+    # - 扇形区域颜色复杂度高（花纹/图案）→ 保护内容，只裁边框条带
+    # - 扇形区域颜色单一（纯色背景）→ 完全裁掉整个扇形区域
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
-    max_r = max(corners_px.values()) if corners_px else 0
-    protect_content = (raw_depth > 0) and (max_r <= raw_depth * 2)
+    corner_protect_map: dict[str, bool] = {}
+    for corner_key, r_px in corners_px.items():
+        if r_px <= 0:
+            corner_protect_map[corner_key] = False
+            continue
+        # 当没有边框层时，直接正常裁切
+        if raw_depth <= 0:
+            corner_protect_map[corner_key] = False
+            continue
+        # 当圆角远大于边框厚度时（超过边框+3cm），正常裁切
+        # 否则进行内容分析
+        if r_px > raw_depth + 180:  # 180px ≈ 3cm
+            corner_protect_map[corner_key] = False
+        else:
+            # 分析扇形区域内容复杂度
+            has_content = _analyze_corner_sector_content(
+                img, corner_key, r_px, raw_depth, bg_color
+            )
+            corner_protect_map[corner_key] = has_content
 
-    # 生成裁切 mask（当 protect_content=True 时只裁边框区域）
+    # 生成裁切 mask（per-corner protect_content）
     mask = _build_multi_layer_corner_mask(
         w, h, corners_px, border_layers, nested_rects=nested_rects,
-        protect_content=protect_content
+        protect_content=corner_protect_map
     )
 
-    # 生成独立的 validity_mask 用于边框重绘（始终覆盖整个扇形的边框区域）
-    # 这样即使内容区被保护（mask 保留内容区像素），边框重绘仍然能覆盖完整的边框厚度
-    if protect_content and raw_depth > 0:
+    # 生成独立的 validity_mask 用于边框重绘
+    # 只对有内容保护的角生成独立 validity_mask，其余角使用 mask 本身
+    has_any_protect = any(corner_protect_map.values())
+    if has_any_protect and raw_depth > 0:
         validity_mask = _build_border_paint_mask(w, h, corners_px, raw_depth)
     else:
         validity_mask = mask
