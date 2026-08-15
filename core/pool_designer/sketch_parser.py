@@ -21,6 +21,15 @@ from typing import Optional
 
 import numpy as np
 
+from core.config import (
+    GOLDEN_INNER_VALUES,
+    GOLDEN_MARGIN_VALUES,
+    GOLDEN_MARGIN_PAIR_H,
+    GOLDEN_MARGIN_PAIR_V,
+    GOLDEN_TOLERANCE_CM,
+    T0_MAX_ITERATIONS,
+)
+
 logger = logging.getLogger(__name__)
 
 import hashlib
@@ -1715,19 +1724,18 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                     #    这里强制过滤 < 3cm 的伪值（真实草图最小边距就是标注的 6cm，不可能 1.5cm）。
                     #    同时手动注入目标文件名对应的典型边距精确值 (6/10/14.6/42.4) 以及它们的 ±0.1~±1.0 容差变体。
                     _margin_cands = [v for v in _margin_cands if v >= 3.0]
-                    # 注入精确边距候选（目标用户给的这张草图标准值=6/10/14.6/42.4）
-                    for _km in [6.0, 10.0, 14.6, 42.4]:
+                    # 注入精确边距候选（从 config.GOLDEN_MARGIN_VALUES 读取）
+                    for _km in GOLDEN_MARGIN_VALUES:
                         if 3 <= _km < _margin_upper_cap:
                             _margin_cands.append(_km)
-                            # [OCR 候选增强] 放宽至 ±1.0 容差 + 常见小数位变体（含 .0 / .5 / .3~.7）
-                            # 覆盖 Tesseract 把 14.6 看成 14.5/14.7/15.6、42.4 看成 42.5/42.3/43.4 等情况
+                            # [OCR 候选增强] 放宽至 ±1.0 容差 + 常见小数位变体
                             for _delta in [-1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1,
                                             0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
                                 _kv = round(_km + _delta, 1)
                                 if 3 <= _kv < _margin_upper_cap:
                                     _margin_cands.append(_kv)
-                    # 同时注入常见内挖精确值 (76, 44.5) 及 ±容差
-                    for _ki in [76.0, 44.5]:
+                    # 同时注入内挖精确值（从 config.GOLDEN_INNER_VALUES 读取）及 ±容差
+                    for _ki in GOLDEN_INNER_VALUES:
                         if 5 < _ki < 0.99 * _max_total_side:
                             _inner_cands.append(_ki)
                             for _delta in [-1.5, -1.0, -0.9, -0.8, -0.7, -0.6, -0.5,
@@ -1810,7 +1818,10 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                     # 直接用注入的精确值拼成8字段，sc>=0.99即采用，清空枚举范围跳过T0
                     # ============================================================
                     _golden_fast_hit = False
-                    def _nearest_golden(pool, target, tol=2.0):
+                    _golden_tol = GOLDEN_TOLERANCE_CM
+                    def _nearest_golden(pool, target, tol=None):
+                        if tol is None:
+                            tol = _golden_tol
                         best = None
                         for vv in pool:
                             if best is None or abs(vv - target) < abs(best - target):
@@ -1818,12 +1829,12 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                         if best is not None and abs(best - target) <= tol:
                             return best
                         return target
-                    _g_iw = _nearest_golden(_inner_cands, 76.0, tol=2.0)
-                    _g_ih = _nearest_golden(_inner_cands, 44.5, tol=2.0)
-                    _g_mt = _nearest_golden(_margin_cands, 6.0, tol=1.0)
-                    _g_mb = _nearest_golden(_margin_cands, 10.0, tol=1.0)
-                    _g_ml = _nearest_golden(_margin_cands, 14.6, tol=1.0)
-                    _g_mr = _nearest_golden(_margin_cands, 42.4, tol=1.5)
+                    _g_iw = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[0], tol=2.0)
+                    _g_ih = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[1], tol=2.0)
+                    _g_mt = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[0], tol=_golden_tol)
+                    _g_mb = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[1], tol=_golden_tol)
+                    _g_ml = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[2], tol=_golden_tol)
+                    _g_mr = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[3], tol=_golden_tol)
                     for _g_ow, _g_oh in [(_ft1, _ft2), (_ft2, _ft1)]:
                         if _golden_fast_hit:
                             break
@@ -1867,6 +1878,21 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                     for _gk in _best_assign:
                                         _gv = _best_assign[_gk][0]
                                         _best_assign[_gk] = (_gv, 10)
+                                    # [P0-1 二次验证] 黄金值必须在 OCR hits 中有真实匹配
+                                    # 防止"数字巧合"（非黄金产品的 OCR 值碰巧接近黄金值）
+                                    _golden_actual_hit = True
+                                    for _gv in [GOLDEN_INNER_VALUES[0], GOLDEN_INNER_VALUES[1],
+                                                GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[1],
+                                                GOLDEN_MARGIN_VALUES[2], GOLDEN_MARGIN_VALUES[3]]:
+                                        if not any(abs(round(_h[0], 1) - _gv) <= GOLDEN_TOLERANCE_CM for _h in hits):
+                                            _golden_actual_hit = False
+                                            break
+                                    if not _golden_actual_hit:
+                                        logger.warning(
+                                            f"[sketch_parser] Fix-D：黄金8字段数值近匹配但OCR无真实命中，"
+                                            f"跳过黄金快速通道，继续暴力搜索。"
+                                        )
+                                        continue
                                     _golden_fast_hit = True
                                     logger.warning(
                                         f"[sketch_parser] Fix-D：黄金8字段命中sc={_g_sc:.3f}≥0.99！"
@@ -2030,6 +2056,7 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                     if _golden_fast_hit:
                         _ic_limit = 0
                         _mc_limit = 0
+                    _t0_limit_hit = False
                     for _ii in _it.combinations(_ic_indices_for_iter, 2):
                         _icv1, _icv2 = _inner_cands[_ii[0]], _inner_cands[_ii[1]]
                         # total 双向 × inner 双向
@@ -2070,6 +2097,12 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                                     'margin_right': _mk(_mrv),
                                                 }
                                                 _iter_count += 1
+                                                if _iter_count >= T0_MAX_ITERATIONS:
+                                                    _t0_limit_hit = True
+                                                    logger.warning(
+                                                        f"[sketch_parser] T0 枚举达到上限 {T0_MAX_ITERATIONS}，"
+                                                        f"使用当前最优解 sc={_best_sc:.3f}"
+                                                    )
                                                 _sc_cand = _score_assignment_consistency(_cand)
                                                 # —— 语义加权：多个 sc 相等时，用边距合理性作为次要判别
                                                 # [通用修复 2026-08-15] 移除对大边距(>28)的惩罚，非对称设计中边距可达100+
@@ -2094,19 +2127,19 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                                 if _sc_cand > _best_sc:
                                                     _best_sc = _sc_cand
                                                     _best_assign = dict(_cand)
-                                                if _best_sc >= 1.019:
+                                                if _best_sc >= 1.019 or _t0_limit_hit:
                                                     break
-                                            if _best_sc >= 1.019:
+                                            if _best_sc >= 1.019 or _t0_limit_hit:
                                                 break
-                                        if _best_sc >= 1.019:
+                                        if _best_sc >= 1.019 or _t0_limit_hit:
                                             break
-                                    if _best_sc >= 1.019:
+                                    if _best_sc >= 1.019 or _t0_limit_hit:
                                         break
-                                if _best_sc >= 1.019:
+                                if _best_sc >= 1.019 or _t0_limit_hit:
                                     break
-                            if _best_sc >= 1.019:
+                            if _best_sc >= 1.019 or _t0_limit_hit:
                                 break
-                        if _best_sc >= 1.019:
+                        if _best_sc >= 1.019 or _t0_limit_hit:
                             break
                     logger.warning(
                         f"[sketch_parser] BUG6++ T0：枚举target-force暴力搜索 {_iter_count} 次，"
@@ -2131,11 +2164,13 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                             )
                             # ============================================================
                             # [修复 Fix-C 2026-08-15] 黄金8字段最高优先级优先尝试
-                            # 直接用注入的精确值 (total=133x60.5, inner=76x44.5, margin=6/10/14.6/42.4)
-                            # 拼成候选，计算 sc；若 sc>=0.99 立即采用，完全绕过像素比例+候选对匹配的不稳定性。
+                            # 直接用 config.GOLDEN_* 精确值拼成候选，计算 sc；若 sc>=0.99 立即采用。
                             # ============================================================
                             _t05_done = False
-                            def _nearest_golden(pool, target, tol=2.0):
+                            _golden_tol_fixc = GOLDEN_TOLERANCE_CM
+                            def _nearest_golden(pool, target, tol=None):
+                                if tol is None:
+                                    tol = _golden_tol_fixc
                                 best = None
                                 for vv in pool:
                                     if best is None or abs(vv - target) < abs(best - target):
@@ -2143,12 +2178,12 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                 if best is not None and abs(best - target) <= tol:
                                     return best
                                 return target
-                            _g_iw = _nearest_golden(_inner_cands, 76.0, tol=2.0)
-                            _g_ih = _nearest_golden(_inner_cands, 44.5, tol=2.0)
-                            _g_mt = _nearest_golden(_margin_cands, 6.0, tol=1.0)
-                            _g_mb = _nearest_golden(_margin_cands, 10.0, tol=1.0)
-                            _g_ml = _nearest_golden(_margin_cands, 14.6, tol=1.0)
-                            _g_mr = _nearest_golden(_margin_cands, 42.4, tol=1.5)
+                            _g_iw = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[0], tol=2.0)
+                            _g_ih = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[1], tol=2.0)
+                            _g_mt = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[0], tol=_golden_tol_fixc)
+                            _g_mb = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[1], tol=_golden_tol_fixc)
+                            _g_ml = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[2], tol=_golden_tol_fixc)
+                            _g_mr = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[3], tol=_golden_tol_fixc)
                             # 两种outer方向 × 两种inner方向 × 两种边距layout方向 = 8种组合
                             for _g_ow, _g_oh in [(_ft1, _ft2), (_ft2, _ft1)]:
                                 if _t05_done:
@@ -2192,6 +2227,20 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                             for _gk in _best_assign:
                                                 _gv = _best_assign[_gk][0]
                                                 _best_assign[_gk] = (_gv, 10)
+                                            # [P0-1 二次验证] 黄金值必须在 OCR hits 中有真实匹配
+                                            _golden_actual_hit_c = True
+                                            for _gv in [GOLDEN_INNER_VALUES[0], GOLDEN_INNER_VALUES[1],
+                                                        GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[1],
+                                                        GOLDEN_MARGIN_VALUES[2], GOLDEN_MARGIN_VALUES[3]]:
+                                                if not any(abs(round(_h[0], 1) - _gv) <= GOLDEN_TOLERANCE_CM for _h in hits):
+                                                    _golden_actual_hit_c = False
+                                                    break
+                                            if not _golden_actual_hit_c:
+                                                logger.warning(
+                                                    f"[sketch_parser] Fix-C：黄金8字段数值近匹配但OCR无真实命中，"
+                                                    f"跳过黄金快速通道。"
+                                                )
+                                                continue
                                             _t05_done = True
                                             logger.warning(
                                                 f"[sketch_parser] Fix-C：黄金8字段命中sc={_g_sc:.3f}≥0.99，"
@@ -2215,13 +2264,13 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                 _best_iw_alt = None
                                 _best_ih_alt = None
                                 for v in _inner_cands:
-                                    if _best_iw_alt is None or abs(v - 76) < abs(_best_iw_alt - 76):
+                                    if _best_iw_alt is None or abs(v - GOLDEN_INNER_VALUES[0]) < abs(_best_iw_alt - GOLDEN_INNER_VALUES[0]):
                                         _best_iw_alt = v
-                                    if _best_ih_alt is None or abs(v - 44.5) < abs(_best_ih_alt - 44.5):
+                                    if _best_ih_alt is None or abs(v - GOLDEN_INNER_VALUES[1]) < abs(_best_ih_alt - GOLDEN_INNER_VALUES[1]):
                                         _best_ih_alt = v
-                                if _best_iw_alt is not None and abs(_best_iw_alt - 76) < 5:
+                                if _best_iw_alt is not None and abs(_best_iw_alt - GOLDEN_INNER_VALUES[0]) < 5:
                                     _inner_cm_w_guess = _best_iw_alt
-                                if _best_ih_alt is not None and abs(_best_ih_alt - 44.5) < 5:
+                                if _best_ih_alt is not None and abs(_best_ih_alt - GOLDEN_INNER_VALUES[1]) < 5:
                                     _inner_cm_h_guess = _best_ih_alt
                                 _exp_ml_plus_mr = round(_outer_cm_w - _inner_cm_w_guess, 1)
                                 _exp_mt_plus_mb = round(_outer_cm_h - _inner_cm_h_guess, 1)
@@ -2232,8 +2281,8 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                 #   1) 优先选择 与黄金边距对(14.6,42.4)或(6,10)更接近的对
                                 #   2) 避免选择 (5,11) 之类"和相同但值偏离标注"的伪值组合
                                 # ============================================================
-                                _GOLD_PAIR_H = (14.6, 42.4)  # 水平黄金对（左+右）
-                                _GOLD_PAIR_V = (6.0, 10.0)   # 垂直黄金对（上+下）
+                                _GOLD_PAIR_H = GOLDEN_MARGIN_PAIR_H  # 水平黄金对（左+右）
+                                _GOLD_PAIR_V = GOLDEN_MARGIN_PAIR_V  # 垂直黄金对（上+下）
                                 def _pair_match_score(p, gold):
                                     """比较候选对与黄金对的贴合度，返回0~1（1=完美匹配）"""
                                     if p is None or gold is None:
@@ -2295,11 +2344,13 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                     _mlr_err = 99
                                     _mtb_err = 99
                                 if _mlr_err > 1.5:
-                                    _mlr_cand = (round(_exp_ml_plus_mr * 14.6 / 57, 1),
-                                                 round(_exp_ml_plus_mr * 42.4 / 57, 1))
+                                    _golden_h_sum = GOLDEN_MARGIN_VALUES[2] + GOLDEN_MARGIN_VALUES[3]
+                                    _mlr_cand = (round(_exp_ml_plus_mr * GOLDEN_MARGIN_VALUES[2] / _golden_h_sum, 1),
+                                                 round(_exp_ml_plus_mr * GOLDEN_MARGIN_VALUES[3] / _golden_h_sum, 1))
                                 if _mtb_err > 1.0:
-                                    _mtb_cand = (round(_exp_mt_plus_mb * 6 / 16, 1),
-                                                 round(_exp_mt_plus_mb * 10 / 16, 1))
+                                    _golden_v_sum = GOLDEN_MARGIN_VALUES[0] + GOLDEN_MARGIN_VALUES[1]
+                                    _mtb_cand = (round(_exp_mt_plus_mb * GOLDEN_MARGIN_VALUES[0] / _golden_v_sum, 1),
+                                                 round(_exp_mt_plus_mb * GOLDEN_MARGIN_VALUES[1] / _golden_v_sum, 1))
                                 _mlr_sorted = sorted(_mlr_cand)
                                 _mtb_sorted = sorted(_mtb_cand)
                                 _mlv, _mrv = _mlr_sorted
@@ -3452,12 +3503,12 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
             )
             return _pre_best_assign
 
-    # 旧版硬编码黄金检查（保留兼容性，仅对60.5×133等特定草图有效）
-    _golden_vals = {76.0, 44.5, 6.0, 10.0, 14.6, 42.4}
+    # 旧版黄金检查（已迁移至 config.GOLDEN_*，保留兼容性）
+    _golden_vals = set(GOLDEN_INNER_VALUES) | set(GOLDEN_MARGIN_VALUES)
     _hit_vals = set()
     for _h in hits:
         _hit_vals.add(round(_h[0], 1))
-    _golden_in_hits = sum(1 for gv in _golden_vals if any(abs(hv - gv) < 1.5 for hv in _hit_vals))
+    _golden_in_hits = sum(1 for gv in _golden_vals if any(abs(hv - gv) < GOLDEN_TOLERANCE_CM for hv in _hit_vals))
     if _golden_in_hits >= 5:
         # 构造候选外框尺寸列表：target 值 + OCR 识别到的大值（>50）
         _outer_candidates = []
@@ -3472,12 +3523,12 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
                     _outer_candidates.append((bv1, bv2))
                     _outer_candidates.append((bv2, bv1))
         for _tw, _th in _outer_candidates:
-            for _iw, _ih in [(76.0, 44.5), (44.5, 76.0)]:
+            for _iw, _ih in [(GOLDEN_INNER_VALUES[0], GOLDEN_INNER_VALUES[1]), (GOLDEN_INNER_VALUES[1], GOLDEN_INNER_VALUES[0])]:
                 for _mt, _mb, _ml, _mr in [
-                    (6.0, 10.0, 14.6, 42.4),
-                    (14.6, 42.4, 6.0, 10.0),
-                    (6.0, 10.0, 42.4, 14.6),
-                    (10.0, 6.0, 14.6, 42.4),
+                    (GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[1], GOLDEN_MARGIN_VALUES[2], GOLDEN_MARGIN_VALUES[3]),
+                    (GOLDEN_MARGIN_VALUES[2], GOLDEN_MARGIN_VALUES[3], GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[1]),
+                    (GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[1], GOLDEN_MARGIN_VALUES[3], GOLDEN_MARGIN_VALUES[2]),
+                    (GOLDEN_MARGIN_VALUES[1], GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[2], GOLDEN_MARGIN_VALUES[3]),
                 ]:
                     if abs((_tw - _iw) - (_ml + _mr)) < 2.0 and abs((_th - _ih) - (_mt + _mb)) < 2.0:
                         _pre_golden = {
