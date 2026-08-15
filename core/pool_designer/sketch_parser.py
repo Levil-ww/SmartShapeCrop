@@ -1743,20 +1743,68 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                     # 原 0.55*min(total)=33.2 会把 42.4 的右边距直接裁掉！
                     _margin_hard_cap = 0.55 * _max_total_side
                     _margin_cands = [v for v in _margin_cands if v <= _margin_hard_cap]
+
+                    # [通用修复 2026-08-15] 确保所有OCR识别的值都保留在候选池中
+                    # 旧代码截断候选池到固定数量，丢弃了大值OCR结果（如112、86等）
+                    _ocr_vals_set = set()
+                    for _ov in _uniq_vals:
+                        _ocr_vals_set.add(round(_ov * 10) / 10)
+                    # 保存OCR值在候选池中的位置
+                    _ocr_inner_vals = {v for v in _inner_cands if round(v*10)/10 in _ocr_vals_set}
+                    _ocr_margin_vals = {v for v in _margin_cands if round(v*10)/10 in _ocr_vals_set}
+
                     if len(_margin_cands) > 40:
-                        # 取范围里绝对值最集中的 40 个（保留小值优先，但不丢弃 40+ 的大边距）
+                        # 取范围里绝对值最集中的 40 个（保留小值优先，但不丢弃 OCR 识别的大边距）
+                        _before_trunc = len(_margin_cands)
                         _margin_cands = sorted(_margin_cands)[:40]
+                        # 补回被截断的OCR值
+                        for _omv in _ocr_margin_vals:
+                            if _omv not in _margin_cands:
+                                _margin_cands.append(_omv)
+                        _margin_cands = sorted(set(_margin_cands))
+                        if len(_margin_cands) != _before_trunc:
+                            logger.warning(
+                                f"[sketch_parser] margin候选截断前{_before_trunc}→截断后{len(_margin_cands)}，"
+                                f"已补回OCR识别的大边距值: {sorted(_ocr_margin_vals - set(sorted(_margin_cands)[:40]))}"
+                            )
+
+                    if len(_inner_cands) > 25:
+                        _before_trunc_inner = len(_inner_cands)
+                        _inner_cands = sorted(_inner_cands)[:25]
+                        # 补回被截断的OCR值
+                        for _oiv in _ocr_inner_vals:
+                            if _oiv not in _inner_cands:
+                                _inner_cands.append(_oiv)
+                        _inner_cands = sorted(set(_inner_cands))
+
                     logger.warning(
                         f"[sketch_parser] BUG6++ T0：inner候选{len(_inner_cands)}个（范围5~{0.99*_max_total_side:.0f}）,"
                         f" margin候选{len(_margin_cands)}个（范围3~{_margin_hard_cap:.0f}），"
-                        f"已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差"
+                        f"已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差，"
+                        f" OCR原始值: {sorted([round(v,1) for v in _uniq_vals])}"
                     )
                     # 枚举 inner=C(inner_cands,2) × margin=C(margin_cands,4)
                     import itertools as _it
                     _ic_list = list(range(len(_inner_cands)))
                     _mc_list = list(range(len(_margin_cands)))
-                    _ic_limit = min(len(_ic_list), 20)
-                    _mc_limit = min(len(_mc_list), 30)
+
+                    # [通用修复 2026-08-15] 确保枚举限制包含所有OCR值对应的索引
+                    # 旧代码直接取前N个索引，OCR大值可能在候选列表末尾被截断
+                    _ocr_inner_indices = {i for i, v in enumerate(_inner_cands) if v in _ocr_inner_vals}
+                    _ocr_margin_indices = {i for i, v in enumerate(_margin_cands) if v in _ocr_margin_vals}
+                    # 取前(N - len(ocr))个非OCR索引 + 所有OCR索引
+                    _ic_base = [i for i in _ic_list if i not in _ocr_inner_indices][:max(0, 20 - len(_ocr_inner_indices))]
+                    _mc_base = [i for i in _mc_list if i not in _ocr_margin_indices][:max(0, 30 - len(_ocr_margin_indices))]
+                    _ic_indices_for_iter = sorted(set(_ic_base) | _ocr_inner_indices)
+                    _mc_indices_for_iter = sorted(set(_mc_base) | _ocr_margin_indices)
+                    _ic_limit = len(_ic_indices_for_iter)
+                    _mc_limit = len(_mc_indices_for_iter)
+                    logger.warning(
+                        f"[sketch_parser] 枚举索引：inner共{len(_ic_list)}取{_ic_limit}"
+                        f"(含OCR{len(_ocr_inner_indices)}个)，"
+                        f"margin共{len(_mc_list)}取{_mc_limit}"
+                        f"(含OCR{len(_ocr_margin_indices)}个)"
+                    )
                     # ============================================================
                     # [Fix-D 2026-08-15] 黄金8字段快速通道（在T0枚举之前，避免组合爆炸）
                     # 直接用注入的精确值拼成8字段，sc>=0.99即采用，清空枚举范围跳过T0
@@ -1825,10 +1873,164 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                         f"清空T0枚举范围，跳过暴力搜索。"
                                     )
                                     break
+                    # [通用修复 2026-08-15] 动态黄金快速通道：用实际OCR值直接构造候选
+                    # 对任意尺寸草图，直接用识别到的OCR数值尝试几何自洽组合
+                    # [增强] 集成空间一致性评分作为决胜条件，正确分配的空间得分应高于错误分配
+                    if not _golden_fast_hit and len(_uniq_vals) >= 4:
+                        _ocr_sorted = sorted(_uniq_vals, reverse=True)
+                        logger.warning(
+                            f"[sketch_parser] 动态黄金通道：尝试{len(_ocr_sorted)}个OCR值"
+                            f" {[round(v,1) for v in _ocr_sorted]} 直接构造8字段"
+                        )
+
+                        # —— 空间一致性评分：基于OCR值的空间位置评估分配合理性 ——
+                        # 每个字段有多个可能的锚点位置（如total_w可能在外框下/上/旁），
+                        # 取与值位置最接近的锚点作为匹配依据
+                        _field_anchors = {}  # key -> [(ax, ay, arx, ary), ...]
+                        if inner_rect and iw > 0 and ih > 0:
+                            for _ak, _ax, _ay, _arx, _ary in anchors:
+                                if _ak not in _field_anchors:
+                                    _field_anchors[_ak] = []
+                                _field_anchors[_ak].append((_ax, _ay, _arx, _ary))
+                        # 构建 OCR值 → (x_center, y_center) 映射（取置信度最高的hit）
+                        _ocr_val_pos = {}
+                        for _vh in ocr_hits:
+                            _v = round(_vh[0] * 10) / 10
+                            if _v <= 0:
+                                continue
+                            if _v not in _ocr_val_pos or _vh[3] > _ocr_val_pos[_v][2]:
+                                _ocr_val_pos[_v] = (_vh[1], _vh[2], _vh[3])
+
+                        def _spatial_consistency_score(assign_dict):
+                            """计算分配的空间一致性得分 (0~1)。
+                            对每个值取其字段所有锚点中距离最近的那个作为匹配，
+                            所有匹配的平均得分即为空间一致性。
+                            若无法计算（缺少位置信息），返回0.5中性分。"""
+                            if not _field_anchors or not _ocr_val_pos:
+                                return 0.5
+                            _total_score = 0.0
+                            _count = 0
+                            for _fld in ('total_w', 'total_h', 'inner_w', 'inner_h',
+                                         'margin_top', 'margin_bottom', 'margin_left', 'margin_right'):
+                                if _fld not in _field_anchors:
+                                    continue
+                                _fval = assign_dict[_fld][0]
+                                _fv_rounded = round(_fval * 10) / 10
+                                if _fv_rounded not in _ocr_val_pos:
+                                    continue
+                                _vx, _vy, _vconf = _ocr_val_pos[_fv_rounded]
+                                _best_dist_score = -1.0
+                                for _ax, _ay, _arx, _ary in _field_anchors[_fld]:
+                                    _dx = abs(_vx - _ax) / max(1, _arx)
+                                    _dy = abs(_vy - _ay) / max(1, _ary)
+                                    _dist = (_dx + _dy) / 2
+                                    if _dist <= 1.0:
+                                        _ds = (1.0 - _dist)
+                                    else:
+                                        _ds = max(0.0, 0.5 - (_dist - 1.0))
+                                    if _ds > _best_dist_score:
+                                        _best_dist_score = _ds
+                                if _best_dist_score >= 0:
+                                    _total_score += _best_dist_score
+                                    _count += 1
+                            if _count == 0:
+                                return 0.5
+                            return _total_score / _count
+                        _dyn_best_sc = -1.0
+                        _dyn_best_spatial = -1.0
+                        _dyn_best_assign = None
+                        # 策略：从OCR值中挑选2个最大的作为inner候选，其余作为margin候选
+                        # 尝试所有inner值组合和margin分配
+                        _ocr_inner_cands = [v for v in _ocr_sorted
+                                             if 3 < v < 0.99 * _max_total_side and v not in _force_target_vals]
+                        _ocr_margin_cands = [v for v in _ocr_sorted
+                                              if 0.5 < v < _margin_hard_cap and v not in _force_target_vals]
+                        if len(_ocr_inner_cands) >= 2 and len(_ocr_margin_cands) >= 2:
+                            for _dw, _dh in [(_ocr_inner_cands[i], _ocr_inner_cands[j])
+                                               for i in range(len(_ocr_inner_cands))
+                                               for j in range(i+1, len(_ocr_inner_cands))]:
+                                for _otw, _oth in [(_ft1, _ft2), (_ft2, _ft1)]:
+                                    if not (_dw < _otw and _dh < _oth):
+                                        continue
+                                    _deh = round(_otw - _dw, 1)
+                                    _dev = round(_oth - _dh, 1)
+                                    if _deh < 1 or _dev < 1:
+                                        continue
+                                    # 从margin候选中找两对值，使和分别接近_deh和_dev
+                                    for _ml_idx in range(len(_ocr_margin_cands)):
+                                        for _mr_idx in range(len(_ocr_margin_cands)):
+                                            if _ml_idx == _mr_idx:
+                                                continue
+                                            _mlv = _ocr_margin_cands[_ml_idx]
+                                            _mrv = _ocr_margin_cands[_mr_idx]
+                                            if abs((_mlv + _mrv) - _deh) > max(1.5, _deh * 0.1):
+                                                continue
+                                            for _mt_idx in range(len(_ocr_margin_cands)):
+                                                if _mt_idx in (_ml_idx, _mr_idx):
+                                                    continue
+                                                for _mb_idx in range(len(_ocr_margin_cands)):
+                                                    if _mb_idx in (_ml_idx, _mr_idx, _mt_idx):
+                                                        continue
+                                                    _mtv = _ocr_margin_cands[_mt_idx]
+                                                    _mbv = _ocr_margin_cands[_mb_idx]
+                                                    if abs((_mtv + _mbv) - _dev) > max(1.5, _dev * 0.1):
+                                                        continue
+                                                    _d_cand = {
+                                                        'total_w': _mk(_otw),
+                                                        'total_h': _mk(_oth),
+                                                        'inner_w': _mk(_dw),
+                                                        'inner_h': _mk(_dh),
+                                                        'margin_top': _mk(_mtv),
+                                                        'margin_bottom': _mk(_mbv),
+                                                        'margin_left': _mk(_mlv),
+                                                        'margin_right': _mk(_mrv),
+                                                    }
+                                                    _d_sc = _score_assignment_consistency(_d_cand)
+                                                    # [增强] 空间一致性作为决胜条件：
+                                                    # 当几何得分相同时（如正确/错误分配都sc=1.0），
+                                                    # 用空间一致性区分：值的位置越接近其预期字段位置，越可能正确
+                                                    _d_spatial = _spatial_consistency_score(_d_cand)
+                                                    _d_combined = _d_sc * 0.7 + _d_spatial * 0.3
+                                                    _best_combined = _dyn_best_sc * 0.7 + _dyn_best_spatial * 0.3
+                                                    if _d_combined > _best_combined:
+                                                        _dyn_best_sc = _d_sc
+                                                        _dyn_best_spatial = _d_spatial
+                                                        _dyn_best_assign = dict(_d_cand)
+                                                    # 仅在几何和空间都优秀时提前退出（减少计算量）
+                                                    if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
+                                                        break
+                                                # [增强] 外层break也要考虑空间得分
+                                                if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
+                                                    break
+                                        if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
+                                            break
+                                if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
+                                    break
+                        if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6 and _dyn_best_assign:
+                            logger.warning(
+                                f"[sketch_parser] 动态黄金通道命中(sc={_dyn_best_sc:.3f}, spatial={_dyn_best_spatial:.3f})："
+                                f"total={_dyn_best_assign['total_w'][0]}x{_dyn_best_assign['total_h'][0]} "
+                                f"inner={_dyn_best_assign['inner_w'][0]}x{_dyn_best_assign['inner_h'][0]} "
+                                f"margin T/B/L/R={_dyn_best_assign['margin_top'][0]}/"
+                                f"{_dyn_best_assign['margin_bottom'][0]}/"
+                                f"{_dyn_best_assign['margin_left'][0]}/"
+                                f"{_dyn_best_assign['margin_right'][0]}"
+                            )
+                            _best_sc = _dyn_best_sc
+                            _best_assign = _dyn_best_assign
+                            for _gk in _best_assign:
+                                _gv = _best_assign[_gk][0]
+                                _best_assign[_gk] = (_gv, 10)
+                            _golden_fast_hit = True
+                        elif (_dyn_best_sc * 0.7 + _dyn_best_spatial * 0.3) > (_best_sc * 0.7 + 0.5 * 0.3) and _dyn_best_assign:
+                            # [增强] 非完美命中时也用综合分比较（几何+空间）
+                            _best_sc = _dyn_best_sc
+                            _best_assign = _dyn_best_assign
+
                     if _golden_fast_hit:
                         _ic_limit = 0
                         _mc_limit = 0
-                    for _ii in _it.combinations(_ic_list[:_ic_limit], 2):
+                    for _ii in _it.combinations(_ic_indices_for_iter, 2):
                         _icv1, _icv2 = _inner_cands[_ii[0]], _inner_cands[_ii[1]]
                         # total 双向 × inner 双向
                         for _tw, _th in [(_ft1, _ft2), (_ft2, _ft1)]:
@@ -1841,7 +2043,7 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                 if _expected_h < 1 or _expected_v < 1:
                                     continue
                                 # margin C(30,4)=27405 × 6 分法 × 4 内序 = 约 65 万，尚可
-                                for _mj in _it.combinations(_mc_list[:_mc_limit], 4):
+                                for _mj in _it.combinations(_mc_indices_for_iter, 4):
                                     _m4 = [_margin_cands[_mj[k]] for k in range(4)]
                                     # 水平/垂直分对
                                     for _mpair in _it.combinations(range(4), 2):
@@ -1869,26 +2071,25 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                                 }
                                                 _iter_count += 1
                                                 _sc_cand = _score_assignment_consistency(_cand)
-                                                # —— 语义加权：多个 sc 相等时，边距值"常规化"的方案胜出
-                                                #    惩罚 极值 < 4（Tesseract 1.5/2.0 伪值） 或 >25 的大边距
-                                                #    奖励 5~18cm 的常规边距区间
+                                                # —— 语义加权：多个 sc 相等时，用边距合理性作为次要判别
+                                                # [通用修复 2026-08-15] 移除对大边距(>28)的惩罚，非对称设计中边距可达100+
+                                                #    仅惩罚极小边距(<3.5，可能是OCR伪值)
+                                                #    中等边距(4~28)给小奖励
+                                                #    大边距(>28)不惩罚(合法的非对称设计)
                                                 def _margin_sanity_penalty(mv):
                                                     if mv < 3.5:
-                                                        return -0.08 - (3.5 - mv) * 0.03  # 1.5 会扣掉 0.14
-                                                    if mv > 28:
-                                                        return -0.05 - (mv - 28) * 0.005
-                                                    if 4 <= mv <= 20:
-                                                        return +0.008  # 常规边距加分
-                                                    if 20 < mv <= 28:
-                                                        return +0.002
+                                                        return -0.08 - (3.5 - mv) * 0.03
+                                                    if 4 <= mv <= 28:
+                                                        return +0.005
                                                     return 0
                                                 for _m_in in (_mtv, _mbv, _mlv, _mrv):
                                                     _sc_cand += _margin_sanity_penalty(_m_in)
-                                                # 再附加：左右边距差 < 30 加 0.005，上下边距差 < 20 加 0.005
-                                                if abs(_mlv - _mrv) <= 30:
-                                                    _sc_cand += 0.005
-                                                if abs(_mtv - _mbv) <= 20:
-                                                    _sc_cand += 0.005
+                                                # [通用修复 2026-08-15] 放宽左右/上下边距平衡奖励
+                                                # 非对称设计中左右边距可能差异很大（如36 vs 112），不再强制要求
+                                                if abs(_mlv - _mrv) <= 50:
+                                                    _sc_cand += 0.003
+                                                if abs(_mtv - _mbv) <= 30:
+                                                    _sc_cand += 0.003
                                                 _sc_cand = min(1.02, max(0.0, _sc_cand))
                                                 if _sc_cand > _best_sc:
                                                     _best_sc = _sc_cand
@@ -2422,15 +2623,10 @@ def _score_assignment_consistency(assignment: dict) -> float:
     if th > 0 and mb > th * 0.9:
         score -= 0.2
 
-    # 奖励：边距 < 内框（合理范围，边距不应大于内框）
-    if iw > 0 and ml > iw * 0.9:
-        score -= 0.1
-    if iw > 0 and mr > iw * 0.9:
-        score -= 0.1
-    if ih > 0 and mt > ih * 0.9:
-        score -= 0.1
-    if ih > 0 and mb > ih * 0.9:
-        score -= 0.1
+    # [通用修复 2026-08-15] 移除"边距 < 内框"检查
+    # 旧代码：边距>内框90%时扣0.1分，但非对称设计(如234x60)中边距(112)远大于内框(86)是合法的
+    # 该检查会错误惩罚正确分配，同时无法有效区分错误分配
+    # 几何一致性检查(total-inner=margin_sum)已足够验证正确性
 
     return max(0.0, min(1.0, score))
 
@@ -2993,8 +3189,270 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
             logger.warning(f"[sketch_parser] 分块增强失败: {_oe}")
 
     # [性能优化 v4] 预分配黄金检查：在调用耗时的 _assign_ocr_values_to_fields 之前，
-    # 先检查 OCR hits 是否包含所有黄金值。如果是，直接构造正确结果返回。
-    # 这样可以跳过整个暴力搜索流程（节省 30-120 秒）。
+    # 先用实际OCR数值+目标尺寸尝试直接构造几何自洽的8字段结果。
+    # 支持任意尺寸草图，不限于60.5×133。
+    _hit_vals = set()
+    for _h in hits:
+        _hit_vals.add(round(_h[0], 1))
+    _hit_vals_list = sorted(_hit_vals, reverse=True)
+
+    # 动态预分配：用OCR实际值构造候选，检查几何自洽性
+    # [通用修复 2026-08-15] 支持target任意方向：target和OCR outer取两者并集
+    # [关键修复] outer候选严格限制：防止margin/inner的大值(如112)被当成outer边产生伪自洽
+    if len(_hit_vals_list) >= 4:
+        _pre_outer_cands = []
+        _target_avail = target_w_hint > 0 and target_h_hint > 0
+        if _target_avail:
+            # 优先使用 target 值（正反向都尝试）。这是最可信的 outer 尺寸来源。
+            _pre_outer_cands.append((target_w_hint, target_h_hint))
+            _pre_outer_cands.append((target_h_hint, target_w_hint))
+            # 再从 OCR 中找"与 target 值接近"的大值，作为 outer 候选（允许 OCR 与 target 有小偏差）
+            # 例如：target=234×60，OCR 可能识别成 234.5×59.8 等
+            _tw1, _th1 = target_w_hint, target_h_hint
+            _tw2, _th2 = target_h_hint, target_w_hint
+            _nearby_vals = [v for v in _hit_vals_list if v > 20 and (
+                abs(v - _tw1) < _tw1 * 0.10 or abs(v - _th1) < _th1 * 0.10 or
+                abs(v - _tw2) < _tw2 * 0.10 or abs(v - _th2) < _th2 * 0.10
+            )]
+            # nearby_vals 中两两组合（不含纯target的重复组合）
+            for i in range(len(_nearby_vals)):
+                for j in range(i+1, len(_nearby_vals)):
+                    _pre_outer_cands.append((_nearby_vals[i], _nearby_vals[j]))
+                    _pre_outer_cands.append((_nearby_vals[j], _nearby_vals[i]))
+        else:
+            # 无 target 时：用 OCR 前 3 大值（>20）两两组合
+            _big_vals = sorted([v for v in _hit_vals_list if v > 20], reverse=True)[:3]
+            for i in range(len(_big_vals)):
+                for j in range(i+1, len(_big_vals)):
+                    _pre_outer_cands.append((_big_vals[i], _big_vals[j]))
+                    _pre_outer_cands.append((_big_vals[j], _big_vals[i]))
+        # 去重
+        _seen_outer = set()
+        _pre_outer_list = []
+        for _ot1, _ot2 in _pre_outer_cands:
+            _ok = (round(_ot1, 1), round(_ot2, 1))
+            if _ok in _seen_outer or _ot1 <= 0 or _ot2 <= 0:
+                continue
+            _seen_outer.add(_ok)
+            _pre_outer_list.append((_ot1, _ot2))
+        # 收集"疑似 outer 边"的值集合：用于从 inner/margin 候选中排除这些值
+        # 防止出现 outer=(234,112) 时 inner 候选包含 112、234 这种荒谬情况
+        _suspected_outer_vals = set()
+        for _a, _b in _pre_outer_list:
+            _suspected_outer_vals.add(round(_a, 1))
+            _suspected_outer_vals.add(round(_b, 1))
+        # 如果有 target，把 target 值也加入排除集合
+        if _target_avail:
+            _suspected_outer_vals.add(round(target_w_hint, 1))
+            _suspected_outer_vals.add(round(target_h_hint, 1))
+
+        # 构建空间一致性评分（与_assign_ocr_values_to_fields内相同逻辑）
+        _pre_field_anchors = {}
+        if inner_rect and inner_rect[2] > 0 and inner_rect[3] > 0:
+            _pre_ox, _pre_oy = outer_rect[0], outer_rect[1]
+            _pre_ow, _pre_oh = outer_rect[2], outer_rect[3]
+            _pre_ix, _pre_iy = inner_rect[0], inner_rect[1]
+            _pre_iw, _pre_ih = inner_rect[2], inner_rect[3]
+            _pre_anc = [
+                ('total_w',   _pre_ox + _pre_ow / 2, _pre_oy + _pre_oh + _pre_oh * 0.12, _pre_ow * 0.6, _pre_oh * 0.3),
+                ('total_w',   _pre_ox + _pre_ow / 2, _pre_oy - _pre_oh * 0.12, _pre_ow * 0.95, _pre_oh * 0.4),
+                ('total_h',   _pre_ox - _pre_ow * 0.12, _pre_oy + _pre_oh / 2, _pre_ow * 0.3, _pre_oh * 0.6),
+                ('total_h',   _pre_ox + _pre_ow * 1.08, _pre_oy + _pre_oh / 2, _pre_ow * 0.35, _pre_oh * 0.95),
+                ('margin_top',    _pre_ox + _pre_ow / 2, _pre_oy + max(0, _pre_iy - _pre_oy) / 2, _pre_ow * 0.8, max(_pre_oh * 0.35, (_pre_iy - _pre_oy) + _pre_oh * 0.15)),
+                ('margin_bottom', _pre_ox + _pre_ow / 2, _pre_iy + _pre_ih + max(0, (_pre_oy + _pre_oh) - (_pre_iy + _pre_ih)) / 2, _pre_ow * 0.8, max(_pre_oh * 0.35, ((_pre_oy + _pre_oh) - (_pre_iy + _pre_ih)) + _pre_oh * 0.15)),
+                ('margin_left',   _pre_ox + (_pre_ix - _pre_ox) / 2, _pre_iy + _pre_ih / 2, max(_pre_ow * 0.3, (_pre_ix - _pre_ox) + _pre_ow * 0.15), _pre_ih * 0.9),
+                ('margin_right',  _pre_ix + _pre_iw + ((_pre_ox + _pre_ow) - (_pre_ix + _pre_iw)) / 2, _pre_iy + _pre_ih / 2, max(_pre_ow * 0.3, ((_pre_ox + _pre_ow) - (_pre_ix + _pre_iw)) + _pre_ow * 0.15), _pre_ih * 0.9),
+                ('inner_w',   _pre_ix + _pre_iw / 2, _pre_iy + _pre_ih * 0.35, _pre_iw * 0.8, _pre_ih * 0.5),
+                ('inner_h',   _pre_ix + _pre_iw / 2, _pre_iy + _pre_ih * 0.65, _pre_iw * 0.8, _pre_ih * 0.5),
+            ]
+            for _ak, _ax, _ay, _arx, _ary in _pre_anc:
+                if _ak not in _pre_field_anchors:
+                    _pre_field_anchors[_ak] = []
+                _pre_field_anchors[_ak].append((_ax, _ay, _arx, _ary))
+        _pre_ocr_pos = {}
+        for _vh in hits:
+            _pv = round(_vh[0] * 10) / 10
+            if _pv <= 0:
+                continue
+            if _pv not in _pre_ocr_pos or _vh[3] > _pre_ocr_pos[_pv][2]:
+                _pre_ocr_pos[_pv] = (_vh[1], _vh[2], _vh[3])
+        def _pre_spatial(assign_dict):
+            if not _pre_field_anchors or not _pre_ocr_pos:
+                return 0.5
+            _ts = 0.0
+            _tc = 0
+            for _fld in ('total_w','total_h','inner_w','inner_h','margin_top','margin_bottom','margin_left','margin_right'):
+                if _fld not in _pre_field_anchors:
+                    continue
+                _fv = assign_dict[_fld][0]
+                _fvr = round(_fv * 10) / 10
+                if _fvr not in _pre_ocr_pos:
+                    continue
+                _vx, _vy, _ = _pre_ocr_pos[_fvr]
+                _best = -1.0
+                for _ax, _ay, _arx, _ary in _pre_field_anchors[_fld]:
+                    _dx = abs(_vx - _ax) / max(1, _arx)
+                    _dy = abs(_vy - _ay) / max(1, _ary)
+                    _d = (_dx + _dy) / 2
+                    _ds = (1.0 - _d) if _d <= 1.0 else max(0.0, 0.5 - (_d - 1.0))
+                    if _ds > _best:
+                        _best = _ds
+                if _best >= 0:
+                    _ts += _best
+                    _tc += 1
+            return (_ts / _tc) if _tc > 0 else 0.5
+
+        _pre_best_combined = -1.0
+        _pre_best_sc = -1.0
+        _pre_best_assign = None
+        for _pre_tw, _pre_th in _pre_outer_list:
+            _pre_max_side = max(_pre_tw, _pre_th)
+            _pre_min_side = min(_pre_tw, _pre_th)
+            # [通用修复] margin上限动态化：非对称设计中，大边距可接近 outer 对应方向的边长
+            # 例如 234×60 画布，左边距36+右边距112=148 < 234（水平），上下边距和=15 < 60（垂直）
+            # 所以 margin 上限应该是"不超过 outer 长边的 95%"即可（单条边距不可能超过 outer 总边长）
+            _margin_cap_loose = 0.95 * _pre_max_side
+            # inner候选上限：严格 < outer 两条边（inner 必须同时 < tw 且 < th），但这里只做数值范围限制
+            # 实际顺序限制在下面的 _p_iw2 < _pre_tw and _p_ih2 < _pre_th 中检查
+            _inner_cap_loose = 0.99 * _pre_max_side
+            # [关键修复] 从 inner/margin 候选中排除疑似 outer 边值
+            # 防止 outer=234 的画布中 inner 候选包含 234 或 60 这种 outer 边值
+            _pre_inner_cands = [v for v in _hit_vals_list
+                                if 3 < v < _inner_cap_loose
+                                and round(v, 1) not in _suspected_outer_vals]
+            _pre_margin_cands = [v for v in _hit_vals_list
+                                  if 0.5 < v < _margin_cap_loose
+                                  and round(v, 1) not in _suspected_outer_vals]
+            if len(_pre_inner_cands) < 2 or len(_pre_margin_cands) < 4:
+                continue
+            # 尝试所有 inner 组合
+            for _pi_idx in range(len(_pre_inner_cands)):
+                for _pj_idx in range(_pi_idx + 1, len(_pre_inner_cands)):
+                    _p_iw = _pre_inner_cands[_pi_idx]
+                    _p_ih = _pre_inner_cands[_pj_idx]
+                    # inner双向尝试（不要求顺序）
+                    for _p_iw2, _p_ih2 in [(_p_iw, _p_ih), (_p_ih, _p_iw)]:
+                        if not (_p_iw2 < _pre_tw and _p_ih2 < _pre_th):
+                            continue
+                        _peh = round(_pre_tw - _p_iw2, 1)
+                        _pev = round(_pre_th - _p_ih2, 1)
+                        if _peh < 1 or _pev < 1:
+                            continue
+                        # 找两对 margin 值：和分别等于 _peh, _pev
+                        for _pml in range(len(_pre_margin_cands)):
+                            for _pmr in range(len(_pre_margin_cands)):
+                                if _pmr == _pml:
+                                    continue
+                                _pmlv = _pre_margin_cands[_pml]
+                                _pmrv = _pre_margin_cands[_pmr]
+                                # [关键修复] inner值不能等于margin值（草图8个数字互不相同）
+                                if (_pmlv == _p_iw2 or _pmlv == _p_ih2 or
+                                    _pmrv == _p_iw2 or _pmrv == _p_ih2):
+                                    continue
+                                # 放宽水平容差（非对称设计大margin，OCR有误差）
+                                if abs((_pmlv + _pmrv) - _peh) > max(2.5, _peh * 0.10):
+                                    continue
+                                for _pmt in range(len(_pre_margin_cands)):
+                                    if _pmt in (_pml, _pmr):
+                                        continue
+                                    _pmtv = _pre_margin_cands[_pmt]
+                                    # [关键修复] top margin也不能等于任何inner值
+                                    if _pmtv == _p_iw2 or _pmtv == _p_ih2:
+                                        continue
+                                    for _pmb in range(len(_pre_margin_cands)):
+                                        if _pmb in (_pml, _pmr, _pmt):
+                                            continue
+                                        _pmbv = _pre_margin_cands[_pmb]
+                                        if _pmbv == _p_iw2 or _pmbv == _p_ih2:
+                                            continue
+                                        if abs((_pmtv + _pmbv) - _pev) > max(2.5, _pev * 0.10):
+                                            continue
+                                        # [关键修复 物理合理性] 真实草图中 inner 是主体挖空区域，
+                                        # 尺寸应该大于 margin。过滤掉荒谬的 tiny-inner 解：
+                                        # 1) inner较短边必须 >= 4个margin中的最大值的一半（防止inner=6x9而margin大到112）
+                                        # 2) inner较长边必须 > 4个margin中的最小值的3倍（主体区域不能比边距还小太多）
+                                        _inner_min_side = min(_p_iw2, _p_ih2)
+                                        _margin_max = max(_pmtv, _pmbv, _pmlv, _pmrv)
+                                        _margin_min = min(_pmtv, _pmbv, _pmlv, _pmrv)
+                                        if _inner_min_side < _margin_max * 0.40:
+                                            continue
+                                        if max(_p_iw2, _p_ih2) < _margin_min * 2.0:
+                                            continue
+                                        _p_cand = {
+                                            'total_w': (_pre_tw, 10),
+                                            'total_h': (_pre_th, 10),
+                                            'inner_w': (_p_iw2, 10),
+                                            'inner_h': (_p_ih2, 10),
+                                            'margin_top': (_pmtv, 10),
+                                            'margin_bottom': (_pmbv, 10),
+                                            'margin_left': (_pmlv, 10),
+                                            'margin_right': (_pmrv, 10),
+                                        }
+                                        _p_sc = _score_assignment_consistency(_p_cand)
+                                        _p_sp = _pre_spatial(_p_cand)
+                                        # [修复 tie-breaking 启发式1] 大margin应该出现在outer长边方向：
+                                        # outer长边=水平 → margin_max应该是 左+右（L或R）中的值
+                                        # outer长边=垂直 → margin_max应该是 上+下（T或B）中的值
+                                        _margin_max_v = max(_pmtv, _pmbv, _pmlv, _pmrv)
+                                        _margin_on_long_side_bonus = 0.0
+                                        if _pre_tw >= _pre_th:  # outer 长边水平
+                                            if _margin_max_v in (_pmlv, _pmrv):
+                                                _margin_on_long_side_bonus = 1e-5
+                                        else:  # outer 长边垂直
+                                            if _margin_max_v in (_pmtv, _pmbv):
+                                                _margin_on_long_side_bonus = 1e-5
+                                        # [修复 tie-breaking 启发式2] 非outer值中的Top大值应该尽量分配给margin而不是inner：
+                                        # 非对称设计往往边距可以很大（大于inner短边），但inner不可能用掉所有最大的值。
+                                        # 所以 margin 4 个值包含非 outer 值中 top-K 大的值越多越好。
+                                        _non_outer_sorted = sorted(_pre_inner_cands + [v for v in _pre_margin_cands], reverse=True)
+                                        _margin_set = {_pmtv, _pmbv, _pmlv, _pmrv}
+                                        _top_vals_in_margin = 0
+                                        for _v in _non_outer_sorted[:4]:
+                                            if _v in _margin_set:
+                                                _top_vals_in_margin += 1
+                                        _big_margin_bonus = _top_vals_in_margin * 1e-6
+                                        # [修复 tie-breaking 启发式3] outer尺寸方向与target方向匹配优先：
+                                        # 即 (_pre_tw, _pre_th) == (target_w_hint, target_h_hint) 时优先
+                                        _target_dir_bonus = 0.0
+                                        if (_target_avail and target_w_hint > 0 and target_h_hint > 0
+                                                and _pre_tw == target_w_hint and _pre_th == target_h_hint):
+                                            _target_dir_bonus = 5e-5
+                                        _p_comb = (_p_sc * 0.7 + _p_sp * 0.3
+                                                   + _margin_on_long_side_bonus + _big_margin_bonus
+                                                   + _target_dir_bonus)
+                                        if _p_comb > _pre_best_combined:
+                                            _pre_best_combined = _p_comb
+                                            _pre_best_sc = _p_sc
+                                            _pre_best_assign = dict(_p_cand)
+                                        # 几何完美且空间>=0.6就提前命中（减少计算）
+                                        if _pre_best_sc >= 0.99 and _p_sp >= 0.6:
+                                            break
+                                    if _pre_best_sc >= 0.99 and _p_sp >= 0.6:
+                                        break
+                                if _pre_best_sc >= 0.99 and _p_sp >= 0.6:
+                                    break
+                            if _pre_best_sc >= 0.99 and _p_sp >= 0.6:
+                                break
+                        if _pre_best_sc >= 0.99 and _p_sp >= 0.6:
+                            break
+                    if _pre_best_sc >= 0.99 and _p_sp >= 0.6:
+                        break
+        # [通用修复] 放宽命中条件：几何>=0.99就返回，空间得分作为决胜但不做硬门槛
+        # 防止某些草图labeling不规范导致空间分低时错过正确解
+        if _pre_best_sc >= 0.99 and _pre_best_assign:
+            logger.warning(
+                f"[sketch_parser] 预分配动态黄金命中(sc={_pre_best_sc:.3f}, "
+                f"spatial={_pre_spatial(_pre_best_assign):.3f})："
+                f"total={_pre_best_assign['total_w'][0]}x{_pre_best_assign['total_h'][0]} "
+                f"inner={_pre_best_assign['inner_w'][0]}x{_pre_best_assign['inner_h'][0]} "
+                f"margin T/B/L/R={_pre_best_assign['margin_top'][0]}/"
+                f"{_pre_best_assign['margin_bottom'][0]}/"
+                f"{_pre_best_assign['margin_left'][0]}/"
+                f"{_pre_best_assign['margin_right'][0]}"
+            )
+            return _pre_best_assign
+
+    # 旧版硬编码黄金检查（保留兼容性，仅对60.5×133等特定草图有效）
     _golden_vals = {76.0, 44.5, 6.0, 10.0, 14.6, 42.4}
     _hit_vals = set()
     for _h in hits:
@@ -3048,12 +3506,15 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
     else:
         result = dict(empty)
 
-    # [Fix 2026-08-15] 如果 _assign_ocr_values_to_fields 返回的结果已经几何完全自洽(sc>=0.99)，
+    # [Fix 2026-08-15增强] 如果 _assign_ocr_values_to_fields 返回的结果已经几何完全自洽(sc>=0.99)，
     # 说明黄金8字段/暴力搜索已找到正确解，跳过后续 ROI OCR 和 margin OCR 以防止覆盖
+    # 同时：检查所有字段置信度是否>=5（黄金通道返回的都是10），如果是高置信度自洽解也跳过
     _final_sc = _score_assignment_consistency(result)
-    if _final_sc >= 0.99:
+    _all_high_conf = all(v[1] >= 5 and v[0] > 0 for v in result.values())
+    if _final_sc >= 0.99 or (_final_sc >= 0.90 and _all_high_conf):
         logger.warning(
-            f"[sketch_parser] _assign_ocr_values_to_fields 返回结果已几何自洽(sc={_final_sc:.3f})，"
+            f"[sketch_parser] _assign_ocr_values_to_fields 返回结果已几何自洽"
+            f"(sc={_final_sc:.3f}, all_high_conf={_all_high_conf})，"
             f"跳过后续 ROI OCR 和 margin OCR 以防止覆盖正确值"
         )
         return result
@@ -3083,11 +3544,12 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
             old_val, old_conf = result[key]
             # ROI OCR 的置信度 = 2 或 3（较低，避免抢夺 A 策略）
             new_conf = 3 if reg[4] > 300 else 2
-            # 如果旧值已存在且置信度高于 ROI 检测值，跳过（保护高置信度的黄金8字段结果）
+            # [通用修复 2026-08-15] 高置信度黄金结果保护：
+            # 旧值置信度>=5（黄金8字段/暴力搜索的结果都是>=5）时，不允许 ROI OCR 覆盖
             if old_val > 0 and old_conf >= 5:
-                continue  # 旧值置信度高(>=5)，保留旧值
+                continue
             if old_val > 0 and old_conf > new_conf:
-                continue  # 旧值置信度更高，保留旧值
+                continue
             # 一值多槽防御：若 val 已被其他字段占用则跳过（误差 < 0.15）
             already_used = False
             for other_key, (other_val, _) in result.items():
@@ -3166,12 +3628,19 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
                     skip_due_to_geometry = True
         if skip_due_to_geometry:
             continue
-        # 优先使用检测到的值：但如果旧值置信度非常高(>=8)，说明旧值来自黄金8字段/暴力搜索，应保留
+        # [通用修复 2026-08-15] 高置信度黄金结果保护：
+        # 旧值置信度>=8（来自黄金8字段/暴力搜索的正确解）时，无论 ROI OCR 读什么值都不覆盖！
+        # 原因：策略C的 margin_target_rois OCR 区域很小，很容易把邻近数字读进来
+        # （例：正确 margin_right=112，区域 OCR 可能误读附近的 inner 标注 86 或其他数字）
         if old_conf >= 8 and old_val > 0:
-            continue  # 旧值置信度极高，保留旧值（黄金8字段/暴力搜索结果）
-        # 次高置信度保护：旧值置信度>=5时，仅当检测值与旧值接近(30%内)才保留
-        if old_conf >= 5 and old_val > 0 and abs(old_val - val) < old_val * 0.3:
-            continue  # 旧值置信度较高且与检测值接近，保留旧值
+            continue
+        # 次高置信度保护：旧值置信度>=5时，仅当检测值与旧值接近(30%内)才允许替换旧值
+        # 但如果检测值差异太大，说明 ROI OCR 误读了其他数字 → 不允许覆盖
+        if old_conf >= 5 and old_val > 0:
+            if abs(old_val - val) < old_val * 0.3:
+                continue  # 检测值与旧值接近，保留置信度更高的旧值
+            else:
+                continue  # 检测值与旧值差异太大 → ROI OCR 误读，不覆盖高置信度旧值
         conf = 5 if val > 1 else 4
         result[key] = (val, conf)
 
