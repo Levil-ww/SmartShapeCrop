@@ -586,3 +586,32 @@ Traceback (most recent call last):
     
 KeyboardInterrupt
 
+============================================================
+崩溃时间: 2026-08-15 13:17:03
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 800, in _pool_load_sketch_from_path
+    self._pool_auto_parse_sketch()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 825, in _pool_auto_parse_sketch
+    result = parse_sketch(
+        self._sketch_path,
+        target_outer_w_cm=target_w,
+        target_outer_h_cm=target_h,
+    )
+  File "D:\SmartShapeCrop\core\pool_designer\sketch_parser.py", line 3186, in parse_sketch
+    ocr_result = _find_and_read_numbers(cv2, gray, (ox, oy, ow, oh),
+                                         (ix, iy, iw, ih), tesseract,
+                                         target_w_hint=target_outer_w_cm,
+                                         target_h_hint=target_outer_h_cm)
+  File "D:\SmartShapeCrop\core\pool_designer\sketch_parser.py", line 2971, in _find_and_read_numbers
+    result = _assign_ocr_values_to_fields(hits, outer_rect, inner_rect, h_img, w_img,
+                                           target_w_hint=target_w_hint,
+                                           target_h_hint=target_h_hint)
+  File "D:\SmartShapeCrop\core\pool_designer\sketch_parser.py", line 1799, in _assign_ocr_values_to_fields
+    _lr_i = list(_mpair)
+KeyboardInterrupt
+
