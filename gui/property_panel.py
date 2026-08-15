@@ -193,11 +193,14 @@ class PoolRenderWorker(QThread):
             design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
 
             # 边距优先用草图，否则用默认等比例值（10% 短边）
+            # [尺寸偏移修正 2026-08-15] 画布已 +TRIM_CM(1cm)，4 个边距也需各 +1cm，
+            # 内挖由 inner = canvas - sum(margins) 自动推导出为 inner_sketch - 1cm（双向各减 0.5 总合为 -1）。
+            # 几何不变量：(outer+1) = (ml+1) + (iw-1) + (mr+1)；(outer+1)_v = (mt+1) + (ih-1) + (mb+1)
             if sketch_result and sketch_result.success:
-                design.inner_margin_top_cm = sketch_result.margin_top_cm
-                design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm
-                design.inner_margin_left_cm = sketch_result.margin_left_cm
-                design.inner_margin_right_cm = sketch_result.margin_right_cm
+                design.inner_margin_top_cm = sketch_result.margin_top_cm + TRIM_CM
+                design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm + TRIM_CM
+                design.inner_margin_left_cm = sketch_result.margin_left_cm + TRIM_CM
+                design.inner_margin_right_cm = sketch_result.margin_right_cm + TRIM_CM
             else:
                 default_m = min(canvas_w_cm, canvas_h_cm) * 0.10
                 design.inner_margin_top_cm = default_m
@@ -827,42 +830,42 @@ class PropertyPanel(QWidget):
             self._sketch_parse_result = result
             if result.success:
                 # —— 回填 4 个边距（核心需求）——
-                self._sp_mt.setValue(max(0.0, result.margin_top_cm))
-                self._sp_mb.setValue(max(0.0, result.margin_bottom_cm))
-                self._sp_ml.setValue(max(0.0, result.margin_left_cm))
-                self._sp_mr.setValue(max(0.0, result.margin_right_cm))
+                # [尺寸偏移修正 2026-08-15] 水池模式：画布已 +1cm 损耗，边距也需各 +1cm 偏移，
+                # 使内挖从草图值 inner 自动变为 inner-1cm（canvas+1 = margins+1 + inner-1 + margins+1）。
+                is_pool = getattr(self, '_pool_mode', False)
+                TRIM_UI = 1.0 if is_pool else 0.0
+                mt_ui = max(0.0, result.margin_top_cm + TRIM_UI)
+                mb_ui = max(0.0, result.margin_bottom_cm + TRIM_UI)
+                ml_ui = max(0.0, result.margin_left_cm + TRIM_UI)
+                mr_ui = max(0.0, result.margin_right_cm + TRIM_UI)
+                self._sp_mt.setValue(mt_ui)
+                self._sp_mb.setValue(mb_ui)
+                self._sp_ml.setValue(ml_ui)
+                self._sp_mr.setValue(mr_ui)
                 # 只有非水池模式，才用草图识别的外框覆盖画布尺寸
                 # 水池模式画布已按「文件名+1cm损耗」回填，不应被草图覆盖
-                if not getattr(self, '_pool_mode', False):
+                if not is_pool:
                     if result.outer_w_cm > 0:
                         self._sp_w.setValue(result.outer_w_cm)
                     if result.outer_h_cm > 0:
                         self._sp_h.setValue(result.outer_h_cm)
+                # UI 显示偏移后的内挖推导值
+                canvas_w_ui = self._sp_w.value()
+                canvas_h_ui = self._sp_h.value()
+                inner_w_ui = max(0.1, canvas_w_ui - ml_ui - mr_ui)
+                inner_h_ui = max(0.1, canvas_h_ui - mt_ui - mb_ui)
                 self._set_pool_status(
                     f"✅ 草图识别成功：外框参考 {target_w:.1f}×{target_h:.1f} cm，"
-                    f"内挖 {result.inner_w_cm:.1f}×{result.inner_h_cm:.1f} cm，"
-                    f"边距 → 上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/"
-                    f"左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f} cm"
-                    f"（已自动填入【内挖边距】栏）"
+                    f"画布 {canvas_w_ui:.1f}×{canvas_h_ui:.1f} cm（含1cm损耗），"
+                    f"内挖约 {inner_w_ui:.1f}×{inner_h_ui:.1f} cm，"
+                    f"边距 → 上{mt_ui:.1f}/下{mb_ui:.1f}/左{ml_ui:.1f}/右{mr_ui:.1f} cm"
+                    f"（已自动填入【内挖边距】栏，可微调）"
                 )
             else:
                 self._set_pool_status(
                     f"⚠️ 草图解析未成功：{result.message}（可手动在【内挖边距】栏输入）")
         except Exception as e:
             self._set_pool_status(f"草图解析异常：{e}")
-
-    def _pool_apply_sketch_to_design(self):
-        """把草图解析结果应用到 design（供 PoolRenderWorker 调用前使用）。"""
-        if self._sketch_parse_result and self._sketch_parse_result.success:
-            r = self._sketch_parse_result
-            self.design.inner_margin_top_cm = r.margin_top_cm
-            self.design.inner_margin_bottom_cm = r.margin_bottom_cm
-            self.design.inner_margin_left_cm = r.margin_left_cm
-            self.design.inner_margin_right_cm = r.margin_right_cm
-            if r.outer_w_cm > 0:
-                self.design.canvas_w_cm = r.outer_w_cm + 1.0
-            if r.outer_h_cm > 0:
-                self.design.canvas_h_cm = r.outer_h_cm + 1.0
 
     def _pool_clear_sketch(self):
         self._sketch_path = ""

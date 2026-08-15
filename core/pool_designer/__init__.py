@@ -7,11 +7,9 @@
 from .sketch_parser import (
     SketchParseResult,
     parse_sketch,
-    parse_sketch_geometry,
 )
 
 __all__ = [
     "SketchParseResult",
     "parse_sketch",
-    "parse_sketch_geometry",
 ]
