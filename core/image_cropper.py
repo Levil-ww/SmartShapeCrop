@@ -515,8 +515,29 @@ def _build_multi_layer_corner_mask(
         angle = np.mod(angle, 360.0)
         ang_min, ang_max = CORNER_ANGLES[corner_key]
 
+        # ===== [A) 基础 outer L-cut + 保守 ring 保护 + 边框深度约束] =====
+        # [Fix 中古大花内容区被裁 0815] 新增边框深度约束：
+        #   仅位于边框深度 raw_depth 以内的像素，才可能被扇形外部裁切；
+        #   超过边框深度的内容区像素（花纹、图案）无论 dist 多大都不裁切，保持直角。
+        #   这样 Step 3 的恢复逻辑就不需要兜底内容区了，只需要处理边框层的内
+        #   部嵌套矩形即可。
         # Step 1: 标准 L 形裁切（外层半径 r）
-        outer_cut = (angle >= ang_min) & (angle < ang_max) & (dist > r)
+        if raw_depth > 0:
+            # 为每个局部像素计算到图像外边缘的距离 D_pixel（与 Dk 算法一致）
+            if corner_key == 'tl':
+                D_pixel = np.maximum(xx, yy)
+            elif corner_key == 'tr':
+                D_pixel = np.maximum((w - 1) - xx, yy)
+            elif corner_key == 'bl':
+                D_pixel = np.maximum(xx, (h - 1) - yy)
+            else:  # br
+                D_pixel = np.maximum((w - 1) - xx, (h - 1) - yy)
+            # 只裁边框区域内的扇形外部（+4px 抗锯齿容差），内容区保持直角
+            border_zone = D_pixel <= (raw_depth + 4)
+            outer_cut = (angle >= ang_min) & (angle < ang_max) & (dist > r) & border_zone
+        else:
+            # 无边框检测时，保持原逻辑：裁掉整个扇形外部
+            outer_cut = (angle >= ang_min) & (angle < ang_max) & (dist > r)
 
         # Step 2: 保守 ring_region 保护外边框条带（防止最外轮廓线缺失）
         # [Fix C-shaped gap 0811] 扩展 ring_region 到弧外 2px，补偿像素离散化误差：
