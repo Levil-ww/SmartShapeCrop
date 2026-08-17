@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
+from PIL import Image
 
 from core.geometry import CropDesign, BorderLayer, BorderText
 from core.parser.name_parser import parse_filename
@@ -226,12 +227,39 @@ class PoolRenderWorker(QThread):
             self.finished_err.emit(f"处理失败：{e}")
 
 
+class _SketchParseWorker(QThread):
+    """草图异步解析 Worker：在后台线程跑 parse_sketch，避免阻塞主线程导致草图图片不能立即显示。"""
+
+    finished_ok = pyqtSignal(object)      # 成功：SketchParseResult
+    finished_err = pyqtSignal(str)        # 异常：错误消息
+
+    def __init__(self, sketch_path: str, target_w: float, target_h: float, parent=None):
+        super().__init__(parent)
+        self._sketch_path = sketch_path
+        self._target_w = target_w
+        self._target_h = target_h
+
+    def run(self):
+        try:
+            from core.pool_designer import parse_sketch
+            result = parse_sketch(
+                self._sketch_path,
+                target_outer_w_cm=self._target_w,
+                target_outer_h_cm=self._target_h,
+            )
+            self.finished_ok.emit(result)
+        except Exception as e:
+            logger.exception("草图后台解析异常")
+            self.finished_err.emit(str(e))
+
+
 class PropertyPanel(QWidget):
     """右侧属性面板"""
 
     design_changed = pyqtSignal(object)   # 发送更新后的 CropDesign
     save_requested = pyqtSignal()
     export_psd_requested = pyqtSignal(str)
+    sketch_loaded = pyqtSignal(object)    # 草图上传后发出 PIL Image（None 表示清除），主窗口用于在主画布显示
 
     def get_output_filename(self) -> str:
         """返回用于导出 JPG 的建议文件名（不含扩展名），水池模式优先用输出文件名框"""
@@ -255,6 +283,7 @@ class PropertyPanel(QWidget):
         self._matcher = TemplateMatcher()
         self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
         self._pool_worker = None  # type: PoolRenderWorker | None
+        self._sketch_parse_worker = None  # type: _SketchParseWorker | None
         self._sketch_path = ""
         self._sketch_parse_result = None  # 草图解析缓存，供实时回填 UI
         # —— 持久化设置（与圆角裁剪工具共用同一份 QSettings）——
@@ -778,11 +807,15 @@ class PropertyPanel(QWidget):
         self._pool_load_sketch_from_path(p)
 
     def _pool_load_sketch_from_path(self, p: str):
-        """通用：加载草图路径 → 保存 + 预览更新 + 自动解析回填边距"""
+        """通用：加载草图路径 → 保存 + [立即] 显示缩略图与主画布 → [后台] 启动草图解析回填边距。
+
+        关键：图片显示（QPixmap + 主画布 PIL）在主线程立即完成，不等待 OCR/几何检测；
+        解析操作放到 _SketchParseWorker 后台线程，避免阻塞 Qt 重绘事件，保证"上传即显示"。
+        """
         if not p or not os.path.isfile(p):
             return
         self._sketch_path = p
-        # 预览
+        # —— 1) 立即显示：侧栏缩略图 ——
         pm = QPixmap(p)
         if not pm.isNull():
             self._pool_sk_preview.setPixmap(pm.scaled(
@@ -795,20 +828,28 @@ class PropertyPanel(QWidget):
             self._pool_sk_preview.clear()
             self._pool_sk_preview.setText("（预览失败）\n或拖入图片")
             self._pool_sk_preview.set_has_image(False)
-        self._set_pool_status(f"已上传草图：{os.path.basename(p)}")
-        # 自动解析草图（若目标尺寸已知）
+        self._set_pool_status(f"已上传草图：{os.path.basename(p)}（正在识别尺寸…）")
+        # —— 2) 立即显示：主画布大图（避免小缩略图悬浮在侧栏）——
+        try:
+            pil_img = Image.open(p)
+            if pil_img.mode not in ('RGB', 'RGBA'):
+                pil_img = pil_img.convert('RGB')
+            self.sketch_loaded.emit(pil_img)
+        except Exception as e:
+            logger.warning(f"草图加载为 PIL Image 失败: {e}")
+            self.sketch_loaded.emit(None)
+        # —— 3) 后台异步解析草图（若目标尺寸已知）——
         self._pool_auto_parse_sketch()
 
     def _pool_auto_parse_sketch(self):
-        """当草图和目标尺寸都已知时，自动解析并回填边距 UI。
-        
+        """当草图和目标尺寸都已知时，启动后台线程解析并回填边距 UI。
+
         草图像素→厘米换算参考：使用文件名解析出的「原始外框尺寸」（不含1cm损耗），
         因为草图上的外框标注与目标文件名尺寸一一对应，不包含裁剪余料。
         """
         if not self._sketch_path or not os.path.isfile(self._sketch_path):
             return
         # 优先使用「原始外框尺寸」（文件名解析得到的、无1cm损耗的尺寸）
-        # 因为草图的外框尺寸与目标文件名一致，不含裁剪余料
         raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
         raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
         if raw_w > 0 and raw_h > 0:
@@ -820,24 +861,44 @@ class PropertyPanel(QWidget):
         if target_w <= 0 or target_h <= 0:
             self._set_pool_status("已上传草图，请先填写或选择目标尺寸以启用自动识别")
             return
-        try:
-            from core.pool_designer import parse_sketch
-            result = parse_sketch(
-                self._sketch_path,
-                target_outer_w_cm=target_w,
-                target_outer_h_cm=target_h,
-            )
-            self._sketch_parse_result = result
-            if result.success:
-                # —— 回填 4 个边距（核心需求）——
-                # [尺寸偏移修正 2026-08-15] 水池模式：画布已 +1cm 损耗，边距也需各 +1cm 偏移，
-                # 使内挖从草图值 inner 自动变为 inner-1cm（canvas+1 = margins+1 + inner-1 + margins+1）。
-                is_pool = getattr(self, '_pool_mode', False)
-                TRIM_UI = 1.0 if is_pool else 0.0
-                mt_ui = max(0.0, result.margin_top_cm + TRIM_UI)
-                mb_ui = max(0.0, result.margin_bottom_cm + TRIM_UI)
-                ml_ui = max(0.0, result.margin_left_cm + TRIM_UI)
-                mr_ui = max(0.0, result.margin_right_cm + TRIM_UI)
+
+        # —— 启动后台解析（立即返回，不阻塞 UI 重绘）——
+        if self._sketch_parse_worker is not None and self._sketch_parse_worker.isRunning():
+            # 取消前一次未完成的解析（避免旧结果覆盖新图）
+            try:
+                self._sketch_parse_worker.quit()
+                self._sketch_parse_worker.wait(500)
+            except Exception:
+                pass
+        worker = _SketchParseWorker(self._sketch_path, target_w, target_h, self)
+        worker.finished_ok.connect(self._on_sketch_parsed)
+        worker.finished_err.connect(self._on_sketch_parse_err)
+        self._sketch_parse_worker = worker
+        worker.start()
+
+    def _on_sketch_parsed(self, result):
+        """后台解析成功：回填边距 UI + 更新状态提示"""
+        self._sketch_parse_result = result
+        raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
+        raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
+        target_w = raw_w if raw_w > 0 else self._sp_w.value()
+        target_h = raw_h if raw_h > 0 else self._sp_h.value()
+        if result.success:
+            # —— 回填 4 个边距（核心需求）——
+            # [尺寸偏移修正 2026-08-15] 水池模式：画布已 +1cm 损耗，边距也需各 +1cm 偏移，
+            # 使内挖从草图值 inner 自动变为 inner-1cm（canvas+1 = margins+1 + inner-1 + margins+1）。
+            is_pool = getattr(self, '_pool_mode', False)
+            TRIM_UI = 1.0 if is_pool else 0.0
+            mt_ui = max(0.0, result.margin_top_cm + TRIM_UI)
+            mb_ui = max(0.0, result.margin_bottom_cm + TRIM_UI)
+            ml_ui = max(0.0, result.margin_left_cm + TRIM_UI)
+            mr_ui = max(0.0, result.margin_right_cm + TRIM_UI)
+            # 批量写值：避免多次 valueChanged 触发重复工作
+            self._sp_mt.blockSignals(True)
+            self._sp_mb.blockSignals(True)
+            self._sp_ml.blockSignals(True)
+            self._sp_mr.blockSignals(True)
+            try:
                 self._sp_mt.setValue(mt_ui)
                 self._sp_mb.setValue(mb_ui)
                 self._sp_ml.setValue(ml_ui)
@@ -849,23 +910,30 @@ class PropertyPanel(QWidget):
                         self._sp_w.setValue(result.outer_w_cm)
                     if result.outer_h_cm > 0:
                         self._sp_h.setValue(result.outer_h_cm)
-                # UI 显示偏移后的内挖推导值
-                canvas_w_ui = self._sp_w.value()
-                canvas_h_ui = self._sp_h.value()
-                inner_w_ui = max(0.1, canvas_w_ui - ml_ui - mr_ui)
-                inner_h_ui = max(0.1, canvas_h_ui - mt_ui - mb_ui)
-                self._set_pool_status(
-                    f"✅ 草图识别成功：外框参考 {target_w:.1f}×{target_h:.1f} cm，"
-                    f"画布 {canvas_w_ui:.1f}×{canvas_h_ui:.1f} cm（含1cm损耗），"
-                    f"内挖约 {inner_w_ui:.1f}×{inner_h_ui:.1f} cm，"
-                    f"边距 → 上{mt_ui:.1f}/下{mb_ui:.1f}/左{ml_ui:.1f}/右{mr_ui:.1f} cm"
-                    f"（已自动填入【内挖边距】栏，可微调）"
-                )
-            else:
-                self._set_pool_status(
-                    f"⚠️ 草图解析未成功：{result.message}（可手动在【内挖边距】栏输入）")
-        except Exception as e:
-            self._set_pool_status(f"草图解析异常：{e}")
+            finally:
+                self._sp_mt.blockSignals(False)
+                self._sp_mb.blockSignals(False)
+                self._sp_ml.blockSignals(False)
+                self._sp_mr.blockSignals(False)
+            # UI 显示偏移后的内挖推导值
+            canvas_w_ui = self._sp_w.value()
+            canvas_h_ui = self._sp_h.value()
+            inner_w_ui = max(0.1, canvas_w_ui - ml_ui - mr_ui)
+            inner_h_ui = max(0.1, canvas_h_ui - mt_ui - mb_ui)
+            self._set_pool_status(
+                f"✅ 草图识别成功：外框参考 {target_w:.1f}×{target_h:.1f} cm，"
+                f"画布 {canvas_w_ui:.1f}×{canvas_h_ui:.1f} cm（含1cm损耗），"
+                f"内挖约 {inner_w_ui:.1f}×{inner_h_ui:.1f} cm，"
+                f"边距 → 上{mt_ui:.1f}/下{mb_ui:.1f}/左{ml_ui:.1f}/右{mr_ui:.1f} cm"
+                f"（已自动填入【内挖边距】栏，可微调）"
+            )
+        else:
+            self._set_pool_status(
+                f"⚠️ 草图解析未成功：{result.message}（可手动在【内挖边距】栏输入）")
+
+    def _on_sketch_parse_err(self, err_msg: str):
+        """后台解析异常：更新状态提示，不阻塞已显示的草图"""
+        self._set_pool_status(f"草图解析异常：{err_msg}")
 
     def _pool_clear_sketch(self):
         self._sketch_path = ""
@@ -878,6 +946,8 @@ class PropertyPanel(QWidget):
             " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
         self._pool_sk_preview.set_has_image(False)
         self._set_pool_status("草图已清除，将按默认 10% 短边距推断")
+        # 通知主画布清除草图显示
+        self.sketch_loaded.emit(None)
 
     def _pool_view_sketch(self):
         """点击缩略图：打开大图查看对话框"""
