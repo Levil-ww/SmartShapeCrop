@@ -169,8 +169,9 @@ class MainWindow(QMainWindow):
         # 信号连接
         self.panel.design_changed.connect(self._on_design_changed)
         self.panel.save_requested.connect(self._on_save)
+        self.panel.sketch_loaded.connect(self._on_sketch_loaded)
         self.canvas.rendered.connect(self._on_rendered)
-        
+
         # 裁剪面板信号
         self.cropper.image_cropped.connect(self._on_cropped_image)
 
@@ -291,6 +292,23 @@ class MainWindow(QMainWindow):
 
     def _on_cropped_image(self, pil_img):
         """裁剪面板生成的图片：在画布上显示预览"""
+        self.canvas._full_image = pil_img
+        self.canvas._update_preview_pixmap()
+        self.canvas.update()
+        self.canvas.rendered.emit(pil_img)
+
+    def _on_sketch_loaded(self, pil_img):
+        """草图上传后直接显示在主画布上；传入 None 表示清除草图显示"""
+        if pil_img is None:
+            # 清除：若有设计则回到设计渲染，否则清空画布
+            if self.panel.design is not None:
+                self.canvas.set_design(self.panel.design)
+            else:
+                self.canvas._full_image = None
+                self.canvas._preview_pixmap = None
+                self.canvas.update()
+            return
+        # 直接在主画布显示草图（不悬浮在侧栏小缩略图里）
         self.canvas._full_image = pil_img
         self.canvas._update_preview_pixmap()
         self.canvas.update()
