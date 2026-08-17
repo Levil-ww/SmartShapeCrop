@@ -24916,3 +24916,433 @@
 [2026-08-17 11:46:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;40x160CM四个圆角半径是9cm'
 [2026-08-17 11:47:01] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;40x160CM四个圆角半径是9cm'
 [2026-08-17 11:47:03] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;40x160CM四个圆角半径是9cm'
+[2026-08-17 13:11:06] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 13:11:37] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古雨林;58x155.5CM裁剪有图余料一起发'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-蔓生花;40x120CM裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石1号;60x377CM裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-标准-30x50-暗纹蔷薇;30x50'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-复古花丛;58x263.5CM裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-繁花说;57x125CM剪裁有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-复古花丛;48X55CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;58X209CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-克罗印花;35X290CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-克罗印花;42X145CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-克罗印花;57X76CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-卢浮梦境;23.5X116CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-路易花坊;直径110.5CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玛利亚玫瑰;85X140CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;54X114CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玫瑰骑士;35X395CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玫瑰骑士;50X204CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-无尽夏;33.3X110CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-夏洛赫本;28.5X139CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-庄园秘境;38.5X125.5CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-安妮森林;50X88CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-安妮森林;63X85CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-奥斯汀;58.5X153CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-巴洛克之星;25X45CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-克罗印花;38.5X41CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-欧克;50X135CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-中古大花;50X68CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-中古雨林;23X75CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;直径68.5CM加急'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-都柏林狂欢;34X311CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-安妮森林;58.5x134CM裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-墨上花开;76x139.5cm裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-塞纳时光;86x138CM裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-50x100-慕枝;50x100'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;30.5x99.5cm左下角弧度12.5cm'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-色大理石2;58.5x127.5CM剪裁有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-柏川;40x60CM做图片上的小圆角出来'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-悠米;30x223CM做图片上的小圆角出来'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;59x148CM剪裁有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-素华牡丹;28x82CM裁剪有图'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-飞屋构想;80x140CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-佩斯;80x240CM'
+[2026-08-17 13:12:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-蔓生花;60x261.6CM裁剪有图需要裁剪'
+[2026-08-17 13:12:24] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到17个数字标注，去重后共11个唯一值=[2.0, 3.0, 4.0, 6.0, 10.0, 12.0, 38.0, 42.0, 53.0, 58.0, 120.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.000：total=53.00x6.00, inner=10.00x42.00, 边距上6.00/下12.00/左58.00/右53.00
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=0.500：total=120.00x58.00, inner=53.00x53.00, 边距上42.00/下42.00/左38.00/右12.00
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从11→41个(注入目标+数字混淆+30个)，重新跑暴力搜索
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[58.0, 120.0]，直接枚举 inner+4margin
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前102→截断后44，已补回OCR识别的大边距值: [12.0, 38.0, 42.0, 53.0]
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选27个（范围5~119）, margin候选44个（范围3~66），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [2.0, 3.0, 4.0, 6.0, 10.0, 12.0, 38.0, 42.0, 53.0, 58.0, 120.0]
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共27取20(含OCR7个)，margin共44取30(含OCR8个)
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试11个OCR值 [120.0, 58.0, 53.0, 42.0, 38.0, 12.0, 10.0, 6.0, 4.0, 3.0, 2.0] 直接构造8字段
+[2026-08-17 13:12:31] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道命中(sc=1.000, spatial=0.601)：total=120.0x58.0 inner=53.0x42.0 margin T/B/L/R=12.0/4.0/10.0/53.0
+[2026-08-17 13:13:51] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 15617 次，当前最佳 sc=1.020
+[2026-08-17 13:13:51] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：找到 sc=1.020 的高自洽解，跳过通用暴力搜索
+[2026-08-17 13:13:51] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D 黄金8字段无条件采用：total=120.00x58.00，inner=58.00x35.00，边距 上9.00/下12.00/左6.50/右53.00
+[2026-08-17 13:13:51] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！空间分配严重不自洽(sc=0.000)，采用数值分配(sc=1.020)
+[2026-08-17 13:13:51] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=120.00x58.00cm；内挖inner=58.00x35.00cm；边距上9.00/下12.00/左6.50/右53.00cm。几何自洽校验：水平(outer-inner=62.00 == ml+mr=59.50?False)；垂直(outer-inner=23.00 == mt+mb=21.00?False)
+[2026-08-17 13:13:51] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=120.0x58.0 inner=58.0x2.0 margin T/B/L/R=6.0/10.0/58.0/53.0
+[2026-08-17 13:14:21] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(120.0)-inner(58.0)=62.0 != margins(58.0+53.0=111.0)
+[2026-08-17 13:14:21] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(58.0)-inner(2.0)=56.0 != margins(6.0+10.0=16.0)
+[2026-08-17 13:14:21] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距和(111.00)与预期(62.00)偏差 79% 过大，重置水平边距
+[2026-08-17 13:14:21] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距和(16.00)与预期(56.00)偏差 71% 过大，重置垂直边距
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到17个数字标注，去重后共11个唯一值=[2.0, 3.0, 4.0, 6.0, 10.0, 12.0, 38.0, 42.0, 53.0, 58.0, 120.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.000：total=53.00x6.00, inner=10.00x42.00, 边距上6.00/下12.00/左58.00/右53.00
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=0.500：total=120.00x58.00, inner=53.00x53.00, 边距上42.00/下42.00/左38.00/右12.00
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从11→41个(注入目标+数字混淆+30个)，重新跑暴力搜索
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[58.0, 120.0]，直接枚举 inner+4margin
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前102→截断后44，已补回OCR识别的大边距值: [12.0, 38.0, 42.0, 53.0]
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选27个（范围5~119）, margin候选44个（范围3~66），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [2.0, 3.0, 4.0, 6.0, 10.0, 12.0, 38.0, 42.0, 53.0, 58.0, 120.0]
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共27取20(含OCR7个)，margin共44取30(含OCR8个)
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试11个OCR值 [120.0, 58.0, 53.0, 42.0, 38.0, 12.0, 10.0, 6.0, 4.0, 3.0, 2.0] 直接构造8字段
+[2026-08-17 13:14:48] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道命中(sc=1.000, spatial=0.601)：total=120.0x58.0 inner=53.0x42.0 margin T/B/L/R=12.0/4.0/10.0/53.0
+[2026-08-17 13:16:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 15617 次，当前最佳 sc=1.020
+[2026-08-17 13:16:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：找到 sc=1.020 的高自洽解，跳过通用暴力搜索
+[2026-08-17 13:16:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D 黄金8字段无条件采用：total=120.00x58.00，inner=58.00x35.00，边距 上9.00/下12.00/左6.50/右53.00
+[2026-08-17 13:16:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！空间分配严重不自洽(sc=0.000)，采用数值分配(sc=1.020)
+[2026-08-17 13:16:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=120.00x58.00cm；内挖inner=58.00x35.00cm；边距上9.00/下12.00/左6.50/右53.00cm。几何自洽校验：水平(outer-inner=62.00 == ml+mr=59.50?False)；垂直(outer-inner=23.00 == mt+mb=21.00?False)
+[2026-08-17 13:16:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=120.0x58.0 inner=58.0x2.0 margin T/B/L/R=6.0/10.0/58.0/53.0
+[2026-08-17 13:16:36] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(120.0)-inner(58.0)=62.0 != margins(58.0+53.0=111.0)
+[2026-08-17 13:16:36] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(58.0)-inner(2.0)=56.0 != margins(6.0+10.0=16.0)
+[2026-08-17 13:16:36] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距和(111.00)与预期(62.00)偏差 79% 过大，重置水平边距
+[2026-08-17 13:16:36] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距和(16.00)与预期(56.00)偏差 71% 过大，重置垂直边距
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;72x80CM剪裁有图'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;48x102CM剪裁有图'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-安妮森林;80x130CM剪裁有图'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-黑色大理石1号;48.3x60CM裁剪有图需要裁剪'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-青芜漫野;37.1x359.5CM裁剪有图'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-巴黎左岸;79.5x139.5CM剪裁有图'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: 'pu防水-标准-70x200-云飞;70X200'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-标准-140x160-蔓生花;140X160'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-中古雨林弧形;横版100X100CM'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石2;35X185CM'
+[2026-08-17 13:35:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-凡尔赛的梦;60X70CM'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;37.5X202.3CM'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;66X128CM'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-莫兰迪彩盘;45X45CM'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;37.5X153CM'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;50X277.5CM'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;85X140CM'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-路易花坊;53x312CM剪裁有图'
+[2026-08-17 13:35:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-30x80-青芜漫野;30x80'
+[2026-08-17 13:37:15] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:37:48] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-花幔;33x55.6cm裁剪有图'
+[2026-08-17 13:37:48] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石1号;40x180CM'
+[2026-08-17 13:37:51] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:37:51] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:37:56] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:37:59] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下圆角半径3.6cm'
+[2026-08-17 13:42:15] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:42:15] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:42:16] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下圆角半径3.6cm'
+[2026-08-17 13:48:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到17个数字标注，去重后共11个唯一值=[2.0, 3.0, 4.0, 6.0, 10.0, 12.0, 38.0, 42.0, 53.0, 58.0, 120.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.000：total=53.00x6.00, inner=10.00x42.00, 边距上6.00/下12.00/左58.00/右53.00
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=0.500：total=120.00x58.00, inner=53.00x53.00, 边距上42.00/下42.00/左38.00/右12.00
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从11→41个(注入目标+数字混淆+30个)，重新跑暴力搜索
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[58.0, 120.0]，直接枚举 inner+4margin
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前102→截断后44，已补回OCR识别的大边距值: [12.0, 38.0, 42.0, 53.0]
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选27个（范围5~119）, margin候选44个（范围3~66），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [2.0, 3.0, 4.0, 6.0, 10.0, 12.0, 38.0, 42.0, 53.0, 58.0, 120.0]
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共27取20(含OCR7个)，margin共44取30(含OCR8个)
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试11个OCR值 [120.0, 58.0, 53.0, 42.0, 38.0, 12.0, 10.0, 6.0, 4.0, 3.0, 2.0] 直接构造8字段
+[2026-08-17 13:49:26] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道命中(sc=1.000, spatial=0.601)：total=120.0x58.0 inner=53.0x42.0 margin T/B/L/R=12.0/4.0/10.0/53.0
+[2026-08-17 13:50:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 15617 次，当前最佳 sc=1.020
+[2026-08-17 13:50:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：找到 sc=1.020 的高自洽解，跳过通用暴力搜索
+[2026-08-17 13:50:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D 黄金8字段无条件采用：total=120.00x58.00，inner=58.00x35.00，边距 上9.00/下12.00/左6.50/右53.00
+[2026-08-17 13:50:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！空间分配严重不自洽(sc=0.000)，采用数值分配(sc=1.020)
+[2026-08-17 13:50:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=120.00x58.00cm；内挖inner=58.00x35.00cm；边距上9.00/下12.00/左6.50/右53.00cm。几何自洽校验：水平(outer-inner=62.00 == ml+mr=59.50?False)；垂直(outer-inner=23.00 == mt+mb=21.00?False)
+[2026-08-17 13:50:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=120.0x58.0 inner=58.0x2.0 margin T/B/L/R=6.0/10.0/58.0/53.0
+[2026-08-17 13:51:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(120.0)-inner(58.0)=62.0 != margins(58.0+53.0=111.0)
+[2026-08-17 13:51:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(58.0)-inner(2.0)=56.0 != margins(6.0+10.0=16.0)
+[2026-08-17 13:51:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距和(111.00)与预期(62.00)偏差 79% 过大，重置水平边距
+[2026-08-17 13:51:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距和(16.00)与预期(56.00)偏差 71% 过大，重置垂直边距
+[2026-08-17 13:51:52] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:52:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;15x176CM'
+[2026-08-17 13:52:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;15x207CM'
+[2026-08-17 13:52:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-安妮森林;57.8x240CM裁剪有图'
+[2026-08-17 13:52:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-戴安娜;60.5x139CM剪裁有图'
+[2026-08-17 13:52:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-中古雨林;64x170CM剪裁有图'
+[2026-08-17 13:52:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-塞纳时光;85x133CM剪裁有图'
+[2026-08-17 13:52:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:52:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:55:38] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:55:39] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:55:39] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 13:56:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 13:57:14] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-闲序·青釉;50x154CM'
+[2026-08-17 13:57:14] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-巴洛克之星;60x133.5CM'
+[2026-08-17 13:57:18] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 13:59:58] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 14:00:05] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下角右下是圆角半径3.6cm'
+[2026-08-17 14:01:24] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 14:01:25] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 14:01:25] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 14:05:06] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 14:05:06] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 14:05:07] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 14:06:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-安妮森林;60.5x133cm裁剪有图余料也发'
+[2026-08-17 14:06:56] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-安妮森林;60.5x133cm裁剪有图余料也发'
+[2026-08-17 14:07:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-灰色大理石3号;62x96CM'
+[2026-08-17 14:07:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-克罗印花;49.5x58.5CM'
+[2026-08-17 14:07:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-蔓生花;72x72CM'
+[2026-08-17 14:07:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-花漾之约;9.8x78cm'
+[2026-08-17 14:07:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-标准-50x80-中古大花;50x80cm'
+[2026-08-17 14:07:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-标准-50x80-森夜私语;50x80cm'
+[2026-08-17 14:07:43] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-安妮森林;60.5x133cm裁剪有图余料也发'
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到26个数字标注，去重后共19个唯一值=[3.0, 5.0, 6.0, 8.0, 10.0, 14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 60.5, 64.5, 69.5, 76.0, 132.0, 146.0, 194.0, 445.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.312：total=146.00x132.00, inner=0.00x0.00, 边距上6.00/下10.00/左44.50/右42.40
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=0.250：total=445.00x194.00, inner=146.00x146.00, 边距上132.00/下76.00/左76.00/右69.50
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从19→123个(注入目标+数字混淆+104个)，重新跑暴力搜索
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[60.5, 133.0]，直接枚举 inner+4margin
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前121→截断后47，已补回OCR识别的大边距值: [14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 64.5]
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选34个（范围5~132）, margin候选47个（范围3~73），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [3.0, 5.0, 6.0, 8.0, 10.0, 14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 60.5, 64.5, 69.5, 76.0, 132.0, 146.0, 194.0, 445.0]
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共34取20(含OCR13个)，margin共47取30(含OCR12个)
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D：黄金8字段快速尝试：total=133.0x60.5 inner=76.0x44.5 margin上/下/左/右=6.0/10.0/14.6/42.4 sc=1.000
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6+暴力搜索异常跳过（不影响其它分配逻辑）: name 'hits' is not defined
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：保留空间映射。数值分配(sc=0.250)优势不足(需>0.512)，保留空间映射(sc=0.312)
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=0.312)：外框total=146.00x132.00cm；内挖inner=0.00x0.00cm；边距上6.00/下10.00/左44.50/右42.40cm。几何自洽校验：水平(outer-inner=146.00 == ml+mr=86.90?False)；垂直(outer-inner=132.00 == mt+mb=16.00?False)
+[2026-08-17 14:08:03] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=146.0x132.0 inner=424.0x5.0 margin T/B/L/R=6.0/132.0/44.5/6.0
+[2026-08-17 14:08:40] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 边距异常: margin_bottom=133.0 超过外框边长132.0的60%，可能是OCR误读
+[2026-08-17 14:08:40] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(146.0)-inner(424.0)=-278.0 != margins(44.5+6.0=50.5)
+[2026-08-17 14:08:40] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(132.0)-inner(5.0)=127.0 != margins(6.0+133.0=139.0)
+[2026-08-17 14:08:40] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(485x332=1.46) 与目标宽高比(133.0x60.5=2.20) 差异过大(33.5%)，像素尺寸可能不可靠
+[2026-08-17 14:08:40] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 外框高 132.0 与目标 60.5 偏差过大(2.18)，使用目标值
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到26个数字标注，去重后共19个唯一值=[3.0, 5.0, 6.0, 8.0, 10.0, 14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 60.5, 64.5, 69.5, 76.0, 132.0, 146.0, 194.0, 445.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.312：total=146.00x132.00, inner=0.00x0.00, 边距上6.00/下10.00/左44.50/右42.40
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=0.250：total=445.00x194.00, inner=146.00x146.00, 边距上132.00/下76.00/左76.00/右69.50
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从19→123个(注入目标+数字混淆+104个)，重新跑暴力搜索
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[60.5, 133.0]，直接枚举 inner+4margin
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前121→截断后47，已补回OCR识别的大边距值: [14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 64.5]
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选34个（范围5~132）, margin候选47个（范围3~73），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [3.0, 5.0, 6.0, 8.0, 10.0, 14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 60.5, 64.5, 69.5, 76.0, 132.0, 146.0, 194.0, 445.0]
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共34取20(含OCR13个)，margin共47取30(含OCR12个)
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D：黄金8字段快速尝试：total=133.0x60.5 inner=76.0x44.5 margin上/下/左/右=6.0/10.0/14.6/42.4 sc=1.000
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6+暴力搜索异常跳过（不影响其它分配逻辑）: name 'hits' is not defined
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：保留空间映射。数值分配(sc=0.250)优势不足(需>0.512)，保留空间映射(sc=0.312)
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=0.312)：外框total=146.00x132.00cm；内挖inner=0.00x0.00cm；边距上6.00/下10.00/左44.50/右42.40cm。几何自洽校验：水平(outer-inner=146.00 == ml+mr=86.90?False)；垂直(outer-inner=132.00 == mt+mb=16.00?False)
+[2026-08-17 14:08:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=146.0x132.0 inner=424.0x5.0 margin T/B/L/R=6.0/132.0/44.5/6.0
+[2026-08-17 14:09:19] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 边距异常: margin_bottom=133.0 超过外框边长132.0的60%，可能是OCR误读
+[2026-08-17 14:09:19] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(146.0)-inner(424.0)=-278.0 != margins(44.5+6.0=50.5)
+[2026-08-17 14:09:19] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(132.0)-inner(5.0)=127.0 != margins(6.0+133.0=139.0)
+[2026-08-17 14:09:19] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(485x332=1.46) 与目标宽高比(133.0x60.5=2.20) 差异过大(33.5%)，像素尺寸可能不可靠
+[2026-08-17 14:09:19] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 外框高 132.0 与目标 60.5 偏差过大(2.18)，使用目标值
+[2026-08-17 14:12:20] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-奥斯汀;60x234cm裁剪有图余料也发'
+[2026-08-17 14:12:43] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-奥斯汀;60x234cm裁剪有图余料也发'
+[2026-08-17 14:12:43] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-奥斯汀;60x234cm裁剪有图余料也发'
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到26个数字标注，去重后共19个唯一值=[3.0, 5.0, 6.0, 8.0, 10.0, 14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 60.5, 64.5, 69.5, 76.0, 132.0, 146.0, 194.0, 445.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.312：total=146.00x132.00, inner=0.00x0.00, 边距上6.00/下10.00/左44.50/右42.40
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=0.250：total=445.00x194.00, inner=146.00x146.00, 边距上132.00/下76.00/左76.00/右69.50
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从19→124个(注入目标+数字混淆+105个)，重新跑暴力搜索
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[60.0, 234.0]，直接枚举 inner+4margin
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前151→截断后50，已补回OCR识别的大边距值: [14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 60.5, 64.5, 69.5, 76.0]
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选37个（范围5~232）, margin候选50个（范围3~129），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [3.0, 5.0, 6.0, 8.0, 10.0, 14.6, 42.4, 44.5, 45.0, 46.0, 48.0, 60.5, 64.5, 69.5, 76.0, 132.0, 146.0, 194.0, 445.0]
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共37取20(含OCR16个)，margin共50取30(含OCR15个)
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试19个OCR值 [445.0, 194.0, 146.0, 132.0, 76.0, 69.5, 64.5, 60.5, 48.0, 46.0, 45.0, 44.5, 42.4, 14.6, 10.0, 8.0, 6.0, 5.0, 3.0] 直接构造8字段
+[2026-08-17 14:13:43] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道命中(sc=1.000, spatial=0.602)：total=234.0x60.0 inner=146.0x45.0 margin T/B/L/R=6.0/10.0/46.0/42.4
+[2026-08-17 14:14:50] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 42432 次，当前最佳 sc=1.018
+[2026-08-17 14:14:50] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：找到 sc=1.018 的高自洽解，跳过通用暴力搜索
+[2026-08-17 14:14:50] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D 黄金8字段无条件采用：total=234.00x60.00，inner=146.00x42.40，边距 上4.50/下14.60/左10.00/右76.00
+[2026-08-17 14:14:50] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！数值分配得分(sc=1.018, 语义:True)显著高于空间(sc=0.312, 语义:True)，采用数值分配
+[2026-08-17 14:14:50] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=234.00x60.00cm；内挖inner=146.00x42.40cm；边距上4.50/下14.60/左10.00/右76.00cm。几何自洽校验：水平(outer-inner=88.00 == ml+mr=86.00?False)；垂直(outer-inner=17.60 == mt+mb=19.10?False)
+[2026-08-17 14:14:50] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=234.0x60.0 inner=424.0x5.0 margin T/B/L/R=6.0/132.0/44.5/6.0
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到10个数字标注，去重后共8个唯一值=[6.0, 36.0, 45.0, 65.0, 66.0, 76.0, 86.0, 106.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.000：total=86.00x36.00, inner=45.00x86.00, 边距上6.00/下65.00/左45.00/右0.00
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=1.000：total=234.00x60.00, inner=106.00x45.00, 边距上6.46/下8.54/左66.00/右76.00
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从8→47个(注入目标+数字混淆+39个)，重新跑暴力搜索
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[60.0, 234.0]，直接枚举 inner+4margin
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前118→截断后47，已补回OCR识别的大边距值: [36.0, 45.0, 65.0, 66.0, 76.0, 86.0, 106.0]
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选31个（范围5~232）, margin候选47个（范围3~129），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [6.0, 36.0, 45.0, 65.0, 66.0, 76.0, 86.0, 106.0]
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共31取20(含OCR8个)，margin共47取30(含OCR8个)
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试8个OCR值 [106.0, 86.0, 76.0, 66.0, 65.0, 45.0, 36.0, 6.0] 直接构造8字段
+[2026-08-17 14:15:13] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道命中(sc=1.000, spatial=0.614)：total=234.0x60.0 inner=86.0x6.0 margin T/B/L/R=6.0/45.0/76.0/86.0
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到10个数字标注，去重后共8个唯一值=[6.0, 36.0, 45.0, 65.0, 66.0, 76.0, 86.0, 106.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.000：total=86.00x36.00, inner=45.00x86.00, 边距上6.00/下65.00/左45.00/右0.00
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=1.000：total=234.00x60.00, inner=106.00x45.00, 边距上6.46/下8.54/左66.00/右76.00
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从8→47个(注入目标+数字混淆+39个)，重新跑暴力搜索
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[60.0, 234.0]，直接枚举 inner+4margin
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前118→截断后47，已补回OCR识别的大边距值: [36.0, 45.0, 65.0, 66.0, 76.0, 86.0, 106.0]
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选31个（范围5~232）, margin候选47个（范围3~129），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [6.0, 36.0, 45.0, 65.0, 66.0, 76.0, 86.0, 106.0]
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共31取20(含OCR8个)，margin共47取30(含OCR8个)
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试8个OCR值 [106.0, 86.0, 76.0, 66.0, 65.0, 45.0, 36.0, 6.0] 直接构造8字段
+[2026-08-17 14:15:22] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道命中(sc=1.000, spatial=0.614)：total=234.0x60.0 inner=86.0x6.0 margin T/B/L/R=6.0/45.0/76.0/86.0
+[2026-08-17 14:17:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 12472 次，当前最佳 sc=1.016
+[2026-08-17 14:17:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：找到 sc=1.016 的高自洽解，跳过通用暴力搜索
+[2026-08-17 14:17:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D 黄金8字段无条件采用：total=234.00x60.00，inner=43.00x43.50，边距 上5.00/下9.00/左86.00/右106.00
+[2026-08-17 14:17:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！空间分配严重不自洽(sc=0.000)，采用数值分配(sc=1.016)
+[2026-08-17 14:17:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=234.00x60.00cm；内挖inner=43.00x43.50cm；边距上5.00/下9.00/左86.00/右106.00cm。几何自洽校验：水平(outer-inner=191.00 == ml+mr=192.00?False)；垂直(outer-inner=16.50 == mt+mb=14.00?False)
+[2026-08-17 14:17:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=234.0x60.0 inner=86.0x6.0 margin T/B/L/R=6.0/86.0/6.0/112.0
+[2026-08-17 14:17:29] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 12472 次，当前最佳 sc=1.016
+[2026-08-17 14:17:29] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：找到 sc=1.016 的高自洽解，跳过通用暴力搜索
+[2026-08-17 14:17:29] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D 黄金8字段无条件采用：total=234.00x60.00，inner=43.00x43.50，边距 上5.00/下9.00/左86.00/右106.00
+[2026-08-17 14:17:29] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！空间分配严重不自洽(sc=0.000)，采用数值分配(sc=1.016)
+[2026-08-17 14:17:29] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=234.00x60.00cm；内挖inner=43.00x43.50cm；边距上5.00/下9.00/左86.00/右106.00cm。几何自洽校验：水平(outer-inner=191.00 == ml+mr=192.00?False)；垂直(outer-inner=16.50 == mt+mb=14.00?False)
+[2026-08-17 14:17:29] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=234.0x60.0 inner=86.0x6.0 margin T/B/L/R=6.0/86.0/6.0/112.0
+[2026-08-17 14:17:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 边距异常: margin_bottom=133.0 超过外框边长60.0的60%，可能是OCR误读
+[2026-08-17 14:17:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(234.0)-inner(424.0)=-190.0 != margins(44.5+6.0=50.5)
+[2026-08-17 14:17:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(60.0)-inner(5.0)=55.0 != margins(6.0+133.0=139.0)
+[2026-08-17 14:17:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(485x332=1.46) 与目标宽高比(234.0x60.0=3.90) 差异过大(62.5%)，像素尺寸可能不可靠
+[2026-08-17 14:17:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 内框宽 424.0 > 外框宽 234.0，修正为外框宽 - 最小边距
+[2026-08-17 14:17:42] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 下边距 49.0 > 外框高 80%(48.0)，修正
+[2026-08-17 14:18:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 边距异常: margin_bottom=234.0 超过外框边长60.0的60%，可能是OCR误读
+[2026-08-17 14:18:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(234.0)-inner(86.0)=148.0 != margins(6.0+112.0=118.0)
+[2026-08-17 14:18:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(60.0)-inner(6.0)=54.0 != margins(6.0+234.0=240.0)
+[2026-08-17 14:18:08] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(700x478=1.46) 与目标宽高比(234.0x60.0=3.90) 差异过大(62.5%)，像素尺寸可能不可靠
+[2026-08-17 14:18:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 边距异常: margin_bottom=234.0 超过外框边长60.0的60%，可能是OCR误读
+[2026-08-17 14:18:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(234.0)-inner(86.0)=148.0 != margins(6.0+112.0=118.0)
+[2026-08-17 14:18:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(60.0)-inner(6.0)=54.0 != margins(6.0+234.0=240.0)
+[2026-08-17 14:18:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(700x478=1.46) 与目标宽高比(234.0x60.0=3.90) 差异过大(62.5%)，像素尺寸可能不可靠
+[2026-08-17 14:40:59] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 14:41:02] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石2;35X195CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-黑色大理石1号;32X320CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;32X190CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花漾之约;40X215CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花野;31.5X188.6CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-卢浮梦境;66X94CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玛利亚玫瑰;53.5X98CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;58.2X94.1CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玫瑰骑士;43X160CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-无尽夏;60X118CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-夏洛赫本;39X64CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;35X163CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;43.2X166CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-庄园秘境;33.5X131.7CM'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-复古花丛;45x100cm已确认效果图'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-复古花丛;45x170cm已确认效果图'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-裁剪有图-复古花丛;85x148cm剪裁有图已确认效果图'
+[2026-08-17 14:42:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-裁剪有图-中古花园方形;87x136CM剪裁有图'
+[2026-08-17 14:42:56] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石2;35X195CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-黑色大理石1号;32X320CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;32X190CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花漾之约;40X215CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花野;31.5X188.6CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-卢浮梦境;66X94CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玛利亚玫瑰;53.5X98CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;58.2X94.1CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玫瑰骑士;43X160CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-无尽夏;60X118CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-夏洛赫本;39X64CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;35X163CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;43.2X166CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-庄园秘境;33.5X131.7CM'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-复古花丛;45x100cm已确认效果图'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-复古花丛;45x170cm已确认效果图'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-裁剪有图-复古花丛;85x148cm剪裁有图已确认效果图'
+[2026-08-17 14:43:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-裁剪有图-中古花园方形;87x136CM剪裁有图'
+[2026-08-17 14:45:12] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-安妮森林;100x111.5CM裁剪有图'
+[2026-08-17 14:46:16] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 14:46:17] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 14:46:17] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 14:53:54] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;50x50CM四个角都是半径3cm的圆角'
+[2026-08-17 14:53:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;50x50CM四个角都是半径3cm的圆角'
+[2026-08-17 14:53:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;50x50CM四个角都是半径3cm的圆角'
+[2026-08-17 15:01:05] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-戴安娜;120x300.2cm裁剪有图已确认效果图'
+[2026-08-17 15:01:05] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-花漾之约;60.5x91.5cm裁剪如图'
+[2026-08-17 15:01:05] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-花漾之约;63.5x79.5cm裁剪如图'
+[2026-08-17 15:01:05] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-素华牡丹;60x90CM剪裁有图'
+[2026-08-17 15:01:49] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 15:01:50] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 15:01:50] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35x160CM左下右下是圆角半径3.6cm'
+[2026-08-17 15:03:52] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;60x70CM四个角都是半径3cm的圆角'
+[2026-08-17 15:03:52] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;60x70CM四个角都是半径3cm的圆角'
+[2026-08-17 15:03:53] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;60x70CM四个角都是半径3cm的圆角'
+[2026-08-17 15:13:38] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 15:14:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-素华牡丹;60x190CM剪裁有图'
+[2026-08-17 15:14:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;59x180CM剪裁有图'
+[2026-08-17 15:14:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-35x200-塞纳时光;35X200'
+[2026-08-17 15:14:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-80x140-花满金陵;80X140'
+[2026-08-17 15:14:38] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 15:14:38] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 15:14:57] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都半径2cm的圆角'
+[2026-08-17 15:16:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 15:16:33] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 15:16:33] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;42x80CM四个角都是半径2cm的圆角'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-90x140-白色大理石6;90X140'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-直径50-素华牡丹;直径50'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;37.8X81.8CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-巴洛克之星;56X117CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-戴安娜;25.2X130CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-戴安娜;28.5X205.5CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-戴安娜;30.5X118CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-戴安娜;40X192.5CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-复古花丛;40X45.5CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-复古花丛;41X110CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花间晴;30X228CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花间晴;48.4X276.5CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花间晴;48.7X83CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;16X100CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;32X44.5CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;35.2X242CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花漾之约;22X72CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;34X122CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;43.5X105.5CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;55X135CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玫瑰骑士;43.5X170CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-雾蓝花信;38X80CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-雾蓝花信;38X98CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-雾蓝花信;38X175CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-织光造物;33X210CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;38X46.3CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;38X94.7CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-安妮森林;30X140CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-巴洛克之星;50X109CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-白色大理石1;45X90CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-花满金陵;12X86CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-花满金陵;54X104CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-花满金陵;方形竖版43X47CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-旧枝漫语;37X50CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-悠米;24.5X38.5CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-中古大花;33X172CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-中古雨林;38X117CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-中古雨林;58.5X98CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;57X73CM'
+[2026-08-17 15:22:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-中古大花;43x339CM'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-巴洛克之星;123x129CM裁剪有图'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;17x208cm'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;17x176cm'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-塞纳花斑狗;80x160cm'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-青黛花卷;41.1x217CM裁剪有图'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;58.5x251cm去掉白边和英文只保留棕色边和绿色部分'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;59x273cm去掉白边和英文只保留棕色边和绿色部分'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-中古大花;26x366CM裁剪图余料一起发'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古雨林;58.5x272CM剪裁有图'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古雨林;58.5x253CM剪裁有图'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-裁剪有图-哥特玫瑰方形;140x141cm裁剪有图已确认效果图'
+[2026-08-17 16:06:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;56x220.5CM剪裁有图'
+[2026-08-17 16:07:08] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;80x130CM四个角都是半径5cm的圆角'
+[2026-08-17 16:07:10] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;80x130CM四个角都是半径5cm的圆角'
+[2026-08-17 16:07:10] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;80x130CM四个角都是半径5cm的圆角'
+[2026-08-17 16:09:48] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 16:09:50] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 16:10:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;58x120cm裁剪有图'
+[2026-08-17 16:15:36] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-夏洛赫本;60x182CM剪裁有图'
+[2026-08-17 16:19:28] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-安妮森林;60.5x133cm裁剪有图余料也发'
+[2026-08-17 16:19:38] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-安妮森林;60.5x133cm裁剪有图余料也发'
+[2026-08-17 16:20:00] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-安妮森林;60.5x133cm裁剪有图余料也发'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-夏洛赫本;60x295CM剪裁有图'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '防辣椒油-标准-75x140-夜兰图尔;75X140'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-好多熊熊;70X120CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-克罗印花;45X96CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-克罗印花;45X211CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花间晴;38X212CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;35X472CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;40X236CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;58X210CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花漾之约;40X99.6CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花漾之约;40X99.6CM_1'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-简织;32X189CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-克罗印花;39X130CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-卢浮梦境;32X155CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;33.5X242CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;25.5X142CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古雨林;35X374CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-标准-40x50-素华牡丹;40X50'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-安妮森林;58X180CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-奥斯汀;38X88CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-白色大理石2;60X128CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-路易花坊;49X76CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-路易花坊;60X85CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-路易花坊;60X155CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-尼姆八格;60X231CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-轻云蔽月;26X80CM'
+[2026-08-17 16:26:04] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-标准-直径100-灰色格调H;直径100'
+[2026-08-17 16:28:08] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;80x130CM四个角都是半径5cm的圆角'
+[2026-08-17 16:28:09] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;80x130CM四个角都是半径5cm的圆角'
+[2026-08-17 16:28:09] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;80x130CM四个角都是半径5cm的圆角'

@@ -195,3 +195,182 @@ class TestMaskConsistency:
 
         # 两者应完全一致
         assert np.array_equal(arr_geo, arr_uni)
+
+
+class TestCornerContentProtection:
+    """[Fix 2026-08-17] 圆角裁剪内容区保护测试"""
+
+    def test_protect_content_when_radius_le_2x_border_depth(self):
+        """当圆角半径 <= 2×边框厚度时，内部图案应保持直角完整"""
+        from core.image_cropper import apply_border_only_corners, _get_border_layers_robust
+
+        # 创建测试图像：多层边框 + 内部花纹
+        w, h = 1000, 1200
+        img = Image.new('RGB', (w, h), (255, 255, 255))
+        arr = np.array(img)
+
+        # 外层黑色边框 80px
+        arr[0:80, :] = (0, 0, 0)
+        arr[-80:, :] = (0, 0, 0)
+        arr[:, 0:80] = (0, 0, 0)
+        arr[:, -80:] = (0, 0, 0)
+
+        # 装饰边框 30px
+        arr[80:110, :] = (200, 50, 50)
+        arr[-110:-80, :] = (200, 50, 50)
+        arr[:, 80:110] = (200, 50, 50)
+        arr[:, -110:-80] = (200, 50, 50)
+
+        # 内部花纹矩形（蓝色，应保持完整）
+        arr[200:300, 200:300] = (0, 100, 200)
+
+        img = Image.fromarray(arr, 'RGB')
+        bg_color = (255, 255, 255)
+        border_layers = _get_border_layers_robust(img, bg_color)
+        raw_depth = sum(t for _, t in border_layers) if border_layers else 0
+
+        # r=3cm at 150dpi = 177px, raw_depth should be ~111px
+        # r <= 2*raw_depth: 177 <= 222 → True, protection should trigger
+        dpi = 150
+        corners = {'tl': 0, 'tr': 0, 'bl': 3.0, 'br': 0}
+        result = apply_border_only_corners(img, corners, dpi=dpi, bg_color=bg_color)
+
+        result_arr = np.array(result)
+
+        # 验证内部花纹完整（所有像素蓝色）
+        inner_region = result_arr[200:300, 200:300]
+        blue_pixels = (inner_region[:, :, 2] > 150).sum()
+        total_pixels = 100 * 100
+        assert blue_pixels == total_pixels, \
+            f"内部花纹不完整: {blue_pixels}/{total_pixels} 像素为蓝色"
+
+    def test_border_corner_correctly_carved_in_protection_mode(self):
+        """保护模式下，边框区域的角应被正确裁切"""
+        from core.image_cropper import apply_border_only_corners, _get_border_layers_robust
+
+        w, h = 1000, 1200
+        img = Image.new('RGB', (w, h), (255, 255, 255))
+        arr = np.array(img)
+
+        # 边框
+        arr[0:80, :] = (0, 0, 0)
+        arr[-80:, :] = (0, 0, 0)
+        arr[:, 0:80] = (0, 0, 0)
+        arr[:, -80:] = (0, 0, 0)
+
+        # 内部花纹
+        arr[300:400, 300:400] = (0, 200, 100)
+
+        img = Image.fromarray(arr, 'RGB')
+        bg_color = (255, 255, 255)
+
+        dpi = 150
+        corners = {'tl': 0, 'tr': 0, 'bl': 3.0, 'br': 0}
+        result = apply_border_only_corners(img, corners, dpi=dpi, bg_color=bg_color)
+
+        result_arr = np.array(result)
+
+        # 左下角顶点应为背景色（被裁切）
+        corner_pixel = result_arr[h - 1, 0]
+        assert tuple(corner_pixel) == (255, 255, 255), \
+            f"左下角顶点应为背景色，实际为: {tuple(corner_pixel)}"
+
+        # 检查圆角区域（左下角）
+        corner_region = result_arr[h - 200:h, 0:200]
+        bg_in_corner = np.all(corner_region == np.array(bg_color), axis=2).sum()
+        # 应有相当数量的背景像素（圆角裁切区域）
+        assert bg_in_corner > 100, \
+            f"左下角裁切区域背景像素过少: {bg_in_corner}"
+
+    def test_full_corner_arc_preserved_in_protection_mode(self):
+        """[Fix 2026-08-17] 保护模式下应保留完整的圆角弧线，而不是只裁切边框区域"""
+        from core.image_cropper import apply_border_only_corners, _get_border_layers_robust
+
+        w, h = 1200, 600
+        img = Image.new('RGB', (w, h), (255, 255, 255))
+        arr = np.array(img)
+
+        # 多层边框
+        arr[0:50, :] = (0, 0, 0)
+        arr[-50:, :] = (0, 0, 0)
+        arr[:, 0:50] = (0, 0, 0)
+        arr[:, -50:] = (0, 0, 0)
+
+        arr[50:70, :] = (180, 180, 180)
+        arr[-70:-50, :] = (180, 180, 180)
+        arr[:, 50:70] = (180, 180, 180)
+        arr[:, -70:-50] = (180, 180, 180)
+
+        # 内部花纹
+        arr[200:300, 200:400] = (100, 50, 150)
+
+        img = Image.fromarray(arr, 'RGB')
+        bg_color = (255, 255, 255)
+
+        border_layers = _get_border_layers_robust(img, bg_color)
+        raw_depth = sum(t for _, t in border_layers) if border_layers else 0
+
+        # 使用较大的圆角（4cm ≈ 236px），大于边框厚度
+        dpi = 150
+        r_cm = 4.0
+        corners = {'tl': r_cm, 'tr': r_cm, 'bl': r_cm, 'br': r_cm}
+        result = apply_border_only_corners(img, corners, dpi=dpi, bg_color=bg_color)
+
+        result_arr = np.array(result)
+
+        # 验证内部花纹完整
+        inner_region = result_arr[200:300, 200:400]
+        purple_pixels = (inner_region[:, :, 0] > 80) & (inner_region[:, :, 2] > 130)
+        purple_count = purple_pixels.sum()
+        assert purple_count == 100 * 200, \
+            f"内部花纹不完整: {purple_count}/{100*200}"
+
+        # 验证圆角区域有足够的背景像素（完整的圆角效果）
+        # 左下角
+        bl_region = result_arr[h - 250:h, 0:250]
+        bg_bl = np.all(bl_region == np.array(bg_color), axis=2).sum()
+        # 应有大量背景像素（完整的圆角弧线）
+        assert bg_bl > 5000, \
+            f"左下角圆角区域背景像素过少: {bg_bl}"
+
+        # 右下角
+        br_region = result_arr[h - 250:h, w - 250:w]
+        bg_br = np.all(br_region == np.array(bg_color), axis=2).sum()
+        assert bg_br > 5000, \
+            f"右下角圆角区域背景像素过少: {bg_br}"
+
+    def test_unrequested_corners_unchanged(self):
+        """验证未请求的角保持不变"""
+        from core.image_cropper import apply_border_only_corners
+
+        w, h = 1000, 800
+        img = Image.new('RGB', (w, h), (255, 255, 255))
+        arr = np.array(img)
+
+        # 边框
+        arr[0:60, :] = (0, 0, 0)
+        arr[-60:, :] = (0, 0, 0)
+        arr[:, 0:60] = (0, 0, 0)
+        arr[:, -60:] = (0, 0, 0)
+
+        img = Image.fromarray(arr, 'RGB')
+        bg_color = (255, 255, 255)
+
+        dpi = 150
+        # 只设置左下角和右下角
+        corners = {'tl': 0, 'tr': 0, 'bl': 3.0, 'br': 3.0}
+        result = apply_border_only_corners(img, corners, dpi=dpi, bg_color=bg_color)
+
+        result_arr = np.array(result)
+
+        # 左上角不应被裁切
+        tl_region = result_arr[0:50, 0:50]
+        bg_tl = np.all(tl_region == np.array(bg_color), axis=2).sum()
+        assert bg_tl == 0, \
+            f"左上角不应被裁切，但有 {bg_tl} 个背景像素"
+
+        # 右上角不应被裁切
+        tr_region = result_arr[0:50, w - 50:w]
+        bg_tr = np.all(tr_region == np.array(bg_color), axis=2).sum()
+        assert bg_tr == 0, \
+            f"右上角不应被裁切，但有 {bg_tr} 个背景像素"

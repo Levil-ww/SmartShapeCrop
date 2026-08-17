@@ -167,10 +167,13 @@ class PoolRenderWorker(QThread):
                     self.progress.emit(60, "解析尺寸草图（几何检测 + OCR 识别）…")
                     try:
                         from core.pool_designer import parse_sketch
+                        def _sketch_progress(pct, msg):
+                            self.progress.emit(int(60 + pct * 0.25), msg)
                         sketch_result = parse_sketch(
                             self._sketch,
                             target_outer_w_cm=file_w,   # 外框参考宽（横边，无损耗）
                             target_outer_h_cm=file_h,   # 外框参考高（竖边，无损耗）
+                            progress_callback=_sketch_progress,
                         )
                         self._log(f"草图解析：success={sketch_result.success}")
                         self._log(f"  {sketch_result.message}")

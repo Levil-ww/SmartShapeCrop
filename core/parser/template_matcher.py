@@ -775,7 +775,18 @@ class TemplateMatcher:
         t_ratio = (max(t_w, t_h) / min(t_w, t_h)) if has_size else None
         force_pattern = bool(tgt.material and tgt_pattern)
 
+        # 形状关键词分类（与 name_parser.SHAPE_SUFFIXES 对齐）
+        _SHAPE_KEYWORDS_DIRECTION = {'横版', '竖版', '横', '竖'}
+        _SHAPE_KEYWORDS_SHAPE = {'弧形', '圆形', '方形', '弧', '圆', '方', '裁剪有图'}
+
+        tgt_shape_kw = set(tgt.shape_keywords or [])
+        tgt_shape_only = tgt_shape_kw & _SHAPE_KEYWORDS_SHAPE
+        self._log(
+            f"🔍 目标形状关键词: 全部={tgt_shape_kw}, 形状类={tgt_shape_only}"
+        )
+
         scored_count = 0
+        shape_rejected_count = 0
         for k in candidate_keys:
             e = self._cache.get(k)
             if e is None:
@@ -794,6 +805,24 @@ class TemplateMatcher:
                 if not tpl_pat:
                     continue
                 if tgt_pattern != tpl_pat and not (tgt_pattern in tpl_pat or tpl_pat in tgt_pattern):
+                    continue
+
+            # [Fix 形状关键词严格匹配 2026-08-17]
+            # 方向关键词(横版/竖版)允许匹配，形状关键词(弧形/圆形/方形)必须严格匹配
+            # 规则：模板含有的形状关键词，目标必须也含有；否则拒绝匹配
+            tpl_parsed = e.parsed
+            if tpl_parsed:
+                tpl_shape_kw = set(tpl_parsed.shape_keywords or [])
+                tpl_shape_only = tpl_shape_kw & _SHAPE_KEYWORDS_SHAPE
+                # 提取模板独有形状关键词（不在目标中）
+                tpl_exclusive_shape = tpl_shape_only - tgt_shape_only
+                if tpl_exclusive_shape:
+                    if self.enable_match_debug_log:
+                        self._log(
+                            f"   ❌ 形状排斥：模板 [{e.filename}] "
+                            f"含形状关键词 {tpl_exclusive_shape}，目标不含"
+                        )
+                    shape_rejected_count += 1
                     continue
 
             score, details = self._compute_match_score_fast(

@@ -128,3 +128,66 @@ class TestScoringDetails:
             # 验证各自匹配到正确的模板
             assert abs(best_close.parsed.width_cm - 41.2) < 0.1 or abs(best_close.parsed.height_cm - 54.0) < 0.1
             assert abs(best_perfect.parsed.width_cm - 41.0) < 0.1 or abs(best_perfect.parsed.height_cm - 55.0) < 0.1
+
+
+class TestShapeKeywordMatching:
+    """[Fix 2026-08-17] 形状关键词严格匹配测试"""
+
+    @pytest.fixture
+    def shape_template_dir(self, tmp_path):
+        """创建含不同形状关键词的模板库"""
+        templates = [
+            # 模板: 含弧形关键词（形状不匹配）
+            ("镜面皮革-定制-定制尺寸-素锦弧形;横版90x160cm.jpg", (500, 900)),
+            # 模板: 正确的素锦（形状匹配）
+            ("双面格-定制-定制尺寸-素锦;横版90x160cm.jpg", (500, 900)),
+            # 模板: 含圆形关键词
+            ("双面格-定制-定制尺寸-素锦圆形;横版90x160cm.jpg", (500, 900)),
+        ]
+        for name, size in templates:
+            img = Image.new('RGB', size, (255, 255, 255))
+            img.save(tmp_path / name, 'JPEG', quality=80)
+        return str(tmp_path)
+
+    def test_target_without_shape_keyword_rejects_arc_template(self, shape_template_dir):
+        """目标无弧形关键词时，不应匹配含弧形的模板"""
+        m = TemplateMatcher()
+        m.set_template_dir(shape_template_dir)
+        target = "双面格-定制-定制尺寸-素锦;90x160CM4个圆角半径4.5厘米"
+        best, _ = m.find_best_match(target)
+        assert best is not None
+        assert '弧形' not in best.filename, \
+            f"目标无弧形关键词，不应匹配含弧形的模板: {best.filename}"
+
+    def test_target_without_shape_keyword_rejects_circle_template(self, shape_template_dir):
+        """目标无圆形关键词时，不应匹配含圆形的模板"""
+        m = TemplateMatcher()
+        m.set_template_dir(shape_template_dir)
+        target = "双面格-定制-定制尺寸-素锦;90x160CM4个圆角半径4.5厘米"
+        best, _ = m.find_best_match(target)
+        assert best is not None
+        assert '圆形' not in best.filename, \
+            f"目标无圆形关键词，不应匹配含圆形的模板: {best.filename}"
+
+    def test_direction_keyword_allowed_with_shape_mismatch(self, tmp_path):
+        """方向关键词（横版/竖版）不应被过滤，只有形状关键词才需要严格匹配"""
+        templates = [
+            # 横版 + 弧形（方向正确但形状不正确）
+            ("素材-素锦弧形;横版90x160cm.jpg", (500, 900)),
+            # 横版 + 正确形状
+            ("素材-素锦;横版90x160cm.jpg", (500, 900)),
+            # 竖版 + 正确形状（方向不同但形状正确）
+            ("素材-素锦;竖版160x90cm.jpg", (900, 500)),
+        ]
+        for name, size in templates:
+            img = Image.new('RGB', size, (255, 255, 255))
+            img.save(tmp_path / name, 'JPEG', quality=80)
+
+        m = TemplateMatcher()
+        m.set_template_dir(str(tmp_path))
+        target = "素材-素锦;90x160CM"
+        best, _ = m.find_best_match(target)
+        assert best is not None
+        # 不应匹配含弧形的模板
+        assert '弧形' not in best.filename, \
+            f"方向关键词不应替代形状匹配: {best.filename}"

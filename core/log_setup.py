@@ -61,7 +61,7 @@ def setup_logging(level: str | int | None = None, log_file: str | Path | None = 
 
     # 确定日志级别
     if level is None:
-        level = os.environ.get('LOG_LEVEL', 'WARNING')
+        level = os.environ.get('LOG_LEVEL', 'INFO')
     if isinstance(level, str):
         level = level.upper()
         level = getattr(logging, level, logging.WARNING)
