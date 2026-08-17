@@ -3142,10 +3142,421 @@ def _validate_and_fix_margins(result):
     return result
 
 
+# ---------------------------------------------------------------------------
+# 方向标签识别（上/下/左/右 + 数值 → 直接边距赋值）
+# ---------------------------------------------------------------------------
+# 当草图中标注了方向标签（如"上6"、"下9"、"左36"、"右112"）时，
+# 通过检测方向字符并关联附近的数字，直接确定4个边距值。
+# 这比纯空间位置分配更准确，尤其适用于非对称设计（左右/上下边距差异大）。
+
+_DIR_CHAR_MAP = {
+    '上': 'margin_top',
+    '下': 'margin_bottom',
+    '左': 'margin_left',
+    '右': 'margin_right',
+}
+
+# Windows 中文字体路径候选（用于模板匹配渲染）
+_CN_FONT_CANDIDATES = [
+    r'C:\Windows\Fonts\simhei.ttf',   # 黑体
+    r'C:\Windows\Fonts\msyh.ttc',     # 微软雅黑
+    r'C:\Windows\Fonts\simsun.ttc',   # 宋体
+    r'C:\Windows\Fonts\simfang.ttf',  # 仿宋
+    r'C:\Windows\Fonts\Deng.ttf',     # 等线
+]
+
+
+def _detect_direction_labels_by_ocr(cv2, gray_img, tesseract, outer_rect):
+    """使用 Tesseract（chi_sim+eng）检测方向标签 上/下/左/右 及其位置。
+
+    Returns:
+        list of (direction_char, margin_field, x_center, y_center, confidence, value_or_None)
+    """
+    from PIL import Image as PILImage
+
+    results = []
+
+    # 检查 chi_sim 语言包是否可用
+    try:
+        available_langs = tesseract.get_languages()
+    except Exception:
+        available_langs = ['eng']
+
+    lang = 'chi_sim+eng' if 'chi_sim' in available_langs else 'eng'
+    if 'chi_sim' not in available_langs:
+        logger.warning(f"[sketch_parser] Tesseract 方向标签检测：chi_sim 未安装，"
+                       f"仅用 eng 语言，中文方向字符识别率会降低。"
+                       f"已安装语言: {available_langs}")
+
+    ox, oy, ow, oh = outer_rect
+    h_img, w_img = gray_img.shape[:2]
+
+    # 裁剪 outer_rect 子图（与主 OCR 流程一致）
+    _ox = max(0, int(ox)); _oy = max(0, int(oy))
+    _ox2 = min(w_img, int(ox + ow)); _oy2 = min(h_img, int(oy + oh))
+    sub = gray_img[_oy:_oy2, _ox:_ox2]
+    if sub.size == 0 or sub.shape[0] < 5 or sub.shape[1] < 5:
+        return results
+
+    for scale in [2.0, 3.0]:
+        scaled = cv2.resize(sub, None, fx=scale, fy=scale,
+                            interpolation=cv2.INTER_CUBIC)
+
+        # 预处理变体
+        variants = [('orig', scaled)]
+        try:
+            _, otsu = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            variants.append(('otsu', otsu))
+        except Exception:
+            pass
+
+        for _vname, variant in variants:
+            pil_img = PILImage.fromarray(variant)
+            for psm in [11, 6, 3]:  # sparse, block, auto
+                config = f'--oem 3 --psm {psm}'
+                try:
+                    data = tesseract.image_to_data(
+                        pil_img, config=config, lang=lang,
+                        output_type=tesseract.Output.DICT,
+                    )
+                except Exception:
+                    continue
+
+                if not data or 'text' not in data:
+                    continue
+
+                n = len(data.get('text', []))
+                for i in range(n):
+                    text = str(data['text'][i]).strip()
+                    if not text:
+                        continue
+
+                    # 检查文本中是否包含方向字符
+                    for dchar, mfield in _DIR_CHAR_MAP.items():
+                        if dchar not in text:
+                            continue
+
+                        try:
+                            conf = int(data.get('conf', [50] * n)[i])
+                        except Exception:
+                            conf = 50
+                        if conf < -1:
+                            continue
+
+                        try:
+                            x_left = int(data.get('left', [0] * n)[i]) / scale
+                            y_top = int(data.get('top', [0] * n)[i]) / scale
+                            ww = int(data.get('width', [0] * n)[i]) / scale
+                            hh = int(data.get('height', [0] * n)[i]) / scale
+                        except Exception:
+                            continue
+
+                        x_c = x_left + ww / 2 + _ox  # 映射回原图坐标
+                        y_c = y_top + hh / 2 + _oy
+
+                        # 尝试从同一 token 中提取数字（如 "上6"、"上:6"）
+                        after = text[text.index(dchar) + 1:]
+                        num_match = re.search(r'(\d+\.?\d*)', after)
+                        if num_match:
+                            try:
+                                val = float(num_match.group(1))
+                                if 0.5 <= val <= 500:
+                                    results.append((dchar, mfield, x_c, y_c, conf, val))
+                            except ValueError:
+                                pass
+                        else:
+                            # 方向字符单独出现，数字可能在相邻 token 中
+                            results.append((dchar, mfield, x_c, y_c, conf, None))
+
+    # 去重：同一方向字段只保留最高置信度且带数值的条目
+    best = {}
+    for dchar, mfield, xc, yc, conf, val in results:
+        prev = best.get(mfield)
+        if prev is None:
+            best[mfield] = (dchar, mfield, xc, yc, conf, val)
+        elif val is not None and (prev[5] is None or conf > prev[4]):
+            best[mfield] = (dchar, mfield, xc, yc, conf, val)
+        elif val is None and prev[5] is None and conf > prev[4]:
+            best[mfield] = (dchar, mfield, xc, yc, conf, val)
+
+    return list(best.values())
+
+
+def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=None):
+    """使用模板匹配检测方向标签 上/下/左/右。
+
+    支持黑色/红色/彩色文字：
+    - 若提供 color_img，先尝试用红色 HSV mask 提取红色文字做匹配
+    - 再回退到灰度图+黑模板匹配（处理黑色文字）
+    - 对每个检测结果做空间合理性校验（位置必须在对应方向的边距区域）
+
+    Returns:
+        list of (direction_char, margin_field, x_center, y_center, confidence, value_or_None)
+    """
+    from PIL import Image as PILImage, ImageDraw, ImageFont
+
+    results = []
+
+    # 查找可用中文字体
+    font_path = None
+    for fp in _CN_FONT_CANDIDATES:
+        if os.path.isfile(fp):
+            font_path = fp
+            break
+    if font_path is None:
+        return results
+
+    ox, oy, ow, oh = outer_rect
+    h_img, w_img = gray_img.shape[:2]
+
+    # 裁剪 outer_rect 子图
+    _ox = max(0, int(ox)); _oy = max(0, int(oy))
+    _ox2 = min(w_img, int(ox + ow)); _oy2 = min(h_img, int(oy + oh))
+    sub = gray_img[_oy:_oy2, _ox:_ox2]
+    if sub.size == 0 or sub.shape[0] < 5 or sub.shape[1] < 5:
+        return results
+
+    # ---- 构建多通道候选图（用于匹配不同颜色的文字）----
+    candidate_maps = [("gray", sub)]
+
+    # 如果有彩色图，尝试提取红色通道作为额外匹配候选
+    if color_img is not None and len(color_img.shape) == 3:
+        try:
+            _sub_color = color_img[_oy:_oy2, _ox:_ox2]
+            # 方法A：红色 HSV mask（将红色文字变白色，背景变黑色 → 反向用于 TM_CCOEFF_NORMED）
+            hsv = cv2.cvtColor(_sub_color, cv2.COLOR_BGR2HSV)
+            mask_r1 = cv2.inRange(hsv, np.array([0, 30, 30]), np.array([15, 255, 255]))
+            mask_r2 = cv2.inRange(hsv, np.array([165, 30, 30]), np.array([180, 255, 255]))
+            mask_red = cv2.bitwise_or(mask_r1, mask_r2)
+            if cv2.countNonZero(mask_red) >= 10:
+                # 膨胀 1 次，连接可能的断裂笔画
+                _k = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+                mask_red = cv2.dilate(mask_red, _k, iterations=1)
+                # 反转：红色文字区域=255，其他=0，再反相为 黑底白字（模板渲染为白底黑字以匹配）
+                candidate_maps.append(("red_mask", cv2.bitwise_not(mask_red)))
+            # 方法B：R 通道直接作为匹配目标
+            r_ch = _sub_color[:, :, 2]
+            candidate_maps.append(("r_channel", r_ch))
+        except Exception:
+            pass
+
+    # 估计文字大小范围（基于外框尺寸，大幅放宽范围）
+    min_side = min(ow, oh)
+    # 更宽的字号范围：0.015 ~ 0.15，覆盖从极小到极大的各种草图尺寸
+    # 上限 0.15 可覆盖"文字占外框短边 15%"的大字号场景
+    font_sizes_raw = [0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12, 0.15]
+    font_sizes = sorted(set(max(10, int(min_side * f)) for f in font_sizes_raw))
+
+    for dchar, mfield in _DIR_CHAR_MAP.items():
+        best_match = None  # (dchar, mfield, xc, yc, score, None)
+
+        for fsize in font_sizes:
+            try:
+                font = ImageFont.truetype(font_path, fsize)
+            except Exception:
+                continue
+
+            # 渲染字符（白底黑字）
+            pad = 4
+            tmp_img = PILImage.new('L', (fsize + pad * 2, fsize + pad * 2), 255)
+            draw = ImageDraw.Draw(tmp_img)
+            draw.text((pad, pad), dchar, fill=0, font=font)
+            template = np.array(tmp_img)
+
+            if template.shape[0] > sub.shape[0] or template.shape[1] > sub.shape[1]:
+                continue
+
+            for map_name, map_img in candidate_maps:
+                try:
+                    res = cv2.matchTemplate(map_img, template, cv2.TM_CCOEFF_NORMED)
+                except Exception:
+                    continue
+
+                # 放宽阈值：不同颜色通道匹配质量差异大
+                threshold = 0.45 if map_name != "gray" else 0.5
+                locs = np.where(res >= threshold)
+
+                for pt in zip(*locs):
+                    score = float(res[pt[0], pt[1]])
+                    tc_x = pt[1] + template.shape[1] / 2 + _ox
+                    tc_y = pt[0] + template.shape[0] / 2 + _oy
+
+                    # 空间合理性作为加权因子（非硬性过滤）
+                    spatial_ok = _is_label_position_reasonable(dchar, tc_x, tc_y, ox, oy, ow, oh)
+                    # 位置合理时保留原分，不合理时大幅扣分（但仍保留候选）
+                    _effective_score = score if spatial_ok else score * 0.5
+
+                    if best_match is None or _effective_score > best_match[4]:
+                        best_match = (dchar, mfield, tc_x, tc_y, score, None)
+
+        if best_match is not None:
+            results.append(best_match)
+
+    return results
+
+
+def _is_label_position_reasonable(dchar, x, y, ox, oy, ow, oh):
+    """检查方向标签位置是否符合空间合理性。
+
+    上标签应位于上边距区域，下标签位于下边距区域等。
+    """
+    if dchar == '上':
+        # 上标签：y 坐标应在上半部分 (oy ≤ y ≤ oy + oh*0.5)
+        return oy <= y <= oy + oh * 0.5
+    elif dchar == '下':
+        # 下标签：y 坐标应在下半部分 (oy + oh*0.5 ≤ y ≤ oy + oh)
+        return oy + oh * 0.5 <= y <= oy + oh
+    elif dchar == '左':
+        # 左标签：x 坐标应在左半部分 (ox ≤ x ≤ ox + ow*0.5)
+        return ox <= x <= ox + ow * 0.5
+    elif dchar == '右':
+        # 右标签：x 坐标应在右半部分 (ox + ow*0.5 ≤ x ≤ ox + ow)
+        return ox + ow * 0.5 <= x <= ox + ow
+    return False
+
+
+def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect):
+    """将方向标签与附近的OCR数字关联。
+
+    对每个方向标签，在OCR hits中找最近的数字，赋值给对应的边距字段。
+    如果方向标签本身已包含数字（OCR检测到"上6"），则直接使用。
+
+    Returns:
+        dict: {margin_top/bottom/left/right: (value, confidence)} 或 None
+    """
+    if not dir_labels:
+        return None
+
+    ox, oy, ow, oh = outer_rect
+    # 距离阈值：方向字符到数字的最大距离（基于外框尺寸）
+    max_dist = max(ow, oh) * 0.15
+
+    margin_result = {}
+    used_hit_idx = set()
+
+    for dchar, mfield, lx, ly, lconf, lval in dir_labels:
+        # 如果方向标签已包含数字，直接使用
+        if lval is not None and 0.5 <= lval <= 500:
+            margin_result[mfield] = (lval, max(lconf, 5))
+            continue
+
+        # 在 OCR hits 中找最近的数字
+        best_hit = None  # (dist, idx, val, conf)
+        for idx, (val, hx, hy, hconf) in enumerate(ocr_hits):
+            if idx in used_hit_idx:
+                continue
+            if not (0.5 <= val <= 500):
+                continue
+            dist = ((lx - hx) ** 2 + (ly - hy) ** 2) ** 0.5
+            if dist > max_dist:
+                continue
+            if best_hit is None or dist < best_hit[0]:
+                best_hit = (dist, idx, val, hconf)
+
+        if best_hit is not None:
+            margin_result[mfield] = (best_hit[2], max(best_hit[3], 5))
+            used_hit_idx.add(best_hit[1])
+
+    # 必须找到全部4个边距才算成功
+    required = {'margin_top', 'margin_bottom', 'margin_left', 'margin_right'}
+    if required.issubset(margin_result.keys()):
+        return margin_result
+    return None
+
+
+def _try_direction_label_fast_track(cv2, gray_img, tesseract, outer_rect, ocr_hits,
+                                    target_w_hint=0.0, target_h_hint=0.0,
+                                    color_img=None):
+    """方向标签快速通道：检测方向标签并关联数字，直接返回8字段赋值。
+
+    Returns:
+        dict with all 8 fields, or None if direction labels not detected.
+    """
+    logger.info("[sketch_parser] 方向标签快速通道：开始检测（outer_rect=%s, tesseract=%s）"
+                % (outer_rect, "available" if tesseract is not None else "None"))
+
+    # 策略1：Tesseract chi_sim OCR 检测方向字符
+    dir_labels = []
+    ocr_labels = []
+    if tesseract is not None:
+        try:
+            ocr_labels = _detect_direction_labels_by_ocr(cv2, gray_img, tesseract, outer_rect)
+            dir_labels.extend(ocr_labels)
+            logger.info(f"[sketch_parser] 方向标签 OCR 检测到 {len(ocr_labels)} 个: "
+                        f"{[(dl[0], dl[1]) for dl in ocr_labels]}")
+        except Exception as _e:
+            logger.warning(f"[sketch_parser] 方向标签 OCR 检测异常: {_e}")
+
+    # 策略2：模板匹配兜底（补充未检测到的方向）
+    detected_fields = {dl[1] for dl in dir_labels}
+    missing = {'margin_top', 'margin_bottom', 'margin_left', 'margin_right'} - detected_fields
+    tmpl_labels = []
+    if missing:
+        try:
+            tmpl_labels = _detect_direction_labels_by_template(
+                cv2, gray_img, outer_rect, color_img=color_img)
+            for tl in tmpl_labels:
+                if tl[1] in missing:
+                    dir_labels.append(tl)
+                    missing.discard(tl[1])
+            if tmpl_labels:
+                logger.info(f"[sketch_parser] 模板匹配检测到 {len(tmpl_labels)} 个方向标签: "
+                            f"{[(dl[0], dl[1]) for dl in tmpl_labels]}")
+        except Exception as _e:
+            logger.warning(f"[sketch_parser] 模板匹配检测方向标签异常: {_e}")
+
+    if not dir_labels:
+        logger.info("[sketch_parser] 方向标签快速通道：未检测到任何方向标签")
+        return None
+
+    logger.info(f"[sketch_parser] 方向标签检测到 {len(dir_labels)} 个标签: "
+                f"{[(dl[0], dl[1]) for dl in dir_labels]}")
+
+    # 关联数字
+    margin_result = _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect)
+    if margin_result is None:
+        logger.info("[sketch_parser] 方向标签快速通道：未能关联全部4个边距数字（当前 %d 个: %s）"
+                    % (len(dir_labels),
+                       [(dl[0], dl[1]) for dl in dir_labels]))
+        return None
+
+    # 构造完整的8字段结果
+    total_w = target_w_hint if target_w_hint > 0 else 0.0
+    total_h = target_h_hint if target_h_hint > 0 else 0.0
+
+    mt = margin_result['margin_top'][0]
+    mb = margin_result['margin_bottom'][0]
+    ml = margin_result['margin_left'][0]
+    mr = margin_result['margin_right'][0]
+
+    inner_w = max(0.0, total_w - ml - mr) if total_w > 0 else 0.0
+    inner_h = max(0.0, total_h - mt - mb) if total_h > 0 else 0.0
+
+    result = {
+        'total_w': (total_w, 10),
+        'total_h': (total_h, 10),
+        'inner_w': (inner_w, 8),
+        'inner_h': (inner_h, 8),
+        'margin_top': margin_result['margin_top'],
+        'margin_bottom': margin_result['margin_bottom'],
+        'margin_left': margin_result['margin_left'],
+        'margin_right': margin_result['margin_right'],
+    }
+
+    logger.warning(
+        f"[sketch_parser] 方向标签快速通道命中："
+        f"total={total_w}x{total_h} inner={inner_w:.1f}x{inner_h:.1f} "
+        f"margin T/B/L/R={mt}/{mb}/{ml}/{mr}"
+    )
+
+    return result
+
+
 def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
                            tesseract=None,
                            target_w_hint: float = 0.0,
-                           target_h_hint: float = 0.0) -> dict:
+                           target_h_hint: float = 0.0,
+                           color_img=None) -> dict:
     """检测并读取草图上的标注数字。
 
     两种策略并用：
@@ -3238,6 +3649,15 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
                 logger.warning(f"[sketch_parser] 3x3分块OCR新增{block_hits}个唯一值")
         except Exception as _oe:
             logger.warning(f"[sketch_parser] 分块增强失败: {_oe}")
+
+    # [方向标签快速通道] 在进入耗时的预分配/暴力搜索之前，先尝试检测方向标签
+    # （上/下/左/右 + 数值），如果4个边距全部匹配成功则直接返回，跳过后续复杂逻辑。
+    _dir_result = _try_direction_label_fast_track(
+        cv2, gray_img, tesseract, outer_rect, hits,
+        target_w_hint=target_w_hint, target_h_hint=target_h_hint,
+        color_img=color_img)
+    if _dir_result is not None:
+        return _dir_result
 
     # [性能优化 v4] 预分配黄金检查：在调用耗时的 _assign_ocr_values_to_fields 之前，
     # 先用实际OCR数值+目标尺寸尝试直接构造几何自洽的8字段结果。
@@ -3805,11 +4225,12 @@ def parse_sketch(
     # ---- L3: 数字识别 ----
     tesseract = _safe_import_tesseract()
 
-    # 先用 OCR 读取标注数字
+    # 先用 OCR 读取标注数字（传入彩色图用于方向标签检测）
     ocr_result = _find_and_read_numbers(cv2, gray, (ox, oy, ow, oh),
                                          (ix, iy, iw, ih), tesseract,
                                          target_w_hint=target_outer_w_cm,
-                                         target_h_hint=target_outer_h_cm)
+                                         target_h_hint=target_outer_h_cm,
+                                         color_img=img)
 
     # 再用几何方法计算回退值
     geo_result = _geometry_fallback_values(
