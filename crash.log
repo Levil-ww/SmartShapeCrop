@@ -1,517 +1,11 @@
 ============================================================
-崩溃时间: 2026-08-13 15:27:26
+崩溃时间: 2026-08-18 13:11:59
 sys.frozen: False
 sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
 sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
 ------------------------------------------------------------
 Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-13 15:27:33
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 366, in <module>
-    main()
-    ~~~~^^
-  File "D:\SmartShapeCrop\main.py", line 360, in main
-    w = MainWindow()
-  File "D:\SmartShapeCrop\main.py", line 143, in __init__
-    self.panel = PropertyPanel()
-                 ~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
-    self._load_from_design()
-    ~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
-    self._update_layers_label()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
-    self._layers_label.setText(" / ".join(names) if names else "（空）")
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-RuntimeError: wrapped C/C++ object of type QLabel has been deleted
-
-============================================================
-崩溃时间: 2026-08-13 15:27:38
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 366, in <module>
-    main()
-    ~~~~^^
-  File "D:\SmartShapeCrop\main.py", line 360, in main
-    w = MainWindow()
-  File "D:\SmartShapeCrop\main.py", line 143, in __init__
-    self.panel = PropertyPanel()
-                 ~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
-    self._load_from_design()
-    ~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
-    self._update_layers_label()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
-    self._layers_label.setText(" / ".join(names) if names else "（空）")
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-RuntimeError: wrapped C/C++ object of type QLabel has been deleted
-
-============================================================
-崩溃时间: 2026-08-13 15:28:18
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 366, in <module>
-    main()
-    ~~~~^^
-  File "D:\SmartShapeCrop\main.py", line 360, in main
-    w = MainWindow()
-  File "D:\SmartShapeCrop\main.py", line 143, in __init__
-    self.panel = PropertyPanel()
-                 ~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
-    self._load_from_design()
-    ~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
-    self._update_layers_label()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
-    self._layers_label.setText(" / ".join(names) if names else "（空）")
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-RuntimeError: wrapped C/C++ object of type QLabel has been deleted
-
-============================================================
-崩溃时间: 2026-08-13 15:28:28
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\DLLs']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 366, in <module>
-    main()
-    ~~~~^^
-  File "D:\SmartShapeCrop\main.py", line 360, in main
-    w = MainWindow()
-  File "D:\SmartShapeCrop\main.py", line 143, in __init__
-    self.panel = PropertyPanel()
-                 ~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 209, in __init__
-    self._load_from_design()
-    ~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 733, in _load_from_design
-    self._update_layers_label()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 649, in _update_layers_label
-    self._layers_label.setText(" / ".join(names) if names else "（空）")
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-RuntimeError: wrapped C/C++ object of type QLabel has been deleted
-
-============================================================
-崩溃时间: 2026-08-13 15:52:47
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
-    inner_mask = _get_inner_pixel_mask(design)
-  File "D:\SmartShapeCrop\core\image_ops.py", line 176, in _get_inner_pixel_mask
-    cut_corner = design.l_shape_px().cut_corner
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'LShape' object has no attribute 'cut_corner'
-
-============================================================
-崩溃时间: 2026-08-13 15:52:54
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
-    inner_mask = _get_inner_pixel_mask(design)
-  File "D:\SmartShapeCrop\core\image_ops.py", line 176, in _get_inner_pixel_mask
-    cut_corner = design.l_shape_px().cut_corner
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'LShape' object has no attribute 'cut_corner'
-
-============================================================
-崩溃时间: 2026-08-14 09:56:55
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:57:25
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:57:44
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:57:57
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:57:58
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:57:59
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:58:01
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:58:07
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:58:12
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 09:59:43
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 10:00:01
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 10:00:13
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 165, in render_design
-    from scipy.ndimage import distance_transform_edt
-ModuleNotFoundError: No module named 'scipy'
-
-============================================================
-崩溃时间: 2026-08-14 10:59:36
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-14 11:30:56
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
-    inner_mask = _get_inner_pixel_mask(design)
-  File "D:\SmartShapeCrop\core\image_ops.py", line 217, in _get_inner_pixel_mask
-    cut_corner = design.l_shape_px().cut_corner
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'LShape' object has no attribute 'cut_corner'
-
-============================================================
-崩溃时间: 2026-08-14 11:31:04
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
-    inner_mask = _get_inner_pixel_mask(design)
-  File "D:\SmartShapeCrop\core\image_ops.py", line 217, in _get_inner_pixel_mask
-    cut_corner = design.l_shape_px().cut_corner
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'LShape' object has no attribute 'cut_corner'
-
-============================================================
-崩溃时间: 2026-08-14 11:31:13
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
-    inner_mask = _get_inner_pixel_mask(design)
-  File "D:\SmartShapeCrop\core\image_ops.py", line 217, in _get_inner_pixel_mask
-    cut_corner = design.l_shape_px().cut_corner
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'LShape' object has no attribute 'cut_corner'
-
-============================================================
-崩溃时间: 2026-08-14 14:26:38
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
-    self.canvas.set_design(design)
-    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
-    self._render()
-    ~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
-    self._full_image = render_design(self._design)
-                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
-    inner_mask = _get_inner_pixel_mask(design)
-  File "D:\SmartShapeCrop\core\image_ops.py", line 217, in _get_inner_pixel_mask
-    cut_corner = design.l_shape_px().cut_corner
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'LShape' object has no attribute 'cut_corner'
-
-============================================================
-崩溃时间: 2026-08-14 15:41:31
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+  File "D:\SmartShapeCrop\main.py", line 288, in _on_design_changed
     self.canvas.set_design(design)
     ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
   File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
@@ -534,13 +28,13 @@ Traceback (most recent call last):
 ValueError: y1 must be greater than or equal to y0
 
 ============================================================
-崩溃时间: 2026-08-14 15:41:55
+崩溃时间: 2026-08-18 13:12:14
 sys.frozen: False
 sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
 sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
 ------------------------------------------------------------
 Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 287, in _on_design_changed
+  File "D:\SmartShapeCrop\main.py", line 288, in _on_design_changed
     self.canvas.set_design(design)
     ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
   File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
@@ -563,139 +57,60 @@ Traceback (most recent call last):
 ValueError: y1 must be greater than or equal to y0
 
 ============================================================
-崩溃时间: 2026-08-15 09:25:33
+崩溃时间: 2026-08-18 13:12:42
 sys.frozen: False
 sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
 sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
 ------------------------------------------------------------
 Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
+  File "D:\SmartShapeCrop\main.py", line 288, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
+    inner_mask = _get_inner_pixel_mask(design)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 205, in _get_inner_pixel_mask
+    fill_rect_mask(m, inner_rect, 255)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\geometry.py", line 227, in fill_rect_mask
+    d.rectangle(rect.to_int_tuple(), fill=value)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\.venv\Lib\site-packages\PIL\ImageDraw.py", line 386, in rectangle
+    self.draw.draw_rectangle(xy, fill_ink, 1)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+ValueError: y1 must be greater than or equal to y0
 
 ============================================================
-崩溃时间: 2026-08-15 12:04:00
+崩溃时间: 2026-08-18 13:15:48
 sys.frozen: False
 sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
 sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
 ------------------------------------------------------------
 Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-15 13:17:03
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 800, in _pool_load_sketch_from_path
-    self._pool_auto_parse_sketch()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 825, in _pool_auto_parse_sketch
-    result = parse_sketch(
-        self._sketch_path,
-        target_outer_w_cm=target_w,
-        target_outer_h_cm=target_h,
-    )
-  File "D:\SmartShapeCrop\core\pool_designer\sketch_parser.py", line 3186, in parse_sketch
-    ocr_result = _find_and_read_numbers(cv2, gray, (ox, oy, ow, oh),
-                                         (ix, iy, iw, ih), tesseract,
-                                         target_w_hint=target_outer_w_cm,
-                                         target_h_hint=target_outer_h_cm)
-  File "D:\SmartShapeCrop\core\pool_designer\sketch_parser.py", line 2971, in _find_and_read_numbers
-    result = _assign_ocr_values_to_fields(hits, outer_rect, inner_rect, h_img, w_img,
-                                           target_w_hint=target_w_hint,
-                                           target_h_hint=target_h_hint)
-  File "D:\SmartShapeCrop\core\pool_designer\sketch_parser.py", line 1799, in _assign_ocr_values_to_fields
-    _lr_i = list(_mpair)
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-17 09:53:48
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-17 10:11:39
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-17 10:41:59
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-17 11:22:43
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\property_panel.py", line 902, in _pool_view_sketch
-    self._sp_mt.setValue(mt_ui)
-    ^^^^^^^
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-17 13:47:43
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
-
-============================================================
-崩溃时间: 2026-08-17 13:53:44
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\main.py", line 291, in _on_rendered
-    self._status_size.setText(f"画布尺寸：{img.width} × {img.height} px ({img.width/img.info.get('dpi',(150,))[0]*2.54:.1f}cm × {img.height/img.info.get('dpi',(150,))[1]*2.54:.1f}cm @ DPI {img.info.get('dpi',(150,))[0]:.0f})" if 'dpi' in img.info else f"画布尺寸：{img.width} × {img.height} px")
-                                                                                                                                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: unsupported format string passed to IFDRational.__format__
-
-============================================================
-崩溃时间: 2026-08-17 13:59:34
-sys.frozen: False
-sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
-sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
-------------------------------------------------------------
-Traceback (most recent call last):
-  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
-    def paintEvent(self, event):
-    
-KeyboardInterrupt
+  File "D:\SmartShapeCrop\main.py", line 288, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 35, in set_design
+    self._render()
+    ~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 49, in _render
+    self._full_image = render_design(self._design)
+                       ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 131, in render_design
+    inner_mask = _get_inner_pixel_mask(design)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 205, in _get_inner_pixel_mask
+    fill_rect_mask(m, inner_rect, 255)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\geometry.py", line 227, in fill_rect_mask
+    d.rectangle(rect.to_int_tuple(), fill=value)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\.venv\Lib\site-packages\PIL\ImageDraw.py", line 386, in rectangle
+    self.draw.draw_rectangle(xy, fill_ink, 1)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+ValueError: y1 must be greater than or equal to y0
 
