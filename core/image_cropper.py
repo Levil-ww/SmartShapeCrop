@@ -113,7 +113,8 @@ def _redraw_outer_border_on_corners(
     corners_px: dict[str, int],
     border_layers: list[tuple[tuple[int, int, int], int]],
     validity_mask: Image.Image,
-    bg_color: tuple = (255, 255, 255)
+    bg_color: tuple = (255, 255, 255),
+    skip_outside_arc: bool = False,
 ) -> None:
     """
     [安全升级版本 v2] 圆角最外轮廓细边的安全补绘。
@@ -125,6 +126,10 @@ def _redraw_outer_border_on_corners(
     3. 优先使用 border_layers[0] 最外层颜色（塞纳时光黑边问题根因：旧算法不分层）
     4. 对多层复杂边框，逐像素从 src 直边采样（但采样的是"真实边框颜色集合匹配"，
        不是单深度一个像素的随机色），避免外层被内层颜色覆盖
+    
+    Args:
+        skip_outside_arc: 非保护模式下跳过 outside_arc 区域（dist > r），
+                         因为裁切区域应该完全为白色，不重绘边框
     """
     if not corners_px:
         return
@@ -148,7 +153,7 @@ def _redraw_outer_border_on_corners(
     content_ref_arr = _content_ref(src_arr, w, h)
     BG_ARR = np.array(bg_color, dtype=np.float64)
 
-    OUTER_BAND = 5  # 只处理外轮廓 ±5px 薄层，绝不碰内层
+    OUTER_BAND = 3  # [Fix 图一] Reduced from 5 to 3 to prevent extra stroke width
 
     for corner_key, r in corners_px.items():
         if r <= 0:
@@ -185,9 +190,16 @@ def _redraw_outer_border_on_corners(
         angle = np.mod(angle, 360.0)
         ang_min, ang_max = CORNER_ANGLES[corner_key]
 
-        # 只在角度范围 + 外轮廓薄层 + validity_mask 允许区域
+        # [Fix 图一] Only paint on the actual arc boundary (dist ≈ r)
+        # Not the entire band — prevents creating extra inner strokes
+        # 只在距离弧边缘 ±2px 处操作，不深入弧内部
         in_angle = (angle >= ang_min - 2) & (angle <= ang_max + 2)
-        in_band = (dist >= float(inner_px)) & (dist <= float(r) + 1.5)
+        in_band = (dist >= float(r) - 1.5) & (dist <= float(r) + 2.0)
+        
+        # [Fix 非保护模式] Skip outside_arc pixels (dist > r) when requested
+        if skip_outside_arc:
+            in_band = in_band & (dist <= float(r))
+        
         if mask_arr is not None:
             local_valid = mask_arr[y1:y2, x1:x2] > 0
             should = in_angle & in_band & local_valid
@@ -200,8 +212,10 @@ def _redraw_outer_border_on_corners(
         ys, xs = np.where(should)
         gy = ys + y1
         gx = xs + x1
-        depth_v = float(r) - dist[ys, xs]  # 外轮廓处 depth≈0, 向里≈OUTER_BAND
-        d_int_v = np.clip(np.round(depth_v).astype(np.int32), 0, OUTER_BAND + 1)
+        # [Fix 图一] Calculate depth from outer edge (r) for consistent sampling
+        # depth_v: distance from arc boundary (positive = inside arc)
+        depth_v = float(r) - dist[ys, xs]
+        d_int_v = np.clip(np.round(depth_v).astype(np.int32), 0, 3)
 
         # 从两条相邻直边的同深度中段采样颜色集合
         def _edge_sample(ck, depth_arr, n):
@@ -362,13 +376,15 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
                 continue
             _redraw_border_on_corner(
                 result, ck, rp, border_layers,
-                src_img=img, validity_mask=mask
+                src_img=img, validity_mask=mask,
+                bg_color=bg_color,
             )
 
     # Step B: 安全的最外轮廓薄层补绘
     if corners_px:
         _redraw_outer_border_on_corners(
-            result, img, corners_px, border_layers, mask, bg_color
+            result, img, corners_px, border_layers, mask, bg_color,
+            skip_outside_arc=True,  # 非保护模式：裁切区域不应重绘边框
         )
 
     return result
@@ -474,22 +490,6 @@ def _build_multi_layer_corner_mask(
         if r <= 0:
             continue
 
-        # ===== [A) 基础 outer L-cut + 保守 ring 保护] =====
-        # ring_lower_bound: 精确等于边框总厚度 + 8px 公差
-        # [Fix 克罗印花厚边框圆角弧线变细 0402]：
-        #   旧逻辑用 min(raw_depth + 4, r*0.5) — 当边框厚≈圆角半径时(如2cm厚边框+2cm圆角)，
-        #   r*0.5 只有边框厚度的一半，导致 validity_mask 只覆盖边框的最外 1cm，
-        #   内层边框花纹无法被 sector_render 染成边框色，视觉上弧线比直边细一半。
-        #   新逻辑放宽为 min(raw_depth + 8, r - 2)：
-        #     - raw_depth + 8：确保整条边框厚度都在 ring_region 内，含抗锯齿容差
-        #     - 上限 r-2：允许接近圆心，同时保留 2px 圆心直角区不被污染
-        # [Fix 不对称圆角 0811]：当没有边框层时，ring_lower_bound 必须为 0，
-        #   否则会过度保护应该被切掉的圆角区域，导致圆角不正确。
-        if raw_depth > 0:
-            ring_lower_bound = max(0, min(raw_depth + 8, r - 2))
-        else:
-            ring_lower_bound = 0
-
         if corner_key == 'tl':
             cx, cy = r, r
         elif corner_key == 'tr':
@@ -524,8 +524,13 @@ def _build_multi_layer_corner_mask(
             corner_protect = protect_content.get(corner_key, False)
         else:
             corner_protect = protect_content
+
+        # [Fix 图一/图三] 保护模式下：
+        # - border_zone/mask: 使用完整边框厚度 (确保所有边框层都被裁切)
+        #   内部图案（在 raw_depth 范围之外）自然保持直角
+        # - ring_region: 根据圆角半径与边框厚度的关系动态调整
         if corner_protect and raw_depth > 0:
-            T_plus = raw_depth + 4  # +4px 抗锯齿容差
+            T_plus = raw_depth + 2  # 使用完整边框厚度 + 2px 抗锯齿容差
             if corner_key == 'tl':
                 border_zone = (xx <= T_plus) | (yy <= T_plus)
             elif corner_key == 'tr':
@@ -535,14 +540,31 @@ def _build_multi_layer_corner_mask(
             else:  # br
                 border_zone = (((w - 1) - xx) <= T_plus) | (((h - 1) - yy) <= T_plus)
             outer_cut = (angle >= ang_min) & (angle < ang_max) & (dist > r) & border_zone
+
+            # ring_region: 动态调整
+            outermost_thickness = border_layers[0][1] if border_layers else raw_depth
+            if r <= raw_depth * 2.0:
+                # r 较小：只使用最外层边框厚度，不加额外容差
+                ring_lower_bound = max(0, min(outermost_thickness, r - 2))
+            else:
+                ring_lower_bound = max(0, min(raw_depth + 2, r - 2))
         else:
             outer_cut = (angle >= ang_min) & (angle < ang_max) & (dist > r)
 
+            # [非保护模式] 动态调整 ring_region 宽度
+            if raw_depth > 0:
+                outermost_thickness = border_layers[0][1] if border_layers else raw_depth
+                if r <= raw_depth * 2.0:
+                    # r 较小：只使用最外层边框厚度，不加额外容差
+                    ring_lower_bound = max(0, min(outermost_thickness, r - 2))
+                else:
+                    # r 较大：使用完整边框厚度 + 2px 容差
+                    ring_lower_bound = max(0, min(raw_depth + 2, r - 2))
+            else:
+                ring_lower_bound = 0
+
         # Step 2: 保守 ring_region 保护外边框条带（防止最外轮廓线缺失）
-        # [Fix C-shaped gap 0811] 扩展 ring_region 到弧外 2px，补偿像素离散化误差：
-        #   当映射连续极坐标(角度+半径)到离散像素坐标时，实际距离可能略大于理想半径，
-        #   导致弧线上的像素被 mask 切掉而未被边框重绘覆盖，形成 C 形缺口。
-        #   增加 2px 容差确保弧线上的像素不被误切。
+        # [Fix C-shaped gap 0811] 扩展 ring_region 到弧外 2px，补偿像素离散化误差。
         ring_inner = float(r) - float(ring_lower_bound)
         ring_region = (angle >= ang_min) & (angle < ang_max) & \
                       (dist >= ring_inner) & (dist <= float(r) + 2.0)
@@ -765,10 +787,8 @@ def _build_border_paint_mask(
     """
     构建边框重绘专用的 validity_mask。
 
-    当 protect_content=True 时，裁切 mask 只裁边框区域，
-    但边框重绘需要覆盖完整的边框厚度，不受 border_zone 限制。
-    此函数生成一个 mask，在每个角的扇形区域内，覆盖从外边缘
-    到 min(border_depth, r) 的所有像素，确保边框重绘完整。
+    validity_mask 使用完整边框厚度，确保间隙层也能被重绘逻辑覆盖。
+    内层直角保护由 mask (border_zone) 控制，与 validity_mask 无关。
 
     Args:
         w, h: 图像宽高（像素）
@@ -792,8 +812,12 @@ def _build_border_paint_mask(
         if r <= 0:
             continue
 
+        # [Fix 图三] validity_mask 始终使用完整边框厚度
+        # 间隙层需要被背景色填充，必须覆盖到间隙层所在深度
+        effective_depth = border_depth
+
         # 计算边框重绘的有效深度（边框厚度，但不超过圆角半径）
-        paint_depth = min(border_depth + 8, r)  # +8px 抗锯齿容差
+        paint_depth = min(effective_depth + 8, r)  # +8px 抗锯齿容差
 
         if corner_key == 'tl':
             cx, cy = r, r
@@ -821,10 +845,15 @@ def _build_border_paint_mask(
         ang_min, ang_max = CORNER_ANGLES[corner_key]
 
         # 在扇形区域内，覆盖从外边缘到 paint_depth 的所有像素
-        # dist 从 (r - paint_depth) 到 (r + 2) 覆盖边框带
+        # 使用完整边框厚度，确保间隙层也能被重绘逻辑覆盖
+        # [Fix 图三] 使用 <= ang_max 包含边界像素，确保角落接缝处的间隙像素被清理
         ring_inner = float(r) - float(paint_depth)
-        paint_region = (angle >= ang_min) & (angle < ang_max) & \
-                       (dist >= ring_inner) & (dist <= float(r) + 2.0)
+        if ang_max == 360:
+            paint_region = ((angle >= ang_min) | (angle < 1)) & \
+                           (dist >= ring_inner) & (dist <= float(r) + 2.0)
+        else:
+            paint_region = (angle >= ang_min) & (angle <= ang_max) & \
+                           (dist >= ring_inner) & (dist <= float(r) + 2.0)
 
         paint_local = paint_arr[y1:y2, x1:x2]
         paint_local[paint_region] = 255
@@ -1170,33 +1199,19 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         return img
 
     # 智能判断每个角是否需要保护内容区
-    # - 扇形区域颜色复杂度高（花纹/图案）→ 保护内容，只裁边框条带
-    # - 扇形区域颜色单一（纯色背景）→ 完全裁掉整个扇形区域
-    # - [Fix 2026-08-17] 当圆角半径 ≤ 2×边框厚度时，强制保护内容区：
-    #   只裁剪外层边框区域，保持内部花纹图案为直角
+    # [Simplified] 使用统一的非保护模式进行标准圆角裁切：
+    # - 裁切区域（扇形外部）变成白色（背景色）
+    # - 保留区域（扇形内部）保持原样
+    # - 边框被正确重绘
+    # 保护模式会导致边框不能被正确裁切，因此默认使用非保护模式
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
     corner_protect_map: dict[str, bool] = {}
     for corner_key, r_px in corners_px.items():
         if r_px <= 0:
             corner_protect_map[corner_key] = False
             continue
-        # 当没有边框层时，直接正常裁切
-        if raw_depth <= 0:
-            corner_protect_map[corner_key] = False
-            continue
-        # [Fix 2026-08-17] 条件1：圆角半径 ≤ 2×边框厚度 → 强制保护内容区
-        if r_px <= 2 * raw_depth:
-            corner_protect_map[corner_key] = True
-            continue
-        # 条件2：当圆角远大于边框厚度时（超过边框+3cm），正常裁切
-        if r_px > raw_depth + 180:  # 180px ≈ 3cm
-            corner_protect_map[corner_key] = False
-        else:
-            # 条件3：介于两者之间，分析扇形区域内容复杂度
-            has_content = _analyze_corner_sector_content(
-                img, corner_key, r_px, raw_depth, bg_color
-            )
-            corner_protect_map[corner_key] = has_content
+        # 非保护模式：标准圆角裁切
+        corner_protect_map[corner_key] = False
 
     # 生成裁切 mask（per-corner protect_content）
     mask = _build_multi_layer_corner_mask(
@@ -1205,7 +1220,6 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     )
 
     # 生成独立的 validity_mask 用于边框重绘
-    # 只对有内容保护的角生成独立 validity_mask，其余角使用 mask 本身
     has_any_protect = any(corner_protect_map.values())
     if has_any_protect and raw_depth > 0:
         validity_mask = _build_border_paint_mask(w, h, corners_px, raw_depth)
@@ -1254,12 +1268,14 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
                 result, corner_key, r_px, border_layers,
                 src_img=img, validity_mask=validity_mask,
                 only_outermost=False,  # 绘制所有边框层（gap层由Smart Gap Check自动跳过）
+                bg_color=bg_color,
             )
 
     # Step B: 安全补绘外轮廓
     if corners_px:
         _redraw_outer_border_on_corners(
-            result, img, corners_px, border_layers, validity_mask, bg_color
+            result, img, corners_px, border_layers, validity_mask, bg_color,
+            skip_outside_arc=True,  # 非保护模式：裁切区域不应重绘边框
         )
 
     return result

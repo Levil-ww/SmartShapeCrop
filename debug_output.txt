@@ -1,0 +1,21 @@
+﻿调试青芜漫野案例...
+[DEBUG] After filling beyond_arc: unique colors in region: {(np.uint8(255), np.uint8(255), np.uint8(255))}
+r_px = 88
+cx=88, cy=2957
+
+裁切区域像素数: 1666
+白色像素数: 1429
+白色比例: 0.8577
+
+非白色像素数: 237
+非白色像素平均色: [30 30 30]
+非白色像素距离范围: [88.0, 90.0]
+采样非白色像素颜色 (前100): {(np.uint8(30), np.uint8(30), np.uint8(30))}
+
+ring_lower_bound: 27
+ring_inner: 61
+ring_region 覆盖: [61, 90]
+
+ring_region 外侧像素数: 237
+
+已保存调试结果: debug_qingwu_result.png

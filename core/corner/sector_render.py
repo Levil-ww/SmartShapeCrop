@@ -158,6 +158,7 @@ def _redraw_border_on_corner(
     src_img: Image.Image | None = None,
     validity_mask: Image.Image | None = None,
     only_outermost: bool = False,
+    bg_color: tuple[int, int, int] = (255, 255, 255),
 ) -> None:
     """
     在圆角区域重新绘制边框颜色。
@@ -174,6 +175,7 @@ def _redraw_border_on_corner(
         src_img: 原图（用于采样颜色 + 判断是否为装饰像素）
         validity_mask: 可选，L模式。非零像素才允许修改
         only_outermost: 若为 True，只绘制最外层边框
+        bg_color: 背景色，间隙层使用此色填充创建干净弧线
     """
     w, h = result_img.size
     if corner_radius_px <= 0 or not border_layers:
@@ -286,12 +288,57 @@ def _redraw_border_on_corner(
         dist_to_content = float(np.sqrt(np.sum((np.array(c, dtype=np.float64) - content_ref_arr) ** 2)))
         cum_before = cumulative_depths[i]
         forced_gap = cum_before >= effective_border_depth
+        col_arr = np.array(c, dtype=np.float64)
 
-        is_gap = (
-            dist_to_content < GAP_COLOR_DIST and
-            t <= GAP_MAX_THICKNESS and
-            i > 0
-        ) or forced_gap
+        # === [Fix 图二/图三] 增强型间隙检测 ===
+        # 三判定策略，任一满足则为间隙层：
+        #   1) 内容匹配: 颜色接近内容参考色 (dist < 60)
+        #   2) 夹层判定: 被两个边框层夹住，且与两者颜色差异都大 (>25)
+        #   3) 真间隙兜底: 颜色接近背景色，且被边框层夹住
+
+        is_gap = False
+        if not forced_gap and i > 0:
+            # 判定1: 颜色接近内容参考色
+            cond_content = (dist_to_content < GAP_COLOR_DIST and
+                            t <= GAP_MAX_THICKNESS)
+
+            # 判定2: 夹层检测 — 被两个非间隙边框层夹住的异色层
+            # 这是间隙层的典型特征：边框-间隙-边框 结构
+            cond_sandwich = False
+            if i > 0 and i < len(border_layers) - 1:
+                prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
+                next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
+                d_prev = float(np.sqrt(np.sum((col_arr - prev_c) ** 2)))
+                d_next = float(np.sqrt(np.sum((col_arr - next_c) ** 2)))
+                # 与两侧颜色都差异大 (>25)，且两侧颜色相互接近 (<35)
+                d_adjacent = float(np.sqrt(np.sum((prev_c - next_c) ** 2)))
+                if (d_prev > 25.0 and d_next > 25.0 and
+                    d_adjacent < 35.0 and t <= GAP_MAX_THICKNESS):
+                    cond_sandwich = True
+
+            # 判定3: 与相邻层颜色都差异大 (>30)，且夹在两层之间
+            cond_neighbor_gap = False
+            if i > 0 and i < len(border_layers) - 1 and t <= GAP_MAX_THICKNESS:
+                prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
+                next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
+                d_prev = float(np.sqrt(np.sum((col_arr - prev_c) ** 2)))
+                d_next = float(np.sqrt(np.sum((col_arr - next_c) ** 2)))
+                if d_prev > 30.0 and d_next > 30.0:
+                    cond_neighbor_gap = True
+
+            is_gap = cond_content or cond_sandwich or cond_neighbor_gap
+
+            # 反向安全检查：如果与相邻边框层颜色非常接近 (< 15)，
+            # 则为实心边框层而非间隙
+            if is_gap:
+                for ni in (i - 1, i + 1):
+                    if 0 <= ni < len(border_layers) and ni != i:
+                        nc = np.array(border_layers[ni][0], dtype=np.float64)
+                        d_adj = float(np.sqrt(np.sum((col_arr - nc) ** 2)))
+                        if d_adj < 15.0:
+                            is_gap = False
+                            break
+
         is_gap_layer.append(is_gap)
 
     gap_regions: list[tuple[int, int]] = []
@@ -319,21 +366,52 @@ def _redraw_border_on_corner(
         valid_angle = (angle >= ang_min) | (angle < 1)
     else:
         valid_angle = (angle >= ang_min) & (angle <= ang_max)
-    valid_region = valid_angle & (dist <= R_total + 2.0)
+    # [Fix 非保护模式] valid_region 只包含 inside_arc 区域
+    # outside_arc 区域（dist >= R_total - 0.5）由 beyond_arc 填充处理
+    # 使用 < 而不是 <=，确保 dist == R_total - 0.5 的像素不被 valid_region 包含
+    valid_region = valid_angle & (dist < R_total - 0.5)
 
     if validity_arr is not None:
         valid_region = valid_region & validity_arr
 
+    # === [Fix 图2/图3] 处理弧线外侧的间隙层 ===
+    # 只在 dist > R_total 的区域（裁切区域）填充间隙层为白色
+    # 内部区域（dist <= R_total）的间隙层保持原色，避免误伤内部内容
+    if gap_regions and src_arr is not None:
+        outside_arc_gap = valid_angle & (dist > R_total) & (dist <= R_total + 2.0)
+        if np.any(outside_arc_gap):
+            outside_coords = np.where(outside_arc_gap)
+            outside_src = src_arr[outside_coords[0], outside_coords[1], :].astype(np.float64)
+            
+            # Check if these pixels match any gap layer color
+            for gap_idx, (is_gap, (gap_color, _)) in enumerate(zip(is_gap_layer, border_layers)):
+                if not is_gap:
+                    continue
+                gap_color_arr = np.array(gap_color, dtype=np.float64)
+                dist_to_gap = np.sqrt(np.sum((outside_src - gap_color_arr.reshape(1, 3)) ** 2, axis=1))
+                is_gap_pixel = dist_to_gap < 15.0
+                
+                if np.any(is_gap_pixel):
+                    bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
+                    idx = np.where(is_gap_pixel)[0]
+                    result_arr[outside_coords[0][idx], outside_coords[1][idx], :] = bg_arr
+                    # Update outside_src to skip already-filled pixels
+                    remaining = ~is_gap_pixel
+                    if not np.any(remaining):
+                        break
+                    outside_coords = (outside_coords[0][remaining], outside_coords[1][remaining])
+                    outside_src = outside_src[remaining]
+
     for d in range(total_border_depth):
-        d_region = valid_region & (depth >= d) & (depth < d + 1)
+        # [Fix 青芜漫野] Exclude pixels at dist == R_total from d_region
+        # These pixels belong to beyond_arc region and should be filled with white
+        d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist < R_total)
         if not np.any(d_region):
             continue
 
         color_idx = depth_mapping.get(d, 0)
         is_gap = is_gap_layer[color_idx] if color_idx < len(is_gap_layer) else False
 
-        if is_gap:
-            continue
         if only_outermost and color_idx != 0:
             continue
 
@@ -349,11 +427,68 @@ def _redraw_border_on_corner(
         for gap_start, gap_end in gap_regions:
             in_gap_region |= (pixel_depths >= gap_start) & (pixel_depths < gap_end)
 
-        if not is_gap and np.any(in_gap_region):
-            keep_mask = ~in_gap_region
-            if not np.any(keep_mask):
-                continue
-            local_coords = (local_coords[0][keep_mask], local_coords[1][keep_mask])
+        # === 间隙层与实心层分离处理 ===
+        if is_gap:
+            # [Fix 图2/图3] 内部区域的间隙层保持原色，不填充为白色
+            # 弧线外侧的间隙层已在循环外处理
+            continue
+        else:
+            # Solid border layer:
+            # 1. Skip pixels in classified gap regions
+            # 2. Fill solid border pixels with target color
+            if np.any(in_gap_region):
+                keep_mask = ~in_gap_region
+                if not np.any(keep_mask):
+                    continue
+                local_coords = (local_coords[0][keep_mask], local_coords[1][keep_mask])
+
+            # [Fix 图2/图3] Only paint solid border pixels, skip unclassified gaps
+            # Internal gap pixels (dist <= R_total) should keep their original color
+            if src_arr is not None and len(local_coords[0]) > 0:
+                src_px = src_arr[local_coords[0], local_coords[1], :].astype(np.float64)
+
+                # Only paint pixels that actually match a solid border layer color
+                solid_colors_list = [np.array(c, dtype=np.float64)
+                                     for (c, _), ig in zip(border_layers, is_gap_layer) if not ig]
+                is_solid_pixel = np.ones(len(local_coords[0]), dtype=bool)
+                if solid_colors_list:
+                    solid_stack = np.stack(solid_colors_list, axis=0)
+                    dist_to_solids = np.sqrt(
+                        np.sum(
+                            (src_px[:, np.newaxis, :] - solid_stack[np.newaxis, :, :]) ** 2,
+                            axis=2
+                        )
+                    )
+                    min_dist_to_solid = np.min(dist_to_solids, axis=1)
+                    is_solid_pixel = min_dist_to_solid < 15.0
+
+                if not np.any(is_solid_pixel):
+                    continue
+                local_coords = (local_coords[0][is_solid_pixel], local_coords[1][is_solid_pixel])
+
+            # [Fix 图一/图二/图三] Second pass: handle ring_region pixels beyond the arc.
+            # These pixels are protected from mask cutting but were never repainted
+            # because the depth loop only covers depth >= 0. Fill ALL pixels in this
+            # region with bg_color (white) to ensure clean crop edge.
+            if border_layers:
+                r_val = float(corner_radius_px)
+                # Use R_total - 0.5 to match the valid_region boundary
+                # This ensures all outside_arc pixels (dist > R_total - 0.5) are filled
+                beyond_arc = valid_angle & (dist >= r_val - 0.5) & (dist <= r_val + 5.0)
+
+                # Only execute once (on first iteration) to avoid redundant work
+                if d == 0 and np.any(beyond_arc):
+                    beyond_coords = np.where(beyond_arc)
+                    # Fill all pixels in the beyond_arc region with bg_color
+                    # This ensures the crop edge is clean white
+                    bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
+                    result_arr[beyond_coords[0], beyond_coords[1], :] = bg_arr
+
+            # [Fix 图2/图3] Third pass removed:
+            # inner_overflow region (depth >= total_border_depth) contains
+            # content pixels that should keep their original color.
+            # Only gap pixels in the arc exterior (dist > R_total) should be
+            # filled with bg_color, which is handled by the second pass above.
 
         # ROI 相对坐标
         roi_y = local_coords[0].copy()
@@ -639,9 +774,14 @@ def _redraw_border_on_corner(
             apply_x = roi_x[final_mask]
             color_fill = np.array(target_color, dtype=result_arr.dtype)
             result_arr[apply_y, apply_x, :] = color_fill.reshape(1, 3)
-        else:
-            color_fill = np.array(target_color, dtype=result_arr.dtype)
-            result_arr[roi_y, roi_x, :] = color_fill.reshape(1, 3)
+
+    # [Fix 青芜漫野] Final pass: ensure beyond_arc region is completely white
+    # Beyond_arc pixels may have been overwritten by border layer drawing
+    final_beyond = valid_angle & (dist >= float(R_total) - 0.5) & (dist <= float(R_total) + 5.0)
+    if np.any(final_beyond):
+        final_coords = np.where(final_beyond)
+        bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
+        result_arr[final_coords[0], final_coords[1], :] = bg_arr
 
     # 回写结果
     new_img = Image.fromarray(result_arr.astype(np.uint8), mode='RGB')
