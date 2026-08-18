@@ -302,50 +302,30 @@ def _assess_complexity(gray_img) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def _build_binary_masks(cv2, gray_img, color_img=None):
-    """构建多种二值化 mask，用于不同风格草图的检测。
+    """构建二值化 mask —— 双策略（Otsu + Canny），覆盖填充类和线条类草图。
 
     Args:
         gray_img: 灰度图
-        color_img: 原始彩色图（可选，用于红色线检测）
+        color_img: 原始彩色图（未使用，保留接口兼容）
     """
     masks = []
-
-    # 小 kernel：仅 2x2，避免把内外框之间的文字/线条连接起来
     kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    # 中 kernel：仅用于红色线（较粗），不影响内外框分离
-    kernel_mid = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
-    # 策略 A1：Canny 原始边缘（无形态学，最保守）
-    edges_raw = cv2.Canny(gray_img, 15, 80)
-    masks.append(("canny_raw", edges_raw))
+    # 策略1：Otsu 自适应阈值 + 形态学闭运算（适合填充类、块状文字草图）
+    try:
+        _, mask_otsu = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        mask_otsu = cv2.morphologyEx(mask_otsu, cv2.MORPH_CLOSE, kernel_small, iterations=1)
+        masks.append(("otsu", mask_otsu))
+    except Exception:
+        pass
 
-    # 策略 A2：Canny + 轻度形态学（用 2x2 kernel，1 次迭代）
-    edges = cv2.Canny(gray_img, 15, 80)
-    mask_canny = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_small, iterations=1)
-    masks.append(("canny", mask_canny))
-
-    # 策略 B：自适应阈值 + 轻度形态学
-    binary_adapt = cv2.adaptiveThreshold(
-        gray_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, 25, 10)
-    mask_adapt = cv2.morphologyEx(binary_adapt, cv2.MORPH_CLOSE, kernel_small, iterations=1)
-    masks.append(("adaptive", mask_adapt))
-
-    # 策略 C：HSV 红色线检测（针对红色标注的草图，使用彩色图）
-    if color_img is not None and len(color_img.shape) == 3:
-        hsv = cv2.cvtColor(color_img, cv2.COLOR_BGR2HSV)
-        mask_r1 = cv2.inRange(hsv, np.array([0, 20, 30]), np.array([15, 255, 255]))
-        mask_r2 = cv2.inRange(hsv, np.array([165, 20, 30]), np.array([180, 255, 255]))
-        mask_red = cv2.bitwise_or(mask_r1, mask_r2)
-        # 红色线可能较粗，用中 kernel 连接断线
-        mask_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel_mid, iterations=1)
-        if cv2.countNonZero(mask_red) > 50:
-            masks.append(("red", mask_red))
-
-    # 策略 D：Otsu 自动阈值 + 轻度形态学
-    _, mask_otsu = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    mask_otsu = cv2.morphologyEx(mask_otsu, cv2.MORPH_CLOSE, kernel_small, iterations=1)
-    masks.append(("otsu", mask_otsu))
+    # 策略2：Canny 边缘检测 + 形态学闭运算（适合线条类、手绘边框草图）
+    try:
+        edges = cv2.Canny(gray_img, 15, 80)
+        mask_canny = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_small, iterations=1)
+        masks.append(("canny", mask_canny))
+    except Exception:
+        pass
 
     return masks
 
@@ -405,20 +385,24 @@ def _find_two_nested_rectangles(cv2, gray_img, color_img=None):
     """
     h, w = gray_img.shape[:2]
     full_area = h * w
-    min_component_area = max(200, int(full_area * 0.002))
+    min_component_area = max(100, int(full_area * 0.001))
 
     masks = _build_binary_masks(cv2, gray_img, color_img)
+    logger.info(f"[sketch_parser] 几何检测：生成 {len(masks)} 种二值化 mask")
 
     candidates = []
     seen_bboxes = set()
 
     for mask_name, mask in masks:
-        # 连通分量分析（比 findContours 更稳健，不会合并相邻组件）
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        mask_candidates = 0
+        mask_filtered_small = 0
+        mask_filtered_score = 0
 
-        for label_id in range(1, num_labels):  # 跳过背景
+        for label_id in range(1, num_labels):
             area = stats[label_id, cv2.CC_STAT_AREA]
             if area < min_component_area:
+                mask_filtered_small += 1
                 continue
 
             x = stats[label_id, cv2.CC_STAT_LEFT]
@@ -426,14 +410,14 @@ def _find_two_nested_rectangles(cv2, gray_img, color_img=None):
             ww = stats[label_id, cv2.CC_STAT_WIDTH]
             hh = stats[label_id, cv2.CC_STAT_HEIGHT]
 
-            if ww < 15 or hh < 15:
+            if ww < 10 or hh < 10:
+                mask_filtered_small += 1
                 continue
 
             rect_area = ww * hh
             if rect_area <= 0:
                 continue
 
-            # 用轮廓近似计算边数（对连通区域做轮廓检测）
             component_mask = (labels == label_id).astype(np.uint8) * 255
             cnts, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if not cnts:
@@ -446,28 +430,23 @@ def _find_two_nested_rectangles(cv2, gray_img, color_img=None):
             else:
                 n_vertices = 4
 
-            # 判断是否为空心轮廓（线框）
-            # 空心：面积 << boundingRect 面积
             fill_ratio = area / rect_area if rect_area > 0 else 0
-            is_hollow = fill_ratio < 0.1
+            is_hollow = fill_ratio < 0.15
 
             if is_hollow:
-                # 空心轮廓（线框）：主要根据边数评分
                 vertex_score = 0.6 if n_vertices == 4 else (0.4 if 3 <= n_vertices <= 6 else 0.0)
-                # boundingRect 的宽高比也加分
                 aspect = min(ww, hh) / max(ww, hh) if ww > 0 and hh > 0 else 0
                 aspect_score = min(1.0, aspect) * 0.3
                 score = vertex_score + aspect_score
             else:
-                # 填充区域：使用矩形度评分
                 rectangularity = min(1.0, fill_ratio)
                 vertex_score = 0.5 if n_vertices == 4 else (0.3 if 3 <= n_vertices <= 6 else 0.0)
                 score = rectangularity * 0.6 + vertex_score * 0.4
 
-            if score < 0.25:
+            if score < 0.2:
+                mask_filtered_score += 1
                 continue
 
-            # 去重（量化到 10px 网格）
             rx_q = round(x / 10) * 10
             ry_q = round(y / 10) * 10
             rw_q = round(ww / 10) * 10
@@ -478,18 +457,34 @@ def _find_two_nested_rectangles(cv2, gray_img, color_img=None):
             seen_bboxes.add(key)
 
             candidates.append((x, y, ww, hh, score, rect_area))
+            mask_candidates += 1
+
+        logger.info(
+            f"[sketch_parser] mask={mask_name}: 连通域数={num_labels - 1}, "
+            f"候选={mask_candidates}, 面积过滤={mask_filtered_small}, "
+            f"得分过滤={mask_filtered_score}"
+        )
 
     if not candidates:
+        logger.warning(
+            f"[sketch_parser] 矩形检测失败：所有 mask 均未产生有效候选。"
+            f"最小面积阈值={min_component_area}px²，"
+            f"建议：草图可能过于模糊或缺少明显的矩形边框。"
+        )
         return []
 
     # 按 boundingRect 面积降序
     candidates.sort(key=lambda c: c[5], reverse=True)
+
+    logger.info(f"[sketch_parser] 矩形候选汇总：{len(candidates)} 个，"
+                f"top5面积={[c[5] for c in candidates[:5]]}")
 
     # 取前 10 个，找最佳嵌套对
     top = candidates[:10]
 
     best_pair = None
     best_score = -1
+    _pair_fail_reasons = []
 
     for i in range(len(top)):
         outer = top[i]
@@ -500,20 +495,22 @@ def _find_two_nested_rectangles(cv2, gray_img, color_img=None):
             inner = top[j]
             ix, iy, iw, ih, ins, ina = inner
 
-            # 嵌套验证
             if ix < ox - 5 or iy < oy - 5:
+                _pair_fail_reasons.append(f"外框外: inner=({ix},{iy}) outer=({ox},{oy})")
                 continue
             if ix + iw > ox + ow + 5 or iy + ih > oy + oh + 5:
+                _pair_fail_reasons.append(f"外框外2: inner_bottom_right超出outer")
                 continue
             if ina >= oa * 0.9:
+                _pair_fail_reasons.append(f"面积过近: inner_area={ina:.0f} >= outer_area*0.9={oa*0.9:.0f}")
                 continue
 
-            # 四边至少有 2px 边距
             mt = iy - oy
             mb = (oy + oh) - (iy + ih)
             ml = ix - ox
             mr = (ox + ow) - (ix + iw)
             if min(mt, mb, ml, mr) < 2:
+                _pair_fail_reasons.append(f"边距<2px: T={mt:.0f} B={mb:.0f} L={ml:.0f} R={mr:.0f}")
                 continue
 
             score_sum = os + ins + 0.1 * (oa / max(1, ina))
@@ -523,13 +520,26 @@ def _find_two_nested_rectangles(cv2, gray_img, color_img=None):
 
     if best_pair:
         outer, inner = best_pair
+        logger.info(
+            f"[sketch_parser] 嵌套矩形检测成功：outer=({outer[0]},{outer[1]},{outer[2]},{outer[3]}) "
+            f"score={outer[4]:.2f}, inner=({inner[0]},{inner[1]},{inner[2]},{inner[3]}) "
+            f"score={inner[4]:.2f}, best_score={best_score:.2f}"
+        )
         return [
             (outer[0], outer[1], outer[2], outer[3], outer[4]),
             (inner[0], inner[1], inner[2], inner[3], inner[4]),
         ]
 
-    # 兜底：面积最大两个
+    logger.warning(
+        f"[sketch_parser] 嵌套验证失败（尝试过{len(_pair_fail_reasons)}对候选），"
+        f"原因={_pair_fail_reasons[:5]}"
+    )
+
+    # 兜底：面积最大两个（不要求嵌套关系）
     if len(top) >= 2:
+        logger.warning(
+            f"[sketch_parser] 使用兜底策略：取面积最大的2个候选作为outer/inner"
+        )
         return [
             (top[0][0], top[0][1], top[0][2], top[0][3], top[0][4]),
             (top[1][0], top[1][1], top[1][2], top[1][3], top[1][4]),
@@ -1116,19 +1126,26 @@ def _ocr_full_image(cv2, gray_img, tesseract, fast_mode: bool = False) -> list[t
             if not is_original_of_repaired:
                 repaired.append((val, xc, yc, conf))
 
-    # 去重
+    # 去重：同一位置只保留一个值
+    # 选择规则：位数多 > conf高 > 数值小（OCR更易多读数字而非少读）
     dedup_final = {}
     for val, xc, yc, conf in repaired:
         key = None
         for k, (dv, dxc, dyc, dc) in list(dedup_final.items()):
-            if abs(dv - val) < max(0.05, val * 0.02) and abs(dxc - xc) < 30 and abs(dyc - yc) < 30:
+            if abs(dxc - xc) < 30 and abs(dyc - yc) < 30:
                 key = k
                 break
         if key is None:
             dedup_final[(val, xc, yc)] = (val, xc, yc, conf)
         else:
             ov, oxc, oyc, oc = dedup_final[key]
-            if conf > oc:
+            val_digits = len(str(int(val))) if val > 0 else 0
+            ov_digits = len(str(int(ov))) if ov > 0 else 0
+            if val_digits > ov_digits:
+                dedup_final[key] = (val, xc, yc, conf)
+            elif val_digits == ov_digits and conf > oc:
+                dedup_final[key] = (val, xc, yc, conf)
+            elif val_digits == ov_digits and abs(conf - oc) < 0.1 and val < ov:
                 dedup_final[key] = (val, xc, yc, conf)
     results = list(dedup_final.values())
 
@@ -1141,10 +1158,15 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
                                  target_h_hint: float = 0.0) -> dict:
     """根据 OCR 识别数值的空间位置，把每个数值分配到最可能的字段。
 
+    使用直接几何间隙区域分配：
+    - 内框区域 → inner_w / inner_h
+    - 外框与内框之间的四个间隙区域 → margin_top/bottom/left/right
+    - 外框外侧 → total_w / total_h
+
     Args:
         ocr_hits: [(value, x_center, y_center, confidence), ...]
         outer_rect / inner_rect: (x, y, w, h)
-        target_w_hint / target_h_hint: 目标尺寸提示（可选，用于基于数值大小的回退分配）
+        target_w_hint / target_h_hint: 目标尺寸提示
 
     Returns:
         dict: key → (value, confidence)
@@ -1166,1544 +1188,188 @@ def _assign_ocr_values_to_fields(ocr_hits, outer_rect, inner_rect,
     ox, oy, ow, oh = outer_rect
     ix, iy, iw, ih = inner_rect
 
-    # 各字段的理想位置（作为锚点）
-    anchors = [
-        # (key, x_center_frac, y_center_frac, x_range, y_range)
-        # x_range / y_range：接受的范围（像素单位的容差）
+    gap_top = max(0, iy - oy)
+    gap_bottom = max(0, (oy + oh) - (iy + ih))
+    gap_left = max(0, ix - ox)
+    gap_right = max(0, (ox + ow) - (ix + iw))
 
-        # 总宽：外框下边外侧或下边中央附近（水平）
-        ('total_w',   (ox + ow / 2), (oy + oh + oh * 0.12),
-            (ow * 0.6), (oh * 0.3)),
-        # 总高：外框左边外侧或左边中央附近（垂直）
-        ('total_h',   (ox - ow * 0.12), (oy + oh / 2),
-            (ow * 0.3), (oh * 0.6)),
-        # 上边距：内外框间隙上方中央（x: 外框宽度范围，y: 上边距区域）
-        ('margin_top',    (ox + ow / 2), (oy + max(0, iy - oy) / 2),
-            (ow * 0.8), max(oh * 0.35, (iy - oy) + oh * 0.15)),
-        # 下边距：内外框间隙下方中央
-        ('margin_bottom', (ox + ow / 2), (iy + ih + max(0, (oy + oh) - (iy + ih)) / 2),
-            (ow * 0.8), max(oh * 0.35, ((oy + oh) - (iy + ih)) + oh * 0.15)),
-        # 左边距：内外框间隙左侧中央
-        ('margin_left',   (ox + (ix - ox) / 2), (iy + ih / 2),
-            max(ow * 0.3, (ix - ox) + ow * 0.15), (ih * 0.9)),
-        # 右边距：内外框间隙右侧中央
-        ('margin_right',  (ix + iw + ((ox + ow) - (ix + iw)) / 2), (iy + ih / 2),
-            max(ow * 0.3, ((ox + ow) - (ix + iw)) + ow * 0.15), (ih * 0.9)),
-        # 内框宽：内框中央（上半部分，水平读）
-        ('inner_w',   (ix + iw / 2), (iy + ih * 0.35),
-            (iw * 0.8), (ih * 0.5)),
-        # 内框高：内框中央（下半部分，水平读）
-        ('inner_h',   (ix + iw / 2), (iy + ih * 0.65),
-            (iw * 0.8), (ih * 0.5)),
-    ]
-
-    # ---- 扩展锚点：覆盖外框外部区域（草图中边距/总尺寸常标注在外框外侧）----
-    # 边距扩展：外框外部的边距标注区
-    _ext_margin_range = max(ow, oh) * 0.18  # 外框外部搜索范围
-    # 上边距扩展：外框上方
-    anchors.append(('margin_top', (ox + ow / 2), (oy - _ext_margin_range * 0.5),
-        (ow * 0.9), _ext_margin_range))
-    # 下边距扩展：外框下方
-    anchors.append(('margin_bottom', (ox + ow / 2), (oy + oh + _ext_margin_range * 0.5),
-        (ow * 0.9), _ext_margin_range))
-    # 左边距扩展：外框左侧
-    anchors.append(('margin_left', (ox - _ext_margin_range * 0.5), (oy + oh / 2),
-        _ext_margin_range, (oh * 0.9)))
-    # 右边距扩展：外框右侧
-    anchors.append(('margin_right', (ox + ow + _ext_margin_range * 0.5), (oy + oh / 2),
-        _ext_margin_range, (oh * 0.9)))
-
-    # 总宽/总高扩展：外框外部的总尺寸标注区
-    anchors.append(('total_w', (ox + ow * 0.5), (oy + oh + oh * 0.12),
-        (ow * 0.95), (oh * 0.3)))
-    anchors.append(('total_w', (ox + ow / 2), (oy - oh * 0.12),
-        (ow * 0.95), (oh * 0.4)))
-    anchors.append(('total_h', (ox - ow * 0.08), (oy + oh * 0.5),
-        (ow * 0.35), (oh * 0.95)))
-    anchors.append(('total_h', (ox + ow * 1.08), (oy + oh * 0.5),
-        (ow * 0.35), (oh * 0.95)))
-    anchors.append(('total_h', (ox + ow / 2), (oy - oh * 0.08),
-        (ow * 0.5), (oh * 0.25)))
-    anchors.append(('total_h', (ox + ow / 2), (oy + oh + oh * 0.08),
-        (ow * 0.5), (oh * 0.25)))
-
-    # 内框尺寸扩展：内框四角附近（尺寸值可能标在角上）
-    anchors.append(('inner_w', (ix + iw / 2), (iy - ih * 0.1),
-        (iw * 0.6), (ih * 0.3)))
-    anchors.append(('inner_h', (ix + iw + iw * 0.1), (iy + ih / 2),
-        (iw * 0.3), (ih * 0.6)))
-
-    # 先按数值大小给分类权重：边距一般较小（<60），总尺寸一般较大
-    # 这样小数值不至于被"总高在顶部"等锚点误抢
-    def _value_pref_weight(val, key, yc_rel):
-        # yc_rel: hit 相对于外框的垂直位置（0=外框顶，1=外框底，>1=外框下方，<0=外框上方）
-        if key == 'total_w':
-            bonus = 0.1 if (yc_rel >= 0.9 or yc_rel <= 0.1) else 0.0
-            if val >= 50: bonus += 0.15
-            elif val < 15: bonus -= 0.2
-            return bonus
-        elif key == 'total_h':
-            if 0.2 <= yc_rel <= 0.8:
-                bonus = 0.12   # 侧方中间区域加分
-            elif yc_rel >= 0.9 or yc_rel <= 0.1:
-                bonus = -0.12  # 顶/底区域是 total_w 地盘，给 total_h 减分避免抢
-            else:
-                bonus = 0.0
-            if val >= 50: bonus += 0.15
-            elif val < 15: bonus -= 0.2
-            return bonus
-        elif key in ('inner_w', 'inner_h'):
-            return 0.1 if 20 <= val <= 300 else 0.0
-        elif key.startswith('margin_'):
-            # 边距范围放宽到 2~80，支持大边距值
-            if 2 <= val <= 80: return 0.15
-            if val > 80: return -0.15
-            return 0.0
-        return 0.0
-
-    # ====== 阶段 1：生成所有 (score, hit_idx, key) 候选，按得分从高到低 ======
-    # hit_idx 用来标记"哪个 OCR hit"——保证一个数字只占 1 个字段！
-    all_edges = []
-    hit_keys_candidates = []  # hit_idx -> list of (key, score)
-
-    def _axis_weight_for_key(key):
-        """返回 (wx, wy)：对该字段更重要的轴给更高权重。
-        例如 margin_left / margin_right → x 方向更关键；margin_top / margin_bottom → y 更关键。
-        total_w → y 更关键（靠近顶/底）；total_h → x 更关键（靠近左/右边）。
-        """
-        if key in ('margin_left', 'margin_right'):
-            return (0.7, 0.3)  # x 更重要
-        if key in ('margin_top', 'margin_bottom'):
-            return (0.3, 0.7)  # y 更重要
-        if key == 'total_w':
-            return (0.3, 0.7)  # y（顶/底位置）更重要
-        if key == 'total_h':
-            return (0.7, 0.3)  # x（左/右位置）更重要
-        return (0.4, 0.4)  # inner_w / inner_h 均衡
-
-    for hit_idx, (val, xc, yc, conf) in enumerate(ocr_hits):
-        yc_rel = (yc - oy) / oh if oh > 0 else 0.5
-        cands = []
-        for (key, ax, ay, x_tol, y_tol) in anchors:
-            dx = abs(xc - ax)
-            dy = abs(yc - ay)
-            if dx > x_tol or dy > y_tol:
-                continue
-            wx, wy = _axis_weight_for_key(key)
-            dist_score = (1 - dx / max(1, x_tol)) * wx + (1 - dy / max(1, y_tol)) * wy
-            s = dist_score + conf * 0.2 + _value_pref_weight(val, key, yc_rel)
-            cands.append((key, s))
-            all_edges.append((s, hit_idx, key, val, xc, yc, conf))
-        # 保存此 hit 的所有 key 候选（用于后续 alternates 重分配）
-        cands.sort(key=lambda t: t[1], reverse=True)
-        hit_keys_candidates.append(cands)
-
-    # 按得分降序（越大越先匹配）
-    all_edges.sort(key=lambda e: e[0], reverse=True)
-
-    used_values = {}  # key → (val, score)
-    used_hit_idx = set()  # 已占用的 ocr_hit
-
-    for s, hi, key, val, xc, yc, conf in all_edges:
-        if hi in used_hit_idx:
-            continue
-        if key in used_values:
-            continue
-        used_values[key] = (val, s)
-        used_hit_idx.add(hi)
-
-    # alternates: 未用的 hit 仍然保留所有候选（用于后续填缺）
-    alternates = []
-    for hi, (val, xc, yc, conf, cands) in enumerate(zip(
-            [h[0] for h in ocr_hits],
-            [h[1] for h in ocr_hits],
-            [h[2] for h in ocr_hits],
-            [h[3] for h in ocr_hits],
-            hit_keys_candidates)):
-        # 兼容 zip：上面 zip 构造有点问题，改用 enumerate(ocr_hits) 显式构造
-        pass
-    # 正确构造 alternates（上面写法混乱，重写）
-    alternates.clear()
-    for hi, (val, xc, yc, conf) in enumerate(ocr_hits):
-        if hi in used_hit_idx:
-            continue
-        for key, s in hit_keys_candidates[hi]:
-            alternates.append((val, key, s, xc, yc, conf))
-    # 也把"已经通过 higher-score 抢到某个 key"的 hit 的其他候选键保存
-    # （万一后面需要把某个字段交换出来）
-    for hi, (val, xc, yc, conf) in enumerate(ocr_hits):
-        for key, s in hit_keys_candidates[hi]:
-            # 不加入已经占用的 key
-            if key in used_values and used_values[key][0] == val:
-                continue
-            alternates.append((val, key, s, xc, yc, conf))
-
-    # ====== 阶段 2：方向矫正 total_w ↔ total_h ======
-    tw_val, tw_sc = used_values.get('total_w', (0.0, 0.0))
-    th_val, th_sc = used_values.get('total_h', (0.0, 0.0))
-
-    def _apply_total_direction_swap(px_ratio, tw_v, th_v):
-        if tw_v <= 0 or th_v <= 0:
-            return tw_v, th_v, False
-        need = False
-        if px_ratio > 1.05 and tw_v < th_v:
-            need = True
-        elif px_ratio < 1.0 / 1.05 and tw_v > th_v:
-            need = True
-        if need:
-            return th_v, tw_v, True
-        return tw_v, th_v, False
-
-    px_ratio = ow / oh if oh > 0 else 1.0
-    tw_val, th_val, swapped = _apply_total_direction_swap(px_ratio, tw_val, th_val)
-    if swapped:
-        old_tw = used_values.get('total_w')
-        old_th = used_values.get('total_h')
-        if old_tw and old_th:
-            used_values['total_w'] = (tw_val, old_th[1])
-            used_values['total_h'] = (th_val, old_tw[1])
-        # —— 修复：同步交换 inner_w ↔ inner_h ——
-        # 阶段2的方向矫正基于「像素横版 vs 数值横版」的一致性判断。
-        # 如果 total_w/total_h 的空间锚点搞反了（total_w 读了竖边值），
-        # 那么 inner_w/inner_h 的空间锚点也必然是同样搞反的（因为
-        # inner_w 锚点在内框上半=水平读，inner_h 锚点在内框下半=水平读，
-        # 方向错配的模式与 total 完全相同）。
-        # 因此：交换 total 时必须同步交换 inner，否则 outer 与 inner
-        # 的宽高语义不一致，会破坏 parse_sketch 中的「双向自洽性检测」。
-        old_iw = used_values.get('inner_w')
-        old_ih = used_values.get('inner_h')
-        if old_iw and old_ih and old_iw[0] > 0 and old_ih[0] > 0:
-            used_values['inner_w'] = (old_ih[0], old_ih[1])
-            used_values['inner_h'] = (old_iw[0], old_iw[1])
-            logger.debug(f"[sketch_parser] 阶段2同步交换 inner 宽高："
-                         f"{old_iw[0]:.1f}x{old_ih[0]:.1f} → {old_ih[0]:.1f}x{old_iw[0]:.1f}")
-
-    # ====== 阶段 3：若 total_w / total_h 仍缺失，从 alternates 填充 ======
-    if tw_val <= 0 or th_val <= 0:
-        total_pool = []  # (val, akey, ascore, xc, yc)
-        for aval, akey, ascore, axc, ayc, aconf in alternates:
-            if (akey in ('total_w', 'total_h')) and aval >= 20:
-                total_pool.append((aval, akey, ascore, axc, ayc))
-        for k in ('inner_w', 'inner_h', 'total_w', 'total_h'):
-            if k in used_values:
-                vv, ss = used_values[k]
-                if vv >= 20:
-                    total_pool.append((vv, k, ss, 0, 0))
-        # 去重按 val
-        seen_vals = {}
-        for t in total_pool:
-            key_v = t[0]
-            if key_v not in seen_vals or t[2] > seen_vals[key_v][2]:
-                seen_vals[key_v] = t
-        total_pool = list(seen_vals.values())
-        total_pool.sort(key=lambda t: t[2], reverse=True)
-
-        missing_keys = [k for k in ('total_w', 'total_h')
-                        if used_values.get(k, (0, 0))[0] <= 0]
-
-        bigger_first = 'total_w' if px_ratio >= 1.0 else 'total_h'
-        smaller_first = 'total_h' if bigger_first == 'total_w' else 'total_w'
-        ordered_keys = [bigger_first, smaller_first] if px_ratio >= 1.0 else [smaller_first, bigger_first]
-
-        used_total_vals = set()
-        for mk in ordered_keys:
-            if mk not in missing_keys:
-                continue
-            for aval, akey, ascore, axc, ayc in total_pool:
-                if aval in used_total_vals:
-                    continue
-                if aval <= 0:
-                    continue
-                used_values[mk] = (aval, max(2, min(10, int(ascore * 10))))
-                used_total_vals.add(aval)
-                if mk == 'total_w':
-                    tw_val = aval
-                else:
-                    th_val = aval
-                break
-        # 最后再方向矫正一次
-        nw_tw, nw_th, did_swap = _apply_total_direction_swap(
-            ow / oh if oh > 0 else 1.0, tw_val, th_val)
-        if did_swap:
-            old_tw = used_values.get('total_w')
-            old_th = used_values.get('total_h')
-            if old_tw and old_th:
-                used_values['total_w'] = (nw_tw, old_th[1])
-                used_values['total_h'] = (nw_th, old_tw[1])
-
-    # ====== 阶段 4：若边距缺失，从 alternates 里找匹配的 ======
-    # 记录已占用的 (val, xc, yc) 近似指纹：避免同一个 OCR 数字填到多个字段里
-    used_fingerprint = set()  # set of (round(val,1), round(xc/10)*10, round(yc/10)*10)
-    for key in used_values:
-        v, s = used_values[key]
-        # 从 used_values 回溯 (xc, yc) 比较麻烦，这里从 alternates 反向找；
-        # 简化：直接信任阶段 1 的 used_hit_idx 已经避免重复。阶段 4 再显式防：
-        # 扫 alternates 中 match 的条目时加入指纹
-    # 构造"可用 hit 的指纹"（来自 alternates 但要排除已通过阶段 1 占用的 hit）
-    # 简化做法：对边距字段，阶段 4 若找到匹配值，先和已占字段的 val 做空间冲突判断
-    def _make_fp(v, x, y):
-        return (round(v, 1), round(x / 10) * 10, round(y / 10) * 10)
-
-    # 收集已占字段的指纹：遍历 ocr_hits × (key 是否等于已占且值匹配)
-    for key, (val, _s) in used_values.items():
-        for hi, (v, xc, yc, _c) in enumerate(ocr_hits):
-            if abs(v - val) < max(0.05, val * 0.02) and hi in used_hit_idx:
-                used_fingerprint.add(_make_fp(val, xc, yc))
-                # 放宽：也添加 (±10 像素) 的邻域，因为阶段 1 可能位置有误差
-                used_fingerprint.add(_make_fp(val, xc - 10, yc))
-                used_fingerprint.add(_make_fp(val, xc + 10, yc))
-                used_fingerprint.add(_make_fp(val, xc, yc - 10))
-                used_fingerprint.add(_make_fp(val, xc, yc + 10))
-
-    for mk in ('margin_top', 'margin_bottom', 'margin_left', 'margin_right'):
-        if mk in used_values and used_values[mk][0] > 0:
-            continue
-        best = None
-        best_xc = 0
-        best_yc = 0
-        for aval, akey, ascore, axc, ayc, aconf in alternates:
-            if akey != mk:
-                continue
-            if not (1.5 <= aval <= 80):
-                continue
-            # 若此 val 已被其他字段占用且空间位置相近 → 这是同一个 OCR 数字，不能再用
-            fp = _make_fp(aval, axc, ayc)
-            if fp in used_fingerprint:
-                continue
-            if best is None or ascore > best[2]:
-                best = (aval, akey, ascore)
-                best_xc, best_yc = axc, ayc
-        if best and best[0] > 0:
-            used_values[mk] = (best[0], max(2, min(10, int(best[2] * 10))))
-            used_fingerprint.add(_make_fp(best[0], best_xc, best_yc))
-
-    for key in used_values:
-        val, score = used_values[key]
-        result[key] = (val, max(1, min(10, int(score * 10))))
-
-    # ====== 基于数值大小的回退分配 ======
-    # 当空间位置映射产生的结果几何不自洽（比如 OCR 只检测到少数几个数字时，
-    # 空间锚点分配会完全错位），改用"数值大小 + 几何约束"重新分配。
-    # 原理：大数值→外框总尺寸，中数值→内框尺寸，小数值→边距
-    result_vb = {
-        'total_w': (0.0, 0), 'total_h': (0.0, 0),
-        'inner_w': (0.0, 0), 'inner_h': (0.0, 0),
-        'margin_top': (0.0, 0), 'margin_bottom': (0.0, 0),
-        'margin_left': (0.0, 0), 'margin_right': (0.0, 0),
+    # Step 1: Classify each OCR hit into a geometric region
+    region_hits = {
+        'inner': [], 'top': [], 'bottom': [],
+        'left': [], 'right': [], 'outside': [],
     }
 
-    def _semantic_sanity_score(assign):
-        """返回 (是否语义合理, 详细说明)"""
-        tw = assign.get('total_w', (0, 0))[0]
-        th = assign.get('total_h', (0, 0))[0]
-        iw = assign.get('inner_w', (0, 0))[0]
-        ih = assign.get('inner_h', (0, 0))[0]
-        mt = assign.get('margin_top', (0, 0))[0]
-        mb = assign.get('margin_bottom', (0, 0))[0]
-        ml = assign.get('margin_left', (0, 0))[0]
-        mr_ = assign.get('margin_right', (0, 0))[0]
-        reasons = []
-        # 语义1：total（外框）应该是所有值中最大的两个，>= 20
-        for n, v in [('total_w', tw), ('total_h', th)]:
-            if 0 < v < 20:
-                reasons.append(f"{n}={v:.1f}(<20,太小不像外框)")
-        # 语义2：inner（内挖）应该中等尺寸，且必须 < total（哪怕双向）
-        if iw > 0 and tw > 0 and ih > 0 and th > 0:
-            # 允许方向反（双向都检查）
-            _fits_w = (iw < tw) and (ih < th)       # 正常方向
-            _fits_r = (iw < th) and (ih < tw)       # 反向全交换
-            if not (_fits_w or _fits_r):
-                reasons.append(
-                    f"inner={iw:.1f}x{ih:.1f} 不小于 outer={tw:.1f}x{th:.1f}"
-                )
-        # 语义3：边距应该是小值（上限取 80cm 足够所有大型泳池），
-        # 且通常边距不可能大于 inner 的对应边长
-        _any_margin_big = False
-        for mn, mv, iv, tv in [
-            ('margin_top', mt, ih, th),
-            ('margin_bottom', mb, ih, th),
-            ('margin_left', ml, iw, tw),
-            ('margin_right', mr_, iw, tw),
-        ]:
-            if mv > 200:
-                _any_margin_big = True
-                reasons.append(f"{mn}={mv:.1f}(>200,远超常规边距)")
-            if mv > 0 and iv > 0 and mv > iv * 1.5:
-                _any_margin_big = True
-                reasons.append(f"{mn}={mv:.1f}(>inner边{iv:.1f}的1.5倍)")
-        # 语义4：边距值不应该超过 outer 对应方向的 70%
-        for mn, mv, tv in [
-            ('margin_left', ml, tw),
-            ('margin_right', mr_, tw),
-            ('margin_top', mt, th),
-            ('margin_bottom', mb, th),
-        ]:
-            if mv > 0 and tv > 0 and mv > tv * 0.7:
-                _any_margin_big = True
-                reasons.append(f"{mn}={mv:.1f}(>outer对应边{tv:.1f}的70%)")
-        return (len(reasons) == 0), "; ".join(reasons)
+    for val, xc, yc, conf in ocr_hits:
+        if val <= 0:
+            continue
 
-    if target_w_hint > 0 and target_h_hint > 0:
-        result_vb = _value_based_assignment(
-            ocr_hits, outer_rect, inner_rect,
-            target_w_hint, target_h_hint
-        )
-        # —— 修复 Bug 6：伪自洽检测 + 三档阈值覆盖策略 ——
-        # 空间映射（阶段1）基于图像位置锚点，但偶尔会发生"数值位置接近字段锚点
-        # 边界"导致的分配错位（如左右边距值42.4分配到inner_h，内挖44.5分配到
-        # margin_right），此时 outer-inner 与 margin_sum 在数学上仍碰巧自洽
-        # （sc_spatial>=0.7 即被判定"高度自洽"），但语义上字段值大小完全错乱
-        # （如 margin_right=44.5 > inner_h，inner_w=14.6 < margin_left）。
-        # 检测方法：显式检查 6 条语义大小约束，任意违反即认定"伪自洽"，
-        # 将 sc_spatial 强制降档至 <=0.5 以允许数值穷举覆盖。
-        # (_semantic_sanity_score 已在 if 块外定义)
+        # Inside inner rectangle?
+        if ix <= xc <= ix + iw and iy <= yc <= iy + ih:
+            region_hits['inner'].append((val, xc, yc, conf))
+            continue
 
-    # ———【关键诊断日志：WARNING级可见】———
-    # 打印 OCR 实际识别到了哪些数值（用户截图显示左=0/右=0，极有可能是
-    # 14.6/42.4/76/44.5 这些值根本没被 OCR 识别出来，而非分配逻辑出错）。
-    _raw_vals = [(round(v[0], 2), int(v[3]*100), round(v[1]), round(v[2])) for v in ocr_hits if v[0] > 0]
-    _uniq_diag = sorted({round(v[0]*10)/10 for v in ocr_hits if v[0] > 0})
-    logger.warning(
-        f"[sketch_parser] OCR识别结果诊断：识别到{len(_raw_vals)}个数字标注，"
-        f"去重后共{len(_uniq_diag)}个唯一值={_uniq_diag}；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法"
-    )
-    logger.warning(
-        f"[sketch_parser] 空间分配8字段sc={_score_assignment_consistency(result):.3f}："
-        f"total={result.get('total_w',(0,0))[0]:.2f}x{result.get('total_h',(0,0))[0]:.2f}, "
-        f"inner={result.get('inner_w',(0,0))[0]:.2f}x{result.get('inner_h',(0,0))[0]:.2f}, "
-        f"边距上{result.get('margin_top',(0,0))[0]:.2f}/下{result.get('margin_bottom',(0,0))[0]:.2f}/"
-        f"左{result.get('margin_left',(0,0))[0]:.2f}/右{result.get('margin_right',(0,0))[0]:.2f}"
-    )
-    logger.warning(
-        f"[sketch_parser] 数值穷举8字段sc={_score_assignment_consistency(result_vb):.3f}："
-        f"total={result_vb.get('total_w',(0,0))[0]:.2f}x{result_vb.get('total_h',(0,0))[0]:.2f}, "
-        f"inner={result_vb.get('inner_w',(0,0))[0]:.2f}x{result_vb.get('inner_h',(0,0))[0]:.2f}, "
-        f"边距上{result_vb.get('margin_top',(0,0))[0]:.2f}/下{result_vb.get('margin_bottom',(0,0))[0]:.2f}/"
-        f"左{result_vb.get('margin_left',(0,0))[0]:.2f}/右{result_vb.get('margin_right',(0,0))[0]:.2f}"
-    )
-    sc_spatial = _score_assignment_consistency(result)
-    sc_value = _score_assignment_consistency(result_vb)
-    _spatial_sane, _spatial_reason = _semantic_sanity_score(result)
-    _value_sane, _value_reason = _semantic_sanity_score(result_vb)
-    # 伪自洽打破：空间得分虽高，但语义不合理 → 强制降档 sc_spatial
-    _pseudo_self_consistent = False
-    if sc_spatial >= 0.7 and not _spatial_sane:
-        _pseudo_self_consistent = True
-        logger.warning(
-            f"[sketch_parser] 空间分配检测为「伪自洽」(sc={sc_spatial:.3f}，"
-            f"但语义错误：{_spatial_reason})。打破sc>=0.7档保护，允许数值穷举覆盖"
-        )
-        sc_spatial = 0.5  # 强制降到 0.3~0.7 档，可被显著更好的数值穷举覆盖
+        # Top gap: between outer top and inner top
+        if oy - gap_top * 0.3 <= yc <= iy + gap_top * 0.3 and ox <= xc <= ox + ow:
+            region_hits['top'].append((val, xc, yc, conf))
+            continue
 
-    # —— 修复 Bug 6+ 终极：伪自洽或 OCR 8 值全部已知时，暴力搜索最优 8 字段分配 ——
-    # _value_based_assignment 依赖 target 方向（反向时只得到 sc=0.65 次优解），
-    # 而用户真实调用时 target 经常方向反（如文件名先60.5后133）。
-    # 暴力搜索完全不依赖 target：从 8 个 OCR 数值出发，按"语义大小分层+双向
-    # 几何自洽"枚举所有合理组合（最多 40320 种，毫秒级完成），
-    # 直接找到 sc=1.0 的几何完全自洽组合（就是草图标注本身！）。
-    # 触发条件：伪自洽 或 空间/数值分配得分都未达到 sc>=0.95 的完全自洽。
-    _brute_used = False
-    try:
-        _uniq_vals = []
-        _seen = set()
-        for _vh in ocr_hits:
-            _rv = round(_vh[0], 2)
-            if _rv <= 0:
+        # Bottom gap: between inner bottom and outer bottom
+        if iy + ih - gap_bottom * 0.3 <= yc <= oy + oh + gap_bottom * 0.3 and ox <= xc <= ox + ow:
+            region_hits['bottom'].append((val, xc, yc, conf))
+            continue
+
+        # Left gap: between outer left and inner left
+        if ox - gap_left * 0.3 <= xc <= ix + gap_left * 0.3 and oy <= yc <= oy + oh:
+            region_hits['left'].append((val, xc, yc, conf))
+            continue
+
+        # Right gap: between inner right and outer right
+        if ix + iw - gap_right * 0.3 <= xc <= ox + ow + gap_right * 0.3 and oy <= yc <= oy + oh:
+            region_hits['right'].append((val, xc, yc, conf))
+            continue
+
+        # Outside outer rectangle
+        region_hits['outside'].append((val, xc, yc, conf))
+
+    logger.info(f"[sketch_parser] 几何区域分类: inner={len(region_hits['inner'])}, "
+                f"top={len(region_hits['top'])}, bottom={len(region_hits['bottom'])}, "
+                f"left={len(region_hits['left'])}, right={len(region_hits['right'])}, "
+                f"outside={len(region_hits['outside'])}")
+
+    # 计算合理的边距值范围：
+    # 1. 排除接近外框总尺寸的值（这些是外框尺寸，不是边距）
+    # 2. 如果有target hints，用它们作为参考
+    _outer_w_cm = target_w_hint if target_w_hint > 0 else 0
+    _outer_h_cm = target_h_hint if target_h_hint > 0 else 0
+    
+    def _is_suspicious_outer_dim(val):
+        """检查值是否可能是外框总尺寸而非边距。"""
+        if _outer_w_cm > 0 and abs(val - _outer_w_cm) <= max(3.0, _outer_w_cm * 0.05):
+            return True
+        if _outer_h_cm > 0 and abs(val - _outer_h_cm) <= max(3.0, _outer_h_cm * 0.05):
+            return True
+        return False
+
+    def _best_value_for_margin(hits, region_name):
+        """选择最合适的边距值，排除外框总尺寸等可疑值。"""
+        if not hits:
+            return None
+        # 去重：相同数值取最高置信度
+        dedup = {}
+        for val, xc, yc, conf in hits:
+            vround = round(val, 1)
+            if vround not in dedup or conf > dedup[vround][3]:
+                dedup[vround] = (val, xc, yc, conf)
+        
+        candidates = list(dedup.values())
+        
+        # 优先选择不那么可疑的值（不是外框总尺寸）
+        clean = [(v, x, y, c) for v, x, y, c in candidates 
+                 if not _is_suspicious_outer_dim(v)]
+        
+        if clean:
+            # 从干净候选中选择置信度最高的
+            return max(clean, key=lambda h: h[3])
+        
+        # 如果所有值都可疑，返回None让下游处理（几何OCR/方向标签会填充正确值）
+        if candidates:
+            logger.warning(f"[sketch_parser] {region_name}区域所有候选值都可疑，跳过由下游处理")
+            return None
+        return None
+
+    def _best_value(hits):
+        if not hits:
+            return None
+        dedup = {}
+        for val, xc, yc, conf in hits:
+            vround = round(val, 1)
+            if vround not in dedup or conf > dedup[vround][3]:
+                dedup[vround] = (val, xc, yc, conf)
+        best = max(dedup.values(), key=lambda h: h[3])
+        return best
+
+    # Step 2: Assign margin values
+    for region, key in [('top', 'margin_top'), ('bottom', 'margin_bottom'),
+                         ('left', 'margin_left'), ('right', 'margin_right')]:
+        best = _best_value_for_margin(region_hits[region], region)
+        if best:
+            val, xc, yc, conf = best
+            result[key] = (val, min(100, int(conf)))
+            logger.info(f"[sketch_parser] 分配 {key}={val} (region={region}, conf={conf:.0f})")
+
+    # Step 3: Assign inner values
+    inner_hits = region_hits['inner']
+    if inner_hits:
+        # Inner values can be inside inner rect or in the gaps
+        # Try to find inner_w (wide, in the inner area) and inner_h (tall, in the inner area)
+        # Strategy: use the two most confident values in the inner region
+        sorted_inner = sorted(inner_hits, key=lambda h: h[3], reverse=True)
+        if len(sorted_inner) >= 1:
+            val, xc, yc, conf = sorted_inner[0]
+            # Assign based on position: upper half → inner_w, lower half → inner_h
+            if yc < iy + ih * 0.5:
+                result['inner_w'] = (val, min(100, int(conf)))
+            else:
+                result['inner_h'] = (val, min(100, int(conf)))
+        if len(sorted_inner) >= 2:
+            val, xc, yc, conf = sorted_inner[1]
+            if yc < iy + ih * 0.5 and result['inner_w'][0] == 0:
+                result['inner_w'] = (val, min(100, int(conf)))
+            elif yc >= iy + ih * 0.5 and result['inner_h'][0] == 0:
+                result['inner_h'] = (val, min(100, int(conf)))
+
+    # If inner not found, look for values in gap regions that might be inner dimensions
+    if result['inner_w'][0] == 0 or result['inner_h'][0] == 0:
+        # Inner values might be in the bottom or right gap
+        if result['inner_w'][0] == 0:
+            for val, xc, yc, conf in region_hits.get('bottom', []):
+                if abs(xc - (ix + iw / 2)) < iw * 0.8:
+                    result['inner_w'] = (val, min(100, int(conf)))
+                    break
+        if result['inner_h'][0] == 0:
+            for val, xc, yc, conf in region_hits.get('right', []):
+                if abs(yc - (iy + ih / 2)) < ih * 0.8:
+                    result['inner_h'] = (val, min(100, int(conf)))
+                    break
+
+    # Step 4: Assign total_w and total_h from outside region
+    outside_hits = region_hits['outside']
+    if outside_hits:
+        sorted_outside = sorted(outside_hits, key=lambda h: h[3], reverse=True)
+        # Find the most horizontal value (wide) → total_w
+        # Find the most vertical value (tall) → total_h
+        for val, xc, yc, conf in sorted_outside:
+            if result['total_w'][0] == 0 and abs(yc - (oy + oh / 2)) < oh * 0.4:
+                result['total_w'] = (val, min(100, int(conf)))
                 continue
-            _key = round(_rv * 10)  # 按 0.1cm 精度去重
-            if _key in _seen:
+            if result['total_h'][0] == 0 and abs(xc - (ox + ow / 2)) < ow * 0.4:
+                result['total_h'] = (val, min(100, int(conf)))
                 continue
-            _seen.add(_key)
-            _uniq_vals.append(_vh[0])
 
-        # ---- 后处理：检测并移除"×10"变体（OCR漏读小数点导致）----
-        # 例如：14.6被同时读为146，42.4被同时读为424，44.5被同时读为445
-        # 如果小数值存在且在合理范围内，移除其×10变体
-        _uniq_vals_set = set(round(v, 2) for v in _uniq_vals)
-        _filtered_vals = []
-        _removed_x10 = []
-        _replaced_x10 = []
-        _all_goldens = list(GOLDEN_INNER_VALUES) + list(GOLDEN_MARGIN_VALUES)
-        for _v in _uniq_vals:
-            _rv = round(_v, 2)
-            # 检查是否存在对应的"×0.1"基础值
-            _v10 = round(_v / 10.0, 2)
-            if _v10 != _rv and _v10 in _uniq_vals_set and _v10 <= 200:
-                # 基础值存在且合理（≤200cm），当前值是×10变体，移除
-                _removed_x10.append(_rv)
-                continue
-            # 检查是否是GOLDEN值的×10变体（基础值不存在但接近GOLDEN值）
-            # 仅当原值明显偏大(>150cm，远超任何合法泳池维度)时才替换
-            _is_golden_x10 = False
-            if _rv > 150:
-                for _gv in _all_goldens:
-                    if abs(_v10 - _gv) <= 0.5 and abs(_rv - 10 * _gv) <= 5:
-                        _replaced_x10.append(f"{_rv}→{_v10}(golden={_gv})")
-                        _filtered_vals.append(_v10)
-                        _is_golden_x10 = True
-                        break
-            if _is_golden_x10:
-                continue
-            _filtered_vals.append(_v)
-        if _removed_x10 or _replaced_x10:
-            logger.warning(
-                f"[sketch_parser] 检测并移除OCR '×10'变体: 移除{_removed_x10}, "
-                f"替换{_replaced_x10}，保留基础值={[round(v,2) for v in _filtered_vals]}"
-            )
-            _uniq_vals = _filtered_vals
-            # 重新构建_seen
-            _seen = set(round(v * 10) for v in _uniq_vals)
+    # Step 5: Fill missing with target hints or geometry
+    if result['total_w'][0] == 0 and target_w_hint > 0:
+        result['total_w'] = (target_w_hint, 5)
+    if result['total_h'][0] == 0 and target_h_hint > 0:
+        result['total_h'] = (target_h_hint, 5)
 
-        if 3 <= len(_uniq_vals) <= 30:
-            # —— 触发条件大幅放宽：不依赖伪自洽或 sc 阈值，每次都跑暴力搜索
-            _need_brute = True
-            if _need_brute:
-                import itertools
-                _best_sc = -1.0
-                _best_assign = None
-                _confidence_map = {round(v[0]*10): max(1, min(10, int(v[3]*10))) for v in ocr_hits}
+    # If still missing, use geometry (outer - margin_sum)
+    tw = result['total_w'][0]
+    th = result['total_h'][0]
+    mt = result['margin_top'][0]
+    mb = result['margin_bottom'][0]
+    ml = result['margin_left'][0]
+    mr = result['margin_right'][0]
 
-                # —— 修复 Bug 6++ 终极：注入目标尺寸 + 数字混淆候选 ——
-                _augmented_vals = list(_uniq_vals)
-                _augmented_meta = {}
-                for _v in _uniq_vals:
-                    _augmented_meta[round(_v*10)/10] = {'from_ocr': True, 'target': False, 'origin': 'ocr'}
+    if result['inner_w'][0] == 0 and tw > 0 and (ml > 0 or mr > 0):
+        result['inner_w'] = (max(0.0, tw - ml - mr), 3)
+    if result['inner_h'][0] == 0 and th > 0 and (mt > 0 or mb > 0):
+        result['inner_h'] = (max(0.0, th - mt - mb), 3)
 
-                def _inject(val, origin, is_target=False):
-                    if val <= 0:
-                        return
-                    _r = round(val * 10) / 10
-                    if _r in _augmented_meta:
-                        if is_target and not _augmented_meta[_r]['target']:
-                            _augmented_meta[_r]['target'] = True
-                            _augmented_meta[_r]['origin'] = origin
-                        return
-                    _augmented_vals.append(val)
-                    _augmented_meta[_r] = {'from_ocr': False, 'target': is_target, 'origin': origin}
+    # Log results
+    for key in result:
+        if result[key][0] > 0:
+            logger.info(f"[sketch_parser] 最终分配 {key}={result[key][0]:.1f} (conf={result[key][1]})")
 
-                if target_w_hint > 0:
-                    _inject(target_w_hint, f'target_w={target_w_hint}', is_target=True)
-                if target_h_hint > 0:
-                    _inject(target_h_hint, f'target_h={target_h_hint}', is_target=True)
-                if target_w_hint > 0 and target_h_hint > 0:
-                    _inject(target_h_hint, f'target_w={target_h_hint}(反向)', is_target=True)
-                    _inject(target_w_hint, f'target_h={target_w_hint}(反向)', is_target=True)
-
-                def _digit_confusion(v):
-                    s = f"{v:.2f}".rstrip('0').rstrip('.')
-                    cands = set()
-                    digit_pairs = [('3','1'),('3','8'),('3','5'),
-                                   ('6','5'),('6','7'),('6','9'),
-                                   ('0','4'),('0','6'),('0','9'),
-                                   ('4','9'),('4','1'),
-                                   ('7','1'),('7','4'),('7','9'),
-                                   ('8','3'),('8','5'),('8','9'),
-                                   ('9','4'),('9','6'),
-                                   ('1','7'),('1','4')]
-                    for i in range(len(s)):
-                        ch = s[i]
-                        if ch == '.':
-                            continue
-                        for a, b in digit_pairs:
-                            if ch == a:
-                                ns = s[:i] + b + s[i+1:]
-                                try:
-                                    nv = float(ns)
-                                    if 0.5 <= nv <= 500:
-                                        cands.add(round(nv * 10) / 10)
-                                except ValueError:
-                                    pass
-                            if ch == b:
-                                ns = s[:i] + a + s[i+1:]
-                                try:
-                                    nv = float(ns)
-                                    if 0.5 <= nv <= 500:
-                                        cands.add(round(nv * 10) / 10)
-                                except ValueError:
-                                    pass
-                    return cands
-
-                for _v in _uniq_vals:
-                    for _cand in _digit_confusion(_v):
-                        _inject(_cand, f'confusion({_v}→{_cand})')
-
-                if len(_augmented_vals) > len(_uniq_vals):
-                    _added = len(_augmented_vals) - len(_uniq_vals)
-                    logger.warning(
-                        f"[sketch_parser] BUG6++增强：候选池从{len(_uniq_vals)}→{len(_augmented_vals)}个"
-                        f"(注入目标+数字混淆+{_added}个)，重新跑暴力搜索"
-                    )
-
-                _search_vals = _augmented_vals
-
-                def _mk(v):
-                    _ck = round(v * 10)
-                    meta = _augmented_meta.get(round(v * 10)/10, {})
-                    base_conf = _confidence_map.get(_ck, 5)
-                    if meta.get('target'):
-                        base_conf = 10
-                    elif not meta.get('from_ocr'):
-                        base_conf = max(3, base_conf - 2)
-                    return (v, base_conf)
-
-                _indices = list(range(len(_search_vals)))
-                _iter_count = 0
-                # 目标宽高比（用于后续额外排序权重）
-                _target_ratio = None
-                if target_w_hint > 0 and target_h_hint > 0:
-                    _target_ratio = target_w_hint / target_h_hint
-
-                # —— 阶段 0：若 target_w_hint/target_h_hint 已知，直接强制 total=target（核心修复！）
-                #    之前枚举 78 选 2 = 2999 种 total 组合，110×110 这种错误组合排在前面，
-                #    而 target=(133,60.5) 的正确组合即使被枚举到也可能因 sc 计算顺序问题
-                #    没被选中。这里把"强制 target total 的暴力搜索"放在最优先位置，
-                #    一旦命中 sc>=0.85 的自洽解立即返回（用户文件名=最可信数据源！）。
-                _force_target_vals = []
-                for v, meta in _augmented_meta.items():
-                    if meta.get('target'):
-                        _force_target_vals.append(v)
-                _golden_fast_hit = False
-                if len(_force_target_vals) >= 2:
-                    _ftw = _force_target_vals[0]
-                    _fth = _force_target_vals[1]
-                    logger.warning(
-                        f"[sketch_parser] BUG6++ T0：target优先！强制外框total候选="
-                        f"{sorted([round(x,2) for x in _force_target_vals])}，直接枚举 inner+4margin"
-                    )
-                    # 取最大的 2 个 target 值作为 _ft1/_ft2（避免反向造成的短边优先问题）
-                    _ft_sorted = sorted(_force_target_vals, reverse=True)
-                    _ft1, _ft2 = _ft_sorted[0], _ft_sorted[1]
-                    # [Bug A 修复 2026-08-15] 内挖尺寸应与「对应的 total 维度」比较，
-                    # 而非一刀切 < min(total)。例如 target=133x60.5，min=60.5，但内挖宽 76
-                    # 对应 total 宽(133)而非 min，原条件 76<60 → False 直接被过滤，导致枚举0次！
-                    # 修复：只要 < 较大的那一边（双向枚举时会与正确的 total 维度自动配对）。
-                    _max_total_side = max(_ft1, _ft2)
-                    _min_total_side = min(_ft1, _ft2)
-                    _inner_cands = [v for v in _search_vals
-                                    if 5 < v < 0.99 * _max_total_side]
-                    # margin 候选：< 0.5 * max(total)（边距不可能超过对应total边长的一半）
-                    # 同样不能用 min(total)，否则 42.4 的右边距（对应total宽133，半值66.5）
-                    # 会被 min(total)=60.5 的一半=30.25 误过滤。
-                    _margin_upper_cap = 0.5 * _max_total_side
-                    _margin_cands = [v for v in _search_vals
-                                     if 0.5 < v < _margin_upper_cap and v not in _force_target_vals]
-                    # —— Bug6++ A：针对 Tesseract 典型"小数幻觉"（把局部线宽/毛刺识别为1.0/1.6/2.0/4.0等），
-                    #    这里强制过滤 < 3cm 的伪值（真实草图最小边距就是标注的 6cm，不可能 1.5cm）。
-                    #    同时手动注入目标文件名对应的典型边距精确值 (6/10/14.6/42.4) 以及它们的 ±0.1~±1.0 容差变体。
-                    _margin_cands = [v for v in _margin_cands if v >= 3.0]
-                    # 注入精确边距候选（从 config.GOLDEN_MARGIN_VALUES 读取）
-                    for _km in GOLDEN_MARGIN_VALUES:
-                        if 3 <= _km < _margin_upper_cap:
-                            _margin_cands.append(_km)
-                            # [OCR 候选增强] 放宽至 ±1.0 容差 + 常见小数位变体
-                            for _delta in [-1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1,
-                                            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
-                                _kv = round(_km + _delta, 1)
-                                if 3 <= _kv < _margin_upper_cap:
-                                    _margin_cands.append(_kv)
-                    # 同时注入内挖精确值（从 config.GOLDEN_INNER_VALUES 读取）及 ±容差
-                    for _ki in GOLDEN_INNER_VALUES:
-                        if 5 < _ki < 0.99 * _max_total_side:
-                            _inner_cands.append(_ki)
-                            for _delta in [-1.5, -1.0, -0.9, -0.8, -0.7, -0.6, -0.5,
-                                            -0.4, -0.3, -0.2, -0.1,
-                                            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.5]:
-                                _kv = round(_ki + _delta, 1)
-                                if 5 < _kv < 0.99 * _max_total_side:
-                                    _inner_cands.append(_kv)
-                    # 按 0.1cm 精度去重并排序（升序，margin 小值优先）
-                    _inner_cands = sorted({round(v*10)/10 for v in _inner_cands})
-                    _margin_cands = sorted({round(v*10)/10 for v in _margin_cands})
-                    # [Bug A 修复2] margin 上限用 max(total) 的 55%，而非 min(total)。
-                    # 原 0.55*min(total)=33.2 会把 42.4 的右边距直接裁掉！
-                    _margin_hard_cap = 0.55 * _max_total_side
-                    _margin_cands = [v for v in _margin_cands if v <= _margin_hard_cap]
-
-                    # [通用修复 2026-08-15] 确保所有OCR识别的值都保留在候选池中
-                    # 旧代码截断候选池到固定数量，丢弃了大值OCR结果（如112、86等）
-                    _ocr_vals_set = set()
-                    for _ov in _uniq_vals:
-                        _ocr_vals_set.add(round(_ov * 10) / 10)
-                    # 保存OCR值在候选池中的位置
-                    _ocr_inner_vals = {v for v in _inner_cands if round(v*10)/10 in _ocr_vals_set}
-                    _ocr_margin_vals = {v for v in _margin_cands if round(v*10)/10 in _ocr_vals_set}
-
-                    if len(_margin_cands) > 40:
-                        # 取范围里绝对值最集中的 40 个（保留小值优先，但不丢弃 OCR 识别的大边距）
-                        _before_trunc = len(_margin_cands)
-                        _margin_cands = sorted(_margin_cands)[:40]
-                        # 补回被截断的OCR值
-                        for _omv in _ocr_margin_vals:
-                            if _omv not in _margin_cands:
-                                _margin_cands.append(_omv)
-                        _margin_cands = sorted(set(_margin_cands))
-                        if len(_margin_cands) != _before_trunc:
-                            logger.warning(
-                                f"[sketch_parser] margin候选截断前{_before_trunc}→截断后{len(_margin_cands)}，"
-                                f"已补回OCR识别的大边距值: {sorted(_ocr_margin_vals - set(sorted(_margin_cands)[:40]))}"
-                            )
-
-                    if len(_inner_cands) > 25:
-                        _before_trunc_inner = len(_inner_cands)
-                        _inner_cands = sorted(_inner_cands)[:25]
-                        # 补回被截断的OCR值
-                        for _oiv in _ocr_inner_vals:
-                            if _oiv not in _inner_cands:
-                                _inner_cands.append(_oiv)
-                        _inner_cands = sorted(set(_inner_cands))
-
-                    logger.warning(
-                        f"[sketch_parser] BUG6++ T0：inner候选{len(_inner_cands)}个（范围5~{0.99*_max_total_side:.0f}）,"
-                        f" margin候选{len(_margin_cands)}个（范围3~{_margin_hard_cap:.0f}），"
-                        f"已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差，"
-                        f" OCR原始值: {sorted([round(v,1) for v in _uniq_vals])}"
-                    )
-                    # 枚举 inner=C(inner_cands,2) × margin=C(margin_cands,4)
-                    import itertools as _it
-                    _ic_list = list(range(len(_inner_cands)))
-                    _mc_list = list(range(len(_margin_cands)))
-
-                    # [通用修复 2026-08-15] 确保枚举限制包含所有OCR值对应的索引
-                    # 旧代码直接取前N个索引，OCR大值可能在候选列表末尾被截断
-                    _ocr_inner_indices = {i for i, v in enumerate(_inner_cands) if v in _ocr_inner_vals}
-                    _ocr_margin_indices = {i for i, v in enumerate(_margin_cands) if v in _ocr_margin_vals}
-                    # 取前(N - len(ocr))个非OCR索引 + 所有OCR索引
-                    _ic_base = [i for i in _ic_list if i not in _ocr_inner_indices][:max(0, 20 - len(_ocr_inner_indices))]
-                    _mc_base = [i for i in _mc_list if i not in _ocr_margin_indices][:max(0, 30 - len(_ocr_margin_indices))]
-                    _ic_indices_for_iter = sorted(set(_ic_base) | _ocr_inner_indices)
-                    _mc_indices_for_iter = sorted(set(_mc_base) | _ocr_margin_indices)
-                    _ic_limit = len(_ic_indices_for_iter)
-                    _mc_limit = len(_mc_indices_for_iter)
-                    logger.warning(
-                        f"[sketch_parser] 枚举索引：inner共{len(_ic_list)}取{_ic_limit}"
-                        f"(含OCR{len(_ocr_inner_indices)}个)，"
-                        f"margin共{len(_mc_list)}取{_mc_limit}"
-                        f"(含OCR{len(_ocr_margin_indices)}个)"
-                    )
-                    # ============================================================
-                    # [Fix-D 2026-08-15] 黄金8字段快速通道（在T0枚举之前，避免组合爆炸）
-                    # 直接用注入的精确值拼成8字段，sc>=0.99即采用，清空枚举范围跳过T0
-                    # ============================================================
-                    _golden_fast_hit = False
-                    _golden_tol = GOLDEN_TOLERANCE_CM
-                    def _nearest_golden(pool, target, tol=None):
-                        if tol is None:
-                            tol = _golden_tol
-                        best = None
-                        for vv in pool:
-                            if best is None or abs(vv - target) < abs(best - target):
-                                best = vv
-                        if best is not None and abs(best - target) <= tol:
-                            return best
-                        return target
-                    _g_iw = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[0], tol=2.0)
-                    _g_ih = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[1], tol=2.0)
-                    _g_mt = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[0], tol=_golden_tol)
-                    _g_mb = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[1], tol=_golden_tol)
-                    _g_ml = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[2], tol=_golden_tol)
-                    _g_mr = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[3], tol=_golden_tol)
-                    for _g_ow, _g_oh in [(_ft1, _ft2), (_ft2, _ft1)]:
-                        if _golden_fast_hit:
-                            break
-                        for _g_ii, _g_ihh in [(_g_iw, _g_ih), (_g_ih, _g_iw)]:
-                            if _golden_fast_hit:
-                                break
-                            if not (_g_ii < _g_ow and _g_ihh < _g_oh):
-                                continue
-                            for _g_ll, _g_rr, _g_tt, _g_bb in [
-                                (_g_ml, _g_mr, _g_mt, _g_mb),
-                                (_g_mt, _g_mb, _g_ml, _g_mr),
-                            ]:
-                                # 防止同值分配：inner值不能与margin值相同
-                                _g_inner_vals = {round(_g_ii, 1), round(_g_ihh, 1)}
-                                _g_margin_vals = {round(_g_tt, 1), round(_g_bb, 1), round(_g_ll, 1), round(_g_rr, 1)}
-                                if _g_inner_vals & _g_margin_vals:
-                                    continue
-                                if len(_g_margin_vals) < 4:
-                                    continue
-                                _g_exph = round(_g_ow - _g_ii, 1)
-                                _g_expv = round(_g_oh - _g_ihh, 1)
-                                _g_sumh = round(_g_ll + _g_rr, 1)
-                                _g_sumv = round(_g_tt + _g_bb, 1)
-                                if abs(_g_sumh - _g_exph) > 2.0 or abs(_g_sumv - _g_expv) > 2.0:
-                                    continue
-                                _g_cand = {
-                                    'total_w': _mk(_g_ow),
-                                    'total_h': _mk(_g_oh),
-                                    'inner_w': _mk(_g_ii),
-                                    'inner_h': _mk(_g_ihh),
-                                    'margin_top': _mk(_g_tt),
-                                    'margin_bottom': _mk(_g_bb),
-                                    'margin_left': _mk(_g_ll),
-                                    'margin_right': _mk(_g_rr),
-                                }
-                                _iter_count += 1
-                                _g_sc = _score_assignment_consistency(_g_cand)
-                                logger.warning(
-                                    f"[sketch_parser] Fix-D：黄金8字段快速尝试："
-                                    f"total={_g_ow}x{_g_oh} inner={_g_ii}x{_g_ihh} "
-                                    f"margin上/下/左/右={_g_tt}/{_g_bb}/{_g_ll}/{_g_rr} sc={_g_sc:.3f}"
-                                )
-                                if _g_sc >= 0.99:
-                                    _best_sc = _g_sc
-                                    _best_assign = dict(_g_cand)
-                                    # [Fix 2026-08-15] 黄金8字段命中后，将所有字段置信度设为10（最高），
-                                    # 防止后续 ROI OCR / margin OCR 覆盖掉正确值
-                                    for _gk in _best_assign:
-                                        _gv = _best_assign[_gk][0]
-                                        _best_assign[_gk] = (_gv, 10)
-                                    # [P0-1 二次验证] 黄金值必须在 OCR hits 中有真实匹配
-                                    # 防止"数字巧合"（非黄金产品的 OCR 值碰巧接近黄金值）
-                                    _golden_actual_hit = True
-                                    for _gv in [GOLDEN_INNER_VALUES[0], GOLDEN_INNER_VALUES[1],
-                                                GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[1],
-                                                GOLDEN_MARGIN_VALUES[2], GOLDEN_MARGIN_VALUES[3]]:
-                                        if not any(abs(round(_h[0], 1) - _gv) <= GOLDEN_TOLERANCE_CM for _h in hits):
-                                            _golden_actual_hit = False
-                                            break
-                                    if not _golden_actual_hit:
-                                        logger.warning(
-                                            f"[sketch_parser] Fix-D：黄金8字段数值近匹配但OCR无真实命中，"
-                                            f"跳过黄金快速通道，继续暴力搜索。"
-                                        )
-                                        continue
-                                    _golden_fast_hit = True
-                                    logger.warning(
-                                        f"[sketch_parser] Fix-D：黄金8字段命中sc={_g_sc:.3f}≥0.99！"
-                                        f"清空T0枚举范围，跳过暴力搜索。"
-                                    )
-                                    break
-                    # [通用修复 2026-08-15] 动态黄金快速通道：用实际OCR值直接构造候选
-                    # 对任意尺寸草图，直接用识别到的OCR数值尝试几何自洽组合
-                    # [增强] 集成空间一致性评分作为决胜条件，正确分配的空间得分应高于错误分配
-                    if not _golden_fast_hit and len(_uniq_vals) >= 4:
-                        _ocr_sorted = sorted(_uniq_vals, reverse=True)
-                        logger.warning(
-                            f"[sketch_parser] 动态黄金通道：尝试{len(_ocr_sorted)}个OCR值"
-                            f" {[round(v,1) for v in _ocr_sorted]} 直接构造8字段"
-                        )
-
-                        # —— 空间一致性评分：基于OCR值的空间位置评估分配合理性 ——
-                        # 每个字段有多个可能的锚点位置（如total_w可能在外框下/上/旁），
-                        # 取与值位置最接近的锚点作为匹配依据
-                        _field_anchors = {}  # key -> [(ax, ay, arx, ary), ...]
-                        if inner_rect and iw > 0 and ih > 0:
-                            for _ak, _ax, _ay, _arx, _ary in anchors:
-                                if _ak not in _field_anchors:
-                                    _field_anchors[_ak] = []
-                                _field_anchors[_ak].append((_ax, _ay, _arx, _ary))
-                        # 构建 OCR值 → (x_center, y_center) 映射（取置信度最高的hit）
-                        _ocr_val_pos = {}
-                        for _vh in ocr_hits:
-                            _v = round(_vh[0] * 10) / 10
-                            if _v <= 0:
-                                continue
-                            if _v not in _ocr_val_pos or _vh[3] > _ocr_val_pos[_v][2]:
-                                _ocr_val_pos[_v] = (_vh[1], _vh[2], _vh[3])
-
-                        def _spatial_consistency_score(assign_dict):
-                            """计算分配的空间一致性得分 (0~1)。
-                            对每个值取其字段所有锚点中距离最近的那个作为匹配，
-                            所有匹配的平均得分即为空间一致性。
-                            若无法计算（缺少位置信息），返回0.5中性分。"""
-                            if not _field_anchors or not _ocr_val_pos:
-                                return 0.5
-                            _total_score = 0.0
-                            _count = 0
-                            for _fld in ('total_w', 'total_h', 'inner_w', 'inner_h',
-                                         'margin_top', 'margin_bottom', 'margin_left', 'margin_right'):
-                                if _fld not in _field_anchors:
-                                    continue
-                                _fval = assign_dict[_fld][0]
-                                _fv_rounded = round(_fval * 10) / 10
-                                if _fv_rounded not in _ocr_val_pos:
-                                    continue
-                                _vx, _vy, _vconf = _ocr_val_pos[_fv_rounded]
-                                _best_dist_score = -1.0
-                                for _ax, _ay, _arx, _ary in _field_anchors[_fld]:
-                                    _dx = abs(_vx - _ax) / max(1, _arx)
-                                    _dy = abs(_vy - _ay) / max(1, _ary)
-                                    _dist = (_dx + _dy) / 2
-                                    if _dist <= 1.0:
-                                        _ds = (1.0 - _dist)
-                                    else:
-                                        _ds = max(0.0, 0.5 - (_dist - 1.0))
-                                    if _ds > _best_dist_score:
-                                        _best_dist_score = _ds
-                                if _best_dist_score >= 0:
-                                    _total_score += _best_dist_score
-                                    _count += 1
-                            if _count == 0:
-                                return 0.5
-                            return _total_score / _count
-                        _dyn_best_sc = -1.0
-                        _dyn_best_spatial = -1.0
-                        _dyn_best_assign = None
-                        # 策略：从OCR值中挑选2个最大的作为inner候选，其余作为margin候选
-                        # 尝试所有inner值组合和margin分配
-                        _ocr_inner_cands = [v for v in _ocr_sorted
-                                             if 3 < v < 0.99 * _max_total_side and v not in _force_target_vals]
-                        _ocr_margin_cands = [v for v in _ocr_sorted
-                                              if 0.5 < v < _margin_hard_cap and v not in _force_target_vals]
-                        if len(_ocr_inner_cands) >= 2 and len(_ocr_margin_cands) >= 2:
-                            for _dw, _dh in [(_ocr_inner_cands[i], _ocr_inner_cands[j])
-                                               for i in range(len(_ocr_inner_cands))
-                                               for j in range(i+1, len(_ocr_inner_cands))]:
-                                for _otw, _oth in [(_ft1, _ft2), (_ft2, _ft1)]:
-                                    if not (_dw < _otw and _dh < _oth):
-                                        continue
-                                    _deh = round(_otw - _dw, 1)
-                                    _dev = round(_oth - _dh, 1)
-                                    if _deh < 1 or _dev < 1:
-                                        continue
-                                    # 从margin候选中找两对值，使和分别接近_deh和_dev
-                                    for _ml_idx in range(len(_ocr_margin_cands)):
-                                        for _mr_idx in range(len(_ocr_margin_cands)):
-                                            if _ml_idx == _mr_idx:
-                                                continue
-                                            _mlv = _ocr_margin_cands[_ml_idx]
-                                            _mrv = _ocr_margin_cands[_mr_idx]
-                                            if abs((_mlv + _mrv) - _deh) > max(1.5, _deh * 0.1):
-                                                continue
-                                            for _mt_idx in range(len(_ocr_margin_cands)):
-                                                if _mt_idx in (_ml_idx, _mr_idx):
-                                                    continue
-                                                for _mb_idx in range(len(_ocr_margin_cands)):
-                                                    if _mb_idx in (_ml_idx, _mr_idx, _mt_idx):
-                                                        continue
-                                                    _mtv = _ocr_margin_cands[_mt_idx]
-                                                    _mbv = _ocr_margin_cands[_mb_idx]
-                                                    if abs((_mtv + _mbv) - _dev) > max(1.5, _dev * 0.1):
-                                                        continue
-                                                    # 防止同值分配：inner值不能与margin值相同
-                                                    if round(_dw, 1) in {round(_mlv, 1), round(_mrv, 1), round(_mtv, 1), round(_mbv, 1)}:
-                                                        continue
-                                                    if round(_dh, 1) in {round(_mlv, 1), round(_mrv, 1), round(_mtv, 1), round(_mbv, 1)}:
-                                                        continue
-                                                    _d_cand = {
-                                                        'total_w': _mk(_otw),
-                                                        'total_h': _mk(_oth),
-                                                        'inner_w': _mk(_dw),
-                                                        'inner_h': _mk(_dh),
-                                                        'margin_top': _mk(_mtv),
-                                                        'margin_bottom': _mk(_mbv),
-                                                        'margin_left': _mk(_mlv),
-                                                        'margin_right': _mk(_mrv),
-                                                    }
-                                                    _d_sc = _score_assignment_consistency(_d_cand)
-                                                    # [增强] 空间一致性作为决胜条件：
-                                                    # 当几何得分相同时（如正确/错误分配都sc=1.0），
-                                                    # 用空间一致性区分：值的位置越接近其预期字段位置，越可能正确
-                                                    _d_spatial = _spatial_consistency_score(_d_cand)
-                                                    _d_combined = _d_sc * 0.7 + _d_spatial * 0.3
-                                                    _best_combined = _dyn_best_sc * 0.7 + _dyn_best_spatial * 0.3
-                                                    if _d_combined > _best_combined:
-                                                        _dyn_best_sc = _d_sc
-                                                        _dyn_best_spatial = _d_spatial
-                                                        _dyn_best_assign = dict(_d_cand)
-                                                    # 仅在几何和空间都优秀时提前退出（减少计算量）
-                                                    if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
-                                                        break
-                                                # [增强] 外层break也要考虑空间得分
-                                                if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
-                                                    break
-                                        if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
-                                            break
-                                if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6:
-                                    break
-                        if _dyn_best_sc >= 0.99 and _dyn_best_spatial >= 0.6 and _dyn_best_assign:
-                            logger.warning(
-                                f"[sketch_parser] 动态黄金通道命中(sc={_dyn_best_sc:.3f}, spatial={_dyn_best_spatial:.3f})："
-                                f"total={_dyn_best_assign['total_w'][0]}x{_dyn_best_assign['total_h'][0]} "
-                                f"inner={_dyn_best_assign['inner_w'][0]}x{_dyn_best_assign['inner_h'][0]} "
-                                f"margin T/B/L/R={_dyn_best_assign['margin_top'][0]}/"
-                                f"{_dyn_best_assign['margin_bottom'][0]}/"
-                                f"{_dyn_best_assign['margin_left'][0]}/"
-                                f"{_dyn_best_assign['margin_right'][0]}"
-                            )
-                            _best_sc = _dyn_best_sc
-                            _best_assign = _dyn_best_assign
-                            for _gk in _best_assign:
-                                _gv = _best_assign[_gk][0]
-                                _best_assign[_gk] = (_gv, 10)
-                            _golden_fast_hit = True
-                        elif (_dyn_best_sc * 0.7 + _dyn_best_spatial * 0.3) > (_best_sc * 0.7 + 0.5 * 0.3) and _dyn_best_assign:
-                            # [增强] 非完美命中时也用综合分比较（几何+空间）
-                            _best_sc = _dyn_best_sc
-                            _best_assign = _dyn_best_assign
-
-                    if _golden_fast_hit:
-                        _ic_limit = 0
-                        _mc_limit = 0
-                    _t0_limit_hit = False
-                    _t0_start_time = time.time()
-                    _t0_timeout = 10.0  # 10秒超时保护
-                    for _ii in _it.combinations(_ic_indices_for_iter, 2):
-                        _icv1, _icv2 = _inner_cands[_ii[0]], _inner_cands[_ii[1]]
-                        # total 双向 × inner 双向
-                        for _tw, _th in [(_ft1, _ft2), (_ft2, _ft1)]:
-                            for _iw, _ih in [(_icv1, _icv2), (_icv2, _icv1)]:
-                                if not (_iw < _tw and _ih < _th):
-                                    continue
-                                _expected_h = _tw - _iw
-                                _expected_v = _th - _ih
-                                # 0.5 <= expected 合理（至少有边距）
-                                if _expected_h < 1 or _expected_v < 1:
-                                    continue
-                                # margin C(30,4)=27405 × 6 分法 × 4 内序 = 约 65 万，尚可
-                                for _mj in _it.combinations(_mc_indices_for_iter, 4):
-                                    _m4 = [_margin_cands[_mj[k]] for k in range(4)]
-                                    # 水平/垂直分对
-                                    for _mpair in _it.combinations(range(4), 2):
-                                        _lr_i = list(_mpair)
-                                        _tb_i = [i for i in range(4) if i not in _mpair]
-                                        _slr = _m4[_lr_i[0]] + _m4[_lr_i[1]]
-                                        _stb = _m4[_tb_i[0]] + _m4[_tb_i[1]]
-                                        if abs(_slr - _expected_h) > 2.5:
-                                            continue
-                                        if abs(_stb - _expected_v) > 2.5:
-                                            continue
-                                        _lrv1, _lrv2 = _m4[_lr_i[0]], _m4[_lr_i[1]]
-                                        _tbv1, _tbv2 = _m4[_tb_i[0]], _m4[_tb_i[1]]
-                                        for _mlv, _mrv in ((_lrv1, _lrv2), (_lrv2, _lrv1)):
-                                            for _mtv, _mbv in ((_tbv1, _tbv2), (_tbv2, _tbv1)):
-                                                # 防止同值分配：inner值不能与margin值相同
-                                                _inner_vals = {round(_iw, 1), round(_ih, 1)}
-                                                _margin_vals = {round(_mtv, 1), round(_mbv, 1), round(_mlv, 1), round(_mrv, 1)}
-                                                if _inner_vals & _margin_vals:
-                                                    continue
-                                                # 防止边距值重复
-                                                if len(_margin_vals) < 4:
-                                                    continue
-                                                _cand = {
-                                                    'total_w': _mk(_tw),
-                                                    'total_h': _mk(_th),
-                                                    'inner_w': _mk(_iw),
-                                                    'inner_h': _mk(_ih),
-                                                    'margin_top': _mk(_mtv),
-                                                    'margin_bottom': _mk(_mbv),
-                                                    'margin_left': _mk(_mlv),
-                                                    'margin_right': _mk(_mrv),
-                                                }
-                                                _iter_count += 1
-                                                if _iter_count >= T0_MAX_ITERATIONS:
-                                                    _t0_limit_hit = True
-                                                    logger.warning(
-                                                        f"[sketch_parser] T0 枚举达到上限 {T0_MAX_ITERATIONS}，"
-                                                        f"使用当前最优解 sc={_best_sc:.3f}"
-                                                    )
-                                                elif _iter_count % 5000 == 0:
-                                                    if time.time() - _t0_start_time > _t0_timeout:
-                                                        _t0_limit_hit = True
-                                                        logger.warning(
-                                                            f"[sketch_parser] T0 枚举超时({_t0_timeout}s)，"
-                                                            f"已枚举{_iter_count}次，使用当前最优解 sc={_best_sc:.3f}"
-                                                        )
-                                                _sc_cand = _score_assignment_consistency(_cand)
-                                                # —— 语义加权：多个 sc 相等时，用边距合理性作为次要判别
-                                                # [通用修复 2026-08-15] 移除对大边距(>28)的惩罚，非对称设计中边距可达100+
-                                                #    仅惩罚极小边距(<3.5，可能是OCR伪值)
-                                                #    中等边距(4~28)给小奖励
-                                                #    大边距(>28)不惩罚(合法的非对称设计)
-                                                def _margin_sanity_penalty(mv):
-                                                    if mv < 3.5:
-                                                        return -0.08 - (3.5 - mv) * 0.03
-                                                    if 4 <= mv <= 28:
-                                                        return +0.005
-                                                    return 0
-                                                for _m_in in (_mtv, _mbv, _mlv, _mrv):
-                                                    _sc_cand += _margin_sanity_penalty(_m_in)
-                                                # [通用修复 2026-08-15] 放宽左右/上下边距平衡奖励
-                                                # 非对称设计中左右边距可能差异很大（如36 vs 112），不再强制要求
-                                                if abs(_mlv - _mrv) <= 50:
-                                                    _sc_cand += 0.003
-                                                if abs(_mtv - _mbv) <= 30:
-                                                    _sc_cand += 0.003
-                                                _sc_cand = min(1.02, max(0.0, _sc_cand))
-                                                if _sc_cand > _best_sc:
-                                                    _best_sc = _sc_cand
-                                                    _best_assign = dict(_cand)
-                                                if _best_sc >= 1.019 or _t0_limit_hit:
-                                                    break
-                                            if _best_sc >= 1.019 or _t0_limit_hit:
-                                                break
-                                        if _best_sc >= 1.019 or _t0_limit_hit:
-                                            break
-                                    if _best_sc >= 1.019 or _t0_limit_hit:
-                                        break
-                                if _best_sc >= 1.019 or _t0_limit_hit:
-                                    break
-                            if _best_sc >= 1.019 or _t0_limit_hit:
-                                break
-                        if _best_sc >= 1.019 or _t0_limit_hit:
-                            break
-                    logger.warning(
-                        f"[sketch_parser] BUG6++ T0：枚举target-force暴力搜索 {_iter_count} 次，"
-                        f"当前最佳 sc={_best_sc:.3f}"
-                    )
-                    # 如果 T0 没命中 sc>=0.75，且 inner_rect 像素尺寸异常（< outer的 50% 面积），
-                    # 说明 inner_rect 检测错了（比如用户日志里 inner=42×28px，outer=485×332px，
-                    # 面积比仅 0.7%！真实内挖约 (14.6+76+42.4=133 → 内框占 outer 约 76/133 × 44.5/60.5
-                    # ≈ 42% 面积）。此时强制使用"target几何比例逆推法"直接生成 sc=1.0 的 8 字段！
-                    if _best_sc < 0.85 and outer_rect and inner_rect:
-                        _ox, _oy, _ow, _oh = outer_rect[0], outer_rect[1], outer_rect[2], outer_rect[3]
-                        _ix, _iy, _iw, _ih = inner_rect[0], inner_rect[1], inner_rect[2], inner_rect[3]
-                        _outer_area = _ow * _oh
-                        _inner_area = _iw * _ih
-                        _area_ratio = _inner_area / _outer_area if _outer_area > 0 else 0
-                        _min_expected_ratio = 0.12  # 真实 inner 至少占 outer 面积 12%
-                        if _area_ratio < _min_expected_ratio:
-                            logger.warning(
-                                f"[sketch_parser] BUG6++ T0.5：inner_rect面积仅占outer的{_area_ratio*100:.1f}%"
-                                f" (<{_min_expected_ratio*100:.0f}%)，疑似几何检测错！"
-                                f"改用 target+像素比例逆推法直接生成自洽8字段。"
-                            )
-                            # ============================================================
-                            # [修复 Fix-C 2026-08-15] 黄金8字段最高优先级优先尝试
-                            # 直接用 config.GOLDEN_* 精确值拼成候选，计算 sc；若 sc>=0.99 立即采用。
-                            # ============================================================
-                            _t05_done = False
-                            _golden_tol_fixc = GOLDEN_TOLERANCE_CM
-                            def _nearest_golden(pool, target, tol=None):
-                                if tol is None:
-                                    tol = _golden_tol_fixc
-                                best = None
-                                for vv in pool:
-                                    if best is None or abs(vv - target) < abs(best - target):
-                                        best = vv
-                                if best is not None and abs(best - target) <= tol:
-                                    return best
-                                return target
-                            _g_iw = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[0], tol=2.0)
-                            _g_ih = _nearest_golden(_inner_cands, GOLDEN_INNER_VALUES[1], tol=2.0)
-                            _g_mt = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[0], tol=_golden_tol_fixc)
-                            _g_mb = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[1], tol=_golden_tol_fixc)
-                            _g_ml = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[2], tol=_golden_tol_fixc)
-                            _g_mr = _nearest_golden(_margin_cands, GOLDEN_MARGIN_VALUES[3], tol=_golden_tol_fixc)
-                            # 两种outer方向 × 两种inner方向 × 两种边距layout方向 = 8种组合
-                            for _g_ow, _g_oh in [(_ft1, _ft2), (_ft2, _ft1)]:
-                                if _t05_done:
-                                    break
-                                for _g_ii, _g_ihh in [(_g_iw, _g_ih), (_g_ih, _g_iw)]:
-                                    if _t05_done:
-                                        break
-                                    if not (_g_ii < _g_ow and _g_ihh < _g_oh):
-                                        continue
-                                    for _g_ll, _g_rr, _g_tt, _g_bb in [
-                                        (_g_ml, _g_mr, _g_mt, _g_mb),   # layout A: lr=(14.6,42.4), tb=(6,10)
-                                        (_g_mt, _g_mb, _g_ml, _g_mr),   # layout B: lr=(6,10), tb=(14.6,42.4) 兜底
-                                    ]:
-                                        _g_exph = round(_g_ow - _g_ii, 1)
-                                        _g_expv = round(_g_oh - _g_ihh, 1)
-                                        _g_sumh = round(_g_ll + _g_rr, 1)
-                                        _g_sumv = round(_g_tt + _g_bb, 1)
-                                        if abs(_g_sumh - _g_exph) > 2.0 or abs(_g_sumv - _g_expv) > 2.0:
-                                            continue
-                                        _g_cand = {
-                                            'total_w': _mk(_g_ow),
-                                            'total_h': _mk(_g_oh),
-                                            'inner_w': _mk(_g_ii),
-                                            'inner_h': _mk(_g_ihh),
-                                            'margin_top': _mk(_g_tt),
-                                            'margin_bottom': _mk(_g_bb),
-                                            'margin_left': _mk(_g_ll),
-                                            'margin_right': _mk(_g_rr),
-                                        }
-                                        _iter_count += 1
-                                        _g_sc = _score_assignment_consistency(_g_cand)
-                                        logger.warning(
-                                            f"[sketch_parser] Fix-C：黄金8字段尝试："
-                                            f"total={_g_ow}x{_g_oh} inner={_g_ii}x{_g_ihh} "
-                                            f"margin上/下/左/右={_g_tt}/{_g_bb}/{_g_ll}/{_g_rr} sc={_g_sc:.3f}"
-                                        )
-                                        if _g_sc >= 0.99:
-                                            _best_sc = _g_sc
-                                            _best_assign = dict(_g_cand)
-                                            # [Fix 2026-08-15] Fix-C 黄金8字段也设高置信度
-                                            for _gk in _best_assign:
-                                                _gv = _best_assign[_gk][0]
-                                                _best_assign[_gk] = (_gv, 10)
-                                            # [P0-1 二次验证] 黄金值必须在 OCR hits 中有真实匹配
-                                            _golden_actual_hit_c = True
-                                            for _gv in [GOLDEN_INNER_VALUES[0], GOLDEN_INNER_VALUES[1],
-                                                        GOLDEN_MARGIN_VALUES[0], GOLDEN_MARGIN_VALUES[1],
-                                                        GOLDEN_MARGIN_VALUES[2], GOLDEN_MARGIN_VALUES[3]]:
-                                                if not any(abs(round(_h[0], 1) - _gv) <= GOLDEN_TOLERANCE_CM for _h in hits):
-                                                    _golden_actual_hit_c = False
-                                                    break
-                                            if not _golden_actual_hit_c:
-                                                logger.warning(
-                                                    f"[sketch_parser] Fix-C：黄金8字段数值近匹配但OCR无真实命中，"
-                                                    f"跳过黄金快速通道。"
-                                                )
-                                                continue
-                                            _t05_done = True
-                                            logger.warning(
-                                                f"[sketch_parser] Fix-C：黄金8字段命中sc={_g_sc:.3f}≥0.99，"
-                                                f"立即采用！跳过像素比例兜底。"
-                                            )
-                                            break
-                            # —— 当 Fix-C 黄金8字段未命中时，才回退到原有的"像素比例逆推+候选对匹配"法 ——
-                            if not _t05_done:
-                                logger.warning(
-                                    f"[sketch_parser] Fix-C：黄金8字段未命中(sc<0.99)，"
-                                    f"回退到像素比例+候选对匹配逻辑。"
-                                )
-                                _outer_cm_w = _ft1
-                                _outer_cm_h = _ft2
-                                cmpp_x = _outer_cm_w / _ow if _ow > 0 else 0
-                                cmpp_y = _outer_cm_h / _oh if _oh > 0 else 0
-                                if cmpp_x <= 0 or cmpp_y <= 0:
-                                    cmpp_x = cmpp_y = 0
-                                _inner_cm_w_guess = round(_outer_cm_w * 0.571, 1)
-                                _inner_cm_h_guess = round(_outer_cm_h * 0.736, 1)
-                                _best_iw_alt = None
-                                _best_ih_alt = None
-                                for v in _inner_cands:
-                                    if _best_iw_alt is None or abs(v - GOLDEN_INNER_VALUES[0]) < abs(_best_iw_alt - GOLDEN_INNER_VALUES[0]):
-                                        _best_iw_alt = v
-                                    if _best_ih_alt is None or abs(v - GOLDEN_INNER_VALUES[1]) < abs(_best_ih_alt - GOLDEN_INNER_VALUES[1]):
-                                        _best_ih_alt = v
-                                if _best_iw_alt is not None and abs(_best_iw_alt - GOLDEN_INNER_VALUES[0]) < 5:
-                                    _inner_cm_w_guess = _best_iw_alt
-                                if _best_ih_alt is not None and abs(_best_ih_alt - GOLDEN_INNER_VALUES[1]) < 5:
-                                    _inner_cm_h_guess = _best_ih_alt
-                                _exp_ml_plus_mr = round(_outer_cm_w - _inner_cm_w_guess, 1)
-                                _exp_mt_plus_mb = round(_outer_cm_h - _inner_cm_h_guess, 1)
-                                import itertools as _it2
-                                # ============================================================
-                                # [修复 Fix-B 2026-08-15] 边距对平局决胜(_find_best_pair增强)
-                                #   误差在 0.2cm 以内视为同等，此时：
-                                #   1) 优先选择 与黄金边距对(14.6,42.4)或(6,10)更接近的对
-                                #   2) 避免选择 (5,11) 之类"和相同但值偏离标注"的伪值组合
-                                # ============================================================
-                                _GOLD_PAIR_H = GOLDEN_MARGIN_PAIR_H  # 水平黄金对（左+右）
-                                _GOLD_PAIR_V = GOLDEN_MARGIN_PAIR_V  # 垂直黄金对（上+下）
-                                def _pair_match_score(p, gold):
-                                    """比较候选对与黄金对的贴合度，返回0~1（1=完美匹配）"""
-                                    if p is None or gold is None:
-                                        return 0.0
-                                    ps = sorted(p)
-                                    gs = sorted(gold)
-                                    d0 = abs(ps[0] - gs[0])
-                                    d1 = abs(ps[1] - gs[1])
-                                    max_dev = max(d0, d1)
-                                    if max_dev <= 0.0:
-                                        return 1.0
-                                    return max(0.0, 1.0 - 0.3 * max_dev)  # 每偏差1cm扣0.3
-                                def _find_best_pair_tb(vals, target_sum, gold_pair_hint):
-                                    best_pair = None
-                                    best_err = 1e9
-                                    best_match = -1.0
-                                    _sorted_vals = sorted(set(vals))
-                                    for a, b in _it2.combinations(_sorted_vals, 2):
-                                        err = abs(a + b - target_sum)
-                                        match_score = _pair_match_score((a, b), gold_pair_hint)
-                                        # 决胜规则：误差 < best_err → 直接替换
-                                        # 误差在 0.2 以内（视为"同等精度"）→ 取 match_score 更高的
-                                        if err < best_err - 0.05:
-                                            best_err = err
-                                            best_pair = (a, b)
-                                            best_match = match_score
-                                        elif abs(err - best_err) <= 0.2:
-                                            if match_score > best_match + 0.01:
-                                                best_err = err
-                                                best_pair = (a, b)
-                                                best_match = match_score
-                                    return best_pair, best_err
-                                _mc_set = sorted(set(_margin_cands))
-                                _mlr_cand, _mlr_err = _find_best_pair_tb(
-                                    _mc_set, _exp_ml_plus_mr, _GOLD_PAIR_H)
-                                _mtb_cand, _mtb_err = _find_best_pair_tb(
-                                    _mc_set, _exp_mt_plus_mb, _GOLD_PAIR_V)
-                                logger.warning(
-                                    f"[sketch_parser] Fix-B：边距对平局决胜结果："
-                                    f"水平对={_mlr_cand}(err={_mlr_err:.2f})，"
-                                    f"垂直对={_mtb_cand}(err={_mtb_err:.2f})"
-                                )
-                                def _pair_has_bad_small(p):
-                                    return (p is None) or p[0] < 3.8 or p[1] < 3.8
-                                def _pair_too_close(p):
-                                    return (p is not None) and abs(p[0] - p[1]) < 0.3
-                                if _pair_has_bad_small(_mlr_cand) or _pair_has_bad_small(_mtb_cand):
-                                    logger.warning(
-                                        f"[sketch_parser] BUG6++ C：匹配到的 margin 对含<4cm伪值，"
-                                        f"强制回退精确比例值。水平候选={_mlr_cand} 垂直候选={_mtb_cand}"
-                                    )
-                                    _mlr_err = 99
-                                    _mtb_err = 99
-                                elif _pair_too_close(_mlr_cand) or _pair_too_close(_mtb_cand):
-                                    logger.warning(
-                                        f"[sketch_parser] BUG6++ C：匹配到的 margin 对数值过于接近(差<0.3)，"
-                                        f"疑似伪值。水平={_mlr_cand} 垂直={_mtb_cand}，强制回退精确比例值。"
-                                    )
-                                    _mlr_err = 99
-                                    _mtb_err = 99
-                                if _mlr_err > 1.5:
-                                    _golden_h_sum = GOLDEN_MARGIN_VALUES[2] + GOLDEN_MARGIN_VALUES[3]
-                                    _mlr_cand = (round(_exp_ml_plus_mr * GOLDEN_MARGIN_VALUES[2] / _golden_h_sum, 1),
-                                                 round(_exp_ml_plus_mr * GOLDEN_MARGIN_VALUES[3] / _golden_h_sum, 1))
-                                if _mtb_err > 1.0:
-                                    _golden_v_sum = GOLDEN_MARGIN_VALUES[0] + GOLDEN_MARGIN_VALUES[1]
-                                    _mtb_cand = (round(_exp_mt_plus_mb * GOLDEN_MARGIN_VALUES[0] / _golden_v_sum, 1),
-                                                 round(_exp_mt_plus_mb * GOLDEN_MARGIN_VALUES[1] / _golden_v_sum, 1))
-                                _mlr_sorted = sorted(_mlr_cand)
-                                _mtb_sorted = sorted(_mtb_cand)
-                                _mlv, _mrv = _mlr_sorted
-                                _mtv, _mbv = _mtb_sorted
-                                if _inner_cm_w_guess < _outer_cm_w and _inner_cm_h_guess < _outer_cm_h:
-                                    _sc_force_cand = {
-                                        'total_w': _mk(_outer_cm_w),
-                                        'total_h': _mk(_outer_cm_h),
-                                        'inner_w': _mk(_inner_cm_w_guess),
-                                        'inner_h': _mk(_inner_cm_h_guess),
-                                        'margin_top': _mk(_mtv),
-                                        'margin_bottom': _mk(_mbv),
-                                        'margin_left': _mk(_mlv),
-                                        'margin_right': _mk(_mrv),
-                                    }
-                                    _iter_count += 1
-                                    _sc_force = _score_assignment_consistency(_sc_force_cand)
-                                    if _sc_force > _best_sc:
-                                        _best_sc = _sc_force
-                                        _best_assign = dict(_sc_force_cand)
-                                    logger.warning(
-                                        f"[sketch_parser] BUG6++ T0.5：target逆推兜底方案："
-                                        f"total={_outer_cm_w}x{_outer_cm_h} inner={_inner_cm_w_guess}x{_inner_cm_h_guess}"
-                                        f" margin(上/下/左/右)={_mtv}/{_mbv}/{_mlv}/{_mrv} sc={_sc_force:.3f}"
-                                    )
-                    # 如果 T0 已经得到 sc>=0.95 的自洽解，不再跑通用暴力搜索（直接跳 final）
-                    if _best_sc >= 0.95:
-                        logger.warning(
-                            f"[sketch_parser] BUG6++ T0：找到 sc={_best_sc:.3f} 的高自洽解，跳过通用暴力搜索"
-                        )
-                        _need_general_brute = False
-                    else:
-                        _need_general_brute = True
-                else:
-                    _need_general_brute = True
-
-                # —— 阶段 1：通用暴力搜索（仅当 T0 未命中高自洽解时执行）
-                # [性能优化] 添加 5 秒超时限制，避免候选池过大时搜索耗时过长
-                if _need_general_brute:
-                    _brute_start_time = time.time()
-                    _brute_timeout = 5.0  # 5 秒超时
-                    for _total_idx in itertools.combinations(_indices, 2):
-                        if time.time() - _brute_start_time > _brute_timeout:
-                            logger.warning(f"[sketch_parser] 通用暴力搜索超时({_brute_timeout}s)，已枚举{_iter_count}种组合，使用当前最优解")
-                            break
-                        _t1, _t2 = _search_vals[_total_idx[0]], _search_vals[_total_idx[1]]
-                        if _t1 < 15 or _t2 < 15:
-                            continue  # 语义：外框不能小于 15cm（含小型泳池/SPA）
-                        _rem1 = [i for i in _indices if i not in _total_idx]
-                        for _inner_idx in itertools.combinations(_rem1, 2):
-                            _i1, _i2 = _search_vals[_inner_idx[0]], _search_vals[_inner_idx[1]]
-                            # 语义：inner 必须 < total（至少一个方向）
-                            _fits = False
-                            for _tw, _th in [(_t1, _t2), (_t2, _t1)]:
-                                for _iw, _ih in [(_i1, _i2), (_i2, _i1)]:
-                                    if _iw < _tw and _ih < _th:
-                                        _fits = True
-                                        break
-                                if _fits:
-                                    break
-                            if not _fits:
-                                continue
-                            _margin_idx = [i for i in _rem1 if i not in _inner_idx]
-                            if len(_margin_idx) < 4:
-                                continue
-                            # 如果有超过 4 个剩余值（非严格8值），取最小 4 个作为 margin
-                            _margin_idx.sort(key=lambda i: _search_vals[i])
-                            _m_vals = [_search_vals[i] for i in _margin_idx[:4]]
-                            # 语义：边距常规上限 200cm，且不超过自身外框对应边 70%
-                            _any_big = False
-                            for _mv in _m_vals:
-                                if _mv > 200:
-                                    _any_big = True
-                                    break
-                                for _tv in (_t1, _t2):
-                                    if _tv > 0 and _mv > _tv * 0.7:
-                                        _any_big = True
-                                        break
-                                if _any_big:
-                                    break
-                            if _any_big:
-                                continue
-                            # total 双向 × inner 双向
-                            for _tw, _th in [(_t1, _t2), (_t2, _t1)]:
-                                for _iw, _ih in [(_i1, _i2), (_i2, _i1)]:
-                                    if not (_iw < _tw and _ih < _th):
-                                        continue
-                                    # margins 4 值的水平/垂直分对（C(4,2)=6种分法，每对2个内序）
-                                    for _mpair in itertools.combinations(range(4), 2):
-                                        _lr_idx = list(_mpair)
-                                        _tb_idx = [i for i in range(4) if i not in _mpair]
-                                        _lrv1, _lrv2 = _m_vals[_lr_idx[0]], _m_vals[_lr_idx[1]]
-                                        _tbv1, _tbv2 = _m_vals[_tb_idx[0]], _m_vals[_tb_idx[1]]
-                                        _expected_lr = _tw - _iw
-                                        _expected_tb = _th - _ih
-                                        # 快速剪枝：每对的和应该（近似）等于 expected
-                                        _sum_lr = _lrv1 + _lrv2
-                                        _sum_tb = _tbv1 + _tbv2
-                                        if abs(_sum_lr - _expected_lr) > 2.0:
-                                            continue
-                                        if abs(_sum_tb - _expected_tb) > 2.0:
-                                            continue
-                                        # 每对内序：(a,b) 和 (b,a) → 2*2 = 4 种
-                                        for _mlv, _mrv in ((_lrv1, _lrv2), (_lrv2, _lrv1)):
-                                            for _mtv, _mbv in ((_tbv1, _tbv2), (_tbv2, _tbv1)):
-                                                # 防止同值分配：inner值不能与margin值相同
-                                                _inner_vals = {round(_iw, 1), round(_ih, 1)}
-                                                _margin_vals = {round(_mtv, 1), round(_mbv, 1), round(_mlv, 1), round(_mrv, 1)}
-                                                if _inner_vals & _margin_vals:
-                                                    continue
-                                                # 防止边距值重复
-                                                if len(_margin_vals) < 4:
-                                                    continue
-                                                _cand = {
-                                                    'total_w': _mk(_tw),
-                                                    'total_h': _mk(_th),
-                                                    'inner_w': _mk(_iw),
-                                                    'inner_h': _mk(_ih),
-                                                    'margin_top': _mk(_mtv),
-                                                    'margin_bottom': _mk(_mbv),
-                                                    'margin_left': _mk(_mlv),
-                                                    'margin_right': _mk(_mrv),
-                                                }
-                                                _iter_count += 1
-                                                _sc_cand = _score_assignment_consistency(_cand)
-                                                if _sc_cand > _best_sc:
-                                                    _best_sc = _sc_cand
-                                                    _best_assign = dict(_cand)
-                                                if _best_sc >= 0.999:
-                                                    break
-                                            if _best_sc >= 0.999:
-                                                break
-                                        if _best_sc >= 0.999:
-                                            break
-                                    if _best_sc >= 0.999:
-                                        break
-                                if _best_sc >= 0.999:
-                                    break
-                            if _best_sc >= 0.999:
-                                break
-                        if _best_sc >= 0.999:
-                            break
-
-                if _golden_fast_hit and _best_assign is not None:
-                    # [性能+准确率修复] 黄金8字段命中时，无条件采用，不受 sc_value 比较 restriction
-                    # 原因：初始 result_vb 可能也有 sc=1.0 但边距值错误（如 1.98/14.02/23.17/33.83），
-                    # 黄金解（6/10/14.6/42.4）才是正确答案
-                    logger.warning(
-                        f"[sketch_parser] Fix-D 黄金8字段无条件采用："
-                        f"total={_best_assign.get('total_w',(0,0))[0]:.2f}x{_best_assign.get('total_h',(0,0))[0]:.2f}，"
-                        f"inner={_best_assign.get('inner_w',(0,0))[0]:.2f}x{_best_assign.get('inner_h',(0,0))[0]:.2f}，"
-                        f"边距 上{_best_assign.get('margin_top',(0,0))[0]:.2f}/下{_best_assign.get('margin_bottom',(0,0))[0]:.2f}/"
-                        f"左{_best_assign.get('margin_left',(0,0))[0]:.2f}/右{_best_assign.get('margin_right',(0,0))[0]:.2f}"
-                    )
-                    result_vb = _best_assign
-                    sc_value = _best_sc
-                    _brute_used = True
-                elif _best_assign is not None and _best_sc > sc_spatial and _best_sc > sc_value:
-                    # —— 宽高比加权：若候选方案的 total 宽高比匹配 target，给额外加成
-                    #    避免几何自洽但外框尺寸选错方向时，错误方案胜出
-                    _final_sc = _best_sc
-                    if _target_ratio and _best_assign:
-                        _btw = _best_assign.get('total_w', (0, 0))[0]
-                        _bth = _best_assign.get('total_h', (0, 0))[0]
-                        if _btw > 0 and _bth > 0:
-                            _r1 = _btw / _bth
-                            _r2 = _bth / _btw
-                            _min_diff = min(abs(_r1 - _target_ratio), abs(_r2 - _target_ratio))
-                            if _min_diff < 0.2:
-                                # 宽高比匹配，给额外置信度加成（不影响 sc 本身，只影响日志标记）
-                                _final_sc = min(1.0, _best_sc + 0.01)
-                    _b_sane, _b_reason = _semantic_sanity_score(_best_assign)
-                    if _b_sane and _final_sc > sc_value:
-                        logger.warning(
-                            f"[sketch_parser] BUG6+暴力搜索命中：OCR识别{len(_uniq_vals)}个，"
-                            f"扩充候选池{len(_augmented_vals)}个，枚举约{_iter_count}种组合后找到sc={_best_sc:.3f}"
-                            f"{'[完全自洽]' if _best_sc>0.99 else '[次优]'}的分配"
-                            f"(语义合理:{_b_sane})。宽高比匹配target={f'{_target_ratio:.3f}' if _target_ratio else 'N/A'}。"
-                            f"暴力解为当前最可信，覆盖为数值穷举结果！"
-                        )
-                        logger.warning(
-                            f"[sketch_parser] BUG6+暴力最优8字段：total={_best_assign.get('total_w',(0,0))[0]:.2f}x{_best_assign.get('total_h',(0,0))[0]:.2f}，"
-                            f"inner={_best_assign.get('inner_w',(0,0))[0]:.2f}x{_best_assign.get('inner_h',(0,0))[0]:.2f}，"
-                            f"边距 上{_best_assign.get('margin_top',(0,0))[0]:.2f}/下{_best_assign.get('margin_bottom',(0,0))[0]:.2f}/"
-                            f"左{_best_assign.get('margin_left',(0,0))[0]:.2f}/右{_best_assign.get('margin_right',(0,0))[0]:.2f}"
-                        )
-                        # 用暴力最优解替换掉 target 方向依赖的 result_vb
-                        result_vb = _best_assign
-                        sc_value = _best_sc
-                        _value_sane = _b_sane
-                        _value_reason = _b_reason
-                        _brute_used = True
-    except Exception as _be:
-        logger.warning(f"[sketch_parser] BUG6+暴力搜索异常跳过（不影响其它分配逻辑）: {_be}")
-    override_reason = ""
-    should_override = False
-    if sc_spatial >= 0.7:
-        override_reason = (
-            f"空间分配已高度自洽(sc={sc_spatial:.3f})且语义合理，"
-            f"不允许数值覆盖(sc={sc_value:.3f})"
-        )
-        should_override = False
-    elif sc_spatial >= 0.3:
-        if sc_value > sc_spatial + 0.20:
-            override_reason = (
-                f"数值分配得分(sc={sc_value:.3f}, 语义:{_value_sane})"
-                f"显著高于空间(sc={sc_spatial:.3f}, 语义:{_spatial_sane})，"
-                f"采用数值分配"
-            )
-            should_override = True
-        else:
-            override_reason = (
-                f"数值分配(sc={sc_value:.3f})优势不足(需>{sc_spatial+0.2:.3f})，"
-                f"保留空间映射(sc={sc_spatial:.3f})"
-            )
-            should_override = False
-    else:
-        if sc_value > sc_spatial:
-            override_reason = (
-                f"空间分配严重不自洽(sc={sc_spatial:.3f})，"
-                f"采用数值分配(sc={sc_value:.3f})"
-            )
-            should_override = True
-        else:
-            override_reason = (
-                f"两者得分都低(sc_spatial={sc_spatial:.3f}, sc_value={sc_value:.3f})，"
-                f"保留空间映射"
-            )
-            should_override = False
-    if _pseudo_self_consistent and should_override and not _value_sane:
-        # 附加保护：数值穷举方案本身也语义不合理时，不盲目覆盖
-        override_reason += (
-            f" → 取消覆盖（数值穷举本身语义不合理：{_value_reason}）"
-        )
-        should_override = False
-    if should_override:
-        logger.warning(f"[sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！{override_reason}")
-        result = result_vb
-    else:
-        logger.warning(f"[sketch_parser] 三档覆盖判定：保留空间映射。{override_reason}")
-
-    _tw = result.get('total_w', (0, 0))[0]
-    _th = result.get('total_h', (0, 0))[0]
-    _iw = result.get('inner_w', (0, 0))[0]
-    _ih = result.get('inner_h', (0, 0))[0]
-    _mt = result.get('margin_top', (0, 0))[0]
-    _mb = result.get('margin_bottom', (0, 0))[0]
-    _ml = result.get('margin_left', (0, 0))[0]
-    _mr = result.get('margin_right', (0, 0))[0]
-    _sc_final = _score_assignment_consistency(result)
-    logger.warning(
-        f"[sketch_parser] 最终采用的8字段(sc={_sc_final:.3f})："
-        f"外框total={_tw:.2f}x{_th:.2f}cm；内挖inner={_iw:.2f}x{_ih:.2f}cm；"
-        f"边距上{_mt:.2f}/下{_mb:.2f}/左{_ml:.2f}/右{_mr:.2f}cm。"
-        f"几何自洽校验：水平(outer-inner={_tw-_iw:.2f} == ml+mr={_ml+_mr:.2f}?{abs(_tw-_iw-_ml-_mr)<0.5})；"
-        f"垂直(outer-inner={_th-_ih:.2f} == mt+mb={_mt+_mb:.2f}?{abs(_th-_ih-_mt-_mb)<0.5})"
-    )
     return result
 
 
@@ -3386,13 +2052,16 @@ def _detect_direction_labels_by_ocr(cv2, gray_img, tesseract, outer_rect):
     return list(best.values())
 
 
-def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=None):
+def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=None, inner_rect=None):
     """使用模板匹配检测方向标签 上/下/左/右。
 
     支持黑色/红色/彩色文字：
     - 若提供 color_img，先尝试用红色 HSV mask 提取红色文字做匹配
     - 再回退到灰度图+黑模板匹配（处理黑色文字）
-    - 对每个检测结果做空间合理性校验（位置必须在对应方向的边距区域）
+    - 对每个检测结果做空间合理性校验（位置必须在对应方向的边距间隙区域）
+
+    Args:
+        inner_rect: (ix, iy, iw, ih) 内框坐标，用于更精确地检查标签位置
 
     Returns:
         list of (direction_char, margin_field, x_center, y_center, confidence, value_or_None)
@@ -3412,6 +2081,11 @@ def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=No
 
     ox, oy, ow, oh = outer_rect
     h_img, w_img = gray_img.shape[:2]
+    
+    # 解析内框坐标（如果提供）
+    ix, iy, iw, ih = 0, 0, 0, 0
+    if inner_rect is not None and len(inner_rect) == 4:
+        ix, iy, iw, ih = inner_rect
 
     # 裁剪 outer_rect 子图
     _ox = max(0, int(ox)); _oy = max(0, int(oy))
@@ -3453,6 +2127,7 @@ def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=No
 
     for dchar, mfield in _DIR_CHAR_MAP.items():
         best_match = None  # (dchar, mfield, xc, yc, score, None)
+        _max_score_for_char = 0.0
 
         for fsize in font_sizes:
             try:
@@ -3477,7 +2152,8 @@ def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=No
                     continue
 
                 # 放宽阈值：不同颜色通道匹配质量差异大
-                threshold = 0.45 if map_name != "gray" else 0.5
+                # 降低阈值到0.30，提高召回率
+                threshold = 0.30 if map_name != "gray" else 0.35
                 locs = np.where(res >= threshold)
 
                 for pt in zip(*locs):
@@ -3485,13 +2161,21 @@ def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=No
                     tc_x = pt[1] + template.shape[1] / 2 + _ox
                     tc_y = pt[0] + template.shape[0] / 2 + _oy
 
+                    # 记录最大分数用于调试
+                    if score > _max_score_for_char:
+                        _max_score_for_char = score
+
                     # 空间合理性作为加权因子（非硬性过滤）
-                    spatial_ok = _is_label_position_reasonable(dchar, tc_x, tc_y, ox, oy, ow, oh)
+                    spatial_ok = _is_label_position_reasonable(dchar, tc_x, tc_y, ox, oy, ow, oh, ix, iy, iw, ih)
                     # 位置合理时保留原分，不合理时大幅扣分（但仍保留候选）
                     _effective_score = score if spatial_ok else score * 0.5
 
                     if best_match is None or _effective_score > best_match[4]:
                         best_match = (dchar, mfield, tc_x, tc_y, score, None)
+
+        # 调试日志：显示每个方向字符的最大匹配分数
+        if _max_score_for_char < 0.35:
+            logger.debug(f"[sketch_parser] 方向标签 {dchar}: 最大匹配分={_max_score_for_char:.3f} 低于阈值，可能未检测到")
 
         if best_match is not None:
             results.append(best_match)
@@ -3499,33 +2183,291 @@ def _detect_direction_labels_by_template(cv2, gray_img, outer_rect, color_img=No
     return results
 
 
-def _is_label_position_reasonable(dchar, x, y, ox, oy, ow, oh):
+def _detect_margins_by_geometry_ocr(cv2, gray_img, tesseract, outer_rect, 
+                                     inner_rect=None,
+                                     target_outer_w_cm=0, target_outer_h_cm=0):
+    """基于几何位置的边距OCR检测。
+
+    原理：草图中的边距数值通常标注在内外框之间的间隙区域。
+    通过在间隙区域进行聚焦OCR，可以直接获取边距值。
+
+    改进：使用内外框的间隙区域作为OCR搜索区域，更准确地覆盖边距值位置。
+    使用目标外框尺寸（cm）进行过滤，排除外框总尺寸标注。
+
+    Returns:
+        dict: {margin_top/bottom/left/right: (value, confidence)}
+    """
+    from PIL import Image as PILImage
+    import re
+
+    ox, oy, ow, oh = outer_rect
+    h_img, w_img = gray_img.shape[:2]
+    
+    margin_results = {}
+    
+    # 将像素尺寸转换为cm（如果有目标尺寸）
+    _outer_w_cm = target_outer_w_cm if target_outer_w_cm > 0 else 0
+    _outer_h_cm = target_outer_h_cm if target_outer_h_cm > 0 else 0
+    
+    # 计算间隙区域（使用inner_rect如果可用）
+    if inner_rect is not None:
+        ix, iy, iw, ih = inner_rect
+        gap_top_region = (max(0, int(oy - 5)), min(h_img, int(iy + 5)))
+        gap_bottom_region = (max(0, int(iy + ih - 5)), min(h_img, int(oy + oh + 5)))
+        gap_left_region = (max(0, int(ox - 5)), min(w_img, int(ix + 5)))
+        gap_right_region = (max(0, int(ix + iw - 5)), min(w_img, int(ox + ow + 5)))
+        full_width = (max(0, int(ox - 10)), min(w_img, int(ox + ow + 10)))
+        full_height = (max(0, int(oy - 10)), min(h_img, int(oy + oh + 10)))
+    else:
+        # 没有inner_rect时，使用旧的基于比例的方法
+        gap_top_region = (max(0, int(oy - oh * 0.35)), min(h_img, int(oy + oh * 0.10)))
+        gap_bottom_region = (max(0, int(oy + oh * 0.90)), min(h_img, int(oy + oh + oh * 0.35)))
+        gap_left_region = (max(0, int(ox - ow * 0.35)), min(w_img, int(ox + ow * 0.10)))
+        gap_right_region = (max(0, int(ox + ow * 0.90)), min(w_img, int(ox + ow + ow * 0.35)))
+        full_width = (max(0, int(ox - ow * 0.05)), min(w_img, int(ox + ow + ow * 0.05)))
+        full_height = (max(0, int(oy - oh * 0.05)), min(h_img, int(oy + oh + oh * 0.05)))
+    
+    # 定义边距搜索区域：间隙区域（垂直方向）× 外框范围（水平方向）
+    edge_regions = {
+        'margin_top': {
+            'cx1': full_width[0], 'cx2': full_width[1],
+            'cy1': gap_top_region[0], 'cy2': gap_top_region[1],
+        },
+        'margin_bottom': {
+            'cx1': full_width[0], 'cx2': full_width[1],
+            'cy1': gap_bottom_region[0], 'cy2': gap_bottom_region[1],
+        },
+        'margin_left': {
+            'cx1': gap_left_region[0], 'cx2': gap_left_region[1],
+            'cy1': full_height[0], 'cy2': full_height[1],
+        },
+        'margin_right': {
+            'cx1': gap_right_region[0], 'cx2': gap_right_region[1],
+            'cy1': full_height[0], 'cy2': full_height[1],
+        },
+    }
+    
+    for mfield, region in edge_regions.items():
+        cx1, cx2 = region['cx1'], region['cx2']
+        cy1, cy2 = region['cy1'], region['cy2']
+        
+        if cx2 - cx1 < 10 or cy2 - cy1 < 10:
+            continue
+        
+        crop = gray_img[cy1:cy2, cx1:cx2]
+        if crop.size == 0:
+            continue
+        
+        logger.debug(f"[sketch_parser] 几何OCR {mfield}: 区域=[{cx1}:{cx2},{cy1}:{cy2}], 尺寸={crop.shape}")
+        
+        all_values = []  # 收集所有识别到的值
+        
+        # 多尺度OCR
+        for scale in [3.0, 4.5, 6.0]:
+            scaled = cv2.resize(crop, None, fx=scale, fy=scale,
+                                interpolation=cv2.INTER_CUBIC)
+            
+            # 预处理变体
+            variants = [('orig', scaled)]
+            try:
+                _, otsu = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                variants.append(('otsu', otsu))
+            except Exception:
+                pass
+            try:
+                adaptive = cv2.adaptiveThreshold(scaled, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                cv2.THRESH_BINARY, 11, 3)
+                variants.append(('adaptive', adaptive))
+            except Exception:
+                pass
+            
+            for _vname, variant in variants:
+                pil_img = PILImage.fromarray(variant)
+                
+                configs = [
+                    f'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789.',
+                    f'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789.',
+                    f'--oem 3 --psm 13 -c tessedit_char_whitelist=0123456789.',
+                    f'--oem 3 --psm 6',
+                    f'--oem 3 --psm 11',
+                    f'--oem 3 --psm 12',
+                ]
+                
+                for config in configs:
+                    try:
+                        data = tesseract.image_to_data(
+                            pil_img, config=config,
+                            output_type=tesseract.Output.DICT,
+                        )
+                    except Exception:
+                        continue
+                    
+                    if not data or 'text' not in data:
+                        continue
+                    
+                    n = len(data.get('text', []))
+                    for i in range(n):
+                        text = str(data['text'][i]).strip()
+                        if not text:
+                            continue
+                        try:
+                            conf = int(data.get('conf', [0] * n)[i])
+                        except Exception:
+                            conf = 0
+                        if conf < 10:
+                            continue
+                        
+                        for m in re.finditer(r'(\d+\.?\d*)', text):
+                            try:
+                                val = float(m.group(1))
+                                if not (0.5 <= val <= 500):
+                                    continue
+                                
+                                # 过滤：不能等于外框总尺寸（cm）
+                                if _outer_w_cm > 0 and abs(val - _outer_w_cm) <= 3.0:
+                                    logger.debug(f"[sketch_parser] 几何OCR {mfield}: 丢弃值{val} (接近外框宽度{_outer_w_cm}cm)")
+                                    continue
+                                if _outer_h_cm > 0 and abs(val - _outer_h_cm) <= 3.0:
+                                    logger.debug(f"[sketch_parser] 几何OCR {mfield}: 丢弃值{val} (接近外框高度{_outer_h_cm}cm)")
+                                    continue
+                                
+                                all_values.append((val, conf))
+                            except ValueError:
+                                pass
+        
+        # 选择最佳值：综合置信度和值的合理性
+        if all_values:
+            # 去重并按值分组
+            dedup = {}
+            for val, conf in all_values:
+                vround = round(val, 1)
+                if vround not in dedup or conf > dedup[vround][1]:
+                    dedup[vround] = (val, conf)
+            
+            candidates = list(dedup.values())
+            if len(candidates) == 1:
+                best_val, best_conf = candidates[0]
+            else:
+                # 按置信度排序
+                candidates.sort(key=lambda x: -x[1])
+                max_conf_val = candidates[0][0]
+                max_conf = candidates[0][1]
+                
+                # 策略：
+                # 1. 如果最大值的置信度明显更高(比所有其他值高30%)，使用最大值
+                # 2. 否则，使用置信度最高的值（不偏向最小值）
+                # 3. 只有当最小值的置信度接近最大值(>=80%)时才偏向最小值
+                
+                other_candidates = [c for c in candidates if c[1] < max_conf]
+                if other_candidates:
+                    # 检查最大值的置信度是否明显领先
+                    second_best = max(other_candidates, key=lambda x: x[1])
+                    if max_conf > second_best[1] * 1.3:
+                        # 最大值置信度明显更高，使用最大值
+                        best_val, best_conf = max_conf_val, max_conf
+                    else:
+                        # 置信度接近，使用置信度最高的值（可能为较小值或较大值）
+                        best_val, best_conf = max_conf_val, max_conf
+                else:
+                    best_val, best_conf = max_conf_val, max_conf
+            
+            if best_val is not None:
+                margin_results[mfield] = (best_val, best_conf)
+                logger.info(f"[sketch_parser] 几何OCR {mfield}: 值={best_val}, conf={best_conf}, 所有结果={list(dedup.values())[:5]}")
+    
+    return margin_results
+
+
+def _is_label_position_reasonable(dchar, x, y, ox, oy, ow, oh, ix=0, iy=0, iw=0, ih=0):
     """检查方向标签位置是否符合空间合理性。
 
-    上标签应位于上边距区域，下标签位于下边距区域等。
+    宽松检查：边距值应位于外框与内框之间的间隙区域。
+    若提供内框坐标，则检查间隙区域；否则退化为外框半区检查。
     """
+    has_inner = iw > 0 and ih > 0
+    
     if dchar == '上':
-        # 上标签：y 坐标应在上半部分 (oy ≤ y ≤ oy + oh*0.5)
-        return oy <= y <= oy + oh * 0.5
+        if has_inner and iy > oy:
+            return oy - (iy - oy) * 0.2 <= y <= iy + (iy - oy) * 0.2
+        return 0 <= y <= oy + oh * 0.6
     elif dchar == '下':
-        # 下标签：y 坐标应在下半部分 (oy + oh*0.5 ≤ y ≤ oy + oh)
-        return oy + oh * 0.5 <= y <= oy + oh
+        if has_inner and iy + ih < oy + oh:
+            gap_y2 = iy + ih
+            gap_y3 = oy + oh
+            return gap_y2 - (gap_y3 - gap_y2) * 0.2 <= y <= gap_y3 + (gap_y3 - gap_y2) * 0.2
+        return oy + oh * 0.4 <= y <= oy + oh + oh * 0.3
     elif dchar == '左':
-        # 左标签：x 坐标应在左半部分 (ox ≤ x ≤ ox + ow*0.5)
-        return ox <= x <= ox + ow * 0.5
+        if has_inner and ix > ox:
+            return ox - (ix - ox) * 0.2 <= x <= ix + (ix - ox) * 0.2
+        return 0 <= x <= ox + ow * 0.6
     elif dchar == '右':
-        # 右标签：x 坐标应在右半部分 (ox + ow*0.5 ≤ x ≤ ox + ow)
-        return ox + ow * 0.5 <= x <= ox + ow
+        if has_inner and ix + iw < ox + ow:
+            gap_x2 = ix + iw
+            gap_x3 = ox + ow
+            return gap_x2 - (gap_x3 - gap_x2) * 0.2 <= x <= gap_x3 + (gap_x3 - gap_x2) * 0.2
+        return ox + ow * 0.4 <= x <= ox + ow + ow * 0.3
+    return False
+
+
+def _is_label_position_strict(dchar, x, y, ox, oy, ow, oh, ix=0, iy=0, iw=0, ih=0):
+    """严格检查方向标签位置是否符合空间合理性。
+
+    边距值应位于外框与内框之间的间隙区域：
+    - 上标签：外框下方，内框上方 (oy ≤ y ≤ iy)
+    - 下标签：内框下方，外框上方 (iy+ih ≤ y ≤ oy+oh)
+    - 左标签：外框右侧，内框左侧 (ox ≤ x ≤ ix)
+    - 右标签：内框右侧，外框左侧 (ix+iw ≤ x ≤ ox+ow)
+    
+    若提供了内框坐标，则精确检查间隙区域；否则退化为外框边缘检查。
+    容差在间隙两侧对称扩展，最大5像素。
+    """
+    has_inner = iw > 0 and ih > 0
+    
+    if dchar == '上':
+        x_ok = ox - ow * 0.15 <= x <= ox + ow * 1.15
+        if has_inner and iy > oy:
+            gap = iy - oy
+            tol = min(gap * 0.1, 5)
+            y_ok = (oy - tol) <= y <= (iy + tol)
+        else:
+            y_ok = oy - oh * 0.15 <= y <= oy + oh * 0.35
+        return x_ok and y_ok
+    elif dchar == '下':
+        x_ok = ox - ow * 0.15 <= x <= ox + ow * 1.15
+        if has_inner and iy + ih < oy + oh:
+            gap = (oy + oh) - (iy + ih)
+            tol = min(gap * 0.1, 5)
+            y_ok = (iy + ih - tol) <= y <= (oy + oh + tol)
+        else:
+            y_ok = oy + oh * 0.65 <= y <= oy + oh + oh * 0.15
+        return x_ok and y_ok
+    elif dchar == '左':
+        y_ok = oy - oh * 0.15 <= y <= oy + oh * 1.15
+        if has_inner and ix > ox:
+            gap = ix - ox
+            tol = min(gap * 0.1, 5)
+            x_ok = (ox - tol) <= x <= (ix + tol)
+        else:
+            x_ok = ox - ow * 0.15 <= x <= ox + ow * 0.35
+        return x_ok and y_ok
+    elif dchar == '右':
+        y_ok = oy - oh * 0.15 <= y <= oy + oh * 1.15
+        if has_inner and ix + iw < ox + ow:
+            gap = (ox + ow) - (ix + iw)
+            tol = min(gap * 0.1, 5)
+            x_ok = (ix + iw - tol) <= x <= (ox + ow + tol)
+        else:
+            x_ok = ox + ow * 0.65 <= x <= ox + ow + ow * 0.15
+        return x_ok and y_ok
     return False
 
 
 def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
-                                      lx, ly, outer_rect):
+                                      lx, ly, outer_rect, target_outer_w_cm=0, target_outer_h_cm=0):
     """在方向标签位置进行聚焦OCR，获取更准确的边距数值。
 
-    原理：方向标签（上/下/左/右）附近通常有边距数值标注。
-    通过裁剪标签附近的小区域、高倍率放大、多预处理+多PSM组合，
-    可以获得比全图OCR更准确的数值识别。
+    改进：尝试多种裁剪策略和PSM配置，提高数值识别率。
+    使用目标外框尺寸（cm）进行过滤，排除外框总尺寸标注。
 
     Args:
         cv2, gray_img, tesseract: OCR相关依赖
@@ -3533,6 +2475,8 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
         mfield: 对应字段名
         lx, ly: 方向标签中心位置（原图坐标）
         outer_rect: 外框 (ox, oy, ow, oh)
+        target_outer_w_cm: 目标外框宽度(cm)
+        target_outer_h_cm: 目标外框高度(cm)
 
     Returns:
         (value, confidence) or None
@@ -3542,165 +2486,153 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
 
     ox, oy, ow, oh = outer_rect
     h_img, w_img = gray_img.shape[:2]
+    
+    # 外框总尺寸（cm），用于排除外框尺寸标注
+    _outer_w_cm = target_outer_w_cm if target_outer_w_cm > 0 else 0
+    _outer_h_cm = target_outer_h_cm if target_outer_h_cm > 0 else 0
 
-    # 根据方向确定裁剪区域（向远离外框的方向扩展）
-    # 裁剪区域以标签为中心，向对应方向扩展
-    crop_w = max(25, ow * 0.18)
-    crop_h = max(25, oh * 0.18)
+    # 生成多种裁剪策略
+    crop_regions = []
+    base_crop_w = max(25, ow * 0.12)
+    base_crop_h = max(25, oh * 0.12)
 
     if dchar == '上':
-        # 上边距：标签在外框上方，数字通常在标签上方或旁边
-        cx1 = max(0, int(lx - crop_w))
-        cx2 = min(w_img, int(lx + crop_w))
-        cy1 = max(0, int(ly - crop_h * 1.2))
-        cy2 = min(h_img, int(ly + crop_h * 0.3))
+        # 策略1：以标签为中心
+        crop_regions.append(('center',
+            max(0, int(lx - base_crop_w)), min(w_img, int(lx + base_crop_w)),
+            max(0, int(ly - base_crop_h)), min(h_img, int(ly + base_crop_h))))
+        # 策略2：向上扩展（数字可能在标签上方）
+        crop_regions.append(('up_extended',
+            max(0, int(lx - base_crop_w * 0.7)), min(w_img, int(lx + base_crop_w * 0.7)),
+            max(0, int(ly - base_crop_h * 2.0)), min(h_img, int(ly + base_crop_h * 0.5))))
     elif dchar == '下':
-        # 下边距：标签在外框下方，数字通常在标签下方或旁边
-        cx1 = max(0, int(lx - crop_w))
-        cx2 = min(w_img, int(lx + crop_w))
-        cy1 = max(0, int(ly - crop_h * 0.3))
-        cy2 = min(h_img, int(ly + crop_h * 1.2))
+        crop_regions.append(('center',
+            max(0, int(lx - base_crop_w)), min(w_img, int(lx + base_crop_w)),
+            max(0, int(ly - base_crop_h)), min(h_img, int(ly + base_crop_h))))
+        crop_regions.append(('down_extended',
+            max(0, int(lx - base_crop_w * 0.7)), min(w_img, int(lx + base_crop_w * 0.7)),
+            max(0, int(ly - base_crop_h * 0.5)), min(h_img, int(ly + base_crop_h * 2.0))))
     elif dchar == '左':
-        # 左边距：标签在外框左侧，数字通常在标签左边或旁边
-        cx1 = max(0, int(lx - crop_w * 1.2))
-        cx2 = min(w_img, int(lx + crop_w * 0.3))
-        cy1 = max(0, int(ly - crop_h))
-        cy2 = min(h_img, int(ly + crop_h))
+        crop_regions.append(('center',
+            max(0, int(lx - base_crop_w)), min(w_img, int(lx + base_crop_w)),
+            max(0, int(ly - base_crop_h)), min(h_img, int(ly + base_crop_h))))
+        crop_regions.append(('left_extended',
+            max(0, int(lx - base_crop_w * 2.0)), min(w_img, int(lx + base_crop_h * 0.5)),
+            max(0, int(ly - base_crop_h * 0.7)), min(h_img, int(ly + base_crop_h * 0.7))))
     elif dchar == '右':
-        # 右边距：标签在外框右侧，数字通常在标签右边或旁边
-        cx1 = max(0, int(lx - crop_w * 0.3))
-        cx2 = min(w_img, int(lx + crop_w * 1.2))
-        cy1 = max(0, int(ly - crop_h))
-        cy2 = min(h_img, int(ly + crop_h))
+        crop_regions.append(('center',
+            max(0, int(lx - base_crop_w)), min(w_img, int(lx + base_crop_w)),
+            max(0, int(ly - base_crop_h)), min(h_img, int(ly + base_crop_h))))
+        crop_regions.append(('right_extended',
+            max(0, int(lx - base_crop_w * 0.5)), min(w_img, int(lx + base_crop_w * 2.0)),
+            max(0, int(ly - base_crop_h * 0.7)), min(h_img, int(ly + base_crop_h * 0.7))))
     else:
         return None
 
-    if cx2 - cx1 < 5 or cy2 - cy1 < 5:
-        return None
-
-    crop = gray_img[cy1:cy2, cx1:cx2]
-    if crop.size == 0:
-        return None
-
-    # 多尺度OCR：4x和5x高倍率
     best_result = None
     best_score = -1
+    _all_ocr_results = []
 
-    for scale in [3.5, 5.0]:
-        scaled = cv2.resize(crop, None, fx=scale, fy=scale,
-                            interpolation=cv2.INTER_CUBIC)
+    for region_name, cx1, cx2, cy1, cy2 in crop_regions:
+        if cx2 - cx1 < 5 or cy2 - cy1 < 5:
+            continue
 
-        # 多种预处理
-        variants = [('orig', scaled)]
-        try:
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            variants.append(('clahe', clahe.apply(scaled)))
-        except Exception:
-            pass
-        try:
-            blur = cv2.GaussianBlur(scaled, (3, 3), 0)
-            variants.append(('blur', blur))
-        except Exception:
-            pass
-        try:
-            _, otsu = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            variants.append(('otsu', otsu))
-        except Exception:
-            pass
-        try:
-            # 自适应阈值
-            adaptive = cv2.adaptiveThreshold(scaled, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                            cv2.THRESH_BINARY, 15, 5)
-            variants.append(('adaptive', adaptive))
-        except Exception:
-            pass
+        crop = gray_img[cy1:cy2, cx1:cx2]
+        if crop.size == 0:
+            continue
 
-        for _vname, variant in variants:
-            pil_img = PILImage.fromarray(variant)
+        logger.debug(f"[sketch_parser] 聚焦OCR {dchar} ({region_name}): 区域=[{cx1}:{cx2},{cy1}:{cy2}], 尺寸={crop.shape}")
 
-            # 多种PSM模式，优先使用限制字符集的配置（只识别数字和小数点）
-            configs = [
-                f'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789.',
-                f'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789.',
-                f'--oem 3 --psm 13 -c tessedit_char_whitelist=0123456789.',
-                f'--oem 3 --psm 6',
-                f'--oem 3 --psm 11',
-            ]
-            for config in configs:
-                try:
-                    data = tesseract.image_to_data(
-                        pil_img, config=config,
-                        output_type=tesseract.Output.DICT,
-                    )
-                except Exception:
-                    continue
+        # 多尺度 + 多PSM组合
+        for scale in [3.0, 4.5, 6.0]:
+            scaled = cv2.resize(crop, None, fx=scale, fy=scale,
+                                interpolation=cv2.INTER_CUBIC)
 
-                if not data or 'text' not in data:
-                    continue
+            # 预处理：多种变体
+            variants = [('orig', scaled)]
+            try:
+                _, otsu = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                variants.append(('otsu', otsu))
+            except Exception:
+                pass
+            try:
+                adaptive = cv2.adaptiveThreshold(scaled, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                cv2.THRESH_BINARY, 11, 3)
+                variants.append(('adaptive', adaptive))
+            except Exception:
+                pass
 
-                n = len(data.get('text', []))
-                for i in range(n):
-                    text = str(data['text'][i]).strip()
-                    if not text:
-                        continue
+            for _vname, variant in variants:
+                pil_img = PILImage.fromarray(variant)
+
+                configs = [
+                    f'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789.',
+                    f'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789.',
+                    f'--oem 3 --psm 13 -c tessedit_char_whitelist=0123456789.',
+                    f'--oem 3 --psm 6',
+                    f'--oem 3 --psm 11',
+                    f'--oem 3 --psm 12',
+                ]
+                for config in configs:
                     try:
-                        conf = int(data.get('conf', [0] * n)[i])
+                        data = tesseract.image_to_data(
+                            pil_img, config=config,
+                            output_type=tesseract.Output.DICT,
+                        )
                     except Exception:
-                        conf = 0
-                    if conf < 10:
                         continue
 
-                    # 尝试提取数字
-                    for m in re.finditer(r'(\d+\.?\d*)', text):
+                    if not data or 'text' not in data:
+                        continue
+
+                    n = len(data.get('text', []))
+                    for i in range(n):
+                        text = str(data['text'][i]).strip()
+                        if not text:
+                            continue
                         try:
-                            val = float(m.group(1))
-                            if not (0.5 <= val <= 500):
-                                continue
+                            conf = int(data.get('conf', [0] * n)[i])
+                        except Exception:
+                            conf = 0
+                        if conf < 10:
+                            continue
 
-                            # —— [Fix-2026-08-17 硬过滤] 边距聚焦OCR：识别值绝不能等于外框尺寸
-                            # 方向标签附近常有外框总尺寸标注（如58/120），极易被误识别为边距！
-                            # 若识别值与 ow/oh 的差在 ±2cm 内 → 直接丢弃（这是外框尺寸，不是边距）
-                            if abs(val - ow) <= 2.0 or abs(val - oh) <= 2.0:
-                                continue
-                            # 若识别值超过外框较小边的 60%，几乎不可能是边距
-                            _margin_abs_cap = min(ow, oh) * 0.60
-                            if val > _margin_abs_cap and val > 15:
-                                continue
+                        for m in re.finditer(r'(\d+\.?\d*)', text):
+                            try:
+                                val = float(m.group(1))
+                                if not (0.5 <= val <= 500):
+                                    continue
 
-                            # 评分：置信度 + 数值合理性 + 与标签距离
-                            score = conf
-                            # 小数值更可能是边距（边距通常<80）
-                            if val <= 60:
-                                score += 40
-                            elif val <= 80:
-                                score += 20
-                            elif val <= min(ow, oh) * 0.5:
-                                score += 5
-                            # 接近或超过外框短边 50% → 强倒扣（不可能是边距）
-                            elif val > min(ow, oh) * 0.5:
-                                score -= 60
+                                _all_ocr_results.append((val, conf, _vname, region_name))
 
-                            if score > best_score:
-                                best_score = score
-                                best_result = (val, conf)
-                        except ValueError:
-                            pass
+                                # 过滤：不能等于外框总尺寸（cm）
+                                if _outer_w_cm > 0 and abs(val - _outer_w_cm) <= 3.0:
+                                    continue
+                                if _outer_h_cm > 0 and abs(val - _outer_h_cm) <= 3.0:
+                                    continue
 
-    # —— [Fix-2026-08-17 最终校验] 返回前再次确认：边距值绝不能等于外框尺寸
-    # 即使 score 最高，只要接近 ow/oh 就是错误（方向标签附近的总尺寸标注）
+                                score = conf + 40 if val <= 80 else conf
+
+                                if score > best_score:
+                                    best_score = score
+                                    best_result = (val, conf)
+                            except ValueError:
+                                pass
+
+    # 调试输出
+    if _all_ocr_results:
+        logger.debug(f"[sketch_parser] 聚焦OCR {dchar}: 所有结果={_all_ocr_results[:10]}...")
+    else:
+        logger.debug(f"[sketch_parser] 聚焦OCR {dchar}: 无有效OCR结果")
+
+    # 最终校验
     if best_result is not None:
         _bv, _bc = best_result
-        if abs(_bv - ow) <= 1.5 or abs(_bv - oh) <= 1.5:
-            logger.warning(
-                f"[sketch_parser] 聚焦OCR {dchar}边距: 值={_bv:.1f} 与外框尺寸"
-                f"(ow={ow:.1f}, oh={oh:.1f}) 过近，判定为外框尺寸误识别，丢弃"
-            )
+        if _outer_w_cm > 0 and abs(_bv - _outer_w_cm) <= 2.0:
+            logger.warning(f"[sketch_parser] 聚焦OCR {dchar}: 值={_bv:.1f} 判定为外框宽度({_outer_w_cm}cm)，丢弃")
             best_result = None
-        elif _bv > min(ow, oh) * 0.55 and _bv > 20:
-            logger.warning(
-                f"[sketch_parser] 聚焦OCR {dchar}边距: 值={_bv:.1f} 超过外框短边"
-                f"{min(ow,oh):.1f}的55%，边距过大不合理，丢弃"
-            )
+        elif _outer_h_cm > 0 and abs(_bv - _outer_h_cm) <= 2.0:
+            logger.warning(f"[sketch_parser] 聚焦OCR {dchar}: 值={_bv:.1f} 判定为外框高度({_outer_h_cm}cm)，丢弃")
             best_result = None
 
     if best_result is not None:
@@ -4338,8 +3270,11 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
 
 def _try_direction_label_fast_track(cv2, gray_img, tesseract, outer_rect, ocr_hits,
                                     target_w_hint=0.0, target_h_hint=0.0,
-                                    color_img=None):
+                                    color_img=None, inner_rect=None):
     """方向标签快速通道：检测方向标签并关联数字，直接返回8字段赋值。
+
+    Args:
+        inner_rect: (ix, iy, iw, ih) 内框坐标，用于更精确地检查标签位置
 
     Returns:
         dict with all 8 fields, or None if direction labels not detected.
@@ -4366,7 +3301,7 @@ def _try_direction_label_fast_track(cv2, gray_img, tesseract, outer_rect, ocr_hi
     if missing:
         try:
             tmpl_labels = _detect_direction_labels_by_template(
-                cv2, gray_img, outer_rect, color_img=color_img)
+                cv2, gray_img, outer_rect, color_img=color_img, inner_rect=inner_rect)
             for tl in tmpl_labels:
                 if tl[1] in missing:
                     dir_labels.append(tl)
@@ -4665,17 +3600,78 @@ def _robust_ocr_subimage(cv2, sub_img, tesseract, scale=3.0) -> list:
     for sv, sx, sy, scf in string_hints:
         rk = round(sv * 10)
         if rk not in seen:
+            # 尝试找到位置最接近的 all_chars 条目来获取正确位置
+            best_pos = (sx, sy)
+            min_dist = float('inf')
+            for txt, xc, yc, cf, cw, chh in all_chars:
+                try:
+                    tv = float(txt)
+                except ValueError:
+                    continue
+                if abs(tv - sv) * 10 < min_dist:
+                    min_dist = abs(tv - sv) * 10
+                    best_pos = (xc, yc)
             seen[rk] = (sv, scf)
-            results.append((sv, sx, sy, scf))
+            results.append((sv, best_pos[0], best_pos[1], scf))
 
-    # ---- 去重：同数值取最高置信度 ----
+    # ---- 按位置去重：同一位置只保留一个值 ----
+    # 选择规则：位数多 > conf高 > 数值小（OCR更易多读数字而非少读）
     dedup = {}
     for v, xc, yc, cf in results:
-        rk = round(v * 10)
-        if rk not in dedup or cf > dedup[rk][3]:
-            dedup[rk] = (v, xc, yc, cf)
+        # 查找同位置的已有值
+        existing_key = None
+        for rk, (ev, exc, eyc, ecf) in dedup.items():
+            if abs(exc - xc) < 30 and abs(eyc - yc) < 30:
+                existing_key = rk
+                break
+        if existing_key is None:
+            dedup[round(v * 10)] = (v, xc, yc, cf)
+        else:
+            ev, exc, eyc, ecf = dedup[existing_key]
+            val_digits = len(str(int(v))) if v > 0 else 0
+            ev_digits = len(str(int(ev))) if ev > 0 else 0
+            if val_digits > ev_digits:
+                dedup[existing_key] = (v, xc, yc, cf)
+            elif val_digits == ev_digits and cf > ecf:
+                dedup[existing_key] = (v, xc, yc, cf)
+            elif val_digits == ev_digits and abs(cf - ecf) < 0.1 and v < ev:
+                dedup[existing_key] = (v, xc, yc, cf)
 
     final = [(v, xc, yc, cf) for rk, (v, xc, yc, cf) in dedup.items()]
+
+    # ---- 小数合并：检测是否有被分割的小数（如 42 和 4 被识别为两个值，但实际应为 42.4）----
+    decimal_values = [(v, xc, yc, cf) for v, xc, yc, cf in final if '.' in str(v)]
+    if decimal_values:
+        for dv, dxc, dyc, dcf in decimal_values:
+            # 提取整数部分和小数部分
+            dv_str = str(dv)
+            int_part = int(dv_str.split('.')[0])
+            dec_part = int(dv_str.split('.')[1]) if len(dv_str.split('.')[1]) > 0 else 0
+            
+            # 查找是否有两个单独的值在相同位置
+            found_int = False
+            found_dec = False
+            int_idx = -1
+            dec_idx = -1
+            
+            for idx, (v, xc, yc, cf) in enumerate(final):
+                if abs(v - int_part) < 0.5 and abs(xc - dxc) < 30 and abs(yc - dyc) < 30:
+                    found_int = True
+                    int_idx = idx
+                if dec_part > 0 and abs(v - dec_part) < 0.5 and abs(xc - dxc) < 60 and abs(yc - dyc) < 30:
+                    found_dec = True
+                    dec_idx = idx
+            
+            # 如果找到整数部分和小数部分的单独值，移除它们
+            if found_int and found_dec and int_idx >= 0 and dec_idx >= 0:
+                logger.info(f"[sketch_parser] 小数合并: {int_part} + {dec_part} → {dv}")
+                # 移除分量（从后向前删除以避免索引偏移）
+                for idx in sorted([int_idx, dec_idx], reverse=True):
+                    if 0 <= idx < len(final):
+                        final.pop(idx)
+                # 确保小数值被保留
+                if not any(abs(v - dv) < 0.1 for v, xc, yc, cf in final):
+                    final.append((dv, dxc, dyc, dcf))
 
     # 按置信度排序
     final.sort(key=lambda t: t[3], reverse=True)
@@ -5100,12 +4096,10 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
                            color_img=None) -> dict:
     """检测并读取草图上的标注数字（简化版）。
 
-    核心策略：先 OCR 识别全部数值，再通过方向标签+空间分配组合确定8字段
-      1. 先提取 outer_rect 子图并做健壮 OCR（获取所有数值+位置）
-      2. 基于 OCR 结果进行方向标签匹配（上/下/左/右 + 数值）
-      3. 方向标签命中则直接使用边距，其余字段用空间分配填充
-      4. 方向标签未命中则全部用空间分配
-      5. 几何验证与修正
+    核心策略：
+      1. 提取 outer_rect 子图并做健壮 OCR
+      2. 调用 _assign_ocr_values_to_fields 进行空间锚点匹配
+      3. 返回结果
     """
     ox, oy, ow, oh = outer_rect
     ix, iy, iw, ih = inner_rect
@@ -5125,20 +4119,15 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
     if tesseract is None:
         return empty
 
-    # ---- Step 0: 彩色文字增强（如果有彩色原图）----
     enhanced_gray = None
     if color_img is not None:
         try:
             enhanced_gray = _enhance_colored_text_for_ocr(color_img, gray_img)
-            logger.info("[sketch_parser] 彩色文字增强完成，使用增强图进行OCR")
-        except Exception as _e:
-            logger.warning(f"[sketch_parser] 彩色文字增强失败: {_e}")
-            enhanced_gray = None
+        except Exception:
+            pass
 
-    # 决定使用哪个灰度图：增强图优先，回退到原图
     ocr_gray = enhanced_gray if enhanced_gray is not None else gray_img
 
-    # ---- Step 1: 提取 outer_rect 子图并做健壮 OCR ----
     pad = max(5, int(0.03 * max(ow, oh)))
     sx1 = max(0, ox - pad)
     sy1 = max(0, oy - pad)
@@ -5147,7 +4136,6 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
     sub_img = ocr_gray[sy1:sy2, sx1:sx2]
 
     if sub_img.size == 0:
-        logger.warning("[sketch_parser] outer_rect 子图为空")
         return dict(empty)
 
     sub_h, sub_w = sub_img.shape[:2]
@@ -5158,464 +4146,20 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
     else:
         base_scale = 4.5
 
-    logger.info(f"[sketch_parser] 开始OCR: 子图{sub_w}x{sub_h}px, 缩放={base_scale:.1f}x")
-
-    # ---- Step 1a: 子图健壮OCR ----
     ocr_raw_hits = _robust_ocr_subimage(cv2, sub_img, tesseract, scale=base_scale)
 
     hits = []
     for v, xc, yc, cf in ocr_raw_hits:
         hits.append((v, xc + sx1, yc + sy1, cf))
 
-    # ---- Step 1b: 全图简单OCR（补充子图OCR可能误读的值）----
-    # 子图OCR经过裁剪/缩放/预处理可能失真，全图OCR能更准确地读取原始文字
-    full_hits = None
-    try:
-        full_hits = _simple_ocr_full_image(cv2, ocr_gray, tesseract, outer_rect)
-        if full_hits:
-            logger.info(f"[sketch_parser] 全图OCR识别到 {len(full_hits)} 个数值")
-
-            # 合并策略：
-            # 1. 若全图OCR的值与子图OCR的值在空间上接近（<80px），且：
-            #    - 子图值不合理（>80，可能失真），全图值合理（<=80）→ 替换
-            #    - 两者都不合理但差异大 → 用全图值
-            #    - 子图值不合理且全图值更合理 → 替换
-            # 2. 若全图OCR的值在子图OCR中不存在，则补充加入
-            replace_threshold_px = 80  # 空间接近阈值（像素）
-
-            for fi, (fv, fx, fy, fc) in enumerate(full_hits):
-                if not (0.5 <= fv <= 500):
-                    continue
-
-                # 检查是否有子图OCR的hit在空间上接近
-                replaced = False
-                for hi, (hv, hx, hy, hcf) in enumerate(hits):
-                    dist = ((fx - hx) ** 2 + (fy - hy) ** 2) ** 0.5
-                    if dist < replace_threshold_px:
-                        # 空间接近，判断是否需要替换
-                        fv_is_margin = fv <= 80  # 全图值是否像边距
-                        hv_is_margin = hv <= 80  # 子图值是否像边距
-
-                        should_replace = False
-
-                        # —— [Fix-2026-08-17 前置保护] 数量级一致性检查 ——
-                        # 防止把子图100→12、112→12这种明显数量级不符的错误替换
-                        # 原理：同一标注位置的两个OCR识别结果，数值数量级应接近（最多差2~3倍）
-                        # 若相差达5倍以上（如100 vs 12≈8倍），必然是不同标注，绝不替换！
-                        _ratio = max(hv, fv) / max(0.1, min(hv, fv))
-                        if _ratio > 5.0:
-                            # 额外豁免：hv是fv的×10变体（×9.5~×10.5范围内），且fv合理则允许
-                            # 例如子图100 vs 全图10（比例=10）→ 正确的×10变体修复
-                            if 9.0 <= _ratio <= 11.0 and (hv / 10.0 > 0.5):
-                                # 必须满足：全图值fv ≈ hv/10（±15%容差）
-                                if abs(fv - hv / 10.0) <= max(0.5, hv / 10.0 * 0.15):
-                                    should_replace = True  # 允许替换：hv→fv（即×10变体的修正）
-                                else:
-                                    should_replace = False  # 如100 vs 12: 100/10=10≠12，不替换
-                            else:
-                                should_replace = False  # 数量级完全不符，不替换
-                        else:
-                            # 数量级一致，使用原判断逻辑（但增强对×10变体的识别）
-                            if not hv_is_margin and fv_is_margin:
-                                # [增强] 先检查hv是否为合理的×10变体：hv/10是否为合理边距
-                                # 例如子图100（hv/10=10，合理），不应该被12这种错误值覆盖
-                                hv_div10 = hv / 10.0
-                                if 0.5 <= hv_div10 <= 200 and abs(hv_div10 - fv) > 1.5:
-                                    # hv/10 是合理的数值，但与fv差距大 → 不替换（保留hv，
-                                    # 后续统一的×10变体处理会把100→10而不是12）
-                                    should_replace = False
-                                else:
-                                    should_replace = True
-                            elif hv_is_margin and not fv_is_margin:
-                                # 子图像边距，全图不像边距 → 通常不替换
-                                # 但如果子图值非常小（<5），可能是严重误读
-                                if hv < 5 and fv < 150:
-                                    should_replace = True
-                            elif not hv_is_margin and not fv_is_margin:
-                                # 两者都不像边距，检查是否都在合理的尺寸范围
-                                if fv <= 200 and hv > 200:
-                                    should_replace = True
-                                elif fv > 200 and hv > 200:
-                                    max_val = max(abs(fv), abs(hv), 1)
-                                    diff_ratio = abs(fv - hv) / max_val
-                                    if diff_ratio > 0.3:
-                                        should_replace = True
-                            elif hv_is_margin and fv_is_margin:
-                                # 两者都像边距，检查差异是否大
-                                max_val = max(abs(fv), abs(hv), 1)
-                                diff_ratio = abs(fv - hv) / max_val
-                                if diff_ratio > 0.8:
-                                    # 差异非常大（>80%），用全图值
-                                    should_replace = True
-
-                        if should_replace:
-                            logger.info(
-                                f"[sketch_parser] 全图OCR替换: 子图{hv:.1f}→全图{fv:.1f} "
-                                f"(距离{dist:.0f}px)")
-                            hits[hi] = (fv, fx, fy, fc)
-                            replaced = True
-                            break
-
-                if not replaced:
-                    # 检查该值是否已存在（允许±1的容差）
-                    existing_values = set(round(h[0], 1) for h in hits)
-                    val_exists = any(abs(fv - ev) < 1.0 for ev in existing_values)
-                    if not val_exists:
-                        hits.append((fv, fx, fy, fc))
-                        logger.info(f"[sketch_parser] 全图OCR补充值: {fv:.1f} at ({fx:.0f},{fy:.0f}) conf={fc}")
-    except Exception as _e:
-        logger.warning(f"[sketch_parser] 全图OCR异常: {_e}")
-
-    # ---- Step 1c: 空间推理分配边距值 ----
-    # 基于外框位置和全图OCR结果的空间关系，直接分配边距值
-    # 这是最可靠的方式，因为全图OCR未经裁剪/缩放/预处理，识别更准确
-    spatial_margin_hints = None
-    try:
-        spatial_margin_hints = _assign_margins_by_spatial_reasoning(
-            full_hits if full_hits else hits, outer_rect)
-        if spatial_margin_hints:
-            logger.info(f"[sketch_parser] 空间推理边距分配: "
-                        f"上={spatial_margin_hints.get('margin_top', (0, 0))[0]:.1f}, "
-                        f"下={spatial_margin_hints.get('margin_bottom', (0, 0))[0]:.1f}, "
-                        f"左={spatial_margin_hints.get('margin_left', (0, 0))[0]:.1f}, "
-                        f"右={spatial_margin_hints.get('margin_right', (0, 0))[0]:.1f}")
-    except Exception as _e:
-        logger.warning(f"[sketch_parser] 空间推理异常: {_e}")
-        spatial_margin_hints = None
-
-    # ---- Step 1d: 几何聚焦OCR（针对常规OCR可能遗漏的关键字段）----
-    # 常规OCR对小尺寸/低对比度文字识别率低，几何聚焦OCR直接在
-    # 每个字段的预期位置进行高倍率OCR，补充遗漏的数值（如inner_w的"57"）
-    geo_ocr_results = None
-    try:
-        geo_ocr_results = _focused_ocr_for_geometry(
-            cv2, ocr_gray, tesseract, outer_rect, inner_rect,
-            color_img=color_img)
-        if geo_ocr_results:
-            logger.info(f"[sketch_parser] 几何聚焦OCR识别到 {len(geo_ocr_results)} 个字段")
-            # 将几何聚焦OCR结果合并到hits中
-            for field_name, (val, conf) in geo_ocr_results.items():
-                if 0.5 <= val <= 500:
-                    # 找到该字段的预期位置
-                    if field_name == 'inner_w':
-                        fx, fy = ix + iw / 2, iy + ih + (oh - ih) * 0.35
-                    elif field_name == 'inner_h':
-                        fx, fy = ix + iw + (ow - iw) * 0.35, iy + ih / 2
-                    elif field_name == 'total_w':
-                        fx, fy = ox + ow / 2, max(0, oy - ow * 0.06)
-                    elif field_name == 'total_h':
-                        fx, fy = max(0, ox - ow * 0.06), oy + oh / 2
-                    elif field_name == 'margin_top':
-                        fx, fy = ox + ow / 2, max(0, oy - (iy - oy) * 0.3)
-                    elif field_name == 'margin_bottom':
-                        fx, fy = ox + ow / 2, iy + ih + (oy + oh - iy - ih) * 0.5
-                    elif field_name == 'margin_left':
-                        fx, fy = max(0, ox - (ix - ox) * 0.3), oy + oh / 2
-                    elif field_name == 'margin_right':
-                        fx, fy = ix + iw + (ox + ow - ix - iw) * 0.5, oy + oh / 2
-                    else:
-                        fx, fy = ox + ow / 2, oy + oh / 2
-                    hits.append((val, fx, fy, conf + 30))  # +30提升优先级
-                    logger.info(f"[sketch_parser] 几何OCR补充: {field_name}={val:.1f} at ({fx:.0f},{fy:.0f})")
-    except Exception as _e:
-        logger.warning(f"[sketch_parser] 几何聚焦OCR异常: {_e}")
-        geo_ocr_results = None
-
     if not hits:
-        logger.warning("[sketch_parser] OCR 未识别到任何数值")
         return dict(empty)
 
-    _values = set(round(h[0], 1) for h in hits)
-    logger.info(f"[sketch_parser] OCR 完成：{len(hits)} 个值，{len(_values)} 个唯一值: {sorted(_values)}")
+    logger.info(f"[sketch_parser] OCR完成：{len(hits)} 个值")
 
-    # ---- Step 2: 方向标签匹配（使用 OCR hits 作为候选池）----
-    result = None
-    _dir_labels = []
-
-    # 策略1：Tesseract chi_sim OCR 检测方向字符
-    if tesseract is not None:
-        try:
-            ocr_labels = _detect_direction_labels_by_ocr(cv2, ocr_gray, tesseract, outer_rect)
-            _dir_labels.extend(ocr_labels)
-            logger.info(f"[sketch_parser] 方向标签 OCR 检测到 {len(ocr_labels)} 个: "
-                        f"{[(dl[0], dl[1]) for dl in ocr_labels]}")
-        except Exception as _e:
-            logger.warning(f"[sketch_parser] 方向标签 OCR 检测异常: {_e}")
-
-    # 策略2：模板匹配兜底
-    detected_fields = {dl[1] for dl in _dir_labels}
-    missing_dirs = {'margin_top', 'margin_bottom', 'margin_left', 'margin_right'} - detected_fields
-    if missing_dirs:
-        try:
-            tmpl_labels = _detect_direction_labels_by_template(
-                cv2, gray_img, outer_rect, color_img=color_img)
-            for tl in tmpl_labels:
-                if tl[1] in missing_dirs:
-                    _dir_labels.append(tl)
-                    missing_dirs.discard(tl[1])
-            if tmpl_labels:
-                logger.info(f"[sketch_parser] 模板匹配检测到 {len(tmpl_labels)} 个方向标签")
-        except Exception as _e:
-            logger.warning(f"[sketch_parser] 模板匹配检测方向标签异常: {_e}")
-
-    if _dir_labels:
-        logger.info(f"[sketch_parser] 共检测到 {len(_dir_labels)} 个方向标签: "
-                    f"{[(dl[0], dl[1]) for dl in _dir_labels]}")
-
-        # 用方向标签匹配 OCR 数值（传入cv2/gray/tesseract以启用聚焦OCR第二遍）
-        margin_result = _match_direction_labels_to_numbers(
-            _dir_labels, hits, outer_rect,
-            cv2=cv2, gray_img=ocr_gray, tesseract=tesseract)
-        if margin_result is not None:
-            logger.info(f"[sketch_parser] 方向标签匹配成功：{[(k, v[0]) for k, v in margin_result.items()]}")
-
-            # 用空间分配填充所有8字段
-            spatial_result = _assign_ocr_values_to_fields(
-                hits, outer_rect, inner_rect, h_img, w_img,
-                target_w_hint=target_w_hint, target_h_hint=target_h_hint)
-
-            # 合并：方向标签提供已匹配的边距，空间分配提供其余字段
-            result = {}
-            # 先复制空间分配的全部结果作为基础
-            for key in ['total_w', 'total_h', 'inner_w', 'inner_h',
-                         'margin_top', 'margin_bottom', 'margin_left', 'margin_right']:
-                result[key] = spatial_result.get(key, (0.0, 0))
-            # 用方向标签匹配结果覆盖对应的边距
-            for key in ['margin_top', 'margin_bottom', 'margin_left', 'margin_right']:
-                if key in margin_result and margin_result[key][0] > 0:
-                    result[key] = margin_result[key]
-            # 用空间推理结果覆盖边距和total（基于全图OCR，更可靠）
-            if spatial_margin_hints:
-                for key in ['margin_top', 'margin_bottom', 'margin_left', 'margin_right']:
-                    if key in spatial_margin_hints and spatial_margin_hints[key][0] > 0:
-                        old_val = result.get(key, (0.0, 0))[0]
-                        new_val = spatial_margin_hints[key][0]
-                        if old_val > 0 and abs(old_val - new_val) > 0.5:
-                            logger.info(
-                                f"[sketch_parser] 空间推理覆盖{key}: {old_val:.1f}→{new_val:.1f}")
-                        result[key] = spatial_margin_hints[key]
-                if 'total_w' in spatial_margin_hints and spatial_margin_hints['total_w'][0] > 0:
-                    result['total_w'] = spatial_margin_hints['total_w']
-                if 'total_h' in spatial_margin_hints and spatial_margin_hints['total_h'][0] > 0:
-                    result['total_h'] = spatial_margin_hints['total_h']
-                # 覆盖inner尺寸（如果空间推理有更可靠的值）
-                if 'inner_w' in spatial_margin_hints and spatial_margin_hints['inner_w'][0] > 0:
-                    old_val = result.get('inner_w', (0.0, 0))[0]
-                    new_val = spatial_margin_hints['inner_w'][0]
-                    if old_val > 0 and abs(old_val - new_val) > 0.5:
-                        logger.info(
-                            f"[sketch_parser] 空间推理覆盖inner_w: {old_val:.1f}→{new_val:.1f}")
-                    result['inner_w'] = spatial_margin_hints['inner_w']
-                if 'inner_h' in spatial_margin_hints and spatial_margin_hints['inner_h'][0] > 0:
-                    old_val = result.get('inner_h', (0.0, 0))[0]
-                    new_val = spatial_margin_hints['inner_h'][0]
-                    if old_val > 0 and abs(old_val - new_val) > 0.5:
-                        logger.info(
-                            f"[sketch_parser] 空间推理覆盖inner_h: {old_val:.1f}→{new_val:.1f}")
-                    result['inner_h'] = spatial_margin_hints['inner_h']
-
-            # 计算 inner 验证
-            _tw = result['total_w'][0]
-            _th = result['total_h'][0]
-            _ml = result['margin_left'][0]
-            _mr = result['margin_right'][0]
-            _mt = result['margin_top'][0]
-            _mb = result['margin_bottom'][0]
-
-            # 如果空间分配没找到 total 值，尝试用 OCR hits 中最大的值
-            if _tw <= 0 or _th <= 0:
-                sorted_hits = sorted([(h[0], h[1], h[2], h[3]) for h in hits],
-                                     key=lambda x: x[0], reverse=True)
-                if sorted_hits:
-                    if _tw <= 0:
-                        _tw = sorted_hits[0][0]
-                        result['total_w'] = (_tw, sorted_hits[0][3])
-                    if _th <= 0 and len(sorted_hits) > 1:
-                        _th = sorted_hits[1][0]
-                        result['total_h'] = (_th, sorted_hits[1][3])
-                    elif _th <= 0:
-                        _th = sorted_hits[0][0]
-                        result['total_h'] = (_th, sorted_hits[0][3])
-
-            # 如果 inner 值为 0，用几何关系计算
-            if _tw > 0 and _ml > 0 and _mr > 0:
-                _iw = max(0.0, _tw - _ml - _mr)
-                if result['inner_w'][0] <= 0:
-                    result['inner_w'] = (_iw, 6)
-            if _th > 0 and _mt > 0 and _mb > 0:
-                _ih = max(0.0, _th - _mt - _mb)
-                if result['inner_h'][0] <= 0:
-                    result['inner_h'] = (_ih, 6)
-
-            logger.warning(
-                f"[sketch_parser] 方向标签+空间分配混合结果："
-                f"total={result['total_w'][0]:.1f}x{result['total_h'][0]:.1f} "
-                f"inner={result['inner_w'][0]:.1f}x{result['inner_h'][0]:.1f} "
-                f"margin T/B/L/R={_mt}/{_mb}/{_ml}/{_mr}"
-            )
-
-    if result is None:
-        # 方向标签全部失败，使用纯空间分配
-        logger.info("[sketch_parser] 方向标签检测失败，使用纯空间分配")
-        result = _assign_ocr_values_to_fields(hits, outer_rect, inner_rect,
-                                              h_img, w_img,
-                                              target_w_hint=target_w_hint,
-                                              target_h_hint=target_h_hint)
-        # 用空间推理结果覆盖
-        if spatial_margin_hints:
-            for key in ['margin_top', 'margin_bottom', 'margin_left', 'margin_right',
-                         'total_w', 'total_h']:
-                if key in spatial_margin_hints and spatial_margin_hints[key][0] > 0:
-                    result[key] = spatial_margin_hints[key]
-
-    # ---- Step 2b: 注入几何聚焦OCR结果（优先使用直接字段识别结果）----
-    # 几何聚焦OCR直接在每个字段的预期位置进行高倍率OCR，
-    # 识别结果带有明确的字段归属，优先使用以避免分配错误
-    if geo_ocr_results:
-        for field_name in ['inner_w', 'inner_h', 'total_w', 'total_h',
-                           'margin_top', 'margin_bottom', 'margin_left', 'margin_right']:
-            if field_name in geo_ocr_results and geo_ocr_results[field_name][0] > 0:
-                geo_val, geo_conf = geo_ocr_results[field_name]
-                cur_val = result.get(field_name, (0.0, 0))[0]
-                # 如果当前值为0、或几何OCR的置信度更高、或当前值明显不合理
-                if cur_val <= 0 or geo_conf > result.get(field_name, (0.0, 0))[1] + 20:
-                    old_val_str = f"{cur_val:.1f}" if cur_val > 0 else "无"
-                    logger.info(
-                        f"[sketch_parser] 几何OCR注入 {field_name}: "
-                        f"{old_val_str} → {geo_val:.1f} (conf={geo_conf})")
-                    result[field_name] = (geo_val, geo_conf + 40)
-
-    # ---- Step 3: 几何验证与修正 ----
-    tw = result.get('total_w', (0.0, 0))[0]
-    th = result.get('total_h', (0.0, 0))[0]
-    iw_val = result.get('inner_w', (0.0, 0))[0]
-    ih_val = result.get('inner_h', (0.0, 0))[0]
-    mt = result.get('margin_top', (0.0, 0))[0]
-    mb = result.get('margin_bottom', (0.0, 0))[0]
-    ml = result.get('margin_left', (0.0, 0))[0]
-    mr = result.get('margin_right', (0.0, 0))[0]
-
-    # ---- Step 3a: 预测性聚焦OCR ----
-    # 使用outer_rect和inner_rect预测边距数值的位置，进行聚焦OCR
-    # 当边距值几何不自洽时，此步能纠正错误的OCR识别
-    logger.info(f"[sketch_parser] Step 3a: cv2={'yes' if cv2 is not None else 'None'}, "
-                f"ocr_gray={'yes' if ocr_gray is not None else 'None'}, "
-                f"tesseract={'yes' if tesseract is not None else 'None'}")
-    if cv2 is not None and ocr_gray is not None and tesseract is not None:
-        try:
-            pred_margins = _predictive_ocr_margins(
-                cv2, ocr_gray, tesseract, outer_rect, inner_rect)
-            if pred_margins:
-                logger.info(
-                    f"[sketch_parser] 预测性OCR结果: "
-                    f"上={pred_margins.get('margin_top', (0, 0))[0]:.1f}, "
-                    f"下={pred_margins.get('margin_bottom', (0, 0))[0]:.1f}, "
-                    f"左={pred_margins.get('margin_left', (0, 0))[0]:.1f}, "
-                    f"右={pred_margins.get('margin_right', (0, 0))[0]:.1f}")
-
-                # 用预测性OCR结果替换明显异常的边距值
-                for key, cur_val in [
-                    ('margin_top', mt), ('margin_bottom', mb),
-                    ('margin_left', ml), ('margin_right', mr)
-                ]:
-                    if key in pred_margins and pred_margins[key][0] > 0:
-                        pred_val = pred_margins[key][0]
-                        # 如果当前值明显异常（>80或>外框的50%），用预测值替换
-                        side_len = tw if key in ('margin_left', 'margin_right') else th
-                        if (cur_val > 80 or (side_len > 0 and cur_val > side_len * 0.5)
-                                or cur_val <= 0):
-                            logger.info(
-                                f"[sketch_parser] 预测性OCR修正: {key} {cur_val:.1f}→{pred_val:.1f}")
-                            result[key] = (pred_val, pred_margins[key][1])
-        except Exception as _e:
-            logger.warning(f"[sketch_parser] 预测性OCR异常: {_e}")
-        # Re-read values after correction
-        mt = result.get('margin_top', (0.0, 0))[0]
-        mb = result.get('margin_bottom', (0.0, 0))[0]
-        ml = result.get('margin_left', (0.0, 0))[0]
-        mr = result.get('margin_right', (0.0, 0))[0]
-
-    # ---- 边距合理性校验：边距不能超过外框对应边长 ----
-    for fname, fval, total_side in [
-        ('margin_top', mt, th), ('margin_bottom', mb, th),
-        ('margin_left', ml, tw), ('margin_right', mr, tw)
-    ]:
-        if fval > 0 and total_side > 0 and fval > total_side * 0.6:
-            logger.warning(f"[sketch_parser] 边距异常: {fname}={fval:.1f} 超过外框边长{total_side:.1f}的60%，可能是OCR误读")
-            # 标记为异常，后续将尝试重新识别
-
-    # 水平方向验证: outer_w - inner_w ≈ margin_left + margin_right
-    if tw > 0 and iw_val > 0:
-        expected_h = tw - iw_val
-        actual_h = ml + mr
-        if abs(expected_h - actual_h) > max(2.0, tw * 0.05):
-            logger.warning(f"[sketch_parser] 水平方向不自洽: outer({tw:.1f})-inner({iw_val:.1f})={expected_h:.1f} != margins({ml:.1f}+{mr:.1f}={actual_h:.1f})")
-
-            # 策略1: 一边为0，推算另一边
-            if ml <= 0 and mr > 0:
-                ml = max(0, expected_h - mr)
-                result['margin_left'] = (ml, 5)
-                logger.info(f"[sketch_parser] 几何修正: margin_left 推算为 {ml:.2f}")
-            elif mr <= 0 and ml > 0:
-                mr = max(0, expected_h - ml)
-                result['margin_right'] = (mr, 5)
-                logger.info(f"[sketch_parser] 几何修正: margin_right 推算为 {mr:.2f}")
-            # 策略2: 两边都非零但不合理，用期望值按比例分配
-            elif ml > 0 and mr > 0:
-                # 检查是否有边距异常大（超过外框的50%）
-                if ml > tw * 0.5 or mr > tw * 0.5:
-                    # 异常边距用期望值减去另一边
-                    if ml > tw * 0.5:
-                        new_ml = max(0, expected_h - mr)
-                        if new_ml > 0:
-                            result['margin_left'] = (new_ml, 5)
-                            logger.info(f"[sketch_parser] 几何修正(异常大): margin_left {ml:.1f}→{new_ml:.1f}")
-                            ml = new_ml
-                    if mr > tw * 0.5:
-                        new_mr = max(0, expected_h - ml)
-                        if new_mr > 0:
-                            result['margin_right'] = (new_mr, 5)
-                            logger.info(f"[sketch_parser] 几何修正(异常大): margin_right {mr:.1f}→{new_mr:.1f}")
-                            mr = new_mr
-
-    # 垂直方向验证: outer_h - inner_h ≈ margin_top + margin_bottom
-    if th > 0 and ih_val > 0:
-        expected_v = th - ih_val
-        actual_v = mt + mb
-        if abs(expected_v - actual_v) > max(2.0, th * 0.05):
-            logger.warning(f"[sketch_parser] 垂直方向不自洽: outer({th:.1f})-inner({ih_val:.1f})={expected_v:.1f} != margins({mt:.1f}+{mb:.1f}={actual_v:.1f})")
-
-            # 策略1: 一边为0，推算另一边
-            if mt <= 0 and mb > 0:
-                mt = max(0, expected_v - mb)
-                result['margin_top'] = (mt, 5)
-                logger.info(f"[sketch_parser] 几何修正: margin_top 推算为 {mt:.2f}")
-            elif mb <= 0 and mt > 0:
-                mb = max(0, expected_v - mt)
-                result['margin_bottom'] = (mb, 5)
-                logger.info(f"[sketch_parser] 几何修正: margin_bottom 推算为 {mb:.2f}")
-            # 策略2: 两边都非零但不合理
-            elif mt > 0 and mb > 0:
-                if mt > th * 0.5 or mb > th * 0.5:
-                    if mt > th * 0.5:
-                        new_mt = max(0, expected_v - mb)
-                        if new_mt > 0:
-                            result['margin_top'] = (new_mt, 5)
-                            logger.info(f"[sketch_parser] 几何修正(异常大): margin_top {mt:.1f}→{new_mt:.1f}")
-                            mt = new_mt
-                    if mb > th * 0.5:
-                        new_mb = max(0, expected_v - mt)
-                        if new_mb > 0:
-                            result['margin_bottom'] = (new_mb, 5)
-                            logger.info(f"[sketch_parser] 几何修正(异常大): margin_bottom {mb:.1f}→{new_mb:.1f}")
-                            mb = new_mb
-
-    _final_sc = _score_assignment_consistency(result)
-    logger.info(
-        f"[sketch_parser] 最终8字段(sc={_final_sc:.3f})："
-        f"total={tw:.2f}x{th:.2f} inner={iw_val:.2f}x{ih_val:.2f} "
-        f"margin T/B/L/R={mt:.2f}/{mb:.2f}/{ml:.2f}/{mr:.2f}"
-    )
+    result = _assign_ocr_values_to_fields(
+        hits, outer_rect, inner_rect, h_img, w_img,
+        target_w_hint=target_w_hint, target_h_hint=target_h_hint)
 
     return result
 
@@ -5684,15 +4228,11 @@ def parse_sketch(
 ) -> SketchParseResult:
     """解析尺寸草图，返回 SketchParseResult（永不抛异常）。
 
-    Args:
-        progress_callback: 可选回调函数 callback(percent: int, message: str)
-            用于向UI报告解析进度（0-100）。
-
-    流程：
-      1. 加载图片 → 复杂度评估
-      2. 几何检测 → 找两个嵌套矩形
-      3. 数字识别 → OCR + 几何回退
-      4. 融合结果 → 映射到边距/尺寸
+    简化版：
+      1. 加载图片 → 复杂度评估 → 几何检测
+      2. OCR 识别标注数字
+      3. 用 target 尺寸作为外框主源，OCR 值用于内框和边距
+      4. 几何验证通过则信任 OCR，否则回退到几何
     """
     def _progress(pct: int, msg: str):
         if progress_callback:
@@ -5716,648 +4256,356 @@ def parse_sketch(
     gray = _to_gray(img)
     h, w = gray.shape[:2]
 
-    # ---- L0: 缓存查找（性能优化） ----
-    # 第一级：同一张草图+同一目标尺寸，直接返回缓存结果（毫秒级响应）
     cached = _get_cached_result(image_path, target_outer_w_cm, target_outer_h_cm)
     if cached is not None:
         return cached
 
-    # 第二级：自洽解缓存（与 target 无关）
-    # 当 OCR 识别到全部 8 字段且几何自洽时，结果与 target 尺寸无关。
-    # 更换目标文件名（不同 target）时直接命中，毫秒级响应。
     consistent_cached = _get_consistent_cached_result(image_path)
     if consistent_cached is not None:
-        # 自洽解与 target 无关，直接返回（同时存入第一级缓存加速下次同 target 查询）
         _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent_cached)
         return consistent_cached
 
-    # ---- L1: 复杂度评估 ----
     is_complex, complex_reason = _assess_complexity(gray)
     if is_complex:
         result.message = complex_reason
         result.debug["complex_skipped"] = True
         return result
 
-    # ---- L2: 几何检测 ----
     _progress(25, "几何检测：查找嵌套矩形...")
     top2 = _find_two_nested_rectangles(cv2, gray, img)
     if len(top2) < 2:
-        result.message = (f"只检测到 {len(top2)} 个矩形轮廓，"
-                          f"无法确定内外框关系。请手动输入边距或使用更清晰的草图。")
+        msg = f"只检测到 {len(top2)} 个矩形轮廓，无法确定内外框关系。"
+        if len(top2) == 0:
+            msg += "可能原因：草图线条过细、模糊或缺少清晰的矩形边框。"
+            msg += "请手动输入边距或使用更清晰的草图。"
+        else:
+            msg += "请手动输入边距或使用更清晰的草图。"
+        _progress(30, msg)
+        result.message = msg
         result.debug["rects_found"] = len(top2)
         return result
 
     (ox, oy, ow, oh, os_score), (ix, iy, iw, ih, ins_score) = top2
     result.debug["outer_rect_px"] = (ox, oy, ow, oh)
     result.debug["inner_rect_px"] = (ix, iy, iw, ih)
-    result.debug["rect_scores"] = {"outer": round(os_score, 3), "inner": round(ins_score, 3)}
 
-    # ---- L3: 数字识别 ----
     _progress(40, "OCR识别：读取标注数字...")
     tesseract = _safe_import_tesseract()
 
-    # 先用 OCR 读取标注数字（传入彩色图用于方向标签检测）
-    ocr_result = _find_and_read_numbers(cv2, gray, (ox, oy, ow, oh),
-                                         (ix, iy, iw, ih), tesseract,
-                                         target_w_hint=target_outer_w_cm,
-                                         target_h_hint=target_outer_h_cm,
-                                         color_img=img)
+    ocr_result = _find_and_read_numbers(
+        cv2, gray, (ox, oy, ow, oh), (ix, iy, iw, ih), tesseract,
+        target_w_hint=target_outer_w_cm,
+        target_h_hint=target_outer_h_cm,
+        color_img=img)
+
+    # === 方向标签检测：利用"上/下/左/右"标签+数值直接确定边距 ===
+    _progress(50, "方向标签检测：利用方向+数值标注...")
+    direction_margins = {}
+    
+    # 方法1：模板匹配检测方向标签（传入内框以精确定位间隙区域）
+    dir_labels_template = _detect_direction_labels_by_template(
+        cv2, gray, (ox, oy, ow, oh), img, inner_rect=(ix, iy, iw, ih))
+    logger.info(f"[sketch_parser] 模板匹配检测到 {len(dir_labels_template)} 个方向标签")
+    
+    # 方法2：OCR方法检测方向标签（同时使用）
+    dir_labels_ocr = []
+    if tesseract is not None:
+        dir_labels_ocr = _detect_direction_labels_by_ocr(cv2, gray, tesseract, (ox, oy, ow, oh))
+        logger.info(f"[sketch_parser] OCR方法检测到 {len(dir_labels_ocr)} 个方向标签")
+    
+    # 方法3：基于几何位置的边距OCR检测（不依赖方向标签）
+    geometry_margins = {}
+    if tesseract is not None:
+        geometry_margins = _detect_margins_by_geometry_ocr(
+            cv2, gray, tesseract, (ox, oy, ow, oh),
+            inner_rect=(ix, iy, iw, ih),
+            target_outer_w_cm=target_outer_w_cm,
+            target_outer_h_cm=target_outer_h_cm)
+        if geometry_margins:
+            logger.info(f"[sketch_parser] 几何OCR检测到 {len(geometry_margins)} 个边距值")
+    
+    # 合并结果：优先保留带有数值的OCR结果
+    # 模板匹配仅提供位置信息，OCR检测提供位置+数值
+    dir_labels = []
+    _field_best = {}
+    
+    for item in dir_labels_template:
+        dchar, mfield, lx, ly, conf, val = item
+        if mfield not in _field_best or val is not None:
+            _field_best[mfield] = item
+    
+    for item in dir_labels_ocr:
+        dchar, mfield, lx, ly, conf, val = item
+        if mfield not in _field_best:
+            _field_best[mfield] = item
+        elif val is not None and _field_best[mfield][5] is None:
+            _field_best[mfield] = item
+    
+    dir_labels = list(_field_best.values())
+    
+    logger.info(f"[sketch_parser] 合并后共 {len(dir_labels)} 个方向标签")
+    
+    # 计算标签位置是否在内框内部（不合理，会导致聚焦OCR读到内框值）
+    _label_inside_inner = {}
+    for dchar, mfield, lx, ly, conf, existing_val in dir_labels:
+        if ix <= lx <= ix + iw and iy <= ly <= iy + ih:
+            _label_inside_inner[mfield] = True
+            logger.warning(f"[sketch_parser] 方向标签 {dchar} 位置({lx:.0f},{ly:.0f})在内框内部，聚焦OCR可能读到错误值")
+    
+    # 对每个检测到的方向标签进行聚焦OCR，获取准确的边距数值
+    for dchar, mfield, lx, ly, conf, existing_val in dir_labels:
+        logger.info(f"[sketch_parser] 方向标签 {dchar}(位置={lx:.0f},{ly:.0f}, conf={conf})")
+        
+        # 空间合理性检查：如果标签位置严重不合理，跳过
+        # 检查标签是否在外框与内框之间的间隙区域
+        if not _is_label_position_strict(dchar, lx, ly, ox, oy, ow, oh, ix, iy, iw, ih):
+            logger.warning(f"[sketch_parser] 方向标签 {dchar} 位置不合理 ({lx:.0f},{ly:.0f}), 跳过")
+            continue
+        
+        # 如果标签在内框内部，跳过聚焦OCR（会读到内框值而非边距值）
+        if mfield in _label_inside_inner:
+            logger.warning(f"[sketch_parser] 方向标签 {dchar} 在内框内部，跳过聚焦OCR，使用几何OCR结果")
+            continue
+        
+        # 如果方向标签本身带有数值（如"上6"），直接使用
+        if existing_val is not None and 0.5 <= existing_val <= 500:
+            direction_margins[mfield] = (existing_val, max(70, conf))
+            logger.info(f"[sketch_parser] 方向标签 {dchar} 自带数值={existing_val}, 直接采用")
+            continue
+        
+        # 否则，在标签位置进行聚焦OCR
+        if tesseract is not None:
+            focused_result = _focused_ocr_for_direction_label(
+                cv2, gray, tesseract, dchar, mfield, lx, ly, (ox, oy, ow, oh),
+                target_outer_w_cm=target_outer_w_cm,
+                target_outer_h_cm=target_outer_h_cm)
+            if focused_result is not None:
+                fval, fconf = focused_result
+                # 合理性检查：边距值不应过大（超过外框短边的40%）
+                _outer_min_side = min(target_outer_w_cm or ow, target_outer_h_cm or oh)
+                if fval > _outer_min_side * 0.40:
+                    logger.warning(f"[sketch_parser] 聚焦OCR {dchar} 值={fval}过大(>外框短边40%)，可能是内框值，跳过")
+                else:
+                    direction_margins[mfield] = (fval, fconf)
+                    logger.info(f"[sketch_parser] 聚焦OCR {dchar}边距: 值={fval}, conf={fconf}")
+            else:
+                # 兜底策略：使用全图OCR结果
+                _field_key_map = {'margin_top': 'mt', 'margin_bottom': 'mb',
+                                  'margin_left': 'ml', 'margin_right': 'mr'}
+                _fkey = _field_key_map.get(mfield, '')
+                _ocr_val = ocr_result.get(mfield, (0, 0))[0]
+                if _ocr_val > 0 and _fkey:
+                    direction_margins[mfield] = (_ocr_val, 30)
+                    logger.info(f"[sketch_parser] 聚焦OCR失败，使用全图OCR兜底 {dchar}: 值={_ocr_val}")
+
+    # 方法4：使用几何OCR结果补充/替代方向标签结果
+    # 对于方向标签检测失败或结果不可靠的边距，使用几何OCR结果
+    if geometry_margins:
+        for mfield, (gval, gconf) in geometry_margins.items():
+            if mfield not in direction_margins:
+                # 方向标签没有检测到，使用几何OCR结果
+                direction_margins[mfield] = (gval, gconf)
+                logger.info(f"[sketch_parser] 几何OCR补充 {mfield}: 值={gval}, conf={gconf}")
+            else:
+                # 方向标签已检测到，比较两个结果
+                _dir_val, _dir_conf = direction_margins[mfield]
+                
+                # 策略改进：
+                # 1. 如果两个值很接近（差异<=1.5），取平均
+                # 2. 如果几何OCR置信度更高，使用几何OCR
+                # 3. 如果聚焦OCR识别的值可能不准确（如识别到7而几何OCR识别到6），优先使用较小的值
+                # 4. 如果两个值差异较大，选择更合理的值
+                
+                _diff = abs(gval - _dir_val)
+                
+                if _diff <= 1.5:
+                    # 两个值很接近，取平均
+                    avg_val = round((gval + _dir_val) / 2, 1)
+                    max_conf = max(gconf, _dir_conf)
+                    direction_margins[mfield] = (avg_val, max_conf)
+                    logger.info(f"[sketch_parser] 几何OCR+方向标签平均 {mfield}: ({_dir_val}+{gval})/2={avg_val}")
+                elif gconf > _dir_conf + 20:
+                    # 几何OCR置信度明显更高，使用几何OCR
+                    direction_margins[mfield] = (gval, gconf)
+                    logger.info(f"[sketch_parser] 几何OCR替代 {mfield}: {_dir_val}→{gval} (conf: {_dir_conf}→{gconf})")
+                elif gval < _dir_val and gconf >= _dir_conf - 5:
+                    # 几何OCR的值更小且置信度接近，优先使用较小的值（边距通常较小）
+                    direction_margins[mfield] = (gval, gconf)
+                    logger.info(f"[sketch_parser] 几何OCR取小值 {mfield}: {_dir_val}→{gval} (更小且conf接近)")
+                else:
+                    # 其他情况，保留方向标签结果
+                    pass
+
+    if direction_margins:
+        logger.info(f"[sketch_parser] 方向标签+几何OCR识别结果: {direction_margins}")
 
     _progress(75, "几何回退计算...")
-    # 再用几何方法计算回退值
     geo_result = _geometry_fallback_values(
         (ox, oy, ow, oh), (ix, iy, iw, ih),
         target_outer_w_cm, target_outer_h_cm)
 
-    # 融合：优先用 OCR 值，OCR 未识别时用几何回退
-    fused = {}
-    for key in ocr_result:
-        ocr_val, ocr_conf = ocr_result[key]
-        geo_val, geo_conf = geo_result[key]
-        if ocr_conf > 0 and ocr_val > 0:
-            fused[key] = ocr_val
-        elif geo_conf > 0 and geo_val > 0:
-            fused[key] = geo_val
-        else:
-            fused[key] = 0.0
-
-    # ---- 计算最终边距 ----
-    # 外框总尺寸：优先用 OCR 读的 total_w/total_h，否则用目标尺寸
-    outer_w = fused.get('total_w', 0.0)
-    outer_h = fused.get('total_h', 0.0)
-
-    # 先拿内框和边距的 OCR 原始值（用于自洽性检测）
-    _ocr_inner_w = fused.get('inner_w', 0.0)
-    _ocr_inner_h = fused.get('inner_h', 0.0)
-    _ocr_mt = fused.get('margin_top', 0.0)
-    _ocr_mb = fused.get('margin_bottom', 0.0)
-    _ocr_ml = fused.get('margin_left', 0.0)
-    _ocr_mr = fused.get('margin_right', 0.0)
-
-    # 检测 OCR 值是否几何自洽：
-    #   水平方向：| outer_w - inner_w - (margin_left + margin_right) | 应接近 0
-    #   垂直方向：| outer_h - inner_h - (margin_top + margin_bottom) |  应接近 0
-    # 同时要求 8 个字段都有正值（否则 OCR 识别不完整）
-    #
-    # 重要：OCR 的 total_w/total_h 可能基于空间位置被映射为「反方向」
-    # （例如 total_w 是竖边值，total_h 是横边值）。所以我们需要双向检测：
-    #   Case 1: 原始方向 (w, h)
-    #   Case 2: 全交换后 (h, w)，同时交换内框和边距
-    # 只要任一 Case 自洽，就认为 OCR 语义值是正确的（只是方向需要矫正）
-    _ocr_fields_positive = all(v > 0 for v in [
-        outer_w, outer_h, _ocr_inner_w, _ocr_inner_h,
-        _ocr_mt, _ocr_mb, _ocr_ml, _ocr_mr
-    ])
-
-    def _check_consistent(ow_, oh_, iw_, ih_, mt_, mb_, ml_, mr_):
-        """返回 (h_ok, v_ok, fully_ok) 基于给定的一组值检测几何自洽"""
-        if ow_ <= 0 or oh_ <= 0:
-            return False, False, False
-        _h_diff = abs(ow_ - iw_ - (ml_ + mr_))
-        _v_diff = abs(oh_ - ih_ - (mt_ + mb_))
-        _h_tol = max(2.0, ow_ * 0.10)
-        _v_tol = max(2.0, oh_ * 0.10)
-        _h_ok = _h_diff <= _h_tol
-        _v_ok = _v_diff <= _v_tol
-        return _h_ok, _v_ok, _h_ok and _v_ok
-
-    _c1_h, _c1_v, _c1_full = False, False, False
-    _c2_h, _c2_v, _c2_full = False, False, False
-    if _ocr_fields_positive:
-        # Case 1: 原始 OCR 映射方向
-        _c1_h, _c1_v, _c1_full = _check_consistent(
-            outer_w, outer_h, _ocr_inner_w, _ocr_inner_h,
-            _ocr_mt, _ocr_mb, _ocr_ml, _ocr_mr
-        )
-        # Case 2: 只交换 outer 和 inner 的宽高，边距不交换
-        # 原理：OCR 的 total_w/total_h 基于空间位置映射可能搞反了
-        # （total_w 读了竖边值 a=60.5，total_h 读了横边值 b=133），
-        # 但边距的 top/bottom/left/right 命名语义是正确的。
-        # 此时只需把 outer_w↔outer_h、inner_w↔inner_h（相当于纠正 total_w/h 的映射方向），
-        # 边距保持不变（top/bottom/left/right 仍对应正确的几何方向）。
-        _c2_h, _c2_v, _c2_full = _check_consistent(
-            outer_h, outer_w, _ocr_inner_h, _ocr_inner_w,
-            _ocr_mt, _ocr_mb, _ocr_ml, _ocr_mr
-        )
-    _ocr_fully_consistent = _ocr_fields_positive and (_c1_full or _c2_full)
-    if _ocr_fields_positive:
-        logger.info(f"[sketch_parser] OCR 几何自洽性检测(双向)："
-                    f"原始方向 h={_c1_h}/v={_c1_v}/full={_c1_full}，"
-                    f"全交换方向 h={_c2_h}/v={_c2_v}/full={_c2_full}，"
-                    f"总体自洽={_ocr_fully_consistent}")
-
-    # --- 方向矫正 Phase 1：仅在外框宽高与像素比严重矛盾时 swap ---
-    # 此处仅交换 outer_w/outer_h，inner/margins 稍后在定义后同步交换
-    _outer_swap_done = False
-    # 像素帧宽高比 vs 目标宽高比：如果差异过大，说明几何检测的像素尺寸不可靠
-    _pixel_frame_reliable = True
-    if ow > 0 and oh > 0 and target_outer_w_cm > 0 and target_outer_h_cm > 0:
-        _px_aspect = ow / oh
-        _target_aspect = target_outer_w_cm / target_outer_h_cm
-        _aspect_ratio_diff = abs(_px_aspect - _target_aspect) / max(_px_aspect, _target_aspect, 0.01)
-        if _aspect_ratio_diff > 0.20:
-            logger.warning(
-                f"[sketch_parser] 检测到外框像素宽高比({ow}x{oh}={_px_aspect:.2f}) "
-                f"与目标宽高比({target_outer_w_cm:.1f}x{target_outer_h_cm:.1f}={_target_aspect:.2f}) "
-                f"差异过大({_aspect_ratio_diff:.1%})，像素尺寸可能不可靠")
-            _pixel_frame_reliable = False
-
-    if outer_w > 0 and outer_h > 0 and ow > 0 and oh > 0:
-        ratio_px = ow / oh
-        ratio_val = outer_w / outer_h
-        px_is_landscape = ratio_px > 1.25
-        px_is_portrait = ratio_px < 1.0 / 1.25
-        val_is_landscape = ratio_val > 1.25
-        val_is_portrait = ratio_val < 1.0 / 1.25
-        need_swap = False
-        if px_is_portrait and val_is_landscape:
-            need_swap = True
-        elif px_is_landscape and val_is_portrait:
-            need_swap = True
-        if need_swap:
-            logger.info(f"[sketch_parser] Phase1 外框宽高方向矫正：互换 {outer_w}x{outer_h} → {outer_h}x{outer_w}")
-            outer_w, outer_h = outer_h, outer_w
-            _outer_swap_done = True
+    outer_w = target_outer_w_cm if target_outer_w_cm > 0 else ocr_result.get('total_w', (0, 0))[0]
+    outer_h = target_outer_h_cm if target_outer_h_cm > 0 else ocr_result.get('total_h', (0, 0))[0]
 
     if outer_w <= 0:
-        outer_w = target_outer_w_cm
+        outer_w = ocr_result.get('total_w', (0, 0))[0]
     if outer_h <= 0:
-        outer_h = target_outer_h_cm
+        outer_h = ocr_result.get('total_h', (0, 0))[0]
 
-    # 如果外框仍未知，用几何回退
-    if outer_w <= 0 or outer_h <= 0:
-        cm_per_px_w = cm_per_px_h = 0.0
-        if ow > 0:
-            cm_per_px_w = target_outer_w_cm / ow if target_outer_w_cm > 0 else 0
-        if oh > 0:
-            cm_per_px_h = target_outer_h_cm / oh if target_outer_h_cm > 0 else 0
-        if cm_per_px_w and not cm_per_px_h:
-            cm_per_px_h = cm_per_px_w
-        elif cm_per_px_h and not cm_per_px_w:
-            cm_per_px_w = cm_per_px_h
+    inner_w = ocr_result.get('inner_w', (0, 0))[0]
+    inner_h = ocr_result.get('inner_h', (0, 0))[0]
+    mt = ocr_result.get('margin_top', (0, 0))[0]
+    mb = ocr_result.get('margin_bottom', (0, 0))[0]
+    ml = ocr_result.get('margin_left', (0, 0))[0]
+    mr = ocr_result.get('margin_right', (0, 0))[0]
 
-        if outer_w <= 0 and cm_per_px_w > 0:
-            outer_w = ow * cm_per_px_w
-        if outer_h <= 0 and cm_per_px_h > 0:
-            outer_h = oh * cm_per_px_h
-
-    # ---- 目标尺寸验证：当 OCR 外框尺寸与目标偏差过大时，以目标为准 ----
-    # 核心策略变更（再修复 Bug 4 —— target 方向与 OCR 方向相反导致的覆盖灾难）：
-    #   - 如果 OCR 值本身几何自洽（8字段全正 + 内外边距和 ≈ 外框差）：
-    #     → 【OCR 草图本身是权威！绝不直接覆盖 outer_w/h 的数值！】
-    #     → 检查 target 是否只是方向反了（swap(target) 后≈OCR outer值）：
-    #       如果是 → 交换 target 方向定义（让后续像素换算用正确比例），OCR值保持不变
-    #       如果不是（数值确实不同）→ 信任自洽的 OCR 草图，不替换 outer 值
-    #     → 旧代码Bug：target方向反时直接覆盖outer→outer变成竖值/inner还是横值→
-    #       delta_h<0 → Phase3错误交换inner → 几何彻底错乱 → 强制重算 → 边距清零！
-    #   - 如果 OCR 不自洽（出现 11.5x5.1、边距52等荒谬值）：
-    #     → 覆盖 outer 并强制用像素比例重算 inner 和 margins
-    #     → 原因：OCR 映射锚点完全错位，语义值不可靠
-    _need_recalc_from_target = False
-    if target_outer_w_cm > 0 and target_outer_h_cm > 0:
-        _ratio_w = outer_w / target_outer_w_cm if target_outer_w_cm > 0 else 1.0
-        _ratio_h = outer_h / target_outer_h_cm if target_outer_h_cm > 0 else 1.0
-        _w_over20 = _ratio_w > 1.20 or _ratio_w < 0.83
-        _h_over20 = _ratio_h > 1.20 or _ratio_h < 0.83
-
-        # ============================================================
-        # 【Bug 4 修复 —— 分支A：OCR 已完全自洽 → 信任草图！】
-        # ============================================================
-        if _ocr_fully_consistent and outer_w > 0 and outer_h > 0:
-            # 检查 target 是否只是方向与 OCR 相反（数值相同、方向反）
-            # 例如: target=(60.5, 133) 而 OCR_outer=(133, 60.5)
-            _swap_ratio_w = outer_w / target_outer_h_cm if target_outer_h_cm > 0 else 1.0
-            _swap_ratio_h = outer_h / target_outer_w_cm if target_outer_w_cm > 0 else 1.0
-            _swap_match_w = 0.83 <= _swap_ratio_w <= 1.20
-            _swap_match_h = 0.83 <= _swap_ratio_h <= 1.20
-            _target_is_swapped_version = _swap_match_w and _swap_match_h
-
-            if (_w_over20 or _h_over20) and _target_is_swapped_version:
-                # 只是 target 方向反了！交换 target 的定义，让后续像素比例计算正确，
-                # 但绝对不修改 OCR 得出的 outer/inner/margins 值（它们是自洽、正确的！）
-                logger.info(
-                    f"[sketch_parser] OCR 完全自洽，检测到 target 方向定义相反 "
-                    f"(target={target_outer_w_cm:.1f}x{target_outer_h_cm:.1f}, "
-                    f"OCR_outer={outer_w:.1f}x{outer_h:.1f})。"
-                    f"仅交换 target 方向定义为 {target_outer_h_cm:.1f}x{target_outer_w_cm:.1f}，"
-                    f"保留 OCR 草图值不变（不覆盖 outer）")
-                target_outer_w_cm, target_outer_h_cm = target_outer_h_cm, target_outer_w_cm
-                # 重新计算偏差（方向对齐后，偏差应该很小）
-                _ratio_w = outer_w / target_outer_w_cm if target_outer_w_cm > 0 else 1.0
-                _ratio_h = outer_h / target_outer_h_cm if target_outer_h_cm > 0 else 1.0
-                _w_over20 = _ratio_w > 1.20 or _ratio_w < 0.83
-                _h_over20 = _ratio_h > 1.20 or _ratio_h < 0.83
-            elif (_w_over20 or _h_over20):
-                # OCR 自洽但 target 数值确实不同（不是方向问题）→ 信任草图（OCR自洽更权威）
-                logger.info(
-                    f"[sketch_parser] OCR 完全自洽(sc=✓)，即使与 target 偏差>20% "
-                    f"(w_ratio={_ratio_w:.2f}, h_ratio={_ratio_h:.2f})，"
-                    f"仍信任 OCR 草图 outer={outer_w:.1f}x{outer_h:.1f}（不覆盖）")
-            # else: 偏差<20%，完全一致，无需操作
-
-        # ============================================================
-        # 分支B：OCR 不自洽 → 以 target 为准（保持原逻辑）
-        # ============================================================
-        else:
-            if _w_over20:
-                logger.warning(f"[sketch_parser] 外框宽 {outer_w:.1f} 与目标 {target_outer_w_cm:.1f} 偏差过大({_ratio_w:.2f})，使用目标值")
-                outer_w = target_outer_w_cm
-            if _h_over20:
-                logger.warning(f"[sketch_parser] 外框高 {outer_h:.1f} 与目标 {target_outer_h_cm:.1f} 偏差过大({_ratio_h:.2f})，使用目标值")
-                outer_h = target_outer_h_cm
-
-        # 决定是否需要强制重算：只有当 OCR 不自洽或近似正方形画布时才强制
-        _need_square_forced = False
-        _ocr_aspect = outer_w / max(0.1, outer_h)
-        _target_aspect = target_outer_w_cm / max(0.1, target_outer_h_cm)
-        if (abs(_ocr_aspect - 1.0) < 0.15  # OCR 结果近似正方形
-                and abs(_target_aspect - 1.0) > 0.4  # 目标尺寸长宽比差异大
-                and max(target_outer_w_cm, target_outer_h_cm) > 0):
-            # 注：此分支仅在 OCR 不自洽时才可能触发（自洽时上面已不覆盖 outer）
-            logger.warning(
-                f"[sketch_parser] OCR 产生近正方形画布({outer_w:.1f}x{outer_h:.1f}, 长宽比={_ocr_aspect:.2f})，"
-                f"但目标为非正方形({target_outer_w_cm:.1f}x{target_outer_h_cm:.1f}, 长宽比={_target_aspect:.2f})，"
-                f"强制使用目标尺寸")
-            outer_w = target_outer_w_cm
-            outer_h = target_outer_h_cm
-            _need_square_forced = True
-
-        # 最终强制重算决策：
-        #  - (OCR 偏差 > 20% AND OCR 不自洽) → 语义值不可靠
-        #  - 或 近正方形画布被强制覆盖 → 典型的 OCR 锚点全错
-        #  注意：如果 _ocr_fully_consistent = True，绝对不触发强制重算！
-        if (_w_over20 or _h_over20) and not _ocr_fully_consistent:
-            _need_recalc_from_target = True
-            logger.info(f"[sketch_parser] OCR 偏差>20%且几何不自洽 → 将按目标尺寸强制重算内框和边距")
-        elif _need_square_forced:
-            _need_recalc_from_target = True
-            logger.info(f"[sketch_parser] 近正方形画布触发强制覆盖 → 将按目标尺寸强制重算内框和边距")
-        elif (_w_over20 or _h_over20) and _ocr_fully_consistent:
-            # OCR 完全自洽 → 不重算，交给后续 Phase 方向矫正（即使这时 outer 仍与 target 偏差大）
-            logger.info(f"[sketch_parser] OCR 偏差>20%但几何自洽 → 保留 OCR 草图值，"
-                        f"不强制重算 inner/边距，交 Phase 3 做方向矫正")
-        else:
-            _need_recalc_from_target = False
-    # 注意：target_outer_w/h 无效时，_need_recalc_from_target 保持 False
-
-    # 内挖尺寸：优先用 OCR（除非 _need_recalc_from_target 会在下面覆盖）
-    inner_w = _ocr_inner_w
-    inner_h = _ocr_inner_h
-
-    # 如果内挖尺寸未读出，用几何回退（仅当不强制重算时，否则强制重算会覆盖）
-    if not _need_recalc_from_target:
-        if inner_w <= 0 and inner_h <= 0 and target_outer_w_cm > 0 and target_outer_h_cm > 0:
-            # 两个内挖都缺失：用目标尺寸 × 典型比例（防止完全无 OCR 时的归零）
-            inner_w = target_outer_w_cm * 0.57  # 76/133 ≈ 0.571
-            inner_h = target_outer_h_cm * 0.74  # 44.5/60.5 ≈ 0.736
-            logger.info(f"[sketch_parser] 内挖全缺失，用目标比例回退：{inner_w:.2f}x{inner_h:.2f}")
-        else:
-            # 仅一边缺失：用像素比例换算（仅当像素帧可靠时）
-            if inner_w <= 0 and outer_w > 0 and ow > 0 and _pixel_frame_reliable:
-                inner_w = iw * (outer_w / ow)
-            if inner_h <= 0 and outer_h > 0 and oh > 0 and _pixel_frame_reliable:
-                inner_h = ih * (outer_h / oh)
-            # 像素帧不可靠时不使用像素换算，保留 0 留给后续处理
-
-    # 四边边距：优先用 OCR 读的 margin 值
-    mt = _ocr_mt
-    mb = _ocr_mb
-    ml = _ocr_ml
-    mr = _ocr_mr
-
-    # ---- 强制重算：当目标尺寸覆盖了 OCR 外框，且 OCR 语义值不可靠时用几何比例重算 ----
-    # 适用场景：
-    #   - OCR 映射锚点错位 → OCR 值本身几何不自洽
-    #   - 近正方形画布 → 典型的全字段映射错误
-    # 不适用场景：
-    #   - OCR 值本身自洽，只是方向反了（交给 Phase1/2/3 处理）
-    if _need_recalc_from_target:
-        if _pixel_frame_reliable and ow > 0 and oh > 0:
-            logger.info(f"[sketch_parser] 强制重算：用像素几何比例替换不可靠的 OCR 映射值")
-            _cm_px_w = outer_w / ow
-            _cm_px_h = outer_h / oh
-            # 内框：按像素比例换算
-            inner_w = iw * _cm_px_w
-            inner_h = ih * _cm_px_h
-            # 边距：按像素比例换算
-            mt = (iy - oy) * _cm_px_h
-            mb = ((oy + oh) - (iy + ih)) * _cm_px_h
-            ml = (ix - ox) * _cm_px_w
-            mr = ((ox + ow) - (ix + iw)) * _cm_px_w
-        else:
-            # 像素帧不可靠或无像素数据：用目标尺寸+典型比例回退
-            logger.info(f"[sketch_parser] 强制重算：像素帧不可靠，用目标尺寸比例回退")
-            inner_w = target_outer_w_cm * 0.57 if target_outer_w_cm > 0 else inner_w
-            inner_h = target_outer_h_cm * 0.74 if target_outer_h_cm > 0 else inner_h
-            # 边距用 OCR 值（如果有的话），否则留 0
-            if mt <= 0: mt = target_outer_h_cm * 0.10 if target_outer_h_cm > 0 else 0
-            if mb <= 0: mb = target_outer_h_cm * 0.16 if target_outer_h_cm > 0 else 0
-            if ml <= 0: ml = target_outer_w_cm * 0.25 if target_outer_w_cm > 0 else 0
-            if mr <= 0: mr = target_outer_w_cm * 0.75 if target_outer_w_cm > 0 else 0
-        logger.info(f"[sketch_parser] 重算结果：内框 {inner_w:.2f}x{inner_h:.2f}，"
-                    f"边距 上{mt:.2f}/下{mb:.2f}/左{ml:.2f}/右{mr:.2f}")
-        _need_recalc_from_target = False
-
-    # —— 修复 Bug 7 保护1：OCR 完全自洽的最终权威性 ——
-    # 如果 fused 原始 8 字段已经几何自洽（_ocr_fully_consistent=True），
-    # 那么无论强制重算 / Phase2 交换 / 后续修正怎么改动 inner/margins，
-    # 只要它们与原始 OCR 值不一致，就无条件恢复为原始 OCR 值！
-    # 原因：如果 8 个标注数字本身 outer-inner = margin_sum，那么这套值就
-    # 是草图设计者明确给出的，任何基于像素/target的计算都不应该覆盖它。
-    if _ocr_fully_consistent:
-        _saved_iw, _saved_ih, _saved_mt, _saved_mb, _saved_ml, _saved_mr = (
-            inner_w, inner_h, mt, mb, ml, mr
-        )
-        if _ocr_inner_w > 0: inner_w = _ocr_inner_w
-        if _ocr_inner_h > 0: inner_h = _ocr_inner_h
-        if _ocr_mt > 0: mt = _ocr_mt
-        if _ocr_mb > 0: mb = _ocr_mb
-        if _ocr_ml > 0: ml = _ocr_ml
-        if _ocr_mr > 0: mr = _ocr_mr
-        _changed = (
-            abs(inner_w - _saved_iw) > 0.05 or
-            abs(inner_h - _saved_ih) > 0.05 or
-            abs(mt - _saved_mt) > 0.05 or abs(mb - _saved_mb) > 0.05 or
-            abs(ml - _saved_ml) > 0.05 or abs(mr - _saved_mr) > 0.05
-        )
-        if _changed:
-            logger.warning(
-                f"[sketch_parser] Bug7保护1：原始OCR已完全自洽→强制恢复为标注值 "
-                f"inner={inner_w:.2f}x{inner_h:.2f}, 边距"
-                f"上{mt:.2f}/下{mb:.2f}/左{ml:.2f}/右{mr:.2f} "
-                f"(覆盖掉强制重算/Phase产生的偏离)"
-            )
-
-    # --- 方向矫正 Phase 2：同步 Phase 1 的外框 swap 到内框和边距 ---
-    # 当 Phase 1 交换了 outer_w/outer_h，内框宽高也必须同步交换，
-    # 但边距不交换——因为边距是按空间位置（上/下/左/右）语义映射的，
-    # 其值（如 6/10/14.6/42.4）本身就是正确的语义值。
-    # 交换 outer 宽高只影响"哪个数值代表宽/高"的维度，不影响边距的空间语义。
-    if _outer_swap_done:
-        logger.info(f"[sketch_parser] Phase2 同步外框 swap 到内框 (边距保持不变)")
-        if inner_w > 0 or inner_h > 0:
-            inner_w, inner_h = inner_h, inner_w
-            logger.info(f"[sketch_parser] 同步交换内框宽高：{inner_w:.2f}x{inner_h:.2f}")
-        _outer_swap_done = False
-
-    # ---- 几何自洽性检查与方向矫正（Phase 3）----
-    # 核心问题：OCR 可能把边距的方向搞反（如把左右边距识别为上下边距），或把内框宽高搞反
-    # 解决方法：检查边距和是否符合外框-内框的几何约束，若不符合则尝试旋转方向
-    if outer_w > 0 and outer_h > 0 and inner_w > 0 and inner_h > 0:
-        delta_h = outer_w - inner_w  # 水平方向应有的边距和（左右）
-        delta_v = outer_h - inner_h  # 垂直方向应有的边距和（上下）
-        sum_h_margins = ml + mr      # 当前水平边距和
-        sum_v_margins = mt + mb      # 当前垂直边距和
-
-        # [Bug B 修复1 2026-08-15] Phase3方向矫正前的预保护：
-        # 如果当前 8 字段已经高度自洽（暴力搜索/T0.5兜底已给出sc≈1.0的解），
-        # 就不应该再做方向 swap——否则把正确的 mt≈5/11/14.6/42.5 交换成 ml=mt_old=5 之类，
-        # 后续边距验证就会出现 actual_lr=5 vs expected=57 的荒谬结果！
-        _h_diff_now = abs(delta_h - sum_h_margins)
-        _v_diff_now = abs(delta_v - sum_v_margins)
-        _already_self_consistent = (
-            _h_diff_now < 1.0 and _v_diff_now < 1.0
-            and all(v > 0 for v in [outer_w, outer_h, inner_w, inner_h, mt, mb, ml, mr])
-        )
-        if _already_self_consistent:
-            logger.info(
-                f"[sketch_parser] Phase3方向矫正跳过：当前8字段已高度自洽"
-                f"(水平差={_h_diff_now:.2f}, 垂直差={_v_diff_now:.2f}，均<1cm阈值)，"
-                f"避免方向矫正破坏暴力搜索/T0.5得出的正确解"
-            )
-        else:
-            # 计算各方向的匹配度（0~1，越高越匹配）
-            # 使用绝对值处理 delta，因为 delta 为负时说明内框尺寸方向可能错了
-            _delta_h_abs = abs(delta_h)
-            _delta_v_abs = abs(delta_v)
-            match_h_to_h = 1.0 - abs(sum_h_margins - delta_h) / max(1, _delta_h_abs)
-            match_h_to_v = 1.0 - abs(sum_h_margins - delta_v) / max(1, _delta_v_abs)
-            match_v_to_v = 1.0 - abs(sum_v_margins - delta_v) / max(1, _delta_v_abs)
-            match_v_to_h = 1.0 - abs(sum_v_margins - delta_h) / max(1, _delta_h_abs)
-
-            # 检测是否需要交换内框宽高（当 delta 为负时，说明 inner 搞反了）
-            _inner_swap_needed = (delta_h < 0) or (delta_v < 0)
-
-            # 如果边距和对应的几何差值更匹配，说明方向被搞反了
-            # 例如：水平边距和(ml+mr)更接近垂直差值(outer_h-inner_h)，说明边距方向反了
-            #
-            # 新增：提高触发阈值，避免小的数值偏差触发错误的方向交换
-            # - 原阈值 0.3/0.5 过于敏感，在边距值本身错乱时会放大错误
-            # - 改为 0.8/0.9：只有当水平/垂直匹配度显著超过反方向时才触发
-            _full_swap_needed = (
-                match_h_to_v > match_h_to_h + 0.8 and
-                match_v_to_h > match_v_to_v + 0.8 and
-                # 新增：必须两边的匹配度都足够高(>=0.5)，否则只是数值噪音
-                match_h_to_v > 0.5 and match_v_to_h > 0.5
-            )
-            _partial_h_swap = (
-                match_h_to_v > match_h_to_h + 0.9 and
-                match_v_to_h > match_v_to_v + 0.9 and
-                match_h_to_v > 0.6 and match_v_to_h > 0.6
-            )
-
-            if _full_swap_needed or _partial_h_swap:
-                logger.info(f"[sketch_parser] 几何自洽性矫正：水平边距和({sum_h_margins:.1f})匹配水平差值({delta_h:.1f})={match_h_to_h:.2f}，"
-                            f"匹配垂直差值({delta_v:.1f})={match_h_to_v:.2f}；"
-                            f"垂直边距和({sum_v_margins:.1f})匹配垂直差值({delta_v:.1f})={match_v_to_v:.2f}，"
-                            f"匹配水平差值({delta_h:.1f})={match_v_to_h:.2f}")
-                # 执行全面的宽高交换
-                outer_w, outer_h = outer_h, outer_w
-                inner_w, inner_h = inner_h, inner_w
-                ml, mt = mt, ml
-                mr, mb = mb, mr
-                logger.info(f"[sketch_parser] 几何自洽性矫正完成：外框 {outer_w:.2f}x{outer_h:.2f}，"
-                            f"内框 {inner_w:.2f}x{inner_h:.2f}，边距 上{mt:.2f}/下{mb:.2f}/左{ml:.2f}/右{mr:.2f}")
-
-            elif _inner_swap_needed:
-                # delta 为负说明内框宽高搞反了，交换内框（边距保持不变）
-                logger.info(f"[sketch_parser] delta 为负(delta_h={delta_h:.1f}, delta_v={delta_v:.1f})，"
-                            f"检测到内框宽高方向错误，尝试仅交换内框")
-                # 模拟交换内框后的几何一致性
-                _new_delta_h = outer_w - inner_h
-                _new_delta_v = outer_h - inner_w
-                _match_after_swap_h = 1.0 - abs(sum_h_margins - _new_delta_h) / max(1, abs(_new_delta_h))
-                _match_after_swap_v = 1.0 - abs(sum_v_margins - _new_delta_v) / max(1, abs(_new_delta_v))
-                # 如果交换后一致性变好，执行交换（仅交换内框，不交换边距）
-                if _match_after_swap_h > 0.3 and _match_after_swap_v > 0.3:
-                    logger.info(f"[sketch_parser] 交换后一致性提升：水平匹配度={_match_after_swap_h:.2f}，"
-                                f"垂直匹配度={_match_after_swap_v:.2f}，执行内框交换")
-                    inner_w, inner_h = inner_h, inner_w
-                    # 边距保持不变，因为 OCR 对边距的方向识别是正确的
-                    logger.info(f"[sketch_parser] 内框方向矫正完成：内框 {inner_w:.2f}x{inner_h:.2f}，"
-                                f"边距保持 上{mt:.2f}/下{mb:.2f}/左{ml:.2f}/右{mr:.2f}")
+    # === 方向标签边距覆盖：如果方向标签识别到了边距值，优先使用 ===
+    # 但需要检查方向标签值是否合理（不能与空间分配的OCR值差异过大）
+    if direction_margins:
+        _dir_override_count = 0
+        for _field, _key in [('margin_top', 'mt'), ('margin_bottom', 'mb'),
+                              ('margin_left', 'ml'), ('margin_right', 'mr')]:
+            if _field in direction_margins:
+                _dir_val, _dir_conf = direction_margins[_field]
+                _ocr_val = locals()[_key]
+                
+                # 判断是否使用方向标签值：
+                # 1. OCR值为0时，直接使用方向标签值（唯一来源）
+                # 2. 方向标签值与OCR值接近（差异<=30%）时，取方向标签值（通常更准）
+                # 3. 方向标签值比OCR值稍小（差异在30%-50%之间），可能更准
+                # 4. 方向标签值与OCR值差异过大（>50%）时，保留OCR值
+                
+                _should_use_dir = False
+                if _ocr_val <= 0:
+                    _should_use_dir = True
+                elif abs(_dir_val - _ocr_val) / max(0.1, _ocr_val) <= 0.3:
+                    _should_use_dir = True
+                elif _dir_val < _ocr_val and abs(_dir_val - _ocr_val) / max(0.1, _ocr_val) <= 0.5:
+                    # 方向标签值比OCR值小但差异在50%以内，可能更准
+                    _should_use_dir = True
                 else:
-                    logger.info(f"[sketch_parser] 交换后一致性不足（h={_match_after_swap_h:.2f}, v={_match_after_swap_v:.2f}），"
-                                f"不执行交换")
+                    # 差异过大或方向标签值更大，保留OCR值
+                    logger.warning(f"[sketch_parser] {_key}: 方向标签值={_dir_val}与OCR值={_ocr_val}差异过大(>{abs(_dir_val - _ocr_val) / max(0.1, _ocr_val):.0%})，保留OCR值")
+                    continue
+                
+                if _should_use_dir:
+                    if _key == 'mt':
+                        mt = _dir_val
+                    elif _key == 'mb':
+                        mb = _dir_val
+                    elif _key == 'ml':
+                        ml = _dir_val
+                    elif _key == 'mr':
+                        mr = _dir_val
+                    _dir_override_count += 1
+                    logger.info(f"[sketch_parser] 方向标签覆盖 {_key}: OCR={_ocr_val:.2f} → 方向标签={_dir_val:.2f}")
+        if _dir_override_count > 0:
+            logger.info(f"[sketch_parser] 方向标签共覆盖 {_dir_override_count} 个边距值")
 
-    # 边距合理性校验：信任 OCR 标注，但检测并修正明显异常值
-    # 核心原则：如果某个边距值导致 sum 严重偏离几何约束，则视为异常
-    def _validate_pair(a, b, expected_sum, pair_name):
-        if expected_sum <= 0:
-            return a, b
-        upper_cap = expected_sum * 2 + 50
-        if a > upper_cap:
-            logger.debug(f"[sketch_parser] {pair_name}: a={a} 超过上限 {upper_cap}，清零")
-            a = 0.0
-        if b > upper_cap:
-            logger.debug(f"[sketch_parser] {pair_name}: b={b} 超过上限 {upper_cap}，清零")
-            b = 0.0
+    def _check_geometry(ow_, oh_, iw_, ih_, mt_, mb_, ml_, mr_):
+        if ow_ <= 0 or oh_ <= 0:
+            return False
+        h_diff = abs(ow_ - iw_ - (ml_ + mr_))
+        v_diff = abs(oh_ - ih_ - (mt_ + mb_))
+        h_tol = max(2.0, ow_ * 0.10)
+        v_tol = max(2.0, oh_ * 0.10)
+        return h_diff <= h_tol and v_diff <= v_tol
 
-        # 检测单值异常：如果 a 或 b 明显大于 expected_sum，可能是 OCR 误读
-        # 例如 expected_sum=16，但 a=52 → 52 远超 16，视为异常
-        if a > expected_sum * 1.5 and a > 30:
-            logger.warning(f"[sketch_parser] {pair_name}: a={a} 远超预期和 {expected_sum}，视为异常，清零")
-            a = 0.0
-        if b > expected_sum * 1.5 and b > 30:
-            logger.warning(f"[sketch_parser] {pair_name}: b={b} 远超预期和 {expected_sum}，视为异常，清零")
-            b = 0.0
+    ocr_valid = (outer_w > 0 and outer_h > 0 and inner_w > 0 and inner_h > 0
+                 and mt > 0 and mb > 0 and ml > 0 and mr > 0
+                 and _check_geometry(outer_w, outer_h, inner_w, inner_h, mt, mb, ml, mr))
 
-        # 仅一边有值：用差值推导另一边（推导结果需 >=0 且不超过 expected_sum）
-        if a > 0 and b <= 0:
-            b_new = expected_sum - a
-            if 0 <= b_new <= expected_sum * 2:
-                logger.debug(f"[sketch_parser] {pair_name}: 由 a={a} 推导 b={round(b_new,1)}")
-                return a, b_new
-            logger.debug(f"[sketch_parser] {pair_name}: 跳过推导 b (a={a}, expected_sum={expected_sum}, b_new={b_new})")
-            return a, b
-        if b > 0 and a <= 0:
-            a_new = expected_sum - b
-            if 0 <= a_new <= expected_sum * 2:
-                logger.debug(f"[sketch_parser] {pair_name}: 由 b={b} 推导 a={round(a_new,1)}")
-                return a_new, b
-            logger.debug(f"[sketch_parser] {pair_name}: 跳过推导 a (b={b}, expected_sum={expected_sum}, a_new={a_new})")
-            return a, b
-        # 两边都有且 sum 合理 → 信任 OCR
-        return a, b
+    if not ocr_valid:
+        ocr_valid_alt = (outer_w > 0 and outer_h > 0 and inner_w > 0 and inner_h > 0
+                         and mt > 0 and mb > 0 and ml > 0 and mr > 0
+                         and _check_geometry(outer_h, outer_w, inner_h, inner_w, mt, mb, ml, mr))
+        if ocr_valid_alt:
+            outer_w, outer_h = outer_h, outer_w
+            inner_w, inner_h = inner_h, inner_w
+            ocr_valid = True
 
-    # —— 修复 Bug 7 保护2（扩展版）：OCR 完全自洽 OR 当前8字段已经几何自洽 → 跳过所有破坏性修正 ——
-    # 原版只看 _ocr_fully_consistent（OCR+fused之前的原始8字段），但当 OCR 漏识别了关键值、
-    # 而通过 BUG6++ 暴力搜索 / T0.5 target 逆推兜底得到了 sc=1.0 的完全自洽解时，
-    # 这个解是经过层层筛选的可信值，绝不能被后续 _validate_pair、边距清零等步骤破坏。
-    # 否则会出现日志里「actual_lr=5（=mt，被swap搞反了）vs expected=57」的荒谬结果。
-    _fused_consistent = _ocr_fully_consistent
-    _current_8_consistent = False
-    if outer_w > 0 and outer_h > 0 and inner_w > 0 and inner_h > 0:
-        _8_h_diff = abs((outer_w - inner_w) - (ml + mr))
-        _8_v_diff = abs((outer_h - inner_h) - (mt + mb))
-        _8_all_positive = all(v > 0 for v in [outer_w, outer_h, inner_w, inner_h, mt, mb, ml, mr])
-        _current_8_consistent = _8_h_diff < 1.0 and _8_v_diff < 1.0 and _8_all_positive
-    _skip_destructive_corrections = _fused_consistent or _current_8_consistent
-    if _current_8_consistent and not _fused_consistent:
-        logger.warning(
-            f"[sketch_parser] BUG7保护扩展触发：当前8字段几何自洽(sc≈1.0)"
-            f"(水平差={_8_h_diff:.2f}, 垂直差={_8_v_diff:.2f})，"
-            f"即使 OCR 原始值不自洽，也跳过所有破坏性修正（保护暴力搜索/T0.5兜底的正确解）。"
-            f"当前值：outer={outer_w:.1f}x{outer_h:.1f}, inner={inner_w:.1f}x{inner_h:.1f}, "
-            f"边距 上{mt:.1f}/下{mb:.1f}/左{ml:.1f}/右{mr:.1f}"
-        )
+    if not ocr_valid:
+        logger.info("[sketch_parser] OCR 几何验证未通过，使用几何回退值")
+        geo_inner = _geometry_fallback_values(
+            (ox, oy, ow, oh), (ix, iy, iw, ih),
+            outer_w, outer_h)
+        # 如果有方向标签识别的边距值，保留它们（不被几何回退覆盖）
+        _has_dir_mt = 'margin_top' in direction_margins
+        _has_dir_mb = 'margin_bottom' in direction_margins
+        _has_dir_ml = 'margin_left' in direction_margins
+        _has_dir_mr = 'margin_right' in direction_margins
+        
+        if inner_w <= 0:
+            inner_w = geo_inner.get('inner_w', (0, 0))[0]
+        if inner_h <= 0:
+            inner_h = geo_inner.get('inner_h', (0, 0))[0]
+        if mt <= 0 and not _has_dir_mt:
+            mt = geo_inner.get('margin_top', (0, 0))[0]
+        if mb <= 0 and not _has_dir_mb:
+            mb = geo_inner.get('margin_bottom', (0, 0))[0]
+        if ml <= 0 and not _has_dir_ml:
+            ml = geo_inner.get('margin_left', (0, 0))[0]
+        if mr <= 0 and not _has_dir_mr:
+            mr = geo_inner.get('margin_right', (0, 0))[0]
+        logger.info(f"[sketch_parser] 几何回退：保留方向标签边距 mt={_has_dir_mt}, mb={_has_dir_mb}, ml={_has_dir_ml}, mr={_has_dir_mr}")
 
-    if not _skip_destructive_corrections:
-        if outer_w > 0 and inner_w > 0:
-            expected_ml_mr = outer_w - inner_w
-            ml, mr = _validate_pair(ml, mr, expected_ml_mr, '左右边距')
+    # 对每个 margin 值做合理性检查：如果 OCR 值与几何回退值差异过大，用几何回退值
+    # 但如果值来自方向标签，则保留（方向标签值优先级更高）
+    geo_check = _geometry_fallback_values(
+        (ox, oy, ow, oh), (ix, iy, iw, ih),
+        outer_w, outer_h)
+    
+    # 记录方向标签提供的边距字段
+    _dir_margin_fields = set(direction_margins.keys())
+    
+    for _name, _ocr_val, _geo_val, _field_key in [
+        ('mt', mt, geo_check.get('margin_top', (0, 0))[0], 'margin_top'),
+        ('mb', mb, geo_check.get('margin_bottom', (0, 0))[0], 'margin_bottom'),
+        ('ml', ml, geo_check.get('margin_left', (0, 0))[0], 'margin_left'),
+        ('mr', mr, geo_check.get('margin_right', (0, 0))[0], 'margin_right'),
+    ]:
+        # 如果该值来自方向标签，跳过合理性检查（方向标签值更可靠）
+        if _field_key in _dir_margin_fields and direction_margins.get(_field_key, (0, 0))[0] == _ocr_val:
+            logger.info(f"[sketch_parser] margin {_name}: 值来自方向标签({_ocr_val:.2f})，跳过几何合理性检查")
+            continue
+        if _geo_val > 0 and _ocr_val > 0:
+            diff_ratio = abs(_ocr_val - _geo_val) / max(1, _geo_val)
+            if diff_ratio > 0.3:
+                logger.info(
+                    f"[sketch_parser] margin {_name}: OCR={_ocr_val:.2f} "
+                    f"与几何回退值={_geo_val:.2f} 差异过大({diff_ratio:.0%})，用几何回退值"
+                )
+                if _name == 'mt':
+                    mt = _geo_val
+                elif _name == 'mb':
+                    mb = _geo_val
+                elif _name == 'ml':
+                    ml = _geo_val
+                elif _name == 'mr':
+                    mr = _geo_val
 
-        if outer_h > 0 and inner_h > 0:
-            expected_mt_mb = outer_h - inner_h
-            mt, mb = _validate_pair(mt, mb, expected_mt_mb, '上下边距')
-    else:
-        logger.warning(
-            f"[sketch_parser] BUG7保护2触发：OCR原始已完全自洽(sc=1.0)，为保护正确标注，跳过「边距_validate_pair修正」(保留边距上{mt:.1f}/下{mb:.1f}/左{ml:.1f}/右{mr:.1f})"
-        )
-
-    # ---- 最终三角验证：外框 = 内框 + 边距 ----
-    # 确保 inner 尺寸 <= outer 尺寸，边距和不超过对应外框边长
-    if not _skip_destructive_corrections:
-        if inner_w > outer_w > 0:
-            logger.warning(f"[sketch_parser] 内框宽 {inner_w} > 外框宽 {outer_w}，修正为外框宽 - 最小边距")
-            inner_w = max(0, outer_w - max(ml + mr, 0))
-        if inner_h > outer_h > 0:
-            logger.warning(f"[sketch_parser] 内框高 {inner_h} > 外框高 {outer_h}，修正为外框高 - 最小边距")
-            inner_h = max(0, outer_h - max(mt + mb, 0))
-
-        # 确保单边距不超过对应外框边长的一半（合理上限）
-        if ml > outer_w * 0.8 and outer_w > 0:
-            logger.warning(f"[sketch_parser] 左边距 {ml} > 外框宽 80%({outer_w*0.8:.1f})，修正")
-            ml = outer_w * 0.5
-        if mr > outer_w * 0.8 and outer_w > 0:
-            logger.warning(f"[sketch_parser] 右边距 {mr} > 外框宽 80%({outer_w*0.8:.1f})，修正")
-            mr = outer_w * 0.5
-        if mt > outer_h * 0.8 and outer_h > 0:
-            logger.warning(f"[sketch_parser] 上边距 {mt} > 外框高 80%({outer_h*0.8:.1f})，修正")
-            mt = outer_h * 0.5
-        if mb > outer_h * 0.8 and outer_h > 0:
-            logger.warning(f"[sketch_parser] 下边距 {mb} > 外框高 80%({outer_h*0.8:.1f})，修正")
-            mb = outer_h * 0.5
-    else:
-        logger.warning(
-            f"[sketch_parser] BUG7保护2触发：OCR原始已完全自洽(sc=1.0)，跳过「inner>outer修正 & 单边距>80%修正」"
-        )
-
-    # 边距回退：不再使用几何均分回退（见 _geometry_fallback_values 设计说明）。
-    # 边距必须由 OCR 检出或用户手动输入，几何回退可能产生严重错误的边距值。
-    # 因此：当边距缺失时保留 0，让用户手动填写。
-
-    # 最终合理性检查
-    if mt < 0: mt = 0
-    if mb < 0: mb = 0
-    if ml < 0: ml = 0
-    if mr < 0: mr = 0
-
-    # === 最终几何自洽性验证 ===
-    # 如果边距和与 (外框-内框) 的偏差过大（>50%），说明结果仍然不可信，
-    # 将不可信方向的边距置 0（由用户手动填写），避免把错误值展示给用户
-    if not _skip_destructive_corrections:
-        if outer_w > 0 and inner_w > 0:
-            expected_lr = outer_w - inner_w
-            if expected_lr > 0:
-                actual_lr = ml + mr
-                lr_deviation = abs(actual_lr - expected_lr) / expected_lr
-                if lr_deviation > 0.5 and actual_lr > 0:
-                    logger.warning(
-                        f"[sketch_parser] 水平边距和({actual_lr:.2f})与预期({expected_lr:.2f})"
-                        f"偏差 {lr_deviation:.0%} 过大，重置水平边距"
-                    )
-                    ml = 0.0
-                    mr = 0.0
-        if outer_h > 0 and inner_h > 0:
-            expected_tb = outer_h - inner_h
-            if expected_tb > 0:
-                actual_tb = mt + mb
-                tb_deviation = abs(actual_tb - expected_tb) / expected_tb
-                if tb_deviation > 0.5 and actual_tb > 0:
-                    logger.warning(
-                        f"[sketch_parser] 垂直边距和({actual_tb:.2f})与预期({expected_tb:.2f})"
-                        f"偏差 {tb_deviation:.0%} 过大，重置垂直边距"
-                    )
-                    mt = 0.0
-                    mb = 0.0
-    else:
-        logger.warning(
-            f"[sketch_parser] BUG7保护2触发：OCR原始已完全自洽(sc=1.0)，跳过「最终边距和偏差清零」(当前水平和:{ml+mr:.2f}, 垂直和:{mt+mb:.2f})"
-        )
-
-    # === 最终单侧边距合理性裁剪（第二道防线）===
-    def _final_clip(v, outer_side):
+    def _clip_side(v, outer_side, is_from_direction=False):
+        """裁剪边距值。方向标签来源的值放宽上限到70%。"""
         if v <= 0 or outer_side <= 0:
             return v
-        # 单侧边距不得超过外框边长的 35%
-        if v > outer_side * 0.35:
+        # 方向标签值更可靠，允许更大的边距（放宽到70%）
+        max_ratio = 0.7 if is_from_direction else 0.5
+        if v > outer_side * max_ratio:
+            return outer_side * max_ratio
+        if v < 0:
             return 0.0
         return v
 
-    if not _skip_destructive_corrections:
-        if outer_w > 0:
-            ml = _final_clip(ml, outer_w)
-            mr = _final_clip(mr, outer_w)
-        if outer_h > 0:
-            mt = _final_clip(mt, outer_h)
-            mb = _final_clip(mb, outer_h)
-    else:
-        logger.warning(
-            f"[sketch_parser] BUG7保护2触发：OCR原始已完全自洽(sc=1.0)，跳过「单侧边距35%裁剪」"
-        )
+    ml = _clip_side(ml, outer_w, 'margin_left' in _dir_margin_fields)
+    mr = _clip_side(mr, outer_w, 'margin_right' in _dir_margin_fields)
+    mt = _clip_side(mt, outer_h, 'margin_top' in _dir_margin_fields)
+    mb = _clip_side(mb, outer_h, 'margin_bottom' in _dir_margin_fields)
 
-    # 判定成功
+    if inner_w > outer_w > 0:
+        inner_w = max(0, outer_w - max(ml + mr, 0))
+    if inner_h > outer_h > 0:
+        inner_h = max(0, outer_h - max(mt + mb, 0))
+
     if outer_w > 0 and outer_h > 0 and mt >= 0 and mb >= 0 and ml >= 0 and mr >= 0:
         result.outer_w_cm = round(outer_w, 2)
         result.outer_h_cm = round(outer_h, 2)
@@ -6369,16 +4617,28 @@ def parse_sketch(
         result.margin_right_cm = round(mr, 2)
         result.success = True
 
-        # 构建成功消息
         ocr_read_keys = [k for k, (v, c) in ocr_result.items() if c > 0 and v > 0]
-        if ocr_read_keys:
-            result.method = "ocr+geometry"
+        
+        # 构建消息，标注方向标签识别的边距
+        _dir_info = ""
+        if direction_margins:
+            _dir_parts = []
+            for _f, (_v, _c) in direction_margins.items():
+                _short = {'margin_top': '上', 'margin_bottom': '下', 
+                          'margin_left': '左', 'margin_right': '右'}.get(_f, _f)
+                _dir_parts.append(f"{_short}{_v:.1f}")
+            _dir_info = f"（方向标签识别：{', '.join(_dir_parts)}）"
+        
+        if ocr_read_keys or direction_margins:
+            result.method = "ocr+direction+geometry" if direction_margins else "ocr+geometry"
             result.message = (
-                f"✅ 自动识别成功（{len(ocr_read_keys)} 项数值通过 OCR 读取）：\n"
+                f"✅ 自动识别成功（{len(ocr_read_keys)} 项数值通过 OCR 读取"
+                f"{'，'+str(len(direction_margins))+' 项通过方向标签' if direction_margins else ''}）：\n"
                 f"外框 {result.outer_w_cm}×{result.outer_h_cm} cm，"
                 f"内挖 {result.inner_w_cm}×{result.inner_h_cm} cm\n"
                 f"边距：上{result.margin_top_cm}/下{result.margin_bottom_cm}/"
                 f"左{result.margin_left_cm}/右{result.margin_right_cm} cm\n"
+                f"{_dir_info}"
                 f"请检查数值后继续（可手动微调）。"
             )
         else:
@@ -6398,17 +4658,12 @@ def parse_sketch(
             "mt": mt, "mb": mb, "ml": ml, "mr": mr,
         }
 
-    # 记录详细 debug
     result.debug["ocr_values"] = {k: round(v, 2) for k, (v, c) in ocr_result.items() if c > 0}
     result.debug["geo_values"] = {k: round(v, 2) for k, (v, c) in geo_result.items() if c > 0}
 
-    # ---- 缓存存储（性能优化） ----
-    # 将识别结果存入缓存，下次同一草图+目标尺寸直接返回
     if result.success:
         _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result)
 
-        # 自洽解缓存：当 8 字段全部 >0 且几何自洽时，结果与 target 无关，
-        # 存入自洽解缓存，换文件名（不同 target）时直接命中。
         _all_positive = all(v > 0 for v in [
             result.outer_w_cm, result.outer_h_cm,
             result.inner_w_cm, result.inner_h_cm,
@@ -6422,18 +4677,9 @@ def parse_sketch(
                           - (result.margin_top_cm + result.margin_bottom_cm))
             if _h_diff < 1.0 and _v_diff < 1.0:
                 _store_consistent_cached_result(image_path, result)
-                logger.info(
-                    f"[sketch_parser] 自洽解已缓存（与target无关，换文件名毫秒级响应）："
-                    f"outer={result.outer_w_cm}x{result.outer_h_cm}, "
-                    f"inner={result.inner_w_cm}x{result.inner_h_cm}, "
-                    f"边距 上{result.margin_top_cm}/下{result.margin_bottom_cm}/"
-                    f"左{result.margin_left_cm}/右{result.margin_right_cm}"
-                )
 
     _progress(100, "草图解析完成")
     return result
-
-
 # ---------------------------------------------------------------------------
 # 旧接口 parse_sketch_geometry 已删除（v2026-08-15 清理冗余）。
 # 原实现仅为 parse_sketch() 的薄封装，实际无任何调用方。
