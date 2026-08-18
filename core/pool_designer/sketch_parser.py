@@ -3657,22 +3657,51 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
                             if not (0.5 <= val <= 500):
                                 continue
 
+                            # —— [Fix-2026-08-17 硬过滤] 边距聚焦OCR：识别值绝不能等于外框尺寸
+                            # 方向标签附近常有外框总尺寸标注（如58/120），极易被误识别为边距！
+                            # 若识别值与 ow/oh 的差在 ±2cm 内 → 直接丢弃（这是外框尺寸，不是边距）
+                            if abs(val - ow) <= 2.0 or abs(val - oh) <= 2.0:
+                                continue
+                            # 若识别值超过外框较小边的 60%，几乎不可能是边距
+                            _margin_abs_cap = min(ow, oh) * 0.60
+                            if val > _margin_abs_cap and val > 15:
+                                continue
+
                             # 评分：置信度 + 数值合理性 + 与标签距离
                             score = conf
                             # 小数值更可能是边距（边距通常<80）
-                            if val <= 80:
-                                score += 30
-                            elif val <= 120:
-                                score += 10
-                            # 非常大的值可能不是边距
-                            elif val > 150:
-                                score -= 20
+                            if val <= 60:
+                                score += 40
+                            elif val <= 80:
+                                score += 20
+                            elif val <= min(ow, oh) * 0.5:
+                                score += 5
+                            # 接近或超过外框短边 50% → 强倒扣（不可能是边距）
+                            elif val > min(ow, oh) * 0.5:
+                                score -= 60
 
                             if score > best_score:
                                 best_score = score
                                 best_result = (val, conf)
                         except ValueError:
                             pass
+
+    # —— [Fix-2026-08-17 最终校验] 返回前再次确认：边距值绝不能等于外框尺寸
+    # 即使 score 最高，只要接近 ow/oh 就是错误（方向标签附近的总尺寸标注）
+    if best_result is not None:
+        _bv, _bc = best_result
+        if abs(_bv - ow) <= 1.5 or abs(_bv - oh) <= 1.5:
+            logger.warning(
+                f"[sketch_parser] 聚焦OCR {dchar}边距: 值={_bv:.1f} 与外框尺寸"
+                f"(ow={ow:.1f}, oh={oh:.1f}) 过近，判定为外框尺寸误识别，丢弃"
+            )
+            best_result = None
+        elif _bv > min(ow, oh) * 0.55 and _bv > 20:
+            logger.warning(
+                f"[sketch_parser] 聚焦OCR {dchar}边距: 值={_bv:.1f} 超过外框短边"
+                f"{min(ow,oh):.1f}的55%，边距过大不合理，丢弃"
+            )
+            best_result = None
 
     if best_result is not None:
         logger.info(f"[sketch_parser] 聚焦OCR {dchar}边距: 识别到值={best_result[0]:.1f}, conf={best_result[1]}")
@@ -4158,6 +4187,23 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
 
         # 优先使用聚焦OCR结果（比全图OCR更准确）
         if focused_val is not None:
+            # —— [Fix-2026-08-17 合理性校验] 聚焦OCR返回的值不能等于外框尺寸，也不能过大
+            # 方向标签附近常有外框尺寸(如58×120)的标注，聚焦OCR裁剪区域不够精准时会读到
+            _margin_sanity_cap = min(ow, oh) * 0.55
+            if (abs(focused_val - ow) <= 2.0 or abs(focused_val - oh) <= 2.0):
+                logger.warning(
+                    f"[sketch_parser] 聚焦OCR {dchar}: 值={focused_val:.1f}与外框尺寸"
+                    f"({ow:.1f}x{oh:.1f})过近，判定为外框尺寸误读，跳过聚焦OCR结果"
+                )
+                focused_val = None
+            elif focused_val > _margin_sanity_cap and focused_val > 15:
+                logger.warning(
+                    f"[sketch_parser] 聚焦OCR {dchar}: 值={focused_val:.1f}超过边距合理上限"
+                    f"{_margin_sanity_cap:.1f}(外框短边的55%)，跳过聚焦OCR结果"
+                )
+                focused_val = None
+
+        if focused_val is not None:
             margin_result[mfield] = (focused_val, 8)
             used_hit_idx.add(-1)
             continue
@@ -4181,10 +4227,18 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
         dir_weight_fn = dir_weights.get(mfield, lambda hx, hy, lx, ly: 0)
 
         candidates = []
+        # —— [Fix-2026-08-17] 边距硬上限：绝不能等于/接近外框尺寸，也不能超过短边 55%
+        _margin_abs_cap = min(ow, oh) * 0.55
         for idx, (val, hx, hy, hconf) in enumerate(ocr_hits):
             if idx in used_hit_idx:
                 continue
             if not (0.5 <= val <= 500):
+                continue
+            # —— [Fix-2026-08-17 硬过滤1] 与外框尺寸过近的值直接跳过（这是外框总尺寸，不是边距）
+            if abs(val - ow) <= 2.0 or abs(val - oh) <= 2.0:
+                continue
+            # —— [Fix-2026-08-17 硬过滤2] 超过外框短边 55% 的值不可能是边距
+            if val > _margin_abs_cap and val > 15:
                 continue
 
             dist = ((lx - hx) ** 2 + (ly - hy) ** 2) ** 0.5
@@ -4196,16 +4250,18 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
             # 归一化到 [-1, 1] 范围（相对于max_dist）
             dir_norm = min(max(dir_score / max_dist, -1), 1)
 
-            # 合理性分数（边距通常较小）
+            # —— [Fix-2026-08-17 合理性评分增强] 边距值越小越合理，超过一定比例强倒扣
             plausibility = 0
-            if val <= 80:
-                plausibility = 100
-            elif val <= 120:
-                plausibility = 50
-            elif val <= 200:
-                plausibility = 0
+            if val <= min(60, _margin_abs_cap * 0.9):
+                plausibility = 120
+            elif val <= 80:
+                plausibility = 70
+            elif val <= _margin_abs_cap * 0.85:
+                plausibility = 30
+            elif val <= _margin_abs_cap:
+                plausibility = -10
             else:
-                plausibility = -50
+                plausibility = -80  # 理论上已被过滤，但再保护一次
 
             # 综合评分：距离 + 方向 + 合理性
             # 方向权重为正时表示在预期方向，应加分
@@ -4221,7 +4277,7 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
             # 额外验证：如果最佳候选在反方向，检查是否有更合理的候选
             if dir_score < 0 and len(candidates) > 1:
                 for c in candidates[1:]:
-                    if c[5] > 0 and c[2] <= 80:  # 在预期方向且值合理
+                    if c[5] > 0 and c[2] <= min(80, _margin_abs_cap * 0.9):
                         logger.info(
                             f"[sketch_parser] 边距方向修正: {dchar} 候选值从{val:.1f}(反方向)→{c[2]:.1f}(正方向)")
                         val = c[2]
@@ -4230,10 +4286,10 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
                         dist = c[4]
                         break
 
-            # 额外验证：如果最佳候选值过大(>100)，检查是否有更合理的候选
-            if val > 100 and len(candidates) > 1:
+            # 额外验证：如果最佳候选值过大(>_margin_abs_cap*0.75)，检查是否有更合理的候选
+            if val > _margin_abs_cap * 0.75 and len(candidates) > 1:
                 for c in candidates[1:]:
-                    if c[2] <= 80 and c[4] < max_dist * 1.5:
+                    if c[2] <= min(80, _margin_abs_cap * 0.8) and c[4] < max_dist * 1.5:
                         logger.info(
                             f"[sketch_parser] 边距值修正: {dchar} 候选值从{val:.1f}→{c[2]:.1f} (更合理)")
                         val = c[2]
@@ -4242,10 +4298,37 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
                         dist = c[4]
                         break
 
+            # —— [Fix-2026-08-17 最终安全门] 赋值前最后一道校验：绝不能把外框尺寸作为边距返回
+            if abs(val - ow) <= 1.5 or abs(val - oh) <= 1.5:
+                logger.warning(
+                    f"[sketch_parser] {dchar}边距安全门拦截: 值={val:.1f}与外框尺寸"
+                    f"({ow:.1f}x{oh:.1f})过近，判定为外框尺寸误匹配，跳过该方向")
+                continue  # 不赋值，宁可少一个方向也不给错误值
+            if val > _margin_abs_cap and val > 15:
+                logger.warning(
+                    f"[sketch_parser] {dchar}边距安全门拦截: 值={val:.1f}超过边距上限"
+                    f"{_margin_abs_cap:.1f}(外框短边55%)，不合理跳过")
+                continue
+
             margin_result[mfield] = (val, max(hconf, 5))
             used_hit_idx.add(idx)
             logger.info(f"[sketch_parser] {dchar}边距: 选中值={val:.1f} (距标签{dist:.0f}px, "
                         f"方向分={dir_score:.0f}, conf={hconf})")
+
+    # —— [Fix-2026-08-17 返回值最终校验] 确保返回的边距都是合理的
+    # 如果某个边距值超过了外框的 50%，或者与外框尺寸接近，就剔除该值（避免错误污染）
+    _sanitized_result = {}
+    for _mf, (_mv, _mc) in margin_result.items():
+        _bad = False
+        if abs(_mv - ow) <= 2.0 or abs(_mv - oh) <= 2.0:
+            logger.warning(f"[sketch_parser] 最终校验剔除{_mf}: 值={_mv:.1f}等于外框尺寸")
+            _bad = True
+        elif _mv > min(ow, oh) * 0.55 and _mv > 15:
+            logger.warning(f"[sketch_parser] 最终校验剔除{_mf}: 值={_mv:.1f}超过边距上限")
+            _bad = True
+        if not _bad:
+            _sanitized_result[_mf] = (_mv, _mc)
+    margin_result = _sanitized_result
 
     # 只要找到至少1个边距就返回（支持部分匹配）
     if len(margin_result) >= 1:
@@ -5114,30 +5197,56 @@ def _find_and_read_numbers(cv2, gray_img, outer_rect: tuple, inner_rect: tuple,
                         hv_is_margin = hv <= 80  # 子图值是否像边距
 
                         should_replace = False
-                        if not hv_is_margin and fv_is_margin:
-                            # 子图值不像边距（过大或异常），全图像边距 → 替换
-                            should_replace = True
-                        elif hv_is_margin and not fv_is_margin:
-                            # 子图像边距，全图不像边距 → 通常不替换
-                            # 但如果子图值非常小（<5），可能是严重误读
-                            if hv < 5 and fv < 150:
-                                should_replace = True
-                        elif not hv_is_margin and not fv_is_margin:
-                            # 两者都不像边距，检查是否都在合理的尺寸范围
-                            if fv <= 200 and hv > 200:
-                                should_replace = True
-                            elif fv > 200 and hv > 200:
+
+                        # —— [Fix-2026-08-17 前置保护] 数量级一致性检查 ——
+                        # 防止把子图100→12、112→12这种明显数量级不符的错误替换
+                        # 原理：同一标注位置的两个OCR识别结果，数值数量级应接近（最多差2~3倍）
+                        # 若相差达5倍以上（如100 vs 12≈8倍），必然是不同标注，绝不替换！
+                        _ratio = max(hv, fv) / max(0.1, min(hv, fv))
+                        if _ratio > 5.0:
+                            # 额外豁免：hv是fv的×10变体（×9.5~×10.5范围内），且fv合理则允许
+                            # 例如子图100 vs 全图10（比例=10）→ 正确的×10变体修复
+                            if 9.0 <= _ratio <= 11.0 and (hv / 10.0 > 0.5):
+                                # 必须满足：全图值fv ≈ hv/10（±15%容差）
+                                if abs(fv - hv / 10.0) <= max(0.5, hv / 10.0 * 0.15):
+                                    should_replace = True  # 允许替换：hv→fv（即×10变体的修正）
+                                else:
+                                    should_replace = False  # 如100 vs 12: 100/10=10≠12，不替换
+                            else:
+                                should_replace = False  # 数量级完全不符，不替换
+                        else:
+                            # 数量级一致，使用原判断逻辑（但增强对×10变体的识别）
+                            if not hv_is_margin and fv_is_margin:
+                                # [增强] 先检查hv是否为合理的×10变体：hv/10是否为合理边距
+                                # 例如子图100（hv/10=10，合理），不应该被12这种错误值覆盖
+                                hv_div10 = hv / 10.0
+                                if 0.5 <= hv_div10 <= 200 and abs(hv_div10 - fv) > 1.5:
+                                    # hv/10 是合理的数值，但与fv差距大 → 不替换（保留hv，
+                                    # 后续统一的×10变体处理会把100→10而不是12）
+                                    should_replace = False
+                                else:
+                                    should_replace = True
+                            elif hv_is_margin and not fv_is_margin:
+                                # 子图像边距，全图不像边距 → 通常不替换
+                                # 但如果子图值非常小（<5），可能是严重误读
+                                if hv < 5 and fv < 150:
+                                    should_replace = True
+                            elif not hv_is_margin and not fv_is_margin:
+                                # 两者都不像边距，检查是否都在合理的尺寸范围
+                                if fv <= 200 and hv > 200:
+                                    should_replace = True
+                                elif fv > 200 and hv > 200:
+                                    max_val = max(abs(fv), abs(hv), 1)
+                                    diff_ratio = abs(fv - hv) / max_val
+                                    if diff_ratio > 0.3:
+                                        should_replace = True
+                            elif hv_is_margin and fv_is_margin:
+                                # 两者都像边距，检查差异是否大
                                 max_val = max(abs(fv), abs(hv), 1)
                                 diff_ratio = abs(fv - hv) / max_val
-                                if diff_ratio > 0.3:
+                                if diff_ratio > 0.8:
+                                    # 差异非常大（>80%），用全图值
                                     should_replace = True
-                        elif hv_is_margin and fv_is_margin:
-                            # 两者都像边距，检查差异是否大
-                            max_val = max(abs(fv), abs(hv), 1)
-                            diff_ratio = abs(fv - hv) / max_val
-                            if diff_ratio > 0.8:
-                                # 差异非常大（>80%），用全图值
-                                should_replace = True
 
                         if should_replace:
                             logger.info(
