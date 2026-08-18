@@ -25916,3 +25916,341 @@
 [2026-08-18 10:30:00] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;30x100CM左下是圆角半径12cm'
 [2026-08-18 10:30:01] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;30x100CM左下是圆角半径12cm'
 [2026-08-18 10:30:01] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;30x100CM左下是圆角半径12cm'
+[2026-08-18 10:37:04] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '镜面皮革-定制-定制尺寸-中古大花;方形竖版113x132CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: 'pu防水-定制-定制尺寸-蔓生花;140x160cm'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: 'pu防水-定制-定制尺寸-风华格调;50x381CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: 'pu防水-标准-70x180-曼妙曲线;70x180'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-花漾之约;50x90CM剪裁有图'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石2;48X125CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石4;33X143CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;31X108CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;37X190CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花幔;49X124.5CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;51.4X151CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-玫瑰骑士;33.5X118CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-雾蓝花信;63X72CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-夏洛赫本;32X74CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-夏洛赫本;52X160CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;39.5X48CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-绽蔓;直径100CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;35X276CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古雨林;32.5X76.5CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古雨林;32X362CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-白色大理石4;56X65CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-克罗印花;58.2X116CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;19X85CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;39X206CM'
+[2026-08-18 10:37:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石1;85X135CM'
+[2026-08-18 10:44:04] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-18 10:44:49] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-塞纳时光;79x129CM剪裁有图'
+[2026-08-18 11:02:41] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-素华牡丹;31x215CM左下角右下角弧度4.5cm'
+[2026-08-18 11:02:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-素华牡丹;31x215CM左下角右下角弧度4.5cm'
+[2026-08-18 11:02:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-素华牡丹;31x215CM左下角右下角弧度4.5cm'
+[2026-08-18 11:14:08] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;60x70CM四个角都是半径3cm的圆角'
+[2026-08-18 11:14:09] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;60x70CM四个角都是半径3cm的圆角'
+[2026-08-18 11:14:09] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-繁花说;60x70CM四个角都是半径3cm的圆角'
+[2026-08-18 11:19:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已自动配置 Tesseract: E:\Tesseract-OCR\tesseract.exe
+[2026-08-18 11:19:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 TESSDATA_PREFIX: E:\Tesseract-OCR\tessdata
+[2026-08-18 11:19:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 彩色文字增强: 检测到 34709 像素的彩色区域
+[2026-08-18 11:19:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 彩色文字增强完成，使用增强图进行OCR
+[2026-08-18 11:19:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 开始OCR: 子图742x520px, 缩放=2.5x
+[2026-08-18 11:19:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-奥斯汀;60x234cm裁剪有图余料也发'
+[2026-08-18 11:19:42] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已自动配置 Tesseract: E:\Tesseract-OCR\tesseract.exe
+[2026-08-18 11:19:42] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 TESSDATA_PREFIX: E:\Tesseract-OCR\tessdata
+[2026-08-18 11:19:43] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 彩色文字增强: 检测到 34709 像素的彩色区域
+[2026-08-18 11:19:43] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 彩色文字增强完成，使用增强图进行OCR
+[2026-08-18 11:19:43] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 开始OCR: 子图742x520px, 缩放=2.5x
+[2026-08-18 11:19:44] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-奥斯汀;60x234cm裁剪有图余料也发'
+[2026-08-18 11:19:44] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=吸水皮革-定制-裁剪有图-奥斯汀, 花型=奥斯汀, 水池模式=True, 水池花型=奥斯汀, 尺寸=60.0x234.0cm
+[2026-08-18 11:19:44] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸修正：文件名数值 60.0x234.0 → 外框参考 宽234.0 x 高60.0（与草图横/竖标注一致）
+[2026-08-18 11:19:46] [INFO] [gui.property_panel] [PoolMatcher] 💾 加载磁盘缓存成功（205022 个条目，上次扫描 2026-08-18 10:44:50）
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] _robust_ocr_subimage: 识别到 8 个数值
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=86.00 位置=(398,311) 置信度=96
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=9.00 位置=(414,414) 置信度=64
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=112.00 位置=(616,243) 置信度=62
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=5.00 位置=(371,260) 置信度=50
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=36.00 位置=(204,241) 置信度=49
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=45.00 位置=(204,241) 置信度=49
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=65.00 位置=(49,243) 置信度=24
+[2026-08-18 11:19:51] [INFO] [core.pool_designer.sketch_parser]   值=6.00 位置=(393,99) 置信度=22
+[2026-08-18 11:19:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 全图OCR识别到 5 个数值
+[2026-08-18 11:19:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR直接识别inner_w: 112.0
+[2026-08-18 11:19:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR直接识别inner_h: 9.0
+[2026-08-18 11:19:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 空间推理边距分配: 上=0.0, 下=0.0, 左=0.0, 右=0.0
+[2026-08-18 11:19:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 彩色文字增强: 检测到 34709 像素的彩色区域
+[2026-08-18 11:19:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 几何聚焦OCR 完成: 未识别到任何字段
+[2026-08-18 11:19:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR 完成：8 个值，8 个唯一值: [5.0, 6.0, 9.0, 36.0, 45.0, 65.0, 86.0, 112.0]
+[2026-08-18 11:20:01] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 OCR 检测到 3 个: [('左', 'margin_left'), ('上', 'margin_top'), ('右', 'margin_right')]
+[2026-08-18 11:20:03] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 模板匹配检测到 4 个方向标签
+[2026-08-18 11:20:03] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 共检测到 4 个方向标签: [('左', 'margin_left'), ('上', 'margin_top'), ('右', 'margin_right'), ('下', 'margin_bottom')]
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] _robust_ocr_subimage: 识别到 8 个数值
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=86.00 位置=(398,311) 置信度=96
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=9.00 位置=(414,414) 置信度=64
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=112.00 位置=(616,243) 置信度=62
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=5.00 位置=(371,260) 置信度=50
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=36.00 位置=(204,241) 置信度=49
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=45.00 位置=(204,241) 置信度=49
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=65.00 位置=(49,243) 置信度=24
+[2026-08-18 11:20:04] [INFO] [core.pool_designer.sketch_parser]   值=6.00 位置=(393,99) 置信度=22
+[2026-08-18 11:20:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 全图OCR识别到 5 个数值
+[2026-08-18 11:20:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR直接识别inner_w: 112.0
+[2026-08-18 11:20:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR直接识别inner_h: 9.0
+[2026-08-18 11:20:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 空间推理边距分配: 上=0.0, 下=0.0, 左=0.0, 右=0.0
+[2026-08-18 11:20:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 彩色文字增强: 检测到 34709 像素的彩色区域
+[2026-08-18 11:20:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 几何聚焦OCR 完成: 未识别到任何字段
+[2026-08-18 11:20:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR 完成：8 个值，8 个唯一值: [5.0, 6.0, 9.0, 36.0, 45.0, 65.0, 86.0, 112.0]
+[2026-08-18 11:20:15] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 OCR 检测到 3 个: [('左', 'margin_left'), ('上', 'margin_top'), ('右', 'margin_right')]
+[2026-08-18 11:20:17] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 模板匹配检测到 4 个方向标签
+[2026-08-18 11:20:17] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 共检测到 4 个方向标签: [('左', 'margin_left'), ('上', 'margin_top'), ('右', 'margin_right'), ('下', 'margin_bottom')]
+[2026-08-18 11:20:19] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 聚焦OCR 左边距: 识别到值=3.0, conf=86
+[2026-08-18 11:20:19] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 聚焦OCR成功 左: 值=3.0, 原标签值=None, 最近OCR值搜索将被跳过
+[2026-08-18 11:20:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 聚焦OCR 左边距: 识别到值=3.0, conf=86
+[2026-08-18 11:20:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 聚焦OCR成功 左: 值=3.0, 原标签值=None, 最近OCR值搜索将被跳过
+[2026-08-18 11:20:33] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 上边距: 选中值=6.0 (距标签21px, 方向分=12, conf=22.166666666666668)
+[2026-08-18 11:20:48] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 上边距: 选中值=6.0 (距标签21px, 方向分=12, conf=22.166666666666668)
+[2026-08-18 11:20:49] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 右边距: 选中值=112.0 (距标签26px, 方向分=26, conf=61.7)
+[2026-08-18 11:21:03] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 右边距: 选中值=112.0 (距标签26px, 方向分=26, conf=61.7)
+[2026-08-18 11:21:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 下边距: 选中值=9.0 (距标签23px, 方向分=5, conf=63.5)
+[2026-08-18 11:21:05] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签匹配成功：[('margin_left', 3.0), ('margin_top', 6.0), ('margin_right', 112.0), ('margin_bottom', 9.0)]
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到8个数字标注，去重后共8个唯一值=[5.0, 6.0, 9.0, 36.0, 45.0, 65.0, 86.0, 112.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.000：total=65.00x6.00, inner=86.00x45.00, 边距上5.00/下9.00/左36.00/右112.00
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=0.750：total=112.00x86.00, inner=65.00x45.00, 边距上36.00/下9.00/左6.00/右5.00
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从8→40个(注入目标+数字混淆+32个)，重新跑暴力搜索
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[50.0, 70.0]，直接枚举 inner+4margin
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前68→截断后40，已补回OCR识别的大边距值: []
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选27个（范围5~69）, margin候选40个（范围3~38），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [5.0, 6.0, 9.0, 36.0, 45.0, 65.0, 86.0, 112.0]
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共27取20(含OCR5个)，margin共40取30(含OCR3个)
+[2026-08-18 11:21:05] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试8个OCR值 [112.0, 86.0, 65.0, 45.0, 36.0, 9.0, 6.0, 5.0] 直接构造8字段
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] T0 枚举超时(10.0s)，已枚举5000次，使用当前最优解 sc=0.926
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 5000 次，当前最佳 sc=0.926
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6+暴力搜索命中：OCR识别8个，扩充候选池40个，枚举约5001种组合后找到sc=1.000[完全自洽]的分配(语义合理:True)。宽高比匹配target=0.714。暴力解为当前最可信，覆盖为数值穷举结果！
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6+暴力最优8字段：total=86.00x36.00，inner=75.00x30.00，边距 上3.00/下5.00/左4.00/右6.00
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！空间分配严重不自洽(sc=0.000)，采用数值分配(sc=1.000)
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=86.00x36.00cm；内挖inner=75.00x30.00cm；边距上3.00/下5.00/左4.00/右6.00cm。几何自洽校验：水平(outer-inner=11.00 == ml+mr=10.00?False)；垂直(outer-inner=6.00 == mt+mb=8.00?False)
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 空间推理覆盖inner_w: 75.0→112.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 空间推理覆盖inner_h: 30.0→9.0
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=86.0x36.0 inner=112.0x9.0 margin T/B/L/R=6.0/9.0/3.0/112.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] Step 3a: cv2=yes, ocr_gray=yes, tesseract=yes
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR: outer_rect=(np.int32(58), np.int32(63), np.int32(700), np.int32(478)), inner_rect=(np.int32(298), np.int32(210), np.int32(271), np.int32(169))
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR: o_left=58, o_top=63, o_right=758, o_bottom=541
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR: i_left=298, i_top=210, i_right=569, i_bottom=379
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_left: 预定位=(33,302), 区域=60x143
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 下边距: 选中值=9.0 (距标签23px, 方向分=5, conf=63.5)
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签匹配成功：[('margin_left', 3.0), ('margin_top', 6.0), ('margin_right', 112.0), ('margin_bottom', 9.0)]
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 65.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 86.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.4210526315789473→1.4210526315789473, mb 13.578947368421051→13.5
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 2.2736842105263158→2.2736842105263158, mb 21.726315789473684→21.6
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.934426229508196→15.934426229508196, mb 38.0655737704918→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 16.229508196721312→16.229508196721312, mb 38.77049180327869→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 65.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.115702479338843→1.115702479338843, mb 13.884297520661157→13.5
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.7851239669421488→1.7851239669421488, mb 22.214876033057852→21.6
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 12.405405405405405→12.405405405405405, mb 38.59459459459459→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 13.135135135135135→13.135135135135135, mb 40.86486486486486→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 13.378378378378377→13.378378378378377, mb 41.62162162162162→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 86.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.115702479338843→1.115702479338843, mb 13.884297520661157→13.5
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.7851239669421488→1.7851239669421488, mb 22.214876033057852→21.6
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 12.405405405405405→12.405405405405405, mb 38.59459459459459→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 13.135135135135135→13.135135135135135, mb 40.86486486486486→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 13.378378378378377→13.378378378378377, mb 41.62162162162162→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 86.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.7851239669421488→1.7851239669421488, mb 22.214876033057852→21.6
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 12.405405405405405→12.405405405405405, mb 38.59459459459459→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 13.135135135135135→13.135135135135135, mb 40.86486486486486→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 13.378378378378377→13.378378378378377, mb 41.62162162162162→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 86.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 9.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.115702479338843→1.115702479338843, mb 13.884297520661157→13.5
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 14.617834394904458→14.617834394904458, mb 36.38216560509554→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.477707006369426→15.477707006369426, mb 38.52229299363057→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.764331210191083→15.764331210191083, mb 39.23566878980891→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 86.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.477707006369426→15.477707006369426, mb 38.52229299363057→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.764331210191083→15.764331210191083, mb 39.23566878980891→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 86.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 14.617834394904458→14.617834394904458, mb 36.38216560509554→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.764331210191083→15.764331210191083, mb 39.23566878980891→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 86.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 36.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 14.617834394904458→14.617834394904458, mb 36.38216560509554→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.477707006369426→15.477707006369426, mb 38.52229299363057→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 12.405405405405405→12.405405405405405, mb 38.59459459459459→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 12.405405405405405→12.405405405405405, mb 38.59459459459459→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 12.405405405405405→12.405405405405405, mb 38.59459459459459→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 14.617834394904458→14.617834394904458, mb 36.38216560509554→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→36.0, mb 9.0→9.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→36.0, mb 9.0→9.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 36.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.2203389830508475→1.2203389830508475, mb 22.779661016949156→21.6
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 144.8019801980198→140.4, mr 80.19801980198021→80.19801980198021
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 0.7627118644067796→0.7627118644067796, mb 14.23728813559322→13.5
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 2.593220338983051→2.593220338983051, mb 48.40677966101695→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 173.91891891891893→140.4, mr 24.081081081081084→24.081081081081084
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 0.7627118644067796→0.7627118644067796, mb 14.23728813559322→13.5
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 165.0→140.4, mr 33.0→33.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 165.0→140.4, mr 33.0→33.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 165.0→140.4, mr 33.0→33.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 165.0→140.4, mr 33.0→33.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 2.593220338983051→2.593220338983051, mb 48.40677966101695→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 166.01351351351352→140.4, mr 22.986486486486484→22.986486486486484
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.2203389830508475→1.2203389830508475, mb 22.779661016949156→21.6
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 151.20000000000002→140.4, mr 37.800000000000004→37.800000000000004
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 151.20000000000002→140.4, mr 37.800000000000004→37.800000000000004
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 151.20000000000002→140.4, mr 37.800000000000004→37.800000000000004
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 151.20000000000002→140.4, mr 37.800000000000004→37.800000000000004
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 6.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 2.593220338983051→2.593220338983051, mb 48.40677966101695→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 140.83333333333334→140.4, mr 28.166666666666668→28.166666666666668
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 1.2203389830508475→1.2203389830508475, mb 22.779661016949156→21.6
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 0.7627118644067796→0.7627118644067796, mb 14.23728813559322→13.5
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.477707006369426→15.477707006369426, mb 38.52229299363057→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.764331210191083→15.764331210191083, mb 39.23566878980891→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 190.0→140.4, mr 38.0→38.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 182.39999999999998→140.4, mr 45.599999999999994→45.599999999999994
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 182.39999999999998→140.4, mr 45.599999999999994→45.599999999999994
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 182.39999999999998→140.4, mr 45.599999999999994→45.599999999999994
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 182.39999999999998→140.4, mr 45.599999999999994→45.599999999999994
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.764331210191083→15.764331210191083, mb 39.23566878980891→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.477707006369426→15.477707006369426, mb 38.52229299363057→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.764331210191083→15.764331210191083, mb 39.23566878980891→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→0, mb 9.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 190.83333333333331→140.4, mr 38.166666666666664→38.166666666666664
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 183.2→140.4, mr 45.8→45.8
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 183.2→140.4, mr 45.8→45.8
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 183.2→140.4, mr 45.8→45.8
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.477707006369426→15.477707006369426, mb 38.52229299363057→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 183.2→140.4, mr 45.8→45.8
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 65.0→36.0, mb 9.0→9.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 165.0→140.4, mr 33.0→33.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 151.20000000000002→140.4, mr 37.800000000000004→37.800000000000004
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 15.477707006369426→15.477707006369426, mb 38.52229299363057→36.0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 182.39999999999998→140.4, mr 45.599999999999994→45.599999999999994
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 水平边距合理性裁剪: ml 183.2→140.4, mr 45.8→45.8
+[2026-08-18 11:22:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距合理性裁剪: mt 45.0→0, mb 112.0→0
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] OCR识别结果诊断：识别到8个数字标注，去重后共8个唯一值=[5.0, 6.0, 9.0, 36.0, 45.0, 65.0, 86.0, 112.0]；如果缺少76/44.5/14.6/42.4等正确数值，则问题在OCR前级(图片切割/文字识别/ROI定位)而非分配算法
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 空间分配8字段sc=0.000：total=65.00x6.00, inner=86.00x45.00, 边距上5.00/下9.00/左36.00/右112.00
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 数值穷举8字段sc=1.000：total=234.00x60.00, inner=112.00x45.00, 边距上1.42/下13.50/左36.00/右65.00
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++增强：候选池从8→40个(注入目标+数字混淆+32个)，重新跑暴力搜索
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：target优先！强制外框total候选=[60.0, 234.0]，直接枚举 inner+4margin
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] margin候选截断前111→截断后45，已补回OCR识别的大边距值: [36.0, 45.0, 65.0, 86.0, 112.0]
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：inner候选29个（范围5~232）, margin候选45个（范围3~129），已过滤<3的伪值，注入精确边距(6/10/14.6/42.4)±1.0和内挖(76/44.5)±1.5容差， OCR原始值: [5.0, 6.0, 9.0, 36.0, 45.0, 65.0, 86.0, 112.0]
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 枚举索引：inner共29取20(含OCR7个)，margin共45取30(含OCR8个)
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道：尝试8个OCR值 [112.0, 86.0, 65.0, 45.0, 36.0, 9.0, 6.0, 5.0] 直接构造8字段
+[2026-08-18 11:22:23] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 动态黄金通道命中(sc=1.000, spatial=0.658)：total=234.0x60.0 inner=112.0x45.0 margin T/B/L/R=6.0/9.0/36.0/86.0
+[2026-08-18 11:22:34] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_left: 位置=(33,302), 裁剪=63x143, 未识别到数值
+[2026-08-18 11:22:34] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_right: 预定位=(783,302), 区域=60x143
+[2026-08-18 11:22:43] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_right: 位置=(783,302), 裁剪=84x143, 未识别到数值
+[2026-08-18 11:22:43] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_top: 预定位=(408,43), 区域=210x50
+[2026-08-18 11:22:55] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_top: 位置=(408,43), 裁剪=210x68, 未识别到数值
+[2026-08-18 11:22:55] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_bottom: 预定位=(408,566), 区域=210x55
+[2026-08-18 11:23:09] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_bottom: 位置=(408,566), 裁剪=210x80, 值=234.0, conf=96
+[2026-08-18 11:23:09] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR结果: 上=0.0, 下=234.0, 左=0.0, 右=0.0
+[2026-08-18 11:23:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 边距异常: margin_right=112.0 超过外框边长86.0的60%，可能是OCR误读
+[2026-08-18 11:23:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 水平方向不自洽: outer(86.0)-inner(112.0)=-26.0 != margins(3.0+112.0=115.0)
+[2026-08-18 11:23:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(36.0)-inner(9.0)=27.0 != margins(6.0+9.0=15.0)
+[2026-08-18 11:23:09] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 最终8字段(sc=0.000)：total=86.00x36.00 inner=112.00x9.00 margin T/B/L/R=6.00/9.00/3.00/112.00
+[2026-08-18 11:23:09] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR 几何自洽性检测(双向)：原始方向 h=False/v=False/full=False，全交换方向 h=False/v=False/full=False，总体自洽=False
+[2026-08-18 11:23:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(700x478=1.46) 与目标宽高比(50.0x70.0=0.71) 差异过大(51.2%)，像素尺寸可能不可靠
+[2026-08-18 11:23:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 外框宽 86.0 与目标 50.0 偏差过大(1.72)，使用目标值
+[2026-08-18 11:23:09] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 外框高 36.0 与目标 70.0 偏差过大(0.51)，使用目标值
+[2026-08-18 11:23:09] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR 偏差>20%且几何不自洽 → 将按目标尺寸强制重算内框和边距
+[2026-08-18 11:23:09] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 强制重算：像素帧不可靠，用目标尺寸比例回退
+[2026-08-18 11:23:09] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 重算结果：内框 28.50x51.80，边距 上6.00/下9.00/左3.00/右112.00
+[2026-08-18 11:23:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] T0 枚举超时(10.0s)，已枚举5000次，使用当前最优解 sc=1.016
+[2026-08-18 11:23:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：枚举target-force暴力搜索 5000 次，当前最佳 sc=1.016
+[2026-08-18 11:23:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] BUG6++ T0：找到 sc=1.016 的高自洽解，跳过通用暴力搜索
+[2026-08-18 11:23:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] Fix-D 黄金8字段无条件采用：total=234.00x60.00，inner=35.00x43.00，边距 上5.50/下9.00/左86.00/右112.00
+[2026-08-18 11:23:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 三档覆盖判定：采用数值穷举/暴力搜索解！空间分配严重不自洽(sc=0.000)，采用数值分配(sc=1.016)
+[2026-08-18 11:23:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 最终采用的8字段(sc=1.000)：外框total=234.00x60.00cm；内挖inner=35.00x43.00cm；边距上5.50/下9.00/左86.00/右112.00cm。几何自洽校验：水平(outer-inner=199.00 == ml+mr=198.00?False)；垂直(outer-inner=17.00 == mt+mb=14.50?False)
+[2026-08-18 11:23:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 空间推理覆盖inner_w: 35.0→112.0
+[2026-08-18 11:23:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 空间推理覆盖inner_h: 43.0→9.0
+[2026-08-18 11:23:20] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签+空间分配混合结果：total=234.0x60.0 inner=112.0x9.0 margin T/B/L/R=6.0/9.0/3.0/112.0
+[2026-08-18 11:23:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] Step 3a: cv2=yes, ocr_gray=yes, tesseract=yes
+[2026-08-18 11:23:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR: outer_rect=(np.int32(58), np.int32(63), np.int32(700), np.int32(478)), inner_rect=(np.int32(298), np.int32(210), np.int32(271), np.int32(169))
+[2026-08-18 11:23:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR: o_left=58, o_top=63, o_right=758, o_bottom=541
+[2026-08-18 11:23:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR: i_left=298, i_top=210, i_right=569, i_bottom=379
+[2026-08-18 11:23:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_left: 预定位=(33,302), 区域=60x143
+[2026-08-18 11:23:21] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_left: 位置=(33,302), 裁剪=63x143, 未识别到数值
+[2026-08-18 11:23:21] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_right: 预定位=(783,302), 区域=60x143
+[2026-08-18 11:23:22] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_right: 位置=(783,302), 裁剪=84x143, 未识别到数值
+[2026-08-18 11:23:22] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_top: 预定位=(408,43), 区域=210x50
+[2026-08-18 11:23:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_top: 位置=(408,43), 裁剪=210x68, 未识别到数值
+[2026-08-18 11:23:23] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_bottom: 预定位=(408,566), 区域=210x55
+[2026-08-18 11:23:24] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR margin_bottom: 位置=(408,566), 裁剪=210x80, 值=234.0, conf=96
+[2026-08-18 11:23:24] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 预测性OCR结果: 上=0.0, 下=234.0, 左=0.0, 右=0.0
+[2026-08-18 11:23:24] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直方向不自洽: outer(60.0)-inner(9.0)=51.0 != margins(6.0+9.0=15.0)
+[2026-08-18 11:23:24] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 最终8字段(sc=0.750)：total=234.00x60.00 inner=112.00x9.00 margin T/B/L/R=6.00/9.00/3.00/112.00
+[2026-08-18 11:23:24] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] OCR 几何自洽性检测(双向)：原始方向 h=True/v=False/full=False，全交换方向 h=False/v=False/full=False，总体自洽=False
+[2026-08-18 11:23:24] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 检测到外框像素宽高比(700x478=1.46) 与目标宽高比(234.0x60.0=3.90) 差异过大(62.5%)，像素尺寸可能不可靠
+[2026-08-18 11:23:24] [WARNING] [core.pool_designer.sketch_parser] [sketch_parser] 垂直边距和(15.00)与预期(51.00)偏差 71% 过大，重置垂直边距
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-安妮森林;84.8x134CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-中古大花;58x182CM剪裁有图余料也发'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-戴安娜;48x146CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-庄园秘境竖版;61x62CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-闲序·青釉;31.2x160.1CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-蔓生花;92x150CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石8号;52.3x100.2CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;57.5x176CM剪裁有图余料也发'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-中古大花;20x35CM椭圆如图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-悠米;56.5x271.5CM裁剪有图需要裁剪余料一起发'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-鲁昂画廊;80x135CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-摩登空间;57x210CM裁剪有图需要裁剪余料一起发'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-鲁昂画廊;40x200CM裁剪有图'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-摩登空间;57x160CM裁剪有图需要裁剪余料一起发'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-白色大理石8号;57x81CM裁剪有图需要裁剪'
+[2026-08-18 11:23:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-墨上花开;70x130CM裁剪有图'
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher] 📂 扫描完成：共 205051 文件，205040 有效图片 （增量更新 18 个；目录 扫1/跳3） [首次/已持久化] 耗时 227.76s；写缓存 1.33s
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 205040 条目，耗时 2ms
+[2026-08-18 11:23:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-奥斯汀;60x234cm裁剪有图余料也发'
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=吸水皮革-定制-裁剪有图-奥斯汀, 花型=奥斯汀, 尺寸=60.0x234.0cm, 布局=竖版
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 5002 → 评分 4981 → 入围 4981
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 吸水皮革-定制-定制尺寸-奥斯汀;54x210cm.jpg (得分: 108.00)
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 4980 个
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-奥斯汀;55x213cm.jpg (得分: 107.00)
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-奥斯汀;58.2x226.7cm.jpg (得分: 105.00)
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-奥斯汀;54x210cm.jpg (得分: 103.00)
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：吸水皮革-定制-定制尺寸-奥斯汀;54x210cm.jpg  (score=108.0, 比例差=0.011)
+[2026-08-18 11:23:32] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 缓存命中：C:/Users/Administrator/AppData/Local/Temp/b204c16f60e14907b458a657f5fc24e4.png target=234.0x60.0cm
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolWorker] 草图解析：success=True
+[2026-08-18 11:23:32] [INFO] [gui.property_panel] [PoolWorker]   ✅ 自动识别成功（8 项数值通过 OCR 读取）：
+外框 234.0×60.0 cm，内挖 112.0×9.0 cm
+边距：上0.0/下0.0/左3.0/右0.0 cm
+请检查数值后继续（可手动微调）。
+[2026-08-18 11:26:56] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-18 11:27:45] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60x287.5CM剪裁有图余料也发'
+[2026-08-18 11:27:45] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-中古花园;65x120CM剪裁有图'
+[2026-08-18 11:27:45] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-玫瑰骑士;55x140CM裁剪有图需要裁剪'
