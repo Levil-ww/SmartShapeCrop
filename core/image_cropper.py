@@ -552,12 +552,14 @@ def _build_multi_layer_corner_mask(
         mask_local[outer_cut] = 0
 
         # ===== [B) 嵌套矩形层感知：逐层恢复被误切区域] =====
-        # 对每个内层矩形 k，计算其有效半径 R_eff_k。
-        # 若 R_eff_k < r → 矩形 k 内部 dist ∈ (R_eff_k, r] 的像素
-        #   不应被外层 r 的大半径切掉，需要恢复为 mask=255。
-        # 当 R_eff_k = 0（矩形离边缘足够远，应完全直角）→ 恢复矩形内全部
-        #   dist ∈ (0, r] 的区域，实现"内层直角不被误切"（婉卉案例）。
-        if nested_rects:
+        # [Fix 2026-08-17] 保护模式下跳过 nested_rects 处理：
+        #   当 corner_protect=True（即 r <= 2*raw_depth）时，只裁剪边框条带，
+        #   内部图案完全保持直角。nested_rects 处理可能因检测误差（抗锯齿等）
+        #   导致 Dk 计算不准，从而错误地恢复或裁切内部区域。
+        #   因此在保护模式下直接跳过此段逻辑，确保内部图案不受影响。
+        if corner_protect:
+            pass  # 保护模式：内部图案完全保持直角，不进行 nested_rects 处理
+        elif nested_rects:
             # [Fix P2] nested_rects 伪层过滤（花野 10 层伪层 → 3 层）。
             # 根因：_scan_edge_boundaries 会把花纹的颜色突变也识别为矩形边界，
             # 导致 rects 层数远超实际边框层数。例如花野实际边框 3 层，
@@ -1170,6 +1172,8 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # 智能判断每个角是否需要保护内容区
     # - 扇形区域颜色复杂度高（花纹/图案）→ 保护内容，只裁边框条带
     # - 扇形区域颜色单一（纯色背景）→ 完全裁掉整个扇形区域
+    # - [Fix 2026-08-17] 当圆角半径 ≤ 2×边框厚度时，强制保护内容区：
+    #   只裁剪外层边框区域，保持内部花纹图案为直角
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
     corner_protect_map: dict[str, bool] = {}
     for corner_key, r_px in corners_px.items():
@@ -1180,12 +1184,15 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         if raw_depth <= 0:
             corner_protect_map[corner_key] = False
             continue
-        # 当圆角远大于边框厚度时（超过边框+3cm），正常裁切
-        # 否则进行内容分析
+        # [Fix 2026-08-17] 条件1：圆角半径 ≤ 2×边框厚度 → 强制保护内容区
+        if r_px <= 2 * raw_depth:
+            corner_protect_map[corner_key] = True
+            continue
+        # 条件2：当圆角远大于边框厚度时（超过边框+3cm），正常裁切
         if r_px > raw_depth + 180:  # 180px ≈ 3cm
             corner_protect_map[corner_key] = False
         else:
-            # 分析扇形区域内容复杂度
+            # 条件3：介于两者之间，分析扇形区域内容复杂度
             has_content = _analyze_corner_sector_content(
                 img, corner_key, r_px, raw_depth, bg_color
             )
