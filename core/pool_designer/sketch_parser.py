@@ -1188,7 +1188,7 @@ def _scan_inner_dimensions(cv2, gray_img, tesseract, gaps, inner,
     return results
 
 
-def _multi_scale_ocr_scan(cv2, tesseract, region_img):
+def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False):
     """对图像区域进行多尺度OCR扫描，返回所有检测到的数值。
 
     Args:
@@ -1282,10 +1282,10 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
                     bh = int(bh / scale)
 
                 cleaned = re.sub(r'[£$¥#\s]', '', text)
-                for m in re.finditer(r'(\d+\.?\d*)', cleaned):
+                for m in re.finditer(r'(\d+\.?\d*|\.\d+)', cleaned):
                     try:
                         val = float(m.group(1))
-                        if 0.5 <= val <= 500:
+                        if 0.1 <= val <= 500:
                             results.append((val, conf, (bx, by, bw, bh)))
                             _key = round(val, 1)
                             _seen_values.add(_key)
@@ -3523,21 +3523,12 @@ def _detect_direction_labels_by_ocr(cv2, gray_img, tesseract, outer_rect):
     if sub.size == 0 or sub.shape[0] < 5 or sub.shape[1] < 5:
         return results
 
-    for scale in [2.0, 3.0]:
-        scaled = cv2.resize(sub, None, fx=scale, fy=scale,
+    for scale in [2.5, 3.5]:
+            scaled = cv2.resize(sub, None, fx=scale, fy=scale,
                             interpolation=cv2.INTER_CUBIC)
 
-        # 预处理变体
-        variants = [('orig', scaled)]
-        try:
-            _, otsu = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            variants.append(('otsu', otsu))
-        except Exception:
-            pass
-
-        for _vname, variant in variants:
-            pil_img = PILImage.fromarray(variant)
-            for psm in [11, 6, 3]:  # sparse, block, auto
+            pil_img = PILImage.fromarray(scaled)
+            for psm in [11, 6]:
                 config = f'--oem 3 --psm {psm}'
                 try:
                     data = tesseract.image_to_data(

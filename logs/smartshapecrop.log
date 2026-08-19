@@ -32336,3 +32336,131 @@ AttributeError: 'list' object has no attribute 'get'
 [2026-08-19 16:08:14] [INFO] [gui.property_panel] [PoolWorker]   
 [2026-08-19 16:08:14] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
 [2026-08-19 16:08:18] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-19 16:09:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60x150剪裁有图'
+[2026-08-19 16:09:51] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已自动配置 Tesseract: E:\Tesseract-OCR\tesseract.exe
+[2026-08-19 16:09:51] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 TESSDATA_PREFIX: E:\Tesseract-OCR\tessdata
+[2026-08-19 16:09:51] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 生成 4 种二值化 mask 用于矩形检测
+[2026-08-19 16:09:51] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 找到 8 个矩形候选，top5面积=[np.int32(190036), np.int32(20214), np.int32(14164), np.int32(12442), np.int32(10261)]
+[2026-08-19 16:09:52] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60x150剪裁有图'
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=吸水皮革-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=60.0x150.0cm
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸修正：文件名数值 60.0x150.0 → 外框参考 宽150.0 x 高60.0（与草图横/竖标注一致）
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 205556 条目，耗时 11ms
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 205556 条目，耗时 2ms
+[2026-08-19 16:09:52] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;60x150剪裁有图'
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=吸水皮革-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=60.0x150.0cm, 布局=竖版
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12413 → 评分 12358 → 入围 12358
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 吸水皮革-定制-裁剪有图-克罗印花;60x150CM剪裁有图.jpg (得分: 120.00)
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12357 个
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-克罗印花;60x150cm.jpg (得分: 113.00)
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-克罗印花;60x150.4cm.jpg (得分: 113.00)
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-克罗印花;60x151cm.jpg (得分: 113.00)
+[2026-08-19 16:09:52] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：吸水皮革-定制-裁剪有图-克罗印花;60x150CM剪裁有图.jpg  (score=120.0, 比例差=0.000)
+[2026-08-19 16:09:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已自动配置 Tesseract: E:\Tesseract-OCR\tesseract.exe
+[2026-08-19 16:09:52] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 TESSDATA_PREFIX: E:\Tesseract-OCR\tessdata
+[2026-08-19 16:09:52] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 生成 4 种二值化 mask 用于矩形检测
+[2026-08-19 16:09:52] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 找到 8 个矩形候选，top5面积=[np.int32(190036), np.int32(20214), np.int32(14164), np.int32(12442), np.int32(10261)]
+[2026-08-19 16:10:00] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 29 条原始结果
+[2026-08-19 16:10:00] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 4 条
+[2026-08-19 16:10:01] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 29 条原始结果
+[2026-08-19 16:10:01] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 4 条
+[2026-08-19 16:10:10] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 6 条原始结果
+[2026-08-19 16:10:10] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 1 条
+[2026-08-19 16:10:10] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 6 条原始结果
+[2026-08-19 16:10:10] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 1 条
+[2026-08-19 16:10:31] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 5 条原始结果
+[2026-08-19 16:10:31] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 2 条
+[2026-08-19 16:10:31] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#1 外框=(48,28,1674,659) OCR命中=1/4 边距值={'bottom': (10.0, 72)}
+[2026-08-19 16:10:32] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 5 条原始结果
+[2026-08-19 16:10:32] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 2 条
+[2026-08-19 16:10:32] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#1 外框=(48,28,1674,659) OCR命中=1/4 边距值={'bottom': (10.0, 72)}
+[2026-08-19 16:10:41] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 25 条原始结果
+[2026-08-19 16:10:41] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 4 条
+[2026-08-19 16:10:42] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 25 条原始结果
+[2026-08-19 16:10:42] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 4 条
+[2026-08-19 16:10:52] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 6 条原始结果
+[2026-08-19 16:10:52] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 1 条
+[2026-08-19 16:10:53] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 6 条原始结果
+[2026-08-19 16:10:53] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 1 条
+[2026-08-19 16:11:18] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 5 条原始结果
+[2026-08-19 16:11:18] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 2 条
+[2026-08-19 16:11:18] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#2 外框=(48,28,1674,659) OCR命中=1/4 边距值={'bottom': (10.0, 72)}
+[2026-08-19 16:11:18] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 5 条原始结果
+[2026-08-19 16:11:18] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 2 条
+[2026-08-19 16:11:18] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#2 外框=(48,28,1674,659) OCR命中=1/4 边距值={'bottom': (10.0, 72)}
+[2026-08-19 16:11:53] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#3 外框=(0,0,1778,715) OCR命中=0/4 边距值={}
+[2026-08-19 16:11:54] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#3 外框=(0,0,1778,715) OCR命中=0/4 边距值={}
+[2026-08-19 16:12:03] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 17 条原始结果
+[2026-08-19 16:12:03] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 2 条
+[2026-08-19 16:12:04] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 17 条原始结果
+[2026-08-19 16:12:04] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 2 条
+[2026-08-19 16:12:25] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#4 外框=(0,0,1778,715) OCR命中=0/4 边距值={}
+[2026-08-19 16:12:27] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#4 外框=(0,0,1778,715) OCR命中=0/4 边距值={}
+[2026-08-19 16:12:38] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 18 条原始结果
+[2026-08-19 16:12:38] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 3 条
+[2026-08-19 16:12:39] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 18 条原始结果
+[2026-08-19 16:12:39] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 3 条
+[2026-08-19 16:13:06] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#5 外框=(0,0,1778,715) OCR命中=0/4 边距值={}
+[2026-08-19 16:13:06] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 选定外框=(48,28,1674,659) 内框=(297,212,451,291) score=11.34
+[2026-08-19 16:13:06] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 外框=(48,28,1674,659) 内框=(297,212,451,291)
+[2026-08-19 16:13:07] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 候选#5 外框=(0,0,1778,715) OCR命中=0/4 边距值={}
+[2026-08-19 16:13:07] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 选定外框=(48,28,1674,659) 内框=(297,212,451,291) score=11.34
+[2026-08-19 16:13:07] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 外框=(48,28,1674,659) 内框=(297,212,451,291)
+[2026-08-19 16:13:14] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到107.43 (parts=['10', '7.43'])
+[2026-08-19 16:13:15] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到43.51 (parts=['43.5', '10'])
+[2026-08-19 16:13:15] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 右: 拼接值1043.5超出范围，尝试单token值
+[2026-08-19 16:13:15] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到107.43 (parts=['10', '7.43'])
+[2026-08-19 16:13:16] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到43.51 (parts=['43.5', '10'])
+[2026-08-19 16:13:16] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 右: 拼接值1043.5超出范围，尝试单token值
+[2026-08-19 16:13:19] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到107.43 (parts=['10', '7.43'])
+[2026-08-19 16:13:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到107.43 (parts=['10', '7.43'])
+[2026-08-19 16:13:20] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到10.0 (parts=['10'])
+[2026-08-19 16:13:21] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 方向标签 上: 从相邻tokens拼接找到10.0 (parts=['10'])
+[2026-08-19 16:13:25] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 检测到方向标签: ['top', 'bottom', 'left', 'right']
+[2026-08-19 16:13:25] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 方向标签: {'top': ((479.5, 152.16666666666669), 93, '上'), 'bottom': ((np.float64(480.5), np.float64(579.5)), 0.7540196180343628, '下'), 'left': ((np.float64(154.5), np.float64(361.5)), 0.6989095211029053, '左'), 'right': ((np.float64(822.5), np.float64(351.5)), 0.6617045402526855, '右')}
+[2026-08-19 16:13:25] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 执行全局 OCR 扫描...
+[2026-08-19 16:13:26] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 检测到方向标签: ['top', 'bottom', 'left', 'right']
+[2026-08-19 16:13:26] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 方向标签: {'top': ((479.5, 152.16666666666669), 93, '上'), 'bottom': ((np.float64(480.5), np.float64(579.5)), 0.7540196180343628, '下'), 'left': ((np.float64(154.5), np.float64(361.5)), 0.6989095211029053, '左'), 'right': ((np.float64(822.5), np.float64(351.5)), 0.6617045402526855, '右')}
+[2026-08-19 16:13:26] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 执行全局 OCR 扫描...
+[2026-08-19 16:13:28] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:29] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:32] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:33] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:37] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:37] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 43 条原始结果
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 11 条
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 全局 OCR 共检测到 11 个候选数值
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 top: val=10.0 conf=84 (距标签=8px)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 bottom: val=10.0 conf=62 (距标签=11px)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 left: val=43.5 conf=70 (距标签=21px)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 right: val=36.5 conf=71 (距标签=21px)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 内框尺寸: inner_w=0, inner_h=0
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] OCR水平边距自洽: left=43.5+right=36.5 → implied_inner_w=70.0cm (占外框47%)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] OCR垂直边距自洽: top=10.0+bottom=10.0 → implied_inner_h=40.0cm (占外框67%)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 右边距OCR=36.5 与几何值=87.3 差异大，但OCR水平边距自洽，保留OCR值
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 内框高度修正: 0 → 40.0 (从边距反推)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 内框宽度修正: 0 → 70.0 (从边距反推)
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 验证结果: 外框=150.0x60.0 内框=70.0x40.0 边距=上10.0/下10.0/左43.5/右36.5
+[2026-08-19 16:13:45] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 几何驱动解析成功: 
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [OCR] 空间覆盖不足(2象限)，继续扫描
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重前共 43 条原始结果
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [OCR] 去重后剩 11 条
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 全局 OCR 共检测到 11 个候选数值
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 top: val=10.0 conf=84 (距标签=8px)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 bottom: val=10.0 conf=62 (距标签=11px)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 left: val=43.5 conf=70 (距标签=21px)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 边距 right: val=36.5 conf=71 (距标签=21px)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 内框尺寸: inner_w=0, inner_h=0
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] OCR水平边距自洽: left=43.5+right=36.5 → implied_inner_w=70.0cm (占外框47%)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] OCR垂直边距自洽: top=10.0+bottom=10.0 → implied_inner_h=40.0cm (占外框67%)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 右边距OCR=36.5 与几何值=87.3 差异大，但OCR水平边距自洽，保留OCR值
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 内框高度修正: 0 → 40.0 (从边距反推)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 内框宽度修正: 0 → 70.0 (从边距反推)
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [几何驱动] 验证结果: 外框=150.0x60.0 内框=70.0x40.0 边距=上10.0/下10.0/左43.5/右36.5
+[2026-08-19 16:13:46] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 几何驱动解析成功: 
+[2026-08-19 16:13:46] [INFO] [gui.property_panel] [PoolWorker] 草图解析：success=True
+[2026-08-19 16:13:46] [INFO] [gui.property_panel] [PoolWorker]   
+[2026-08-19 16:13:46] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-19 16:13:54] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
