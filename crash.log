@@ -126,3 +126,18 @@ Traceback (most recent call last):
                                                                                                                                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 TypeError: unsupported format string passed to IFDRational.__format__
 
+============================================================
+崩溃时间: 2026-08-19 12:28:21
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 386, in <module>
+    main()
+    ~~~~^^
+  File "D:\SmartShapeCrop\main.py", line 382, in main
+    sys.exit(app.exec_())
+             ~~~~~~~~~^^
+KeyboardInterrupt
+

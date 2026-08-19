@@ -7,9 +7,11 @@
 from .sketch_parser import (
     SketchParseResult,
     parse_sketch,
+    validate_sketch_file,
 )
 
 __all__ = [
     "SketchParseResult",
     "parse_sketch",
+    "validate_sketch_file",
 ]

@@ -13,27 +13,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
 
-from core.config import (
-    GOLDEN_INNER_VALUES,
-    GOLDEN_MARGIN_VALUES,
-    GOLDEN_MARGIN_PAIR_H,
-    GOLDEN_MARGIN_PAIR_V,
-    GOLDEN_TOLERANCE_CM,
-    T0_MAX_ITERATIONS,
-)
-
 logger = logging.getLogger(__name__)
 
-import hashlib
-import time
+# 解析超时阈值（秒）：超过此时间后跳过后续 OCR 阶段，用几何值兜底返回当前最优结果
+_PARSE_TIMEOUT_SEC = 30
 
 # ---------------------------------------------------------------------------
 # 草图识别结果缓存（性能优化）
@@ -45,6 +39,7 @@ import time
 _ALGO_VERSION = 5  # 2026-08-19: 修复方向标签聚焦OCR裁剪区域过窄+token拼接+修正几何OCR
 _SKETCH_CACHE: dict = {}
 _SKETCH_CACHE_MAX = 50  # 最多缓存 50 条
+_SKETCH_CACHE_LOCK = threading.Lock()  # 跨线程（_SketchParseWorker / PoolRenderWorker）读写保护
 
 
 def _get_cache_key(image_path: str, target_w: float, target_h: float) -> tuple:
@@ -58,25 +53,27 @@ def _get_cache_key(image_path: str, target_w: float, target_h: float) -> tuple:
 
 def _get_cached_result(image_path: str, target_w: float, target_h: float):
     """查找缓存中的识别结果，找到则返回 SketchParseResult 副本，否则返回 None。"""
-    key = _get_cache_key(image_path, target_w, target_h)
-    cached = _SKETCH_CACHE.get(key)
-    if cached is not None:
-        logger.info(f"[sketch_parser] 缓存命中：{image_path} target={target_w:.1f}x{target_h:.1f}cm")
-        # 返回副本，避免调用方修改缓存
-        import copy
-        return copy.deepcopy(cached)
+    with _SKETCH_CACHE_LOCK:
+        key = _get_cache_key(image_path, target_w, target_h)
+        cached = _SKETCH_CACHE.get(key)
+        if cached is not None:
+            logger.info(f"[sketch_parser] 缓存命中：{image_path} target={target_w:.1f}x{target_h:.1f}cm")
+            # 返回副本，避免调用方修改缓存
+            import copy
+            return copy.deepcopy(cached)
     return None
 
 
 def _store_cached_result(image_path: str, target_w: float, target_h: float, result):
     """存储识别结果到缓存。"""
-    key = _get_cache_key(image_path, target_w, target_h)
-    if len(_SKETCH_CACHE) >= _SKETCH_CACHE_MAX:
-        # 简单 LRU：移除最早的一个
-        oldest = next(iter(_SKETCH_CACHE))
-        _SKETCH_CACHE.pop(oldest, None)
-    import copy
-    _SKETCH_CACHE[key] = copy.deepcopy(result)
+    with _SKETCH_CACHE_LOCK:
+        key = _get_cache_key(image_path, target_w, target_h)
+        if len(_SKETCH_CACHE) >= _SKETCH_CACHE_MAX:
+            # 简单 LRU：移除最早的一个
+            oldest = next(iter(_SKETCH_CACHE))
+            _SKETCH_CACHE.pop(oldest, None)
+        import copy
+        _SKETCH_CACHE[key] = copy.deepcopy(result)
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +84,7 @@ def _store_cached_result(image_path: str, target_w: float, target_h: float, resu
 # 更换目标文件名（不同 target）时直接命中，毫秒级响应。
 _SKETCH_CONSISTENT_CACHE: dict = {}
 _SKETCH_CONSISTENT_CACHE_MAX = 50
+_SKETCH_CONSISTENT_CACHE_LOCK = threading.Lock()
 
 
 def _get_consistent_cache_key(image_path: str) -> tuple:
@@ -100,23 +98,67 @@ def _get_consistent_cache_key(image_path: str) -> tuple:
 
 def _get_consistent_cached_result(image_path: str):
     """查找自洽解缓存。命中则返回 SketchParseResult 副本，否则 None。"""
-    key = _get_consistent_cache_key(image_path)
-    cached = _SKETCH_CONSISTENT_CACHE.get(key)
-    if cached is not None:
-        logger.info(f"[sketch_parser] 自洽解缓存命中（与target无关）：{image_path}")
-        import copy
-        return copy.deepcopy(cached)
+    with _SKETCH_CONSISTENT_CACHE_LOCK:
+        key = _get_consistent_cache_key(image_path)
+        cached = _SKETCH_CONSISTENT_CACHE.get(key)
+        if cached is not None:
+            logger.info(f"[sketch_parser] 自洽解缓存命中（与target无关）：{image_path}")
+            import copy
+            return copy.deepcopy(cached)
     return None
 
 
 def _store_consistent_cached_result(image_path: str, result):
     """存储自洽解到缓存（仅当 8 字段全部自洽时调用）。"""
-    key = _get_consistent_cache_key(image_path)
-    if len(_SKETCH_CONSISTENT_CACHE) >= _SKETCH_CONSISTENT_CACHE_MAX:
-        oldest = next(iter(_SKETCH_CONSISTENT_CACHE))
-        _SKETCH_CONSISTENT_CACHE.pop(oldest, None)
-    import copy
-    _SKETCH_CONSISTENT_CACHE[key] = copy.deepcopy(result)
+    with _SKETCH_CONSISTENT_CACHE_LOCK:
+        key = _get_consistent_cache_key(image_path)
+        if len(_SKETCH_CONSISTENT_CACHE) >= _SKETCH_CONSISTENT_CACHE_MAX:
+            oldest = next(iter(_SKETCH_CONSISTENT_CACHE))
+            _SKETCH_CONSISTENT_CACHE.pop(oldest, None)
+        import copy
+        _SKETCH_CONSISTENT_CACHE[key] = copy.deepcopy(result)
+
+
+# ---------------------------------------------------------------------------
+# 草图输入校验（送入 OCR 管线前拒绝超大/损坏/不支持格式）
+# ---------------------------------------------------------------------------
+_SKETCH_ACCEPT_EXT = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp'}
+_SKETCH_MAX_FILE_MB = 50           # 文件大小上限 50MB
+_SKETCH_MAX_PIXELS = 40_000_000    # 像素数上限（约 6000×6000），防 OCR 长时间卡死 / 内存爆炸
+
+
+def validate_sketch_file(path: str) -> tuple:
+    """校验草图文件：存在性 / 扩展名 / 文件大小 / 像素数 / 头部可读性。
+
+    在 UI 线程调用，仅读图片头部（PIL 懒加载），不解码全像素，
+    避免把超大/损坏图片送入 OCR 管线导致长时间卡死或内存爆炸。
+    返回 (ok, reason)；ok=False 时 reason 为用户可读的拒绝原因。
+    """
+    if not path or not os.path.isfile(path):
+        return False, "文件不存在"
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in _SKETCH_ACCEPT_EXT:
+        return False, f"不支持的图片格式：{ext}"
+    size = os.path.getsize(path)
+    if size == 0:
+        return False, "文件为空"
+    if size > _SKETCH_MAX_FILE_MB * 1024 * 1024:
+        return False, f"文件过大（{size / 1024 / 1024:.1f}MB > {_SKETCH_MAX_FILE_MB}MB 上限）"
+    # 头部探测：PIL.Image.open 仅读 header，不解码像素
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(path) as im:
+            w, h = im.size
+    except Exception as e:
+        return False, f"图片无法读取（可能已损坏）：{e}"
+    if w <= 0 or h <= 0:
+        return False, "图片尺寸无效"
+    if w * h > _SKETCH_MAX_PIXELS:
+        return False, (
+            f"图片像素过多（{w}×{h}≈{w * h / 1e6:.1f}MP > {_SKETCH_MAX_PIXELS / 1e6:.0f}MP 上限），"
+            f"OCR 会长时间卡死，请缩小后再上传"
+        )
+    return True, ""
 
 
 # ---------------------------------------------------------------------------
@@ -5403,6 +5445,32 @@ def _geometry_fallback_values(outer_rect: tuple, inner_rect: tuple,
 # 主解析流程
 # ---------------------------------------------------------------------------
 
+def _try_geometry_driven(cv2, gray, img, tesseract, image_path,
+                         target_outer_w_cm, target_outer_h_cm, result):
+    """尝试几何驱动新算法；成功返回最终 result，失败返回 None（调用方回退经典算法）。
+
+    将 "try geo → 成功则 build+缓存+return" 的派发逻辑独立，使 parse_sketch 主流程
+    退化为 "prefilter → try_geo → classic" 三段清晰编排。
+    """
+    try:
+        geo_result = _geometry_driven_parse(
+            cv2, gray, img, tesseract,
+            target_outer_w_cm=target_outer_w_cm,
+            target_outer_h_cm=target_outer_h_cm)
+    except Exception as e:
+        logger.warning(f"[sketch_parser] 几何驱动解析异常: {e}")
+        geo_result = None
+
+    if geo_result and geo_result.get('success'):
+        logger.info(f"[sketch_parser] 几何驱动解析成功: {geo_result.get('message', '')}")
+        result = _build_result_from_geo(geo_result, result)
+        _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result)
+        return result
+
+    logger.info("[sketch_parser] 几何驱动解析未完全成功，回退到经典算法")
+    return None
+
+
 def parse_sketch(
     image_path: str,
     *,
@@ -5424,6 +5492,21 @@ def parse_sketch(
                 progress_callback(pct, msg)
             except Exception:
                 pass
+
+    # —— 超时保护：各 OCR 阶段间检查 deadline，超时则跳过后续 OCR 用几何值兜底 ——
+    _deadline = time.time() + _PARSE_TIMEOUT_SEC
+    _timeout_logged = False
+
+    def _timed_out(stage: str = "") -> bool:
+        nonlocal _timeout_logged
+        if time.time() > _deadline:
+            if not _timeout_logged:
+                logger.warning(
+                    f"[sketch_parser] 解析已超时(>{_PARSE_TIMEOUT_SEC}s)，跳过后续 OCR 阶段：{stage}"
+                )
+                _timeout_logged = True
+            return True
+        return False
 
     result = SketchParseResult(method="hybrid")
     _progress(10, "加载图片...")
@@ -5458,29 +5541,29 @@ def parse_sketch(
     _progress(15, "几何驱动解析：多策略识别...")
     tesseract = _safe_import_tesseract()
 
-    # === 优先尝试几何驱动的新算法 ===
-    geo_result = None
-    try:
-        geo_result = _geometry_driven_parse(
-            cv2, gray, img, tesseract,
-            target_outer_w_cm=target_outer_w_cm,
-            target_outer_h_cm=target_outer_h_cm)
-    except Exception as e:
-        logger.warning(f"[sketch_parser] 几何驱动解析异常: {e}")
-        geo_result = None
-
-    if geo_result and geo_result.get('success'):
-        logger.info(f"[sketch_parser] 几何驱动解析成功: {geo_result.get('message', '')}")
-        result = _build_result_from_geo(geo_result, result)
-        _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result)
-        return result
+    # === 优先尝试几何驱动的新算法；成功则直接返回，失败回退经典算法 ===
+    geo_done = _try_geometry_driven(
+        cv2, gray, img, tesseract, image_path,
+        target_outer_w_cm, target_outer_h_cm, result)
+    if geo_done is not None:
+        return geo_done
 
     # === 回退到旧算法 ===
-    logger.info("[sketch_parser] 几何驱动解析未完全成功，回退到经典算法")
+    return _run_classic_pipeline(gray, img, cv2, image_path,
+                                  target_outer_w_cm, target_outer_h_cm,
+                                  result, _progress, _timed_out)
+
+
+def _classic_detect_two_rects(cv2, gray, img, result, _progress):
+    """阶段1：检测嵌套双矩形（含 1 框时内框估算）。
+
+    返回 (early_result, outer_5tuple, inner_5tuple)：
+      - 成功：early_result=None，并返回 outer/inner (x,y,w,h,score)
+      - 失败：early_result 已填充消息并返回，调用方应 return early_result
+    """
     _progress(25, "几何检测：查找嵌套矩形...")
     top2 = _find_two_nested_rectangles(cv2, gray, img)
-    
-    # 如果嵌套检测失败，尝试从外框内部估算内框
+
     if len(top2) < 2 and len(top2) == 1:
         logger.warning("[sketch_parser] 只检测到1个矩形，尝试从外框内部估算内框...")
         outer_only = top2[0]
@@ -5488,7 +5571,7 @@ def parse_sketch(
         if est_inner is not None:
             top2 = [outer_only, est_inner]
             logger.info(f"[sketch_parser] 估算内框: ({est_inner[0]},{est_inner[1]},{est_inner[2]},{est_inner[3]}) score={est_inner[4]:.2f}")
-    
+
     if len(top2) < 2:
         msg = f"只检测到 {len(top2)} 个矩形轮廓，无法确定内外框关系。"
         if len(top2) == 0:
@@ -5499,20 +5582,49 @@ def parse_sketch(
         _progress(30, msg)
         result.message = msg
         result.debug["rects_found"] = len(top2)
-        return result
+        return result, None, None
 
-    (ox, oy, ow, oh, os_score), (ix, iy, iw, ih, ins_score) = top2
-    result.debug["outer_rect_px"] = (ox, oy, ow, oh)
-    result.debug["inner_rect_px"] = (ix, iy, iw, ih)
+    outer, inner = top2
+    result.debug["outer_rect_px"] = outer[:4]
+    result.debug["inner_rect_px"] = inner[:4]
+    return None, outer, inner
 
+
+@dataclass
+class _ClassicOcrBundle:
+    """_classic_run_ocr 返回的 OCR 阶段所有打包输出。"""
+    ocr_result: dict
+    direction_margins: dict
+    geometry_margins: dict
+    geo_result: dict
+    outer_w: float
+    outer_h: float
+    inner_w: float
+    inner_h: float
+    mt: float
+    mb: float
+    ml: float
+    mr: float
+
+
+def _classic_run_ocr(cv2, gray, img, ox, oy, ow, oh, ix, iy, iw, ih,
+                     target_outer_w_cm, target_outer_h_cm, _progress, _timed_out):
+    """阶段 2：主 OCR → 方向标签 4 方法 → 聚焦 OCR → 修正几何 OCR → 初始值生成。
+
+    返回 _ClassicOcrBundle 打包所有 OCR 阶段产物及 outer/inner/margins 初始值。
+    方向标签覆盖/交叉推导/最终修正留到阶段 3 finalize。
+    """
     _progress(40, "OCR识别：读取标注数字...")
     tesseract = _safe_import_tesseract()
 
-    ocr_result = _find_and_read_numbers(
-        cv2, gray, (ox, oy, ow, oh), (ix, iy, iw, ih), tesseract,
-        target_w_hint=target_outer_w_cm,
-        target_h_hint=target_outer_h_cm,
-        color_img=img)
+    if _timed_out("main_ocr"):
+        ocr_result = {}
+    else:
+        ocr_result = _find_and_read_numbers(
+            cv2, gray, (ox, oy, ow, oh), (ix, iy, iw, ih), tesseract,
+            target_w_hint=target_outer_w_cm,
+            target_h_hint=target_outer_h_cm,
+            color_img=img)
 
     # === 方向标签检测：利用"上/下/左/右"标签+数值直接确定边距 ===
     _progress(50, "方向标签检测：利用方向+数值标注...")
@@ -5525,13 +5637,13 @@ def parse_sketch(
     
     # 方法2：OCR方法检测方向标签（同时使用）
     dir_labels_ocr = []
-    if tesseract is not None:
+    if tesseract is not None and not _timed_out("direction_ocr"):
         dir_labels_ocr = _detect_direction_labels_by_ocr(cv2, gray, tesseract, (ox, oy, ow, oh))
         logger.info(f"[sketch_parser] OCR方法检测到 {len(dir_labels_ocr)} 个方向标签")
     
     # 方法3：基于几何位置的边距OCR检测（不依赖方向标签）
     geometry_margins = {}
-    if tesseract is not None:
+    if tesseract is not None and not _timed_out("geometry_ocr"):
         geometry_margins = _detect_margins_by_geometry_ocr(
             cv2, gray, tesseract, (ox, oy, ow, oh),
             inner_rect=(ix, iy, iw, ih),
@@ -5570,6 +5682,8 @@ def parse_sketch(
     
     # 对每个检测到的方向标签进行聚焦OCR，获取准确的边距数值
     for dchar, mfield, lx, ly, conf, existing_val in dir_labels:
+        if _timed_out("focused_ocr"):
+            break
         logger.info(f"[sketch_parser] 方向标签 {dchar}(位置={lx:.0f},{ly:.0f}, conf={conf})")
         
         # 空间合理性检查：如果标签位置严重不合理，跳过
@@ -5744,7 +5858,7 @@ def parse_sketch(
                            and _corrected_ix + _corrected_iw < ox + ow
                            and _corrected_iy + _corrected_ih < oy + oh)
 
-        if _corrected_valid and (_ix_diff > 5 or _iy_diff > 5 or _iw_diff > 10 or _ih_diff > 10):
+        if _corrected_valid and not _timed_out("corrected_geo_ocr") and (_ix_diff > 5 or _iy_diff > 5 or _iw_diff > 10 or _ih_diff > 10):
             logger.info(f"[sketch_parser] 内框位置修正：原始=({ix},{iy},{iw},{ih}) → 修正=({_corrected_ix},{_corrected_iy},{_corrected_iw},{_corrected_ih})")
 
             # 用修正后的内框重新扫描缺失的边距
@@ -5781,6 +5895,58 @@ def parse_sketch(
     mb = ocr_result.get('margin_bottom', (0, 0))[0]
     ml = ocr_result.get('margin_left', (0, 0))[0]
     mr = ocr_result.get('margin_right', (0, 0))[0]
+
+    return _ClassicOcrBundle(
+        ocr_result=ocr_result,
+        direction_margins=direction_margins,
+        geometry_margins=geometry_margins,
+        geo_result=geo_result,
+        outer_w=outer_w, outer_h=outer_h,
+        inner_w=inner_w, inner_h=inner_h,
+        mt=mt, mb=mb, ml=ml, mr=mr)
+
+
+def _run_classic_pipeline(gray, img, cv2, image_path, target_outer_w_cm, target_outer_h_cm,
+                          result, _progress, _timed_out):
+    """经典回退算法：嵌套矩形检测 → 多阶段 OCR → 方向标签 → 几何校验 → 缓存返回。
+
+    parse_sketch 在几何驱动主路径失败时调用本函数。
+    内部按阶段拆分为独立子函数，使主流程退化为清晰的编排层。
+    """
+    # 阶段 1：矩形检测（失败时填充错误消息并 return）
+    early, outer, inner = _classic_detect_two_rects(cv2, gray, img, result, _progress)
+    if early is not None:
+        return early
+    (ox, oy, ow, oh, _os_score), (ix, iy, iw, ih, _is_score) = outer, inner
+
+    # 阶段 2：主 OCR + 方向标签 4 方法 + 聚焦 OCR + 修正几何 OCR + 初始值
+    ocr_bundle = _classic_run_ocr(
+        cv2, gray, img, ox, oy, ow, oh, ix, iy, iw, ih,
+        target_outer_w_cm, target_outer_h_cm, _progress, _timed_out)
+    ocr_result = ocr_bundle.ocr_result
+    direction_margins = ocr_bundle.direction_margins
+    geometry_margins = ocr_bundle.geometry_margins
+    geo_result = ocr_bundle.geo_result
+    outer_w, outer_h = ocr_bundle.outer_w, ocr_bundle.outer_h
+    inner_w, inner_h = ocr_bundle.inner_w, ocr_bundle.inner_h
+    mt, mb, ml, mr = ocr_bundle.mt, ocr_bundle.mb, ocr_bundle.ml, ocr_bundle.mr
+
+    # 阶段 3：方向标签覆盖 + 几何回退 + 交叉推导 + 核心修正 + 缓存 + 消息
+    return _classic_finalize(
+        cv2, gray, ox, oy, ow, oh, ix, iy, iw, ih,
+        target_outer_w_cm, target_outer_h_cm, image_path,
+        ocr_result, direction_margins, geometry_margins, geo_result,
+        outer_w, outer_h, inner_w, inner_h, mt, mb, ml, mr,
+        result, _progress)
+
+
+def _classic_finalize(cv2, gray, ox, oy, ow, oh, ix, iy, iw, ih,
+                      target_outer_w_cm, target_outer_h_cm, image_path,
+                      ocr_result, direction_margins, geometry_margins, geo_result,
+                      outer_w, outer_h, inner_w, inner_h, mt, mb, ml, mr,
+                      result, _progress):
+    """阶段 3：finalize。方向标签覆盖 → 几何OCR回退 → 边距交叉推导 → 核心修正 →
+    赋值到 result → 缓存 → 消息生成。返回最终 SketchParseResult。"""
 
     # === 方向标签边距覆盖：如果方向标签识别到了边距值，优先使用 ===
     # 但需要检查方向标签值是否合理（不能与空间分配的OCR值差异过大）

@@ -21,6 +21,8 @@ from core.geometry import CropDesign, BorderLayer, BorderText
 from core.parser.name_parser import parse_filename
 from core.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
+from core.pool_designer import validate_sketch_file
+from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT
 
 logger = logging.getLogger(__name__)
 
@@ -119,20 +121,15 @@ class PoolRenderWorker(QThread):
                 )
                 return
 
-            # —— 水池/裁剪有图 模式：修正尺寸方向 ——
-            # 文件名 "a x b CM" 在草图中标注为：a 是竖边(高)、b 是横边(宽)
-            # name_parser 中 width_cm=a(首个数值=竖边), height_cm=b(第二个数=横边)
-            # 水池模式需要交换：file_w(横边)=b=parsed.height_cm，file_h(竖边)=a=parsed.width_cm
-            # 此交换必须与 _pool_set_target_size 和 _pool_auto_parse_sketch 中保持一致
-            is_pool = parsed.pool_mode or ('裁剪有图' in self._target) or ('水池' in self._target)
+            # —— 水池/裁剪有图 模式：尺寸方向统一由 ParsedFilename.oriented_outer_w_h_cm() 处理 ——
+            # 交换规则集中在此方法内，避免与 _on_pool_target_changed / _pool_auto_parse_sketch 副本漂移
+            is_pool = parsed.is_pool_mode()
+            file_w, file_h = parsed.oriented_outer_w_h_cm()
             if is_pool:
-                file_w, file_h = parsed.height_cm, parsed.width_cm
                 self._log(
                     f"水池模式尺寸修正：文件名数值 {parsed.width_cm}x{parsed.height_cm} "
                     f"→ 外框参考 宽{file_w} x 高{file_h}（与草图横/竖标注一致）"
                 )
-            else:
-                file_w, file_h = parsed.width_cm, parsed.height_cm
 
             # 2) 匹配模板
             self.progress.emit(25, "扫描模板库并匹配最佳素材…")
@@ -250,9 +247,15 @@ class _SketchParseWorker(QThread):
                 target_outer_w_cm=self._target_w,
                 target_outer_h_cm=self._target_h,
             )
+            # 若已被新解析取代（requestInterruption），不再发射旧结果，避免覆盖新结果
+            if self.isInterruptionRequested():
+                logger.info("[SketchParseWorker] 已被取消，丢弃旧解析结果")
+                return
             self.finished_ok.emit(result)
         except Exception as e:
             logger.exception("草图后台解析异常")
+            if self.isInterruptionRequested():
+                return
             self.finished_err.emit(str(e))
 
 
@@ -631,18 +634,17 @@ class PropertyPanel(QWidget):
             return
         try:
             parsed = parse_filename(name)
-            # 检测水池设计模式（裁剪有图）
-            is_pool = parsed.pool_mode or ('裁剪有图' in name) or ('水池' in name)
+            # 检测水池设计模式（裁剪有图）—— 统一由 ParsedFilename 判定
+            is_pool = parsed.is_pool_mode()
             self._pool_mode = is_pool
 
             w, h = parsed.width_cm, parsed.height_cm
             if w > 0 and h > 0:
                 if is_pool:
-                    # —— 水池模式：文件名 "a x b CM" 按 (高 x 宽) 顺序解释 ——
+                    # —— 水池模式：外框(宽,高)由 oriented_outer_w_h_cm() 统一交换 ——
                     # 例：60.5x133cm  →  外框 高(竖)=60.5, 宽(横)=133
                     # 画布显示尺寸 = 外框 + 1cm 损耗（裁剪余料）
-                    raw_outer_w = h   # 横边（第二个数）→ 宽
-                    raw_outer_h = w   # 竖边（第一个数）→ 高
+                    raw_outer_w, raw_outer_h = parsed.oriented_outer_w_h_cm()
                     gui_w = raw_outer_w + 1.0
                     gui_h = raw_outer_h + 1.0
                     # 范围夹取
@@ -803,7 +805,7 @@ class PropertyPanel(QWidget):
     def _pool_pick_sketch(self):
         p, _ = QFileDialog.getOpenFileName(
             self, "选择尺寸草图",
-            "", "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
+            "", "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
         )
         if not p:
             return
@@ -815,7 +817,11 @@ class PropertyPanel(QWidget):
         关键：图片显示（QPixmap + 主画布 PIL）在主线程立即完成，不等待 OCR/几何检测；
         解析操作放到 _SketchParseWorker 后台线程，避免阻塞 Qt 重绘事件，保证"上传即显示"。
         """
-        if not p or not os.path.isfile(p):
+        # 输入校验：在设置路径/启动后台解析前，拒绝超大/损坏/不支持格式（防 OCR 卡死/内存爆炸）
+        ok, reason = validate_sketch_file(p)
+        if not ok:
+            QMessageBox.warning(self, "草图无法上传", reason)
+            self._set_pool_status(f"草图上传被拒：{reason}")
             return
         self._sketch_path = p
         # —— 1) 立即显示：侧栏缩略图 ——
@@ -868,9 +874,10 @@ class PropertyPanel(QWidget):
         # —— 启动后台解析（立即返回，不阻塞 UI 重绘）——
         if self._sketch_parse_worker is not None and self._sketch_parse_worker.isRunning():
             # 取消前一次未完成的解析（避免旧结果覆盖新图）
+            # requestInterruption() 对纯 run() 的 QThread 生效（quit() 仅对有事件循环的线程有效）
             try:
-                self._sketch_parse_worker.quit()
-                self._sketch_parse_worker.wait(500)
+                self._sketch_parse_worker.requestInterruption()
+                self._sketch_parse_worker.wait(2000)
             except Exception:
                 pass
         worker = _SketchParseWorker(self._sketch_path, target_w, target_h, self)
@@ -881,6 +888,10 @@ class PropertyPanel(QWidget):
 
     def _on_sketch_parsed(self, result):
         """后台解析成功：回填边距 UI + 更新状态提示"""
+        # 防御：忽略已被新解析取代的旧 worker 发来的结果（sender 不再是当前 worker）
+        if self.sender() is not self._sketch_parse_worker:
+            logger.info("[PropertyPanel] 忽略已过期的草图解析结果")
+            return
         self._sketch_parse_result = result
         raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
         raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
@@ -1186,7 +1197,7 @@ class _SketchDropLabel(QLabel):
     fileDropped = pyqtSignal(str)   # 拖入文件成功时发出路径
     clicked = pyqtSignal()          # 点击时发出（用于打开大图预览）
 
-    _ACCEPT_EXT = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp'}
+    _ACCEPT_EXT = _SKETCH_ACCEPT_EXT  # 复用 sketch_parser 的统一白名单，避免两处副本漂移
 
     def __init__(self, text="（未上传）\n或拖入图片", parent=None):
         super().__init__(text, parent)

@@ -35,6 +35,28 @@ class ParsedFilename:
     pool_mode: bool = False         # 是否为水池裁剪有图模式（含"裁剪有图"关键词）
     pool_pattern_name: str = ""     # 水池模式下的花型名（-分隔最后一段，如"克罗印花"）
 
+    def is_pool_mode(self) -> bool:
+        """是否为水池裁剪有图模式（文件名含 '裁剪有图' 或 '水池' 关键词）。
+
+        pool_mode 已在解析时由 '裁剪有图' 关键词置位；此处补全 '水池' 关键词，
+        与历史调用方 `parsed.pool_mode or ('裁剪有图' in name) or ('水池' in name)` 等价。
+        """
+        if self.pool_mode:
+            return True
+        return "水池" in (self.raw_filename or "")
+
+    def oriented_outer_w_h_cm(self) -> tuple[float, float]:
+        """返回设计画布所需的外框 (宽, 高)。
+
+        水池模式：文件名 "a x b CM" 在草图中标注为 a=竖边(高)、b=横边(宽)，
+                  需交换为 (b, a) = (height_cm, width_cm)。
+        普通模式：直接返回 (width_cm, height_cm)。
+        统一在此处交换，调用方不再各自实现，避免三处副本漂移导致横竖颠倒。
+        """
+        if self.is_pool_mode():
+            return self.height_cm, self.width_cm
+        return self.width_cm, self.height_cm
+
 
 # 中文数字映射
 CN_NUM = {'零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
