@@ -805,7 +805,7 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
     # === 第二阶段：对 top 候选进行 OCR 验证 ===
     # 检查 OCR 能在间隙中识别到的数值数量，作为辅助判定
     if cv2 is not None and gray_img is not None and tesseract is not None:
-        _top_k = min(5, len(candidate_pairs))
+        _top_k = min(2, len(candidate_pairs))
         best_ocr_count = -1
         best_ocr_score = -float('inf')
         best_ocr_pair = None
@@ -816,7 +816,6 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
             _ix, _iy, _iw, _ih = _inner[:4]
             _gap_top, _gap_bottom, _gap_left, _gap_right = _gaps
 
-            # 构造 gap 区域
             _gap_regions = {
                 'top': (_ox, _oy, _ox + _ow, _iy),
                 'bottom': (_ox, _iy + _ih, _ox + _ow, _oy + _oh),
@@ -826,8 +825,6 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
 
             _ocr_hits = 0
             _margin_values = {}
-            _cm_px_x = target_outer_w_cm / _ow if (target_outer_w_cm > 0 and _ow > 0) else 1.0
-            _cm_px_y = target_outer_h_cm / _oh if (target_outer_h_cm > 0 and _oh > 0) else 1.0
 
             for _direction, (_gx1, _gy1, _gx2, _gy2) in _gap_regions.items():
                 _gw = _gx2 - _gx1
@@ -844,11 +841,10 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
                 if _scan.size == 0:
                     continue
                 try:
-                    _results = _multi_scale_ocr_scan(cv2, tesseract, _scan)
+                    _results = _multi_scale_ocr_scan(cv2, tesseract, _scan, fast_mode=True)
                     if _results:
                         _best = max(_results, key=lambda r: r[1])
                         _val, _conf, _ = _best
-                        # 过滤明显是外框尺寸的候选
                         if ((target_outer_w_cm > 0 and abs(_val - target_outer_w_cm) <= 3) or
                                 (target_outer_h_cm > 0 and abs(_val - target_outer_h_cm) <= 3)):
                             continue
@@ -861,12 +857,15 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
             logger.info(f"[几何驱动] 候选#{_idx+1} 外框=({_outer[0]},{_outer[1]},{_outer[2]},{_outer[3]}) "
                          f"OCR命中={_ocr_hits}/4 边距值={_margin_values}")
 
-            # OCR 命中数多 + 几何得分高 = 最优
             _combined_score = _score + _ocr_hits * 8.0
             if _combined_score > best_ocr_score:
                 best_ocr_score = _combined_score
                 best_ocr_count = _ocr_hits
                 best_ocr_pair = (_outer, _inner)
+
+            if _ocr_hits >= 3:
+                logger.info(f"[几何驱动] 候选#{_idx+1} OCR命中={_ocr_hits}>=3，提前终止候选验证")
+                break
 
         if best_ocr_pair is not None and best_ocr_count >= 2:
             logger.info(f"[几何驱动] OCR 验证选择: OCR命中={best_ocr_count} 组合分={best_ocr_score:.2f}")
@@ -1192,36 +1191,44 @@ def _scan_inner_dimensions(cv2, gray_img, tesseract, gaps, inner,
 def _multi_scale_ocr_scan(cv2, tesseract, region_img):
     """对图像区域进行多尺度OCR扫描，返回所有检测到的数值。
 
+    Args:
+        region_img: 灰度图像区域
+        tesseract: pytesseract 实例
+        fast_mode: True=候选评估轻量模式（2变体×2PSM=4次调用），False=完整模式（5变体×5PSM=25次调用）
+
     Returns:
         list of (value, confidence, bbox) where bbox is (x, y, w, h)
     """
     from PIL import Image as PILImage
 
     results = []
-    _seen_values = set()  # 早停用：已发现的不同数值
-    _value_positions = []  # 早停用：已发现值的粗糙位置 (cx, cy)，用于空间覆盖检查
+    _seen_values = set()
+    _value_positions = []
 
     if region_img.size == 0:
         return results
 
-    # 构建多尺度变体列表，每个变体记录原始scale因子
-    variants = []
-
-    # 原始图像（scale=1.0）
-    variants.append((1.0, 'orig', region_img))
-
-    # Otsu预处理
-    try:
-        _, otsu = cv2.threshold(region_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        variants.append((1.0, 'otsu', otsu))
-    except Exception:
-        pass
-
-    # 多尺度放大
-    for scale in [2.5, 4.0, 5.5]:
-        scaled = cv2.resize(region_img, None, fx=scale, fy=scale,
-                            interpolation=cv2.INTER_CUBIC)
-        variants.append((scale, f'scale{scale}', scaled))
+    if fast_mode:
+        variants = [(1.0, 'orig', region_img)]
+        try:
+            scaled = cv2.resize(region_img, None, fx=2.5, fy=2.5,
+                                interpolation=cv2.INTER_CUBIC)
+            variants.append((2.5, 'scale2.5', scaled))
+        except Exception:
+            pass
+        _psm_list = [6, 8]
+    else:
+        variants = [(1.0, 'orig', region_img)]
+        try:
+            _, otsu = cv2.threshold(region_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            variants.append((1.0, 'otsu', otsu))
+        except Exception:
+            pass
+        for scale in [2.5, 4.0, 5.5]:
+            scaled = cv2.resize(region_img, None, fx=scale, fy=scale,
+                                interpolation=cv2.INTER_CUBIC)
+            variants.append((scale, f'scale{scale}', scaled))
+        _psm_list = [6, 7, 11, 8, 13]
 
     for scale, _vname, variant in variants:
         if variant.size == 0:
@@ -1232,9 +1239,7 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
         except Exception:
             continue
 
-        # 使用多种PSM模式
-        for psm in [6, 7, 11, 8, 13]:
-            # 注意：不使用字符白名单，因为草图中的数字经常与符号混排
+        for psm in _psm_list:
             config = f'--oem 3 --psm {psm}'
 
             try:
@@ -1262,7 +1267,6 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
                 if conf < 15:
                     continue
 
-                # 获取位置信息
                 try:
                     bx = int(data.get('left', [0] * n)[i])
                     by = int(data.get('top', [0] * n)[i])
@@ -1271,15 +1275,12 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
                 except Exception:
                     bx, by, bw, bh = 0, 0, 0, 0
 
-                # 缩放回原图坐标
                 if scale != 1.0:
                     bx = int(bx / scale)
                     by = int(by / scale)
                     bw = int(bw / scale)
                     bh = int(bh / scale)
 
-                # 解析数值：尝试提取文本中的数值部分
-                # 先去除常见前缀符号（£, $, ¥, # 等）
                 cleaned = re.sub(r'[£$¥#\s]', '', text)
                 for m in re.finditer(r'(\d+\.?\d*)', cleaned):
                     try:
@@ -1288,14 +1289,10 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
                             results.append((val, conf, (bx, by, bw, bh)))
                             _key = round(val, 1)
                             _seen_values.add(_key)
-                            # 记录位置用于空间覆盖检查（去重时按数值聚合）
                             _value_positions.append((_key, bx + bw / 2, by + bh / 2))
                     except ValueError:
                         pass
 
-        # 早停：需同时满足「足够数值」+「空间覆盖」两个条件
-        # 1. 数值数量 >= 8 覆盖所有8字段（外框2+内框2+边距4）
-        # 2. 数值分布在至少3个图像象限（确保4方向都有候选值）
         if len(_seen_values) >= 8:
             h_img, w_img = region_img.shape[:2]
             if h_img > 0 and w_img > 0:
@@ -3587,38 +3584,114 @@ def _detect_direction_labels_by_ocr(cv2, gray_img, tesseract, outer_rect):
 
                         # 尝试从同一 token 中提取数字（如 "上6"、"上:6"）
                         after = text[text.index(dchar) + 1:]
-                        num_match = re.search(r'(\d+\.?\d*)', after)
+                        num_match = re.search(r'(\d+\.?\d*|\.\d+)', after)
                         if num_match:
                             try:
                                 val = float(num_match.group(1))
+                                # Check adjacent tokens for continuation ONLY if
+                                # the same-token number looks incomplete
+                                # (single digit without decimal, or trailing decimal)
+                                _same_token_val = val
+                                _same_token_str = num_match.group(1)
+                                _is_incomplete = (
+                                    '.' not in _same_token_str and
+                                    len(_same_token_str) == 1
+                                ) or _same_token_str.endswith('.')
+                                if _is_incomplete:
+                                    _is_continuation = False
+                                    for step in [1, -1]:
+                                        _ni = idx + step
+                                        if 0 <= _ni < len(_all_tokens):
+                                            _nt = _all_tokens[_ni][1]
+                                            for nm in re.finditer(r'(\d+\.?\d*|\.\d+)', _nt):
+                                                _part = nm.group(1)
+                                                if '.' not in _part and '.' not in _same_token_str:
+                                                    if step == 1:
+                                                        _concat = str(int(_same_token_val)) + _part
+                                                    else:
+                                                        _concat = _part + str(int(_same_token_val))
+                                                    try:
+                                                        _concat_val = float(_concat)
+                                                        if 0.5 <= _concat_val <= 500:
+                                                            val = _concat_val
+                                                            _is_continuation = True
+                                                            logger.info(f"[sketch_parser] 方向标签 {dchar}: 同token数{_same_token_val}与相邻{_part}拼接为{val}")
+                                                            break
+                                                    except ValueError:
+                                                        pass
+                                                elif '.' in _part and '.' not in _same_token_str:
+                                                    if step == 1:
+                                                        _concat = str(int(_same_token_val)) + _part
+                                                    else:
+                                                        _concat = _part + str(int(_same_token_val))
+                                                    try:
+                                                        _concat_val = float(_concat)
+                                                        if 0.5 <= _concat_val <= 500:
+                                                            val = _concat_val
+                                                            _is_continuation = True
+                                                            logger.info(f"[sketch_parser] 方向标签 {dchar}: 同token数{_same_token_val}与相邻{_part}拼接为{val}")
+                                                            break
+                                                    except ValueError:
+                                                        pass
+                                            if _is_continuation:
+                                                break
                                 if 0.5 <= val <= 500:
                                     results.append((dchar, mfield, x_c, y_c, conf_val, val))
                             except ValueError:
                                 pass
                         else:
                             # 方向字符单独出现，查找相邻 token 中的数字
+                            # 修复：look at MULTIPLE adjacent tokens and concatenate number parts
                             _found_adjacent_val = None
-                            # 向后查找相邻 token
+                            _number_parts = []
+                            # Look at tokens after the direction char first, then before
                             for step in [1, -1]:
                                 _ni = idx + step
-                                if 0 <= _ni < len(_all_tokens):
-                                    _nt = _all_tokens[_ni][1]
-                                    for nm in re.finditer(r'(\d+\.?\d*)', _nt):
-                                        try:
-                                            _nv = float(nm.group(1))
-                                            if 0.5 <= _nv <= 500:
-                                                _found_adjacent_val = _nv
-                                                break
-                                        except ValueError:
-                                            pass
-                                if _found_adjacent_val is not None:
+                                _scan_range = range(_ni, min(_ni + 3 * step, len(_all_tokens)) if step > 0 else max(_ni + 3 * step, -1), step)
+                                for _adj_i in _scan_range:
+                                    if 0 <= _adj_i < len(_all_tokens):
+                                        _nt = _all_tokens[_adj_i][1]
+                                        for nm in re.finditer(r'(\d+\.?\d*|\.\d+)', _nt):
+                                            _number_parts.append(nm.group(1))
+                                            break
+                                    if len(_number_parts) >= 3:
+                                        break
+                                if len(_number_parts) >= 1:
                                     break
-                            if _found_adjacent_val is not None:
-                                logger.info(f"[sketch_parser] 方向标签 {dchar}: 同token无数值，从相邻token找到{_found_adjacent_val}")
-                                results.append((dchar, mfield, x_c, y_c, conf_val, _found_adjacent_val))
-                            else:
-                                # 无值，后续由聚焦OCR处理
-                                results.append((dchar, mfield, x_c, y_c, conf_val, None))
+                            if _number_parts:
+                                # Concatenate all number parts to form the full number
+                                _concat_str = ''.join(_number_parts)
+                                try:
+                                    _found_adjacent_val = float(_concat_str)
+                                    if 0.5 <= _found_adjacent_val <= 500:
+                                        logger.info(f"[sketch_parser] 方向标签 {dchar}: 从相邻tokens拼接找到{_found_adjacent_val} (parts={_number_parts})")
+                                        results.append((dchar, mfield, x_c, y_c, conf_val, _found_adjacent_val))
+                                    else:
+                                        logger.info(f"[sketch_parser] 方向标签 {dchar}: 拼接值{_found_adjacent_val}超出范围，尝试单token值")
+                                except ValueError:
+                                    pass
+                                # Fallback: try individual tokens if concatenation failed
+                                if _found_adjacent_val is None:
+                                    for step in [1, -1]:
+                                        _ni = idx + step
+                                        if 0 <= _ni < len(_all_tokens):
+                                            _nt = _all_tokens[_ni][1]
+                                            for nm in re.finditer(r'(\d+\.?\d*|\.\d+)', _nt):
+                                                try:
+                                                    _nv = float(nm.group(1))
+                                                    if 0.5 <= _nv <= 500:
+                                                        _found_adjacent_val = _nv
+                                                        break
+                                                except ValueError:
+                                                    pass
+                                        if _found_adjacent_val is not None:
+                                            break
+                                if _found_adjacent_val is not None and len(_number_parts) == 0:
+                                    logger.info(f"[sketch_parser] 方向标签 {dchar}: 同token无数值，从相邻token找到{_found_adjacent_val}")
+                                    results.append((dchar, mfield, x_c, y_c, conf_val, _found_adjacent_val))
+                                elif _found_adjacent_val is None:
+                                    # 无值，后续由聚焦OCR处理
+                                    results.append((dchar, mfield, x_c, y_c, conf_val, None))
 
     # 去重：同一方向字段只保留最高置信度且带数值的条目
     best = {}
@@ -6226,11 +6299,32 @@ def _classic_run_ocr(cv2, gray, img, ox, oy, ow, oh, ix, iy, iw, ih,
             logger.warning(f"[sketch_parser] 方向标签 {dchar} 在内框内部，跳过聚焦OCR，使用几何OCR结果")
             continue
         
-        # 如果方向标签本身带有数值（如"上6"），直接使用
+        # 如果方向标签本身带有数值（如"上6"），验证后再使用
         if existing_val is not None and 0.5 <= existing_val <= 500:
-            direction_margins[mfield] = (existing_val, max(70, conf))
-            logger.info(f"[sketch_parser] 方向标签 {dchar} 自带数值={existing_val}, 直接采用")
-            continue
+            # 几何合理性检查：防止OCR错误值直接使用
+            _outer_max = max(target_outer_w_cm or 100, target_outer_h_cm or 100)
+            _is_suspicious_val = False
+            
+            # 检查1: 值是否超过外框的50%（边距不应超过外框一半）
+            if existing_val > _outer_max * 0.5:
+                _is_suspicious_val = True
+                logger.warning(f"[sketch_parser] 方向标签 {dchar} 值={existing_val} > 外框50%({_outer_max*0.5:.0f})，疑似错误")
+            
+            # 检查2: 与几何OCR结果交叉验证
+            if not _is_suspicious_val and geometry_margins and mfield in geometry_margins:
+                _geo_val = geometry_margins[mfield][0]
+                if _geo_val > 0 and abs(existing_val - _geo_val) > max(5.0, _outer_max * 0.15):
+                    _is_suspicious_val = True
+                    logger.warning(f"[sketch_parser] 方向标签 {dchar} 值={existing_val} 与几何OCR={_geo_val} 差异过大")
+            
+            if _is_suspicious_val:
+                # 可疑值，跳过直接使用，改为聚焦OCR
+                logger.warning(f"[sketch_parser] 方向标签 {dchar} 自带数值={existing_val} 可疑，改用聚焦OCR")
+                # 不 continue, 让其走下面的聚焦OCR路径
+            else:
+                direction_margins[mfield] = (existing_val, max(70, conf))
+                logger.info(f"[sketch_parser] 方向标签 {dchar} 自带数值={existing_val}, 验证通过，直接采用")
+                continue
         
         # 否则，在标签位置进行聚焦OCR
         if tesseract is not None:
