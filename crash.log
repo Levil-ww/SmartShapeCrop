@@ -141,3 +141,27 @@ Traceback (most recent call last):
              ~~~~~~~~~^^
 KeyboardInterrupt
 
+============================================================
+崩溃时间: 2026-08-19 13:50:49
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\property_panel.py", line 946, in _on_sketch_parsed
+    ocr_mt = ocr_vals.get("margin_top", 0)
+             ^^^^^^^^^^^^
+AttributeError: 'list' object has no attribute 'get'
+
+============================================================
+崩溃时间: 2026-08-19 14:00:13
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
+    def paintEvent(self, event):
+    
+KeyboardInterrupt
+

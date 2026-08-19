@@ -893,10 +893,6 @@ class PropertyPanel(QWidget):
             logger.info("[PropertyPanel] 忽略已过期的草图解析结果")
             return
         self._sketch_parse_result = result
-        raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
-        raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
-        target_w = raw_w if raw_w > 0 else self._sp_w.value()
-        target_h = raw_h if raw_h > 0 else self._sp_h.value()
         if result.success:
             # —— 回填 4 个边距（核心需求）——
             # [尺寸偏移修正 2026-08-15] 水池模式：画布已 +1cm 损耗，边距也需各 +1cm 偏移，
@@ -929,17 +925,56 @@ class PropertyPanel(QWidget):
                 self._sp_mb.blockSignals(False)
                 self._sp_ml.blockSignals(False)
                 self._sp_mr.blockSignals(False)
-            # UI 显示偏移后的内挖推导值
-            canvas_w_ui = self._sp_w.value()
-            canvas_h_ui = self._sp_h.value()
-            inner_w_ui = max(0.1, canvas_w_ui - ml_ui - mr_ui)
-            inner_h_ui = max(0.1, canvas_h_ui - mt_ui - mb_ui)
+
+            # 获取OCR识别的原始数据
+            ocr_vals = result.debug.get("ocr_values", {})
+            geo_vals = result.debug.get("geo_values", {})
+            dir_vals = result.debug.get("direction_margins", {})
+
+            ocr_info = ""
+            if ocr_vals:
+                ocr_mt = ocr_vals.get("margin_top", 0)
+                ocr_mb = ocr_vals.get("margin_bottom", 0)
+                ocr_ml = ocr_vals.get("margin_left", 0)
+                ocr_mr = ocr_vals.get("margin_right", 0)
+                ocr_iw = ocr_vals.get("inner_w", 0)
+                ocr_ih = ocr_vals.get("inner_h", 0)
+                if any(v > 0 for v in [ocr_mt, ocr_mb, ocr_ml, ocr_mr]):
+                    ocr_info = (
+                        f"\n  📷 OCR识别(原始): 上{ocr_mt:.1f}/下{ocr_mb:.1f}/左{ocr_ml:.1f}/右{ocr_mr:.1f} cm"
+                    )
+                if ocr_iw > 0 or ocr_ih > 0:
+                    ocr_info += f"，内挖 {ocr_iw:.1f}×{ocr_ih:.1f} cm"
+
+            dir_info = ""
+            if dir_vals:
+                dir_mt = dir_vals.get("margin_top", 0)
+                dir_mb = dir_vals.get("margin_bottom", 0)
+                dir_ml = dir_vals.get("margin_left", 0)
+                dir_mr = dir_vals.get("margin_right", 0)
+                if any(v > 0 for v in [dir_mt, dir_mb, dir_ml, dir_mr]):
+                    dir_info = (
+                        f"\n  🔤 方向标注: 上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm"
+                    )
+
+            geo_info = ""
+            if geo_vals:
+                geo_mt = geo_vals.get("margin_top", 0)
+                geo_mb = geo_vals.get("margin_bottom", 0)
+                geo_ml = geo_vals.get("margin_left", 0)
+                geo_mr = geo_vals.get("margin_right", 0)
+                if any(v > 0 for v in [geo_mt, geo_mb, geo_ml, geo_mr]):
+                    geo_info = (
+                        f"\n  📐 几何推算(备用): 上{geo_mt:.1f}/下{geo_mb:.1f}/左{geo_ml:.1f}/右{geo_mr:.1f} cm"
+                    )
+
             self._set_pool_status(
-                f"✅ 草图识别成功：外框参考 {target_w:.1f}×{target_h:.1f} cm，"
-                f"画布 {canvas_w_ui:.1f}×{canvas_h_ui:.1f} cm（含1cm损耗），"
-                f"内挖约 {inner_w_ui:.1f}×{inner_h_ui:.1f} cm，"
-                f"边距 → 上{mt_ui:.1f}/下{mb_ui:.1f}/左{ml_ui:.1f}/右{mr_ui:.1f} cm"
-                f"（已自动填入【内挖边距】栏，可微调）"
+                f"✅ 识别草图成功：\n"
+                f"  外框：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm\n"
+                f"  内挖：{result.inner_w_cm:.1f} × {result.inner_h_cm:.1f} cm\n"
+                f"  上下左右：上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f} cm"
+                f"{ocr_info}{dir_info}{geo_info}"
+                f"\n（已自动填入【内挖边距】栏，可微调）"
             )
         else:
             self._set_pool_status(
@@ -1059,9 +1094,39 @@ class PropertyPanel(QWidget):
         info += (f"内挖边距：上{design.inner_margin_top_cm:.1f}/下{design.inner_margin_bottom_cm:.1f}/"
                  f"左{design.inner_margin_left_cm:.1f}/右{design.inner_margin_right_cm:.1f} cm\n")
         if sketch_result is not None and sketch_result.success:
-            info += f"草图：{sketch_result.message}\n"
+            sr = sketch_result
+            info += f"识别草图成功：\n"
+            info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
+            info += f"  内挖：{sr.inner_w_cm:.1f} × {sr.inner_h_cm:.1f} cm\n"
+            info += f"  上下左右：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f} cm\n"
+            ocr_vals = sr.debug.get("ocr_values", {})
+            if ocr_vals:
+                ocr_mt = ocr_vals.get("margin_top", 0)
+                ocr_mb = ocr_vals.get("margin_bottom", 0)
+                ocr_ml = ocr_vals.get("margin_left", 0)
+                ocr_mr = ocr_vals.get("margin_right", 0)
+                if any(v > 0 for v in [ocr_mt, ocr_mb, ocr_ml, ocr_mr]):
+                    info += f"  📷 OCR识别：上{ocr_mt:.1f}/下{ocr_mb:.1f}/左{ocr_ml:.1f}/右{ocr_mr:.1f} cm\n"
+            dir_vals = sr.debug.get("direction_margins", {})
+            if dir_vals:
+                dir_mt = dir_vals.get("margin_top", 0)
+                dir_mb = dir_vals.get("margin_bottom", 0)
+                dir_ml = dir_vals.get("margin_left", 0)
+                dir_mr = dir_vals.get("margin_right", 0)
+                if any(v > 0 for v in [dir_mt, dir_mb, dir_ml, dir_mr]):
+                    info += f"  🔤 方向标注：上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm\n"
+            geo_vals = sr.debug.get("geo_values", {})
+            if geo_vals:
+                geo_mt = geo_vals.get("margin_top", 0)
+                geo_mb = geo_vals.get("margin_bottom", 0)
+                geo_ml = geo_vals.get("margin_left", 0)
+                geo_mr = geo_vals.get("margin_right", 0)
+                if any(v > 0 for v in [geo_mt, geo_mb, geo_ml, geo_mr]):
+                    info += f"  📐 几何推算：上{geo_mt:.1f}/下{geo_mb:.1f}/左{geo_ml:.1f}/右{geo_mr:.1f} cm\n"
         elif sketch_result is not None and not sketch_result.success:
             info += f"草图未识别（请检查/手动调整边距）：{sketch_result.message}\n"
+        else:
+            info += f"草图未上传或未识别\n"
         if design.pool_outer_material_image:
             info += f"匹配素材：{os.path.basename(design.pool_outer_material_image)}\n"
         self._set_pool_status(info)

@@ -478,7 +478,8 @@ def _geometry_driven_parse(cv2, gray_img, color_img, tesseract,
         return result
 
     # === Step 2: 选择最佳外框+内框对 ===
-    outer, inner = _select_best_nested_pair(all_rects, target_outer_w_cm, target_outer_h_cm)
+    outer, inner = _select_best_nested_pair(all_rects, target_outer_w_cm, target_outer_h_cm,
+                                             cv2=cv2, gray_img=gray_img, tesseract=tesseract)
     if outer is None or inner is None:
         result['message'] = '无法确定内外框关系'
         return result
@@ -507,47 +508,143 @@ def _geometry_driven_parse(cv2, gray_img, color_img, tesseract,
     result['direction_labels'] = dir_labels
     logger.info(f"[几何驱动] 方向标签: {dir_labels}")
 
-    # === Step 6: 在每个间隙区域扫描数值 ===
+    # === Step 6: 全局 OCR 扫描 + 位置映射（比间隙扫描更鲁棒）===
     ocr_values = []
     margins = {}
 
-    # 6a: 扫描4个间隙区域的边距值
-    for direction in ['top', 'bottom', 'left', 'right']:
-        gap_region = gaps.get(direction)
-        if gap_region is None:
-            continue
+    if tesseract is not None:
+        logger.info("[几何驱动] 执行全局 OCR 扫描...")
+        all_ocr = _multi_scale_ocr_scan(cv2, tesseract, gray_img)
+        logger.info(f"[几何驱动] 全局 OCR 共检测到 {len(all_ocr)} 个候选数值")
+        for _v, _c, _b in all_ocr:
+            logger.info(f"  候选: val={_v} conf={_c} pos=({_b[0]},{_b[1]}) size={_b[2]}x{_b[3]}")
 
-        dir_label = dir_labels.get(direction)
-        label_pos = dir_label[0] if dir_label else None
+        # 根据位置把 OCR 值分配到 4 个方向 / 内框
+        _cx_inner = ix + iw / 2
+        _cy_inner = iy + ih / 2
 
-        value, conf, _ = _scan_gap_for_value(
-            cv2, gray_img, tesseract, gap_region,
-            label_pos=label_pos,
-            direction=direction,
-            cm_per_px_x=cm_per_px_x,
-            cm_per_px_y=cm_per_px_y,
-            outer_w_cm=target_outer_w_cm,
-            outer_h_cm=target_outer_h_cm
-        )
+        for _val, _conf, _bbox in all_ocr:
+            _bx, _by, _bw, _bh = _bbox
+            _bcx = _bx + _bw / 2
+            _bcy = _by + _bh / 2
 
-        if value > 0:
-            field_map = {'top': 'margin_top', 'bottom': 'margin_bottom',
-                        'left': 'margin_left', 'right': 'margin_right'}
-            margins[field_map[direction]] = (value, conf)
-            ocr_values.append({'direction': direction, 'value': value,
-                              'confidence': conf, 'source': 'gap_scan'})
-            logger.info(f"[几何驱动] 边距 {direction}: 值={value}, conf={conf}")
+            # 跳过看起来像外框总尺寸的值
+            if ((target_outer_w_cm > 0 and abs(_val - target_outer_w_cm) <= 3) or
+                    (target_outer_h_cm > 0 and abs(_val - target_outer_h_cm) <= 3)):
+                continue
 
-    # 6b: 扫描内框尺寸（在间隙的对边扫描内框尺寸值）
-    inner_values = _scan_inner_dimensions(
-        cv2, gray_img, tesseract, gaps, inner,
-        cm_per_px_x, cm_per_px_y,
-        target_outer_w_cm, target_outer_h_cm
-    )
-    if inner_values.get('inner_w', 0) > 0:
-        result['inner_w'] = inner_values['inner_w']
-    if inner_values.get('inner_h', 0) > 0:
-        result['inner_h'] = inner_values['inner_h']
+            # 基于位置分类：在 inner 上方 / 下方 / 左侧 / 右侧 / 内部
+            if _bcy < iy and _bcx < ix:
+                _zone = 'top-left'
+            elif _bcy < iy and _bcx > ix + iw:
+                _zone = 'top-right'
+            elif _bcy > iy + ih and _bcx < ix:
+                _zone = 'bottom-left'
+            elif _bcy > iy + ih and _bcx > ix + iw:
+                _zone = 'bottom-right'
+            elif _bcy < iy:
+                _zone = 'top'
+            elif _bcy > iy + ih:
+                _zone = 'bottom'
+            elif _bcx < ix:
+                _zone = 'left'
+            elif _bcx > ix + iw:
+                _zone = 'right'
+            else:
+                _zone = 'inner'
+
+            logger.info(f"  OCR值 val={_val} conf={_conf} zone={_zone} pos=({_bcx:.0f},{_bcy:.0f})")
+
+        # === 尝试用方向标签辅助定位 ===
+        # 简化策略：对每个方向，找最接近方向标签位置的 OCR 值
+        _assigned = {}
+        for _direction in ['top', 'bottom', 'left', 'right']:
+            _dir_label = dir_labels.get(_direction)
+            if _dir_label is None:
+                continue
+            _label_pos = _dir_label[0]  # (x, y) of direction label char
+
+            # 定义边距搜索区域（标签附近 + inner 外侧）
+            _lx, _ly = _label_pos
+            _candidates = []
+            for _val, _conf, _bbox in all_ocr:
+                _bx, _by, _bw, _bh = _bbox
+                _bcx = _bx + _bw / 2
+                _bcy = _by + _bh / 2
+
+                # 跳过明显是外框总尺寸的值
+                if ((target_outer_w_cm > 0 and abs(_val - target_outer_w_cm) <= 3) or
+                        (target_outer_h_cm > 0 and abs(_val - target_outer_h_cm) <= 3)):
+                    continue
+
+                # 边距值通常较小（1-100cm 范围）
+                if not (0.5 <= _val <= 100):
+                    continue
+
+                # 计算到方向标签的距离 + 到 inner 边缘的距离
+                _dist_label = ((_bcx - _lx) ** 2 + (_bcy - _ly) ** 2) ** 0.5
+
+                # 方向约束
+                if _direction == 'top' and _bcy > iy:
+                    continue  # 必须在 inner 上方
+                if _direction == 'bottom' and _bcy < iy + ih:
+                    continue
+                if _direction == 'left' and _bcx > ix:
+                    continue
+                if _direction == 'right' and _bcx < ix + iw:
+                    continue
+
+                # 与标签的距离必须合理（不超过图像宽高）
+                if _dist_label > max(w_img, h_img) * 0.6:
+                    continue
+
+                _candidates.append((_val, _conf, _bcx, _bcy, _dist_label))
+
+            if _candidates:
+                # 选择距离标签最近且置信度高的
+                _candidates.sort(key=lambda c: c[4] - c[1] * 0.5)
+                _best = _candidates[0]
+                _assigned[_direction] = (_best[0], _best[1])
+                logger.info(f"[几何驱动] 边距 {_direction}: val={_best[0]} conf={_best[1]} "
+                             f"(距标签={_best[4]:.0f}px)")
+            else:
+                logger.info(f"[几何驱动] 边距 {_direction}: 未找到 OCR 候选")
+
+        # 把分配到的值写入 margins
+        _field_map = {'top': 'margin_top', 'bottom': 'margin_bottom',
+                      'left': 'margin_left', 'right': 'margin_right'}
+        for _d, _v in _assigned.items():
+            margins[_field_map[_d]] = _v
+            ocr_values.append({'direction': _d, 'value': _v[0],
+                               'confidence': _v[1], 'source': 'global_ocr'})
+
+        # === 用同样的方法找 inner_w / inner_h ===
+        _inner_candidates_w = []
+        _inner_candidates_h = []
+        for _val, _conf, _bbox in all_ocr:
+            _bx, _by, _bw, _bh = _bbox
+            _bcx = _bx + _bw / 2
+            _bcy = _by + _bh / 2
+            if not (0.5 <= _val <= 300):
+                continue
+            # 在 inner 中心附近的数值可能是 inner 尺寸
+            if abs(_bcx - _cx_inner) < iw * 0.5 and abs(_bcy - _cy_inner) < ih * 0.5:
+                # 区分宽和高：中心附近的横排数值是宽（通常在 inner 下方），竖排的是高
+                if _bcy > _cy_inner:
+                    _inner_candidates_w.append((_val, _conf, abs(_bcx - _cx_inner)))
+                else:
+                    _inner_candidates_h.append((_val, _conf, abs(_bcy - _cy_inner)))
+
+        if _inner_candidates_w:
+            _inner_candidates_w.sort(key=lambda c: (c[2] - c[1] * 0.3))
+            result['inner_w'] = _inner_candidates_w[0][0]
+            logger.info(f"[几何驱动] inner_w OCR: {_inner_candidates_w[0][0]} (conf={_inner_candidates_w[0][1]})")
+        if _inner_candidates_h:
+            _inner_candidates_h.sort(key=lambda c: (c[2] - c[1] * 0.3))
+            result['inner_h'] = _inner_candidates_h[0][0]
+            logger.info(f"[几何驱动] inner_h OCR: {_inner_candidates_h[0][0]} (conf={_inner_candidates_h[0][1]})")
+    else:
+        logger.info("[几何驱动] 无 tesseract，跳过 OCR 扫描，仅使用几何方法")
 
     logger.info(f"[几何驱动] 内框尺寸: inner_w={result['inner_w']}, inner_h={result['inner_h']}")
 
@@ -607,6 +704,17 @@ def _find_all_rectangles(cv2, gray_img, color_img=None):
             if ww < 15 or hh < 15:
                 continue
 
+            # 过滤掉几乎贴到图像边界的"全屏"矩形（它们通常是图像边界伪影）
+            _border_frac = 0.02
+            if (x <= max(5, int(w_img * _border_frac)) and
+                    y <= max(5, int(h_img * _border_frac)) and
+                    (x + ww) >= w_img - max(5, int(w_img * _border_frac)) and
+                    (y + hh) >= h_img - max(5, int(h_img * _border_frac))):
+                # 与图像边界基本重合的矩形（通常是图像边框伪影）
+                # 仅当它不是唯一候选时跳过
+                if area > full_area * 0.5:
+                    continue
+
             rect_key = (x, y, ww, hh)
             if rect_key in seen:
                 continue
@@ -625,7 +733,8 @@ def _find_all_rectangles(cv2, gray_img, color_img=None):
     return all_rects
 
 
-def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.0):
+def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.0,
+                             cv2=None, gray_img=None, tesseract=None):
     """从矩形候选中选择最佳的外框+内框对。
 
     选择标准：
@@ -633,6 +742,7 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
     2. 内框应在外框内部（严格嵌套）
     3. 内框面积应是外框的5%-90%（排除过小或过近的矩形）
     4. 如果有目标尺寸，外框尺寸应与目标尺寸比例接近
+    5. OCR 扫描间隙，选择能在间隙中找到数值最多的对
 
     Returns:
         (outer_rect, inner_rect) or (None, None)
@@ -640,10 +750,9 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
     if len(all_rects) < 2:
         return None, None
 
-    best_pair = None
-    best_score = -float('inf')
+    # === 第一阶段：收集候选对并按几何得分排序 ===
+    candidate_pairs = []
 
-    # 尝试前10个最大的矩形作为外框
     for i in range(min(10, len(all_rects))):
         outer = all_rects[i]
         ox, oy, ow, oh, os_score, oa = outer
@@ -655,62 +764,121 @@ def _select_best_nested_pair(all_rects, target_outer_w_cm=0.0, target_outer_h_cm
             inner = all_rects[j]
             ix, iy, iw, ih, ins_score, ia = inner
 
-            # 严格嵌套检查
             if not (ox <= ix and oy <= iy and
                     ix + iw <= ox + ow and iy + ih <= oy + oh):
                 continue
 
-            # 面积比例检查
             area_ratio = ia / max(1, outer_area)
             if area_ratio < 0.02 or area_ratio > 0.95:
                 continue
 
-            # 计算综合得分
             pair_score = 0.0
-
-            # 外框面积（越大越好）
-            pair_score += min(oa / 10000, 10.0)
-
-            # 内框矩形度
+            pair_score += min(oa / 20000, 1.0)
             pair_score += ins_score * 2.0
-
-            # 外框矩形度
             pair_score += os_score * 1.0
 
-            # 面积比合理性（5%-50%最佳）
             if 0.05 <= area_ratio <= 0.5:
                 pair_score += 5.0
             elif 0.02 <= area_ratio <= 0.8:
                 pair_score += 2.0
 
-            # 尺寸比例检查（如果有目标尺寸）
-            if target_outer_w_cm > 0 and ow > 0:
-                px_per_cm = ow / target_outer_w_cm
-                expected_oh = target_outer_h_cm * px_per_cm if target_outer_h_cm > 0 else oh
-                if expected_oh > 0:
-                    h_ratio = min(oh, expected_oh) / max(oh, expected_oh)
-                    pair_score += h_ratio * 3.0
-
-            # 边距均匀性检查
             gap_top = iy - oy
             gap_bottom = (oy + oh) - (iy + ih)
             gap_left = ix - ox
             gap_right = (ox + ow) - (ix + iw)
             gaps = [gap_top, gap_bottom, gap_left, gap_right]
             min_gap = min(gaps) if gaps else 0
-            if min_gap > 5:  # 最小间隙大于5像素
+            if min_gap > 5:
                 pair_score += 3.0
             elif min_gap > 2:
                 pair_score += 1.0
 
-            if pair_score > best_score:
-                best_score = pair_score
-                best_pair = (outer, inner)
+            candidate_pairs.append((pair_score, outer, inner, (gap_top, gap_bottom, gap_left, gap_right)))
 
-    if best_pair:
-        outer, inner = best_pair
+    # 按得分降序排序
+    candidate_pairs.sort(key=lambda x: x[0], reverse=True)
+
+    if not candidate_pairs:
+        return None, None
+
+    # === 第二阶段：对 top 候选进行 OCR 验证 ===
+    # 检查 OCR 能在间隙中识别到的数值数量，作为辅助判定
+    if cv2 is not None and gray_img is not None and tesseract is not None:
+        _top_k = min(5, len(candidate_pairs))
+        best_ocr_count = -1
+        best_ocr_score = -float('inf')
+        best_ocr_pair = None
+
+        for _idx in range(_top_k):
+            _score, _outer, _inner, _gaps = candidate_pairs[_idx]
+            _ox, _oy, _ow, _oh = _outer[:4]
+            _ix, _iy, _iw, _ih = _inner[:4]
+            _gap_top, _gap_bottom, _gap_left, _gap_right = _gaps
+
+            # 构造 gap 区域
+            _gap_regions = {
+                'top': (_ox, _oy, _ox + _ow, _iy),
+                'bottom': (_ox, _iy + _ih, _ox + _ow, _oy + _oh),
+                'left': (_ox, _oy, _ix, _oy + _oh),
+                'right': (_ix + _iw, _oy, _ox + _ow, _oy + _oh),
+            }
+
+            _ocr_hits = 0
+            _margin_values = {}
+            _cm_px_x = target_outer_w_cm / _ow if (target_outer_w_cm > 0 and _ow > 0) else 1.0
+            _cm_px_y = target_outer_h_cm / _oh if (target_outer_h_cm > 0 and _oh > 0) else 1.0
+
+            for _direction, (_gx1, _gy1, _gx2, _gy2) in _gap_regions.items():
+                _gw = _gx2 - _gx1
+                _gh = _gy2 - _gy1
+                if _gw < 3 or _gh < 3:
+                    continue
+                _pad_x = max(5, int(_gw * 0.15))
+                _pad_y = max(5, int(_gh * 0.15))
+                _sx1 = max(0, _gx1 - _pad_x)
+                _sy1 = max(0, _gy1 - _pad_y)
+                _sx2 = min(gray_img.shape[1], _gx2 + _pad_x)
+                _sy2 = min(gray_img.shape[0], _gy2 + _pad_y)
+                _scan = gray_img[_sy1:_sy2, _sx1:_sx2]
+                if _scan.size == 0:
+                    continue
+                try:
+                    _results = _multi_scale_ocr_scan(cv2, tesseract, _scan)
+                    if _results:
+                        _best = max(_results, key=lambda r: r[1])
+                        _val, _conf, _ = _best
+                        # 过滤明显是外框尺寸的候选
+                        if ((target_outer_w_cm > 0 and abs(_val - target_outer_w_cm) <= 3) or
+                                (target_outer_h_cm > 0 and abs(_val - target_outer_h_cm) <= 3)):
+                            continue
+                        if 0.5 <= _val <= 500 and _conf >= 25:
+                            _ocr_hits += 1
+                            _margin_values[_direction] = (_val, _conf)
+                except Exception:
+                    pass
+
+            logger.info(f"[几何驱动] 候选#{_idx+1} 外框=({_outer[0]},{_outer[1]},{_outer[2]},{_outer[3]}) "
+                         f"OCR命中={_ocr_hits}/4 边距值={_margin_values}")
+
+            # OCR 命中数多 + 几何得分高 = 最优
+            _combined_score = _score + _ocr_hits * 8.0
+            if _combined_score > best_ocr_score:
+                best_ocr_score = _combined_score
+                best_ocr_count = _ocr_hits
+                best_ocr_pair = (_outer, _inner)
+
+        if best_ocr_pair is not None and best_ocr_count >= 2:
+            logger.info(f"[几何驱动] OCR 验证选择: OCR命中={best_ocr_count} 组合分={best_ocr_score:.2f}")
+            outer, inner = best_ocr_pair
+            logger.info(f"[几何驱动] 选定外框=({outer[0]},{outer[1]},{outer[2]},{outer[3]}) "
+                         f"内框=({inner[0]},{inner[1]},{inner[2]},{inner[3]}) score={best_ocr_score:.2f}")
+            return outer, inner
+
+    # === 默认：使用几何得分最高的候选 ===
+    if candidate_pairs:
+        _score, outer, inner, _ = candidate_pairs[0]
         logger.info(f"[几何驱动] 选定外框=({outer[0]},{outer[1]},{outer[2]},{outer[3]}) "
-                     f"内框=({inner[0]},{inner[1]},{inner[2]},{inner[3]}) score={best_score:.2f}")
+                     f"内框=({inner[0]},{inner[1]},{inner[2]},{inner[3]}) score={_score:.2f}")
         return outer, inner
 
     return None, None
@@ -1026,6 +1194,8 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
     Returns:
         list of (value, confidence, bbox) where bbox is (x, y, w, h)
     """
+    from PIL import Image as PILImage
+
     results = []
 
     if region_img.size == 0:
@@ -1060,8 +1230,9 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
             continue
 
         # 使用多种PSM模式
-        for psm in [7, 8, 13]:
-            config = f'--oem 3 --psm {psm} -c tessedit_char_whitelist=0123456789.'
+        for psm in [6, 7, 11, 8, 13]:
+            # 注意：不使用字符白名单，因为草图中的数字经常与符号混排
+            config = f'--oem 3 --psm {psm}'
 
             try:
                 data = tesseract.image_to_data(
@@ -1104,8 +1275,10 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
                     bw = int(bw / scale)
                     bh = int(bh / scale)
 
-                # 解析数值（支持小数）
-                for m in re.finditer(r'(\d+\.?\d*)', text):
+                # 解析数值：尝试提取文本中的数值部分
+                # 先去除常见前缀符号（£, $, ¥, # 等）
+                cleaned = re.sub(r'[£$¥#\s]', '', text)
+                for m in re.finditer(r'(\d+\.?\d*)', cleaned):
                     try:
                         val = float(m.group(1))
                         if 0.5 <= val <= 500:
@@ -1115,7 +1288,9 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img):
 
     # 去重合并（同一位置附近的值）
     if results:
+        logger.info(f"[OCR] 去重前共 {len(results)} 条原始结果")
         results = _deduplicate_ocr_results(results)
+        logger.info(f"[OCR] 去重后剩 {len(results)} 条")
 
     return results
 
@@ -6285,6 +6460,7 @@ def _classic_finalize(cv2, gray, ox, oy, ow, oh, ix, iy, iw, ih,
 
     result.debug["ocr_values"] = {k: round(v, 2) for k, (v, c) in ocr_result.items() if c > 0}
     result.debug["geo_values"] = {k: round(v, 2) for k, (v, c) in geo_result.items() if c > 0}
+    result.debug["direction_margins"] = {k: round(v, 2) for k, (v, c) in direction_margins.items() if c > 0}
 
     if result.success:
         _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result)
