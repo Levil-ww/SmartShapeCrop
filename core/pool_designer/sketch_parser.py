@@ -42,7 +42,7 @@ import time
 # 缓存 value = SketchParseResult
 # 同一张草图切换不同目标文件名时，若文件内容相同则直接返回缓存结果。
 # 算法版本：修改识别算法时递增，确保旧缓存失效
-_ALGO_VERSION = 4  # 2026-08-19: 修复嵌套矩形检测评分公式，拒绝不合理inner rect
+_ALGO_VERSION = 5  # 2026-08-19: 修复方向标签聚焦OCR裁剪区域过窄+token拼接+修正几何OCR
 _SKETCH_CACHE: dict = {}
 _SKETCH_CACHE_MAX = 50  # 最多缓存 50 条
 
@@ -2721,8 +2721,8 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
 
     # 生成多种裁剪策略
     crop_regions = []
-    base_crop_w = max(25, ow * 0.12)
-    base_crop_h = max(25, oh * 0.12)
+    base_crop_w = max(30, ow * 0.15)
+    base_crop_h = max(30, oh * 0.15)
 
     if dchar == '上':
         # 策略1：以标签为中心
@@ -2733,6 +2733,10 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
         crop_regions.append(('up_extended',
             max(0, int(lx - base_crop_w * 0.7)), min(w_img, int(lx + base_crop_w * 0.7)),
             max(0, int(ly - base_crop_h * 2.0)), min(h_img, int(ly + base_crop_h * 0.5))))
+        # 策略3：覆盖整个上边距间隙区域
+        crop_regions.append(('full_gap',
+            ox, min(w_img, ox + ow),
+            max(0, int(oy - base_crop_h * 0.5)), int(ly + base_crop_h * 0.3)))
     elif dchar == '下':
         crop_regions.append(('center',
             max(0, int(lx - base_crop_w)), min(w_img, int(lx + base_crop_w)),
@@ -2740,20 +2744,36 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
         crop_regions.append(('down_extended',
             max(0, int(lx - base_crop_w * 0.7)), min(w_img, int(lx + base_crop_w * 0.7)),
             max(0, int(ly - base_crop_h * 0.5)), min(h_img, int(ly + base_crop_h * 2.0))))
+        # 策略3：覆盖整个下边距间隙区域
+        crop_regions.append(('full_gap',
+            ox, min(w_img, ox + ow),
+            max(0, int(ly - base_crop_h * 0.3)), min(h_img, int(oy + oh + base_crop_h * 0.5))))
     elif dchar == '左':
+        # 策略1：以标签为中心
         crop_regions.append(('center',
             max(0, int(lx - base_crop_w)), min(w_img, int(lx + base_crop_w)),
             max(0, int(ly - base_crop_h)), min(h_img, int(ly + base_crop_h))))
+        # 策略2：向左扩展（数字在标签左侧，边距方向）
         crop_regions.append(('left_extended',
-            max(0, int(lx - base_crop_w * 2.0)), min(w_img, int(lx + base_crop_h * 0.5)),
+            max(0, int(lx - base_crop_w * 3.0)), min(w_img, int(lx + base_crop_w * 0.5)),
             max(0, int(ly - base_crop_h * 0.7)), min(h_img, int(ly + base_crop_h * 0.7))))
+        # 策略3：覆盖整个左边距间隙区域（从外框左边到标签位置）
+        crop_regions.append(('full_gap',
+            max(0, int(ox - base_crop_w * 0.3)), min(w_img, int(lx + base_crop_w * 0.5)),
+            max(0, int(oy + oh * 0.1)), min(h_img, int(oy + oh * 0.9))))
     elif dchar == '右':
+        # 策略1：以标签为中心
         crop_regions.append(('center',
             max(0, int(lx - base_crop_w)), min(w_img, int(lx + base_crop_w)),
             max(0, int(ly - base_crop_h)), min(h_img, int(ly + base_crop_h))))
+        # 策略2：向右扩展（数字在标签右侧，边距方向）
         crop_regions.append(('right_extended',
-            max(0, int(lx - base_crop_w * 0.5)), min(w_img, int(lx + base_crop_w * 2.0)),
+            max(0, int(lx - base_crop_w * 0.5)), min(w_img, int(lx + base_crop_w * 3.0)),
             max(0, int(ly - base_crop_h * 0.7)), min(h_img, int(ly + base_crop_h * 0.7))))
+        # 策略3：覆盖整个右边距间隙区域（从标签位置到外框右边）
+        crop_regions.append(('full_gap',
+            max(0, int(lx - base_crop_w * 0.5)), min(w_img, int(ox + ow + base_crop_w * 0.3)),
+            max(0, int(oy + oh * 0.1)), min(h_img, int(oy + oh * 0.9))))
     else:
         return None
 
@@ -2813,7 +2833,9 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
                     if not data or 'text' not in data:
                         continue
 
+                    # 收集所有OCR tokens，按x坐标排序后拼接
                     n = len(data.get('text', []))
+                    _tokens_by_line = {}
                     for i in range(n):
                         text = str(data['text'][i]).strip()
                         if not text:
@@ -2824,14 +2846,33 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
                             conf = 0
                         if conf < 10:
                             continue
+                        # 获取token的x坐标（用于按行排序拼接）
+                        try:
+                            _bx = int(data.get('left', [0] * n)[i])
+                            _by = int(data.get('top', [0] * n)[i])
+                        except Exception:
+                            _bx, _by = 0, 0
+                        # 按行分组（y坐标接近的token属于同一行）
+                        _line_key = _by // 20
+                        if _line_key not in _tokens_by_line:
+                            _tokens_by_line[_line_key] = []
+                        _tokens_by_line[_line_key].append((_bx, text, conf))
 
-                        for m in re.finditer(r'(\d+\.?\d*)', text):
+                    # 对每行按x坐标排序并拼接tokens
+                    for _line_key, _tokens in _tokens_by_line.items():
+                        _tokens.sort(key=lambda t: t[0])
+                        # 拼接同一行所有token
+                        _full_text = ''.join(t[1] for t in _tokens)
+                        _avg_conf = sum(t[2] for t in _tokens) // len(_tokens) if _tokens else 0
+
+                        # 从拼接后的文本中提取数字
+                        for m in re.finditer(r'(\d+\.?\d*)', _full_text):
                             try:
                                 val = float(m.group(1))
                                 if not (0.5 <= val <= 500):
                                     continue
 
-                                _all_ocr_results.append((val, conf, _vname, region_name))
+                                _all_ocr_results.append((val, _avg_conf, _vname, region_name))
 
                                 # 过滤：不能等于外框总尺寸（cm）
                                 if _outer_w_cm > 0 and abs(val - _outer_w_cm) <= 3.0:
@@ -2839,11 +2880,17 @@ def _focused_ocr_for_direction_label(cv2, gray_img, tesseract, dchar, mfield,
                                 if _outer_h_cm > 0 and abs(val - _outer_h_cm) <= 3.0:
                                     continue
 
-                                score = conf + 40 if val <= 80 else conf
+                                # 改进评分：置信度 + 小值bonus + 数字长度bonus
+                                # 数字越长越可能是完整数值（防止"14.6"被读成"1"）
+                                _num_digits = len(m.group(1).replace('.', ''))
+                                _length_bonus = _num_digits * 5
+                                score = _avg_conf + _length_bonus
+                                if val <= 80:
+                                    score += 20
 
                                 if score > best_score:
                                     best_score = score
-                                    best_result = (val, conf)
+                                    best_result = (val, _avg_conf)
                             except ValueError:
                                 pass
 
@@ -4727,6 +4774,63 @@ def parse_sketch(
     if direction_margins:
         logger.info(f"[sketch_parser] 方向标签+几何OCR识别结果: {direction_margins}")
 
+    # === 修正几何OCR：当部分方向标签有值时，用已知边距修正内框位置后重新扫描缺失边距 ===
+    _dir_fields_present = set(direction_margins.keys())
+    _missing_fields = {'margin_top', 'margin_bottom', 'margin_left', 'margin_right'} - _dir_fields_present
+    if _missing_fields and len(_dir_fields_present) >= 2 and tesseract is not None:
+        # 用已知方向标签边距构建修正后的内框矩形
+        _px_to_cm_w = (target_outer_w_cm / ow) if target_outer_w_cm > 0 and ow > 0 else 0
+        _px_to_cm_h = (target_outer_h_cm / oh) if target_outer_h_cm > 0 and oh > 0 else 0
+
+        _corrected_ix, _corrected_iy = ix, iy
+        _corrected_iw, _corrected_ih = iw, ih
+
+        if _px_to_cm_w > 0:
+            if 'margin_left' in direction_margins:
+                _ml_cm = direction_margins['margin_left'][0]
+                _corrected_ix = int(ox + _ml_cm / _px_to_cm_w)
+            if 'margin_right' in direction_margins:
+                _mr_cm = direction_margins['margin_right'][0]
+                _corrected_iw = int((ox + ow - _mr_cm / _px_to_cm_w) - _corrected_ix)
+
+        if _px_to_cm_h > 0:
+            if 'margin_top' in direction_margins:
+                _mt_cm = direction_margins['margin_top'][0]
+                _corrected_iy = int(oy + _mt_cm / _px_to_cm_h)
+            if 'margin_bottom' in direction_margins:
+                _mb_cm = direction_margins['margin_bottom'][0]
+                _corrected_ih = int((oy + oh - _mb_cm / _px_to_cm_h) - _corrected_iy)
+
+        # 检查修正后的内框是否与原始内框有显著差异
+        _ix_diff = abs(_corrected_ix - ix)
+        _iy_diff = abs(_corrected_iy - iy)
+        _iw_diff = abs(_corrected_iw - iw)
+        _ih_diff = abs(_corrected_ih - ih)
+
+        # 确保修正后的内框在合理范围内
+        _corrected_valid = (_corrected_iw > 20 and _corrected_ih > 20
+                           and _corrected_ix > ox and _corrected_iy > oy
+                           and _corrected_ix + _corrected_iw < ox + ow
+                           and _corrected_iy + _corrected_ih < oy + oh)
+
+        if _corrected_valid and (_ix_diff > 5 or _iy_diff > 5 or _iw_diff > 10 or _ih_diff > 10):
+            logger.info(f"[sketch_parser] 内框位置修正：原始=({ix},{iy},{iw},{ih}) → 修正=({_corrected_ix},{_corrected_iy},{_corrected_iw},{_corrected_ih})")
+
+            # 用修正后的内框重新扫描缺失的边距
+            _corrected_inner = (_corrected_ix, _corrected_iy, _corrected_iw, _corrected_ih)
+            _corrected_geo_margins = _detect_margins_by_geometry_ocr(
+                cv2, gray, tesseract, (ox, oy, ow, oh),
+                inner_rect=_corrected_inner,
+                target_outer_w_cm=target_outer_w_cm,
+                target_outer_h_cm=target_outer_h_cm)
+
+            for _mfield in _missing_fields:
+                if _mfield in _corrected_geo_margins:
+                    _cval, _cconf = _corrected_geo_margins[_mfield]
+                    if _cval > 0 and _cconf >= 20:
+                        direction_margins[_mfield] = (_cval, _cconf)
+                        logger.info(f"[sketch_parser] 修正几何OCR {_mfield}: 值={_cval}, conf={_cconf} (使用修正内框)")
+
     _progress(75, "几何回退计算...")
     geo_result = _geometry_fallback_values(
         (ox, oy, ow, oh), (ix, iy, iw, ih),
@@ -4947,6 +5051,59 @@ def parse_sketch(
     mr = _clip_side(mr, outer_w, 'margin_right' in _dir_margin_fields)
     mt = _clip_side(mt, outer_h, 'margin_top' in _dir_margin_fields)
     mb = _clip_side(mb, outer_h, 'margin_bottom' in _dir_margin_fields)
+
+    # === 边距交叉推导：当3个边距已知时，从内框像素尺寸推导第4个 ===
+    # 如果内框矩形检测正确但某个边距OCR值错误，可通过其他3个边距+内框像素推导
+    _geo_px = _geometry_fallback_values(
+        (ox, oy, ow, oh), (ix, iy, iw, ih),
+        outer_w if outer_w > 0 else target_outer_w_cm,
+        outer_h if outer_h > 0 else target_outer_h_cm)
+    _geo_mt = _geo_px.get('margin_top', (0, 0))[0]
+    _geo_mb = _geo_px.get('margin_bottom', (0, 0))[0]
+    _geo_ml = _geo_px.get('margin_left', (0, 0))[0]
+    _geo_mr = _geo_px.get('margin_right', (0, 0))[0]
+
+    # 对每个方向：如果方向标签有值但OCR值不一致，或方向标签缺失，用几何值验证
+    # 上边距
+    if 'margin_top' in direction_margins:
+        _dir_mt = direction_margins['margin_top'][0]
+        if mt > 0 and abs(mt - _dir_mt) > 3.0 and abs(_dir_mt - _geo_mt) <= 2.0:
+            logger.info(f"[sketch_parser] 上边距交叉修正: OCR={mt:.2f} → 方向标签={_dir_mt:.2f} (与几何值{_geo_mt:.2f}一致)")
+            mt = _dir_mt
+    elif mt > 0 and _geo_mt > 0 and abs(mt - _geo_mt) > max(3.0, outer_h * 0.1):
+        # 方向标签缺失，OCR值与几何值差异过大
+        logger.info(f"[sketch_parser] 上边距几何修正: OCR={mt:.2f} → 几何={_geo_mt:.2f} (差异过大)")
+        mt = _geo_mt
+
+    # 下边距
+    if 'margin_bottom' in direction_margins:
+        _dir_mb = direction_margins['margin_bottom'][0]
+        if mb > 0 and abs(mb - _dir_mb) > 3.0 and abs(_dir_mb - _geo_mb) <= 2.0:
+            logger.info(f"[sketch_parser] 下边距交叉修正: OCR={mb:.2f} → 方向标签={_dir_mb:.2f} (与几何值{_geo_mb:.2f}一致)")
+            mb = _dir_mb
+    elif mb > 0 and _geo_mb > 0 and abs(mb - _geo_mb) > max(3.0, outer_h * 0.1):
+        logger.info(f"[sketch_parser] 下边距几何修正: OCR={mb:.2f} → 几何={_geo_mb:.2f} (差异过大)")
+        mb = _geo_mb
+
+    # 左边距
+    if 'margin_left' in direction_margins:
+        _dir_ml = direction_margins['margin_left'][0]
+        if ml > 0 and abs(ml - _dir_ml) > 3.0 and abs(_dir_ml - _geo_ml) <= 2.0:
+            logger.info(f"[sketch_parser] 左边距交叉修正: OCR={ml:.2f} → 方向标签={_dir_ml:.2f} (与几何值{_geo_ml:.2f}一致)")
+            ml = _dir_ml
+    elif ml > 0 and _geo_ml > 0 and abs(ml - _geo_ml) > max(3.0, outer_w * 0.1):
+        logger.info(f"[sketch_parser] 左边距几何修正: OCR={ml:.2f} → 几何={_geo_ml:.2f} (差异过大)")
+        ml = _geo_ml
+
+    # 右边距
+    if 'margin_right' in direction_margins:
+        _dir_mr = direction_margins['margin_right'][0]
+        if mr > 0 and abs(mr - _dir_mr) > 3.0 and abs(_dir_mr - _geo_mr) <= 2.0:
+            logger.info(f"[sketch_parser] 右边距交叉修正: OCR={mr:.2f} → 方向标签={_dir_mr:.2f} (与几何值{_geo_mr:.2f}一致)")
+            mr = _dir_mr
+    elif mr > 0 and _geo_mr > 0 and abs(mr - _geo_mr) > max(3.0, outer_w * 0.1):
+        logger.info(f"[sketch_parser] 右边距几何修正: OCR={mr:.2f} → 几何={_geo_mr:.2f} (差异过大)")
+        mr = _geo_mr
 
     # === 核心修正：利用边距值反推内框尺寸，确保几何一致性 ===
     # 当边距值可靠时（来自方向标签或OCR），用外框-边距反推内框
