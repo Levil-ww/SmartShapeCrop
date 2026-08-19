@@ -150,6 +150,21 @@ ok2 = diagnose_sketch(
     "草图2"
 )
 
+
+# 测试草图3-真实草图
+expected_real = {
+    'outer_w': 133.0, 'outer_h': 60.5,
+    'inner_w': 76.0, 'inner_h': 44.5,
+    'top': 6.0, 'bottom': 10.0, 'left': 14.6, 'right': 42.4
+}
+
+ok_real = diagnose_sketch(
+    'C:/Users/Administrator/Desktop/1.png',
+    133.0, 60.5,
+    expected_real,
+    "真实草图"
+)
+
 # 总结
 print("\n" + "=" * 80)
 print("📋 测试总结")
@@ -159,10 +174,10 @@ print(f"  草图2: {'✅ 通过' if ok2 else '❌ 失败'}")
 print(f"\n  总体: {'✅ 所有草图通过' if (ok1 and ok2) else '❌ 部分草图失败'}")
 
 # 如果用户有真实草图，可以在这里添加
-# expected_real = {...}
-# ok_real = diagnose_sketch(
-#     r'D:\测试\数据更新-光固膜-光固胶-光固胶-0610v06质材图.png',
-#     120.0, 58.5,
-#     expected_real,
-#     "真实草图"
-# )
+expected_real = {...}
+ok_real = diagnose_sketch(
+    r'C:\Users\Administrator\Desktop\1.png',
+    133.0, 60.5,
+    expected_real,
+    "真实草图"
+)
