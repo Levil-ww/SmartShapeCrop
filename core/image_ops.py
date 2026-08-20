@@ -129,9 +129,39 @@ def render_design(design: CropDesign) -> Image.Image:
     inner_fill = _render_inner_area(design)
     inner_fill_arr = np.array(inner_fill, dtype=np.uint8)
     inner_mask = _get_inner_pixel_mask(design)
+    
+    # 3.0 池模式：保存素材图非白色像素（在白色填充之前）
+    # 防止白色填充覆盖素材图原有的边框和花纹
+    is_pool_with_material = (design.pool_hole_transparent
+                             and design.pool_outer_material_image
+                             and os.path.isfile(design.pool_outer_material_image))
+    
+    saved_border_pixels = None
+    non_white_mask = None
+    
+    if is_pool_with_material:
+        # 计算 inner_mask 区域内的非白色像素
+        # 白色背景的阈值：R>230, G>230, B>230
+        WHITE_THRESHOLD = 230
+        inner_region = canvas_arr[inner_mask]
+        non_white_mask_in_region = (inner_region[:, 0] < WHITE_THRESHOLD) | \
+                                   (inner_region[:, 1] < WHITE_THRESHOLD) | \
+                                   (inner_region[:, 2] < WHITE_THRESHOLD)
+        if non_white_mask_in_region.any():
+            # 创建完整的 non_white_mask（全图尺寸）
+            non_white_mask = np.zeros_like(inner_mask, dtype=bool)
+            non_white_mask[inner_mask] = non_white_mask_in_region
+            # 保存这些非白色像素
+            saved_border_pixels = canvas_arr[non_white_mask].copy()
+    
+    # 白色填充内部挖空区域
     canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+    
+    # 3.0b 池模式：恢复素材图非白色像素（在白色填充之后）
+    if is_pool_with_material and saved_border_pixels is not None and non_white_mask is not None:
+        canvas_arr[non_white_mask] = saved_border_pixels
 
-    # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线
+    # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线（最后绘制，确保不被覆盖）
     #
     # [因果说明 2026-08-14] 形态学腐蚀法 ≠ 圆角裁剪！ 两者严格解耦：
     # ┌─────────────────────────────────────────────────────────────────────┐
