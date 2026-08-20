@@ -515,7 +515,9 @@ def _geometry_driven_parse(cv2, gray_img, color_img, tesseract,
 
     if tesseract is not None:
         logger.info("[几何驱动] 执行全局 OCR 扫描...")
-        all_ocr = _multi_scale_ocr_scan(cv2, tesseract, gray_img)
+        all_ocr = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
+                                        target_w_cm=target_outer_w_cm,
+                                        target_h_cm=target_outer_h_cm)
         logger.info(f"[几何驱动] 全局 OCR 共检测到 {len(all_ocr)} 个候选数值")
         for _v, _c, _b in all_ocr:
             logger.info(f"  候选: val={_v} conf={_c} bbox=({_b[0]},{_b[1]},{_b[2]},{_b[3]}) pos=({_b[0]+_b[2]/2:.0f},{_b[1]+_b[3]/2:.0f})")
@@ -1725,7 +1727,8 @@ def _scan_inner_dimensions(cv2, gray_img, tesseract, gaps, inner,
     return results
 
 
-def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False):
+def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False,
+                         target_w_cm=0.0, target_h_cm=0.0):
     """对图像区域进行多尺度OCR扫描，返回所有检测到的数值。
 
     Args:
@@ -1847,17 +1850,202 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False):
             else:
                 break
 
+    # 小数点合并（修复OCR丢失/拆分小数点的问题）
+    if results:
+        logger.info(f"[OCR] 合并前共 {len(results)} 条原始结果")
+        results = _merge_split_decimals(results,
+                                        target_w=target_w_cm,
+                                        target_h=target_h_cm)
+        logger.info(f"[OCR] 合并后剩 {len(results)} 条")
+
     # 去重合并（同一位置附近的值）
     if results:
-        logger.info(f"[OCR] 去重前共 {len(results)} 条原始结果")
+        logger.info(f"[OCR] 去重前共 {len(results)} 条")
         results = _deduplicate_ocr_results(results)
         logger.info(f"[OCR] 去重后剩 {len(results)} 条")
 
     return results
 
 
+def _merge_split_decimals(results, target_w=0.0, target_h=0.0):
+    """修复OCR识别中丢失或拆分小数点的问题。
+
+    Tesseract 对带小数的数字（如 43.5、14.6、60.5）容易出现：
+      1. 丢失小数点：43.5 → 435，14.6 → 146
+      2. 拆分小数点：43.5 → 43 + 5，60.5 → 60 + 5
+
+    Args:
+        results: [(value, confidence, bbox), ...]
+        target_w: 目标外框宽度（cm），用于防止误修正合法的外框尺寸
+        target_h: 目标外框高度（cm）
+
+    Returns:
+        修正后的结果列表
+    """
+    if len(results) <= 1:
+        return results
+
+    merged = list(results)
+    removed = set()
+    insertions = []
+
+    # === Phase 1: 修复"丢失小数点"案例（如 146 → 14.6）===
+    for i in range(len(merged)):
+        if i in removed:
+            continue
+        val_i, conf_i, (bx_i, by_i, bw_i, bh_i) = merged[i]
+
+        if val_i <= 100:
+            continue
+
+        # 只有整数且不是10的倍数才可能是丢失小数点
+        # 150, 200, 230 等是合法的外框尺寸，不应被修正
+        if abs(val_i - round(val_i)) > 0.01:
+            continue
+        if val_i % 10 == 0:
+            continue
+
+        # 如果有目标尺寸，检查val_i是否近似等于目标（±5%或5cm）
+        # 234≈234，是合法外框；146≠133，是丢失小数点
+        if target_w > 0 and abs(val_i - target_w) <= max(5.0, target_w * 0.05):
+            logger.info(f"[OCR] 跳过 {val_i:.0f} (≈目标宽度{target_w:.0f}，合法外框)")
+            continue
+        if target_h > 0 and abs(val_i - target_h) <= max(5.0, target_h * 0.05):
+            logger.info(f"[OCR] 跳过 {val_i:.0f} (≈目标高度{target_h:.0f}，合法外框)")
+            continue
+
+        # val_i/10 必须在合理范围内
+        half = val_i / 10.0
+        if not (0.5 <= half <= 300):
+            continue
+
+        # val_i/10 不应过大（>50通常是外框或内框尺寸，不是边距）
+        if half > 50:
+            continue
+
+        # 检查是否不存在与 half 相近的正常值（说明 half 未被正确识别）
+        already_has = any(
+            abs(merged[j][0] - half) < 0.5
+            for j in range(len(merged))
+            if j != i and j not in removed
+        )
+        if already_has:
+            continue
+
+        insertions.append((half, conf_i * 0.7, (bx_i, by_i, bw_i, bh_i)))
+        removed.add(i)
+        logger.info(f"[OCR] 小数点修复: {val_i:.0f} → {half:.1f} (conf={conf_i * 0.7:.0f})")
+
+        # 主动清除附近可能的碎片值（如 146→14.6 后清除附近的 14.0）
+        int_part = int(half)
+        dec_part = half - int_part
+        cx_i = bx_i + bw_i / 2
+        cy_i = by_i + bh_i / 2
+        for j in range(len(merged)):
+            if j in removed or j == i:
+                continue
+            val_j, _, (bx_j, by_j, bw_j, bh_j) = merged[j]
+            cx_j = bx_j + bw_j / 2
+            cy_j = by_j + bh_j / 2
+            dx = abs(cx_i - cx_j)
+            dy = abs(cy_i - cy_j)
+            if dx < 20 and dy < 20:
+                # 碎片值：等于整数部分或小数部分（±0.5容差）
+                if abs(val_j - int_part) < 0.5 or abs(val_j - dec_part) < 0.5:
+                    removed.add(j)
+                    logger.info(f"[OCR] 清除碎片值: {val_j:.1f} at ({cx_j:.0f},{cy_j:.0f}) (修复{half:.1f}的碎片)")
+
+    # === Phase 2: 修复"拆分小数点"案例（如 43 + 5 → 43.5）===
+    for i in range(len(merged)):
+        if i in removed:
+            continue
+        val_i, conf_i, (bx_i, by_i, bw_i, bh_i) = merged[i]
+        cx_i = bx_i + bw_i / 2
+        cy_i = by_i + bh_i / 2
+
+        for j in range(i + 1, len(merged)):
+            if j in removed:
+                continue
+            val_j, conf_j, (bx_j, by_j, bw_j, bh_j) = merged[j]
+            cx_j = bx_j + bw_j / 2
+            cy_j = by_j + bh_j / 2
+
+            is_int_i = abs(val_i - round(val_i)) < 0.01
+            is_int_j = abs(val_j - round(val_j)) < 0.01
+            is_small_i = 0 < val_i < 10
+            is_small_j = 0 < val_j < 10
+
+            if not ((is_int_i and is_small_j) or (is_int_j and is_small_i)):
+                continue
+
+            # 确定整数部分和小数部分
+            if is_int_i and is_small_j:
+                int_val, dec_val = val_i, val_j
+                int_cx, int_cy, int_bw, int_bh = cx_i, cy_i, bw_i, bh_i
+                dec_cx, dec_cy, dec_bw, dec_bh = cx_j, cy_j, bw_j, bh_j
+                int_idx, dec_idx = i, j
+            else:
+                int_val, dec_val = val_j, val_i
+                int_cx, int_cy, int_bw, int_bh = cx_j, cy_j, bw_j, bh_j
+                dec_cx, dec_cy, dec_bw, dec_bh = cx_i, cy_i, bw_i, bh_i
+                int_idx, dec_idx = j, i
+
+            # 小数部分必须在整数部分右侧
+            if dec_cx <= int_cx:
+                continue
+
+            # 同一行检查：y方向偏差 < 两个值高度的较大者的一半
+            avg_h = max(int_bh, dec_bh)
+            if abs(int_cy - dec_cy) > avg_h * 0.6:
+                continue
+
+            # 水平相邻检查：两bbox之间的间隙 < 较小高度的0.5倍
+            right_edge_int = int_cx + int_bw / 2
+            left_edge_dec = dec_cx - dec_bw / 2
+            gap = left_edge_dec - right_edge_int
+            if gap > avg_h * 0.5:
+                continue
+
+            # 合并：小数部分<1时直接相加（如 .5），否则除以10（如 5 → 0.5）
+            if dec_val < 1:
+                new_val = int_val + dec_val
+            else:
+                new_val = int_val + dec_val / 10.0
+
+            if not (0.5 <= new_val <= 500):
+                continue
+
+            new_conf = min(conf_i, conf_j) * 0.8
+            new_bx = min(bx_i, bx_j)
+            new_by = min(by_i, by_j)
+            new_bw = max(bx_i + bw_i, bx_j + bw_j) - new_bx
+            new_bh = max(by_i + bh_i, by_j + bh_j) - new_by
+
+            insertions.append((new_val, new_conf, (new_bx, new_by, new_bw, new_bh)))
+            removed.add(int_idx)
+            removed.add(dec_idx)
+            logger.info(
+                f"[OCR] 小数点合并: {int_val:.0f} + {dec_val:.1f} → {new_val:.1f} "
+                f"(conf={new_conf:.0f}, gap={gap:.0f}px)"
+            )
+            break
+
+    # === 构建最终结果 ===
+    result = [merged[i] for i in range(len(merged)) if i not in removed]
+    result.extend(insertions)
+
+    if removed:
+        logger.info(f"[OCR] 小数点处理: 删除 {len(removed)} 个原始值, 新增 {len(insertions)} 个合并值")
+    return result
+
+
 def _deduplicate_ocr_results(results):
-    """合并重叠的OCR结果：数值相近且位置接近的只保留置信度最高的。"""
+    """合并重叠的OCR结果：数值相近且位置接近的只保留置信度最高的。
+
+    使用自适应阈值：
+      - 数值阈值: max(0.5, val * 0.02) — 大数值容忍更大差异
+      - 位置阈值: max(10, bbox_w * 0.5) — 大字容忍更大位置偏差
+    """
     if len(results) <= 1:
         return results
 
@@ -1865,15 +2053,29 @@ def _deduplicate_ocr_results(results):
     merged = []
 
     for val, conf, bbox in sorted_results:
+        bx, by, bw, bh = bbox
+        cx = bx + bw / 2
+        cy = by + bh / 2
+
         duplicate = False
         for m_val, m_conf, m_bbox in merged:
-            if abs(val - m_val) <= 2.0:
-                # 数值接近，检查位置是否重叠
-                dx = abs(bbox[0] + bbox[2] // 2 - m_bbox[0] - m_bbox[2] // 2)
-                dy = abs(bbox[1] + bbox[3] // 2 - m_bbox[1] - m_bbox[3] // 2)
-                if dx < 30 and dy < 30:
-                    duplicate = True
-                    break
+            m_bx, m_by, m_bw, m_bh = m_bbox
+            m_cx = m_bx + m_bw / 2
+            m_cy = m_by + m_bh / 2
+
+            # 自适应数值阈值：max(0.7, 值的3%)，兼顾小值敏感度和大值容忍
+            val_threshold = max(0.7, abs(m_val) * 0.03)
+            if abs(val - m_val) > val_threshold:
+                continue
+
+            # 自适应位置阈值：取较大bbox宽度的一半，最小10px
+            pos_threshold = max(10, max(bw, m_bw) * 0.5)
+            dx = abs(cx - m_cx)
+            dy = abs(cy - m_cy)
+            if dx < pos_threshold and dy < pos_threshold:
+                duplicate = True
+                break
+
         if not duplicate:
             merged.append((val, conf, bbox))
 
