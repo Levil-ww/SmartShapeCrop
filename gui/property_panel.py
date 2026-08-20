@@ -932,18 +932,10 @@ class PropertyPanel(QWidget):
 
                     dir_info = ""
                     if dir_vals:
-                        def _safe_dir_val(raw):
-                            if isinstance(raw, (int, float)):
-                                return float(raw)
-                            if isinstance(raw, (tuple, list)) and len(raw) > 0:
-                                v = raw[0]
-                                if isinstance(v, (int, float)):
-                                    return float(v)
-                            return 0.0
-                        dir_mt = _safe_dir_val(dir_vals.get("margin_top", 0))
-                        dir_mb = _safe_dir_val(dir_vals.get("margin_bottom", 0))
-                        dir_ml = _safe_dir_val(dir_vals.get("margin_left", 0))
-                        dir_mr = _safe_dir_val(dir_vals.get("margin_right", 0))
+                        dir_mt = self._safe_dir_val2(dir_vals.get("margin_top", 0))
+                        dir_mb = self._safe_dir_val2(dir_vals.get("margin_bottom", 0))
+                        dir_ml = self._safe_dir_val2(dir_vals.get("margin_left", 0))
+                        dir_mr = self._safe_dir_val2(dir_vals.get("margin_right", 0))
                         if any(v > 0 for v in [dir_mt, dir_mb, dir_ml, dir_mr]):
                             dir_info = (
                                 f"\n  🔤 方向标注: 上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm"
@@ -1000,6 +992,26 @@ class PropertyPanel(QWidget):
         except Exception as e:
             logger.warning(f"打开草图大图失败: {e}")
             QMessageBox.warning(self, "查看草图失败", f"无法打开草图：\n{e}")
+
+    @staticmethod
+    def _safe_dir_val2(raw):
+        """安全解析方向标注值，支持多种数据格式。"""
+        try:
+            if raw is None:
+                return 0.0
+            if isinstance(raw, (int, float)):
+                return float(raw)
+            if isinstance(raw, str):
+                return float(raw.strip())
+            if isinstance(raw, (tuple, list)) and len(raw) > 0:
+                v = raw[0]
+                if isinstance(v, (int, float)):
+                    return float(v)
+                if isinstance(v, str):
+                    return float(v.strip())
+        except (ValueError, TypeError, IndexError):
+            pass
+        return 0.0
 
     def _set_pool_status(self, msg: str, is_error: bool = False):
         color = "#B00020" if is_error else "#388E3C"
@@ -1100,20 +1112,15 @@ class PropertyPanel(QWidget):
                     if hasattr(sr, 'debug') and sr.debug:
                         dir_vals = sr.debug.get("direction_margins", {}) if isinstance(sr.debug, dict) else {}
                         if dir_vals:
-                            def _safe_dir_val2(raw):
-                                if isinstance(raw, (int, float)):
-                                    return float(raw)
-                                if isinstance(raw, (tuple, list)) and len(raw) > 0:
-                                    v = raw[0]
-                                    if isinstance(v, (int, float)):
-                                        return float(v)
-                                return 0.0
-                            dir_mt = _safe_dir_val2(dir_vals.get("margin_top", 0))
-                            dir_mb = _safe_dir_val2(dir_vals.get("margin_bottom", 0))
-                            dir_ml = _safe_dir_val2(dir_vals.get("margin_left", 0))
-                            dir_mr = _safe_dir_val2(dir_vals.get("margin_right", 0))
-                            if any(v > 0 for v in [dir_mt, dir_mb, dir_ml, dir_mr]):
-                                info += f"  🔤 方向标注：上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm\n"
+                            try:
+                                dir_mt = self._safe_dir_val2(dir_vals.get("margin_top", 0))
+                                dir_mb = self._safe_dir_val2(dir_vals.get("margin_bottom", 0))
+                                dir_ml = self._safe_dir_val2(dir_vals.get("margin_left", 0))
+                                dir_mr = self._safe_dir_val2(dir_vals.get("margin_right", 0))
+                                if any(v > 0 for v in [dir_mt, dir_mb, dir_ml, dir_mr]):
+                                    info += f"  🔤 方向标注：上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm\n"
+                            except Exception:
+                                pass
                 elif sketch_result is not None and not sketch_result.success:
                     info += f"草图未识别（请检查/手动调整边距）：{sketch_result.message}\n"
                 else:
