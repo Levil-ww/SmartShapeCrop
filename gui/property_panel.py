@@ -341,7 +341,9 @@ class PropertyPanel(QWidget):
         row_size_mode.addWidget(gb_mode)
         self._inner_layout.addLayout(row_size_mode)
 
-        # 3) 内挖参数（矩形/L形共用）
+        # 3) 内挖边距 与 圆角设置 同行排列
+        row_inner_corner = QHBoxLayout()
+
         gb_inner = QGroupBox("内挖边距 (厘米)")
         fi = QVBoxLayout(gb_inner)
         self._sp_mt = self._dspin(0, 450, self.design.inner_margin_top_cm)
@@ -352,7 +354,23 @@ class PropertyPanel(QWidget):
         fi.addLayout(self._row("下", self._sp_mb))
         fi.addLayout(self._row("左", self._sp_ml))
         fi.addLayout(self._row("右", self._sp_mr))
-        self._inner_layout.addWidget(gb_inner)
+
+        self._gb_corner = QGroupBox("圆角设置（厘米）")
+        fc = QVBoxLayout(self._gb_corner)
+        grid_corner = QGridLayout()
+        self._sp_design_corners = {}
+        corner_labels = [('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]
+        for i, (key, name) in enumerate(corner_labels):
+            grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 2)
+            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(getattr(self.design, f'corner_{key}_cm', 0)); sp.setDecimals(1); sp.setSuffix(" cm")
+            sp.setFixedWidth(100)
+            grid_corner.addWidget(sp, i // 2, (i % 2) * 2 + 1)
+            self._sp_design_corners[key] = sp
+        fc.addLayout(grid_corner)
+
+        row_inner_corner.addWidget(gb_inner)
+        row_inner_corner.addWidget(self._gb_corner)
+        self._inner_layout.addLayout(row_inner_corner)
 
         # 4) L 形参数
         self._gb_l = QGroupBox("L形挖角参数")
@@ -366,20 +384,6 @@ class PropertyPanel(QWidget):
         fl.addLayout(self._row("挖角宽度(cm)", self._sp_lw))
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
         self._inner_layout.addWidget(self._gb_l)
-
-        # 4.5) 圆角设置（常驻显示）
-        self._gb_corner = QGroupBox("圆角设置（厘米）")
-        fc = QVBoxLayout(self._gb_corner)
-        grid_corner = QGridLayout()
-        self._sp_design_corners = {}
-        corner_labels = [('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]
-        for i, (key, name) in enumerate(corner_labels):
-            grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 3)
-            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(getattr(self.design, f'corner_{key}_cm', 0)); sp.setDecimals(1); sp.setSuffix(" cm")
-            grid_corner.addWidget(sp, i // 2, (i % 2) * 3 + 1)
-            self._sp_design_corners[key] = sp
-        fc.addLayout(grid_corner)
-        self._inner_layout.addWidget(self._gb_corner)
 
         # 5) 椭圆参数
         self._gb_e = QGroupBox("椭圆参数")
