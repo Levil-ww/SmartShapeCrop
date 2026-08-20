@@ -327,6 +327,10 @@ def _redraw_border_on_corner(
                     cond_neighbor_gap = True
 
             is_gap = cond_content or cond_sandwich or cond_neighbor_gap
+            
+            # DEBUG: 检查每层的间隙判定
+            if d == 0:  # 这是外层循环的 d，暂时无效
+                pass
 
             # 反向安全检查：如果与相邻边框层颜色非常接近 (< 15)，
             # 则为实心边框层而非间隙
@@ -426,6 +430,8 @@ def _redraw_border_on_corner(
         in_gap_region = np.zeros(len(local_coords[0]), dtype=bool)
         for gap_start, gap_end in gap_regions:
             in_gap_region |= (pixel_depths >= gap_start) & (pixel_depths < gap_end)
+        
+
 
         # === 间隙层与实心层分离处理 ===
         if is_gap:
@@ -461,10 +467,39 @@ def _redraw_border_on_corner(
             # inside_arc border pixels should be fully repainted based on depth/region,
             # not filtered by source color matching which can make borders appear thinner
             if np.any(in_gap_region):
+                # [Fix 花幔圆角缺口] 不要直接丢弃所有 in_gap_region 像素
+                # 对于直线延伸区域 (in_extension) 的像素，且颜色接近目标边框色，
+                # 即使落在 gap_region 内也应绘制，以防止因间隙检测误判造成的缺口
                 keep_mask = ~in_gap_region
+                
+                # 将应当保留的像素重新加入：
+                # 1. 处于直线延伸区域的像素
+                # 2. 颜色接近目标边框色的像素
+                if len(local_coords[0]) > 0:
+                    # 从 in_extension_mask (2D) 中提取 local_coords 对应的一维 mask
+                    in_ext_for_local = in_extension_mask[local_coords]
+                    
+                    # [关键改进] 只有颜色匹配目标边框色的 in_extension 像素才被保留
+                    # 这可以防止间隙像素被错误绘制为边框颜色
+                    if src_arr is not None:
+                        src_pixels = src_arr[local_coords[0], local_coords[1], :].astype(np.float64)
+                        dist_to_target = np.sqrt(
+                            np.sum((src_pixels - target_color_arr.reshape(1, 3)) ** 2, axis=1)
+                        )
+                        # 只有颜色距离小于阈值的像素才被认为是有效的边框像素
+                        color_match = dist_to_target <= COLOR_DIST_THRESHOLD
+                        
+                        keep_mask = keep_mask | (in_ext_for_local & color_match)
+                    else:
+                        # 如果没有源图像，保守起见不添加任何像素
+                        pass
+
                 if not np.any(keep_mask):
                     continue
                 local_coords = (local_coords[0][keep_mask], local_coords[1][keep_mask])
+            else:
+                # 无间隙区域，全部像素参与绘制
+                pass
 
             # [Fix 图一/图二/图三] Second pass: handle outside_arc pixels.
             # These pixels (dist >= R_total) should be filled with bg_color (white)
@@ -539,30 +574,49 @@ def _redraw_border_on_corner(
             cum_after_i = cumulative_depths[color_idx + 1]
 
             # [PERF] 使用 ROI 相对坐标计算直线边区域
+            # 首先计算二维的 in_extension_mask (H, W)
             if corner_key == 'tl':
                 x_left, x_right = cum_before_i, cum_after_i
                 y_top, y_bottom = cum_before_i, cum_after_i
-                in_left_strip = (roi_x >= x_left) & (roi_x < x_right)
-                in_top_strip = (roi_y >= y_top) & (roi_y < y_bottom)
-                in_extension = in_left_strip | in_top_strip
+                in_left_strip_mask = (xx >= x_left) & (xx < x_right)
+                in_top_strip_mask = (yy >= y_top) & (yy < y_bottom)
+                in_extension_mask = in_left_strip_mask | in_top_strip_mask
             elif corner_key == 'tr':
                 x_left, x_right = roi_w - cum_after_i, roi_w - cum_before_i
                 y_top, y_bottom = cum_before_i, cum_after_i
-                in_right_strip = (roi_x >= x_left) & (roi_x < x_right)
-                in_top_strip = (roi_y >= y_top) & (roi_y < y_bottom)
-                in_extension = in_right_strip | in_top_strip
+                in_right_strip_mask = (xx >= x_left) & (xx < x_right)
+                in_top_strip_mask = (yy >= y_top) & (yy < y_bottom)
+                in_extension_mask = in_right_strip_mask | in_top_strip_mask
             elif corner_key == 'bl':
                 x_left, x_right = cum_before_i, cum_after_i
                 y_top, y_bottom = roi_h - cum_after_i, roi_h - cum_before_i
-                in_left_strip = (roi_x >= x_left) & (roi_x < x_right)
-                in_bottom_strip = (roi_y >= y_top) & (roi_y < y_bottom)
-                in_extension = in_left_strip | in_bottom_strip
+                in_left_strip_mask = (xx >= x_left) & (xx < x_right)
+                in_bottom_strip_mask = (yy >= y_top) & (yy < y_bottom)
+                in_extension_mask = in_left_strip_mask | in_bottom_strip_mask
             else:
                 x_left, x_right = roi_w - cum_after_i, roi_w - cum_before_i
                 y_top, y_bottom = roi_h - cum_after_i, roi_h - cum_before_i
-                in_right_strip = (roi_x >= x_left) & (roi_x < x_right)
-                in_bottom_strip = (roi_y >= y_top) & (roi_y < y_bottom)
-                in_extension = in_right_strip | in_bottom_strip
+                in_right_strip_mask = (xx >= x_left) & (xx < x_right)
+                in_bottom_strip_mask = (yy >= y_top) & (yy < y_bottom)
+                in_extension_mask = in_right_strip_mask | in_bottom_strip_mask
+
+            # 从二维 mask 中提取当前 local_coords 对应的一维结果
+            # 这将用于 match_filter 和后续的 force_paint 计算
+            if len(local_coords[0]) > 0:
+                in_extension = in_extension_mask[local_coords]
+            else:
+                in_extension = np.array([], dtype=bool)
+
+            # [Fix 花幔圆角缺口] 放宽直线延伸区域的匹配阈值
+            # 直线延伸区域的像素应直接对应直边边框
+            # 若因颜色混合导致不通过默认阈值，则使用更宽容的阈值
+            RELAXED_THRESHOLD = threshold + 15.0  # 增加15的宽容度
+            relaxed_match = min_dist_adjacent <= RELAXED_THRESHOLD
+            
+            # 从 in_extension_mask (2D) 中提取 local_coords 对应的一维 mask
+            if len(local_coords[0]) > 0:
+                in_ext_for_local = in_extension_mask[local_coords]
+                match_filter = match_filter | (in_ext_for_local & relaxed_match)
 
             diagonal_interior = ~in_extension
 
