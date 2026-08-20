@@ -1962,6 +1962,8 @@ def _validate_geometric_constraints(margins, result, outer, inner,
     # 说明OCR值（通常来自方向标签）是可靠的，不应被几何计算值覆盖。
     # 这是因为内框检测可能找到错误的矩形（如文字标注），
     # 但方向标签的数值识别通常是准确的。
+    # === 关键修复：当OCR边距自洽时，始终信任OCR值 ===
+    # 不再要求与检测到的内框尺寸匹配，因为内框检测本身可能失败
     _ocr_h_self_consistent = False
     _ocr_v_self_consistent = False
     
@@ -1974,7 +1976,7 @@ def _validate_geometric_constraints(margins, result, outer, inner,
     _actual_inner_h_cm = ih * cm_px_h
 
     # 水平方向自洽检查：left+right是否能推导出合理的inner_w
-    # 同时检查每个边距是否在物理合理范围内
+    # 关键修复：当OCR边距自洽（推导出的内框占外框10%-90%），始终信任OCR值
     if ml > 0 and mr > 0:
         # 检查单个边距是否在合理范围内
         _ml_plausible = ml <= _h_side_max
@@ -1990,28 +1992,21 @@ def _validate_geometric_constraints(margins, result, outer, inner,
             _implied_inner_w = outer_w_cm - ml - mr
             if 0 < _implied_inner_w < outer_w_cm:
                 _implied_ratio_w = _implied_inner_w / outer_w_cm
+                # 关键修复：当OCR边距推导出合理内框时（10%-90%），始终信任OCR
+                # 不再要求与检测到的内框尺寸匹配，因为内框检测本身可能失败
                 if 0.10 <= _implied_ratio_w <= 0.90:
-                    # 只有内框不可靠时，仅检查比例；内框可靠时还需与实际尺寸匹配
-                    if _inner_unreliable:
-                        _ocr_h_self_consistent = True
+                    _ocr_h_self_consistent = True
+                    if _inner_unreliable or abs(_implied_inner_w - _actual_inner_w_cm) > max(5.0, outer_w_cm * 0.15):
                         logger.info(
-                            f"[几何驱动] OCR水平边距自洽(内框不可靠): left={ml:.1f}+right={mr:.1f} → "
-                            f"implied_inner_w={_implied_inner_w:.1f}cm (占外框{_implied_ratio_w:.0%})"
+                            f"[几何驱动] OCR水平边距自洽(信任OCR): left={ml:.1f}+right={mr:.1f} → "
+                            f"implied_inner_w={_implied_inner_w:.1f}cm (占外框{_implied_ratio_w:.0%}), "
+                            f"与检测内框{_actual_inner_w_cm:.1f}cm差异较大，但信任OCR值"
                         )
                     else:
-                        # 内框可靠时，推导值必须与实际内框宽度匹配
-                        _match_tol_w = max(5.0, outer_w_cm * 0.15)  # 容差：5cm或外框15%
-                        if abs(_implied_inner_w - _actual_inner_w_cm) <= _match_tol_w:
-                            _ocr_h_self_consistent = True
-                            logger.info(
-                                f"[几何驱动] OCR水平边距自洽: left={ml:.1f}+right={mr:.1f} → "
-                                f"implied_inner_w={_implied_inner_w:.1f}cm ≈ 实际{_actual_inner_w_cm:.1f}cm"
-                            )
-                        else:
-                            logger.info(
-                                f"[几何驱动] OCR水平边距不自洽: implied_inner_w={_implied_inner_w:.1f}cm "
-                                f"与实际内框{_actual_inner_w_cm:.1f}cm差异超过容差{_match_tol_w:.1f}cm"
-                            )
+                        logger.info(
+                            f"[几何驱动] OCR水平边距自洽: left={ml:.1f}+right={mr:.1f} → "
+                            f"implied_inner_w={_implied_inner_w:.1f}cm (占外框{_implied_ratio_w:.0%})"
+                        )
                 else:
                     logger.info(
                         f"[几何驱动] OCR水平边距不自洽: implied_inner_w={_implied_inner_w:.1f}cm "
@@ -2024,7 +2019,7 @@ def _validate_geometric_constraints(margins, result, outer, inner,
                 )
 
     # 垂直方向自洽检查：top+bottom是否能推导出合理的inner_h
-    # 同时检查每个边距是否在物理合理范围内
+    # 关键修复：当OCR边距自洽（推导出的内框占外框10%-90%），始终信任OCR值
     if mt > 0 and mb > 0:
         # 检查单个边距是否在合理范围内
         _mt_plausible = mt <= _v_side_max
@@ -2040,28 +2035,21 @@ def _validate_geometric_constraints(margins, result, outer, inner,
             _implied_inner_h = outer_h_cm - mt - mb
             if 0 < _implied_inner_h < outer_h_cm:
                 _implied_ratio_h = _implied_inner_h / outer_h_cm
+                # 关键修复：当OCR边距推导出合理内框时（10%-90%），始终信任OCR
+                # 不再要求与检测到的内框尺寸匹配，因为内框检测本身可能失败
                 if 0.10 <= _implied_ratio_h <= 0.90:
-                    # 只有内框不可靠时，仅检查比例；内框可靠时还需与实际尺寸匹配
-                    if _inner_unreliable:
-                        _ocr_v_self_consistent = True
+                    _ocr_v_self_consistent = True
+                    if _inner_unreliable or abs(_implied_inner_h - _actual_inner_h_cm) > max(5.0, outer_h_cm * 0.15):
                         logger.info(
-                            f"[几何驱动] OCR垂直边距自洽(内框不可靠): top={mt:.1f}+bottom={mb:.1f} → "
-                            f"implied_inner_h={_implied_inner_h:.1f}cm (占外框{_implied_ratio_h:.0%})"
+                            f"[几何驱动] OCR垂直边距自洽(信任OCR): top={mt:.1f}+bottom={mb:.1f} → "
+                            f"implied_inner_h={_implied_inner_h:.1f}cm (占外框{_implied_ratio_h:.0%}), "
+                            f"与检测内框{_actual_inner_h_cm:.1f}cm差异较大，但信任OCR值"
                         )
                     else:
-                        # 内框可靠时，推导值必须与实际内框高度匹配
-                        _match_tol_h = max(5.0, outer_h_cm * 0.15)  # 容差：5cm或外框15%
-                        if abs(_implied_inner_h - _actual_inner_h_cm) <= _match_tol_h:
-                            _ocr_v_self_consistent = True
-                            logger.info(
-                                f"[几何驱动] OCR垂直边距自洽: top={mt:.1f}+bottom={mb:.1f} → "
-                                f"implied_inner_h={_implied_inner_h:.1f}cm ≈ 实际{_actual_inner_h_cm:.1f}cm"
-                            )
-                        else:
-                            logger.info(
-                                f"[几何驱动] OCR垂直边距不自洽: implied_inner_h={_implied_inner_h:.1f}cm "
-                                f"与实际内框{_actual_inner_h_cm:.1f}cm差异超过容差{_match_tol_h:.1f}cm"
-                            )
+                        logger.info(
+                            f"[几何驱动] OCR垂直边距自洽: top={mt:.1f}+bottom={mb:.1f} → "
+                            f"implied_inner_h={_implied_inner_h:.1f}cm (占外框{_implied_ratio_h:.0%})"
+                        )
                 else:
                     logger.info(
                         f"[几何驱动] OCR垂直边距不自洽: implied_inner_h={_implied_inner_h:.1f}cm "
@@ -2181,6 +2169,7 @@ def _validate_geometric_constraints(margins, result, outer, inner,
 
     # === 利用已知边距反推缺失边距 ===
     # 如果3个边距已知，第4个可从外框尺寸反推
+    # 关键修复：当OCR边距自洽时，使用从边距推导出的内框尺寸，而非原始检测的内框尺寸
     if outer_h_cm > 0:
         if mt > 0 and mb > 0:
             # 上下都有，检查一致性
@@ -2190,19 +2179,25 @@ def _validate_geometric_constraints(margins, result, outer, inner,
                 _new_inner_h = round(_inner_h_from_margins, 2)
                 logger.info(f"[几何驱动] 内框高度修正: {result.get('inner_h', 0)} → {_new_inner_h} (从边距反推)")
                 validated['inner_h'] = _new_inner_h
-        elif mt > 0 and result.get('inner_h', 0) > 0:
-            # 有上边距和内框高，反推下边距
-            _mb = round(outer_h_cm - mt - result.get('inner_h', 0), 2)
-            if 0.5 <= _mb <= outer_h_cm:
-                logger.info(f"[几何驱动] 反推下边距: {_mb} = {outer_h_cm} - {mt} - {result.get('inner_h', 0)}")
-                validated['margin_bottom'] = _mb
-                mb = _mb
-        elif mb > 0 and result.get('inner_h', 0) > 0:
-            _mt = round(outer_h_cm - mb - result.get('inner_h', 0), 2)
-            if 0.5 <= _mt <= outer_h_cm:
-                logger.info(f"[几何驱动] 反推上边距: {_mt}")
-                validated['margin_top'] = _mt
-                mt = _mt
+        elif mt > 0:
+            # 有上边距，反推下边距
+            # 优先使用已验证的内框高，若不可用则用原始检测值
+            _ref_inner_h = validated.get('inner_h', 0) or result.get('inner_h', 0)
+            if _ref_inner_h > 0:
+                _mb = round(outer_h_cm - mt - _ref_inner_h, 2)
+                if 0.5 <= _mb <= outer_h_cm:
+                    logger.info(f"[几何驱动] 反推下边距: {_mb} = {outer_h_cm} - {mt} - {_ref_inner_h}")
+                    validated['margin_bottom'] = _mb
+                    mb = _mb
+        elif mb > 0:
+            # 有下边距，反推上边距
+            _ref_inner_h = validated.get('inner_h', 0) or result.get('inner_h', 0)
+            if _ref_inner_h > 0:
+                _mt = round(outer_h_cm - mb - _ref_inner_h, 2)
+                if 0.5 <= _mt <= outer_h_cm:
+                    logger.info(f"[几何驱动] 反推上边距: {_mt}")
+                    validated['margin_top'] = _mt
+                    mt = _mt
 
     if outer_w_cm > 0:
         if ml > 0 and mr > 0:
@@ -2212,18 +2207,24 @@ def _validate_geometric_constraints(margins, result, outer, inner,
                 _new_inner_w = round(_inner_w_from_margins, 2)
                 logger.info(f"[几何驱动] 内框宽度修正: {result.get('inner_w', 0)} → {_new_inner_w} (从边距反推)")
                 validated['inner_w'] = _new_inner_w
-        elif ml > 0 and result.get('inner_w', 0) > 0:
-            _mr = round(outer_w_cm - ml - result.get('inner_w', 0), 2)
-            if 0.5 <= _mr <= outer_w_cm:
-                logger.info(f"[几何驱动] 反推右边距: {_mr}")
-                validated['margin_right'] = _mr
-                mr = _mr
-        elif mr > 0 and result.get('inner_w', 0) > 0:
-            _ml = round(outer_w_cm - mr - result.get('inner_w', 0), 2)
-            if 0.5 <= _ml <= outer_w_cm:
-                logger.info(f"[几何驱动] 反推左边距: {_ml}")
-                validated['margin_left'] = _ml
-                ml = _ml
+        elif ml > 0:
+            # 有左边距，反推右边距
+            _ref_inner_w = validated.get('inner_w', 0) or result.get('inner_w', 0)
+            if _ref_inner_w > 0:
+                _mr = round(outer_w_cm - ml - _ref_inner_w, 2)
+                if 0.5 <= _mr <= outer_w_cm:
+                    logger.info(f"[几何驱动] 反推右边距: {_mr}")
+                    validated['margin_right'] = _mr
+                    mr = _mr
+        elif mr > 0:
+            # 有右边距，反推左边距
+            _ref_inner_w = validated.get('inner_w', 0) or result.get('inner_w', 0)
+            if _ref_inner_w > 0:
+                _ml = round(outer_w_cm - mr - _ref_inner_w, 2)
+                if 0.5 <= _ml <= outer_w_cm:
+                    logger.info(f"[几何驱动] 反推左边距: {_ml}")
+                    validated['margin_left'] = _ml
+                    ml = _ml
 
     # 填充外框尺寸
     validated['outer_w'] = round(outer_w_cm, 2)
