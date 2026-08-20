@@ -518,7 +518,7 @@ def _geometry_driven_parse(cv2, gray_img, color_img, tesseract,
         all_ocr = _multi_scale_ocr_scan(cv2, tesseract, gray_img)
         logger.info(f"[几何驱动] 全局 OCR 共检测到 {len(all_ocr)} 个候选数值")
         for _v, _c, _b in all_ocr:
-            logger.debug(f"  候选: val={_v} conf={_c} pos=({_b[0]},{_b[1]}) size={_b[2]}x{_b[3]}")
+            logger.info(f"  候选: val={_v} conf={_c} bbox=({_b[0]},{_b[1]},{_b[2]},{_b[3]}) pos=({_b[0]+_b[2]/2:.0f},{_b[1]+_b[3]/2:.0f})")
 
         # 根据位置把 OCR 值分配到 4 个方向 / 内框
         _cx_inner = ix + iw / 2
@@ -557,59 +557,185 @@ def _geometry_driven_parse(cv2, gray_img, color_img, tesseract,
             logger.debug(f"  OCR值 val={_val} conf={_conf} zone={_zone} pos=({_bcx:.0f},{_bcy:.0f})")
 
         # === 尝试用方向标签辅助定位 ===
-        # 简化策略：对每个方向，找最接近方向标签位置的 OCR 值
+        # 对每个方向，收集所有候选值，尝试拼接+几何验证
         _assigned = {}
+        _outer_max = max(target_outer_w_cm or 100, target_outer_h_cm or 100)
+        
         for _direction in ['top', 'bottom', 'left', 'right']:
             _dir_label = dir_labels.get(_direction)
             if _dir_label is None:
                 continue
-            _label_pos = _dir_label[0]  # (x, y) of direction label char
-
-            # 定义边距搜索区域（标签附近 + inner 外侧）
+            _label_pos = _dir_label[0]
             _lx, _ly = _label_pos
-            _candidates = []
+
+            _raw_candidates = []
+            _all_raw = []  # 所有原始OCR结果（含被过滤）
             for _val, _conf, _bbox in all_ocr:
                 _bx, _by, _bw, _bh = _bbox
                 _bcx = _bx + _bw / 2
                 _bcy = _by + _bh / 2
 
-                # 跳过明显是外框总尺寸的值
+                _skip_reason = None
                 if ((target_outer_w_cm > 0 and abs(_val - target_outer_w_cm) <= 3) or
                         (target_outer_h_cm > 0 and abs(_val - target_outer_h_cm) <= 3)):
-                    continue
-
-                # 边距值通常较小（1-100cm 范围）
-                if not (0.5 <= _val <= 100):
-                    continue
-
-                # 计算到方向标签的距离 + 到 inner 边缘的距离
+                    _skip_reason = '外框尺寸'
+                else:
+                    # 方向感知的范围检查：水平方向(左/右)用外框宽度限制，垂直方向(上/下)用外框高度限制
+                    if _direction in ('left', 'right'):
+                        _max_val = max(200.0, (target_outer_w_cm or 100) * 0.95)
+                    else:
+                        _max_val = max(200.0, (target_outer_h_cm or 100) * 0.95)
+                    if not (0.1 <= _val <= _max_val):
+                        _skip_reason = f'超出范围(0.1-{_max_val:.0f})'
+                    elif _direction == 'top' and _bcy > iy:
+                        _skip_reason = f'位置不在top区(y={_bcy:.0f} > inner_top={iy})'
+                    elif _direction == 'bottom' and _bcy < iy + ih:
+                        _skip_reason = f'位置不在bottom区(y={_bcy:.0f} < inner_bottom={iy+ih})'
+                    elif _direction == 'left' and _bcx > ix:
+                        _skip_reason = f'位置不在left区(x={_bcx:.0f} > inner_left={ix})'
+                    elif _direction == 'right' and _bcx < ix + iw:
+                        _skip_reason = f'位置不在right区(x={_bcx:.0f} < inner_right={ix+iw})'
+                
                 _dist_label = ((_bcx - _lx) ** 2 + (_bcy - _ly) ** 2) ** 0.5
+                if _skip_reason is None and _dist_label > max(w_img, h_img) * 0.6:
+                    _skip_reason = f'距标签过远(dist={_dist_label:.0f}px > {max(w_img, h_img)*0.6:.0f}px)'
 
-                # 方向约束
-                if _direction == 'top' and _bcy > iy:
-                    continue  # 必须在 inner 上方
-                if _direction == 'bottom' and _bcy < iy + ih:
-                    continue
-                if _direction == 'left' and _bcx > ix:
-                    continue
-                if _direction == 'right' and _bcx < ix + iw:
-                    continue
+                if _skip_reason:
+                    _all_raw.append(f"  val={_val} conf={_conf} pos=({_bcx:.0f},{_bcy:.0f}) [过滤: {_skip_reason}]")
+                else:
+                    _raw_candidates.append((_val, _conf, _bcx, _bcy, _dist_label, _bbox))
+                    _all_raw.append(f"  val={_val} conf={_conf} pos=({_bcx:.0f},{_bcy:.0f}) dist={_dist_label:.0f}px [保留]")
 
-                # 与标签的距离必须合理（不超过图像宽高）
-                if _dist_label > max(w_img, h_img) * 0.6:
-                    continue
+            if not _raw_candidates:
+                logger.info(f"[几何驱动] 边距 {_direction}: 未找到 OCR 候选 (label_pos=({_lx:.0f},{_ly:.0f}), inner=({ix},{iy},{iw},{ih}))")
+                logger.info(f"[几何驱动] 边距 {_direction}: 所有OCR结果:\n" + "\n".join(_all_raw[:20]))
+                continue
 
-                _candidates.append((_val, _conf, _bcx, _bcy, _dist_label))
+            # 调试日志：记录所有候选值
+            logger.info(f"[几何驱动] 边距 {_direction}: 找到 {len(_raw_candidates)} 个候选")
+            for _rc in _raw_candidates:
+                logger.info(f"  val={_rc[0]} conf={_rc[1]} pos=({_rc[2]:.0f},{_rc[3]:.0f}) dist_label={_rc[4]:.0f}px")
 
-            if _candidates:
-                # 选择距离标签最近且置信度高的
-                _candidates.sort(key=lambda c: c[4] - c[1] * 0.5)
-                _best = _candidates[0]
-                _assigned[_direction] = (_best[0], _best[1])
-                logger.info(f"[几何驱动] 边距 {_direction}: val={_best[0]} conf={_best[1]} "
-                             f"(距标签={_best[4]:.0f}px)")
+            # 按位置排序
+            if _direction in ('left', 'right'):
+                _raw_candidates.sort(key=lambda c: c[3])
             else:
-                logger.info(f"[几何驱动] 边距 {_direction}: 未找到 OCR 候选")
+                _raw_candidates.sort(key=lambda c: c[2])
+
+            # 尝试多token拼接
+            _concat_candidates = []
+            for _i in range(len(_raw_candidates)):
+                _concat_candidates.append(_raw_candidates[_i])
+
+                if _i + 1 < len(_raw_candidates):
+                    _a = _raw_candidates[_i]
+                    _b = _raw_candidates[_i + 1]
+                    _pos_a = (_a[2], _a[3])
+                    _pos_b = (_b[2], _b[3])
+                    _dist_ab = ((_pos_a[0] - _pos_b[0])**2 + (_pos_a[1] - _pos_b[1])**2) ** 0.5
+
+                    _gap = gaps.get(_direction)
+                    _max_gap_dist = 200
+                    if _gap:
+                        _gw = _gap[2] - _gap[0]
+                        _gh = _gap[3] - _gap[1]
+                        _max_gap_dist = max(_gw, _gh) * 1.5
+
+                    if _dist_ab < _max_gap_dist:
+                        _va_str = str(int(_a[0])) if abs(_a[0] - round(_a[0])) < 0.01 else f"{_a[0]:.1f}"
+                        # 第二个值如果是小于1的小数（如0.5），格式化为.5
+                        if abs(_b[0]) < 1.0 and _b[0] > 0:
+                            _vb_str = f".{int(round(_b[0] * 10))}"
+                        elif abs(_b[0] - round(_b[0])) < 0.01:
+                            _vb_str = str(int(_b[0]))
+                        else:
+                            _vb_str = f"{_b[0]:.1f}"
+
+                        _concat_str = _va_str + _vb_str
+
+                        try:
+                            _concat_val = float(_concat_str)
+                            if 0.1 <= _concat_val <= 500:
+                                _concat_conf = max(_a[1], _b[1]) * 0.8
+                                _concat_dist = (_a[4] + _b[4]) / 2
+                                _concat_cx = (_a[2] + _b[2]) / 2
+                                _concat_cy = (_a[3] + _b[3]) / 2
+                                _concat_candidates.append((_concat_val, _concat_conf, _concat_cx, _concat_cy, _concat_dist, None))
+                                logger.info(f"[几何驱动] 边距 {_direction}: 拼接 {_a[0]}+{_b[0]}={_concat_val}")
+                        except ValueError:
+                            pass
+
+            # 几何验证 + 优先级选择
+            # 1. 优先使用拼接值（index 5 == None 表示拼接产生的）
+            _concat_only = [c for c in _concat_candidates if c[5] is None]
+            _single_only = [c for c in _concat_candidates if c[5] is not None]
+
+            # 方向感知的验证范围：水平方向用外框宽度，垂直方向用外框高度
+            if _direction in ('left', 'right'):
+                _validate_max = (target_outer_w_cm or _outer_max) * 0.80
+            else:
+                _validate_max = (target_outer_h_cm or _outer_max) * 0.80
+            _validate_max = max(_validate_max, _outer_max * 0.5)  # 保底不低于旧值
+
+            _validate = lambda lst: [c for c in lst
+                                      if 0.5 <= c[0] <= _validate_max]
+
+            _valid_concat = _validate(_concat_only)
+            _valid_single = _validate(_single_only)
+
+            _selected = None
+            if _valid_concat:
+                _valid_concat.sort(key=lambda c: c[4] - c[1] * 0.3)
+                _selected = _valid_concat[0]
+                logger.info(f"[几何驱动] 边距 {_direction}: val={_selected[0]} (拼接值, conf={_selected[1]:.0f}) [验证通过]")
+            elif _valid_single:
+                _valid_single.sort(key=lambda c: c[4] - c[1] * 0.3)
+                _selected = _valid_single[0]
+                logger.info(f"[几何驱动] 边距 {_direction}: val={_selected[0]} (单值, conf={_selected[1]:.0f}) [验证通过]")
+            else:
+                logger.warning(f"[几何驱动] 边距 {_direction}: 所有候选值未通过几何验证 (范围: 0.5~{_validate_max:.0f}cm)")
+
+            if _selected:
+                _assigned[_direction] = (_selected[0], _selected[1])
+
+        # === 回退机制：未分配值的方向，使用间隙聚焦OCR ===
+        for _direction in ['top', 'bottom', 'left', 'right']:
+            if _direction in _assigned:
+                continue
+            
+            _dir_label = dir_labels.get(_direction)
+            if _dir_label is None:
+                continue
+            
+            _label_pos = _dir_label[0]
+            _gap = gaps.get(_direction)
+            if _gap is None:
+                continue
+            
+            logger.info(f"[几何驱动] 边距 {_direction}: 全局OCR无有效值，启动间隙聚焦OCR")
+            _cm_px_x = cm_per_px_x if cm_per_px_x > 0 else 1.0
+            _cm_px_y = cm_per_px_y if cm_per_px_y > 0 else 1.0
+            _gap_result = _scan_gap_for_value(
+                cv2, gray_img, tesseract, _gap,
+                label_pos=_label_pos,
+                direction=_direction,
+                cm_per_px_x=_cm_px_x,
+                cm_per_px_y=_cm_px_y,
+                outer_w_cm=target_outer_w_cm,
+                outer_h_cm=target_outer_h_cm
+            )
+            if _gap_result and _gap_result[0] > 0:
+                _gval, _gconf, _ = _gap_result
+                # 方向感知的验证范围
+                if _direction in ('left', 'right'):
+                    _gap_max = (target_outer_w_cm or _outer_max) * 0.80
+                else:
+                    _gap_max = (target_outer_h_cm or _outer_max) * 0.80
+                if 0.5 <= _gval <= _gap_max:
+                    _assigned[_direction] = (_gval, _gconf)
+                    logger.info(f"[几何驱动] 边距 {_direction}: 间隙聚焦OCR得到 val={_gval} conf={_gconf} [验证通过]")
+                else:
+                    logger.warning(f"[几何驱动] 边距 {_direction}: 间隙聚焦OCR值={_gval} 超出范围(0.5~{_gap_max:.0f}cm)")
 
         # 把分配到的值写入 margins
         _field_map = {'top': 'margin_top', 'bottom': 'margin_bottom',
@@ -648,6 +774,54 @@ def _geometry_driven_parse(cv2, gray_img, color_img, tesseract,
         logger.info("[几何驱动] 无 tesseract，跳过 OCR 扫描，仅使用几何方法")
 
     logger.info(f"[几何驱动] 内框尺寸: inner_w={result['inner_w']}, inner_h={result['inner_h']}")
+
+    # === Step 6.5: 几何引导的OCR重新识别 ===
+    # 当OCR值与几何值差异过大时，在该区域进行更高精度的重新扫描
+    if tesseract is not None:
+        _geo_ml = (ix - ox) * cm_per_px_x
+        _geo_mr = ((ox + ow) - (ix + iw)) * cm_per_px_x
+        _geo_mt = (iy - oy) * cm_per_px_y
+        _geo_mb = ((oy + oh) - (iy + ih)) * cm_per_px_y
+        
+        _ocr_fields = {'top': 'margin_top', 'bottom': 'margin_bottom', 
+                       'left': 'margin_left', 'right': 'margin_right'}
+        _geo_values = {'top': _geo_mt, 'bottom': _geo_mb, 'left': _geo_ml, 'right': _geo_mr}
+        
+        for _direction in ['left', 'right', 'top', 'bottom']:
+            _field = _ocr_fields[_direction]
+            _ocr_val = margins.get(_field, (0, 0))[0]
+            _geo_val = _geo_values[_direction]
+            
+            if _ocr_val <= 0 or _geo_val <= 0:
+                continue
+            
+            # 检查OCR值与几何值的差异
+            _diff = abs(_ocr_val - _geo_val)
+            _threshold = max(3.0, _geo_val * 0.5)  # 50%或3cm
+            
+            if _diff > _threshold:
+                logger.warning(
+                    f"[几何驱动] {_direction}边距OCR={_ocr_val:.1f} 与几何值={_geo_val:.1f} "
+                    f"差异{_diff:.1f}cm > 阈值{_threshold:.1f}cm，尝试重新识别"
+                )
+                
+                # 在该方向的间隙区域进行高倍OCR扫描
+                _gap = gaps.get(_direction)
+                _dir_label = dir_labels.get(_direction)
+                if _gap and _dir_label:
+                    _label_pos = _dir_label[0]
+                    _reScanResult = _rescan_margin_with_geometry(
+                        cv2, gray_img, tesseract, _gap, 
+                        _label_pos, _direction, _geo_val,
+                        cm_per_px_x, cm_per_px_y,
+                        target_outer_w_cm, target_outer_h_cm
+                    )
+                    if _reScanResult and _reScanResult[0] > 0:
+                        margins[_field] = (_reScanResult[0], _reScanResult[1])
+                        logger.info(
+                            f"[几何驱动] {_direction}边距重新识别成功: "
+                            f"val={_reScanResult[0]} conf={_reScanResult[1]}"
+                        )
 
     # === Step 7: 几何约束验证与修正 ===
     validated = _validate_geometric_constraints(
@@ -1037,13 +1211,14 @@ def _scan_gap_for_value(cv2, gray_img, tesseract, gap_region,
     # 如果有方向标签，在标签附近额外扫描
     candidates = []
 
-    # 策略1：整个间隙区域扫描
+    # 策略1：整个间隙区域扫描（高倍放大以捕获小数字）
     results = _multi_scale_ocr_scan(cv2, tesseract, scan_region)
     for val, conf, bbox in results:
         # 转换为全图坐标
         abs_x = sx1 + bbox[0] + bbox[2] // 2
         abs_y = sy1 + bbox[1] + bbox[3] // 2
         candidates.append((val, conf, abs_x, abs_y, 0))
+        logger.debug(f"[几何驱动] 间隙 {direction} 全局扫描: val={val} conf={conf} bbox={bbox}")
 
     # 策略2：如果有标签位置，在标签附近的小区域扫描
     if label_pos is not None:
@@ -1089,6 +1264,58 @@ def _scan_gap_for_value(cv2, gray_img, tesseract, gap_region,
                 candidates.append((val, conf, abs_x, abs_y, dist))
 
     if not candidates:
+        # 尝试更高倍率扫描（针对小数字）
+        logger.info(f"[几何驱动] 间隙 {direction}: 标准扫描无结果，尝试高倍放大")
+        from PIL import Image as PILImage
+        for _extra_scale in [8.0, 10.0]:
+            try:
+                _high_scale = cv2.resize(scan_region, None, fx=_extra_scale, fy=_extra_scale,
+                                         interpolation=cv2.INTER_CUBIC)
+                if _high_scale.size > 0:
+                    _psms = [6, 8, 12]
+                    for _psm in _psms:
+                        try:
+                            _pil = PILImage.fromarray(_high_scale)
+                            _data = tesseract.image_to_data(
+                                _pil, config=f'--oem 3 --psm {_psm}',
+                                output_type=tesseract.Output.DICT,
+                            )
+                            if _data and 'text' in _data:
+                                _n = len(_data.get('text', []))
+                                for _i in range(_n):
+                                    _text = str(_data.get('text', [''] * _n)[_i]).strip()
+                                    if not _text:
+                                        continue
+                                    _conf = int(_data.get('conf', [0] * _n)[_i])
+                                    if _conf < 20:
+                                        continue
+                                    _bx = int(_data.get('left', [0] * _n)[_i])
+                                    _by = int(_data.get('top', [0] * _n)[_i])
+                                    _bw = int(_data.get('width', [0] * _n)[_i])
+                                    _bh = int(_data.get('height', [0] * _n)[_i])
+                                    _bx = int(_bx / _extra_scale)
+                                    _by = int(_by / _extra_scale)
+                                    _bw = int(_bw / _extra_scale)
+                                    _bh = int(_bh / _extra_scale)
+                                    _cleaned = re.sub(r'[£$¥#\s]', '', _text)
+                                    for _m in re.finditer(r'(\d+\.?\d*|\.\d+)', _cleaned):
+                                        try:
+                                            _val = float(_m.group(1))
+                                            if 0.1 <= _val <= 500:
+                                                _abs_x = sx1 + _bx + _bw // 2
+                                                _abs_y = sy1 + _by + _bh // 2
+                                                candidates.append((_val, _conf, _abs_x, _abs_y, 0))
+                                                logger.debug(f"[几何驱动] 间隙 {direction} 高倍扫描({_extra_scale}x): val={_val} conf={_conf}")
+                                        except ValueError:
+                                            pass
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            if candidates:
+                break
+
+    if not candidates:
         return 0, 0, ''
 
     # 过滤：去掉外框尺寸值
@@ -1127,6 +1354,316 @@ def _scan_gap_for_value(cv2, gray_img, tesseract, gap_region,
         val, conf, _, _, _ = filtered[0]
         logger.info(f"[几何驱动] 间隙 {direction}: (无标签) 选值={val} conf={conf}")
         return val, conf, 'cm'
+
+
+def _rescan_margin_with_geometry(cv2, gray_img, tesseract, gap_region,
+                                  label_pos, direction, geo_val,
+                                  cm_per_px_x, cm_per_px_y,
+                                  outer_w_cm, outer_h_cm):
+    """几何引导的OCR重新识别：当OCR值与几何值差异过大时，进行高精度重新扫描。
+    
+    Args:
+        gap_region: (x1, y1, x2, y2) 间隙区域
+        label_pos: (x, y) 方向标签位置
+        direction: 'top', 'bottom', 'left', 'right'
+        geo_val: 几何计算的边距值（用于参考）
+        cm_per_px_x/y: 像素到厘米的转换率
+        outer_w_cm/h_cm: 外框尺寸
+    
+    Returns:
+        (value, confidence) or None
+    """
+    if tesseract is None:
+        return None
+    
+    gx1, gy1, gx2, gy2 = gap_region
+    gw = gx2 - gx1
+    gh = gy2 - gy1
+    
+    if gw < 3 or gh < 3:
+        return None
+    
+    from PIL import Image as PILImage
+    import re
+    
+    # 扩展扫描区域
+    pad_x = max(10, int(gw * 0.3))
+    pad_y = max(10, int(gh * 0.3))
+    sx1 = max(0, gx1 - pad_x)
+    sy1 = max(0, gy1 - pad_y)
+    sx2 = min(gray_img.shape[1], gx2 + pad_x)
+    sy2 = min(gray_img.shape[0], gy2 + pad_y)
+    
+    scan_region = gray_img[sy1:sy2, sx1:sx2]
+    if scan_region.size == 0:
+        return None
+    
+    lx, ly = label_pos
+    
+    # 多种预处理方法
+    preprocessed_variants = []
+    
+    # 原始图
+    preprocessed_variants.append(('orig', scan_region))
+    
+    # OTSU二值化
+    try:
+        _, otsu = cv2.threshold(scan_region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        preprocessed_variants.append(('otsu', otsu))
+    except Exception:
+        pass
+    
+    # 自适应二值化
+    try:
+        adaptive = cv2.adaptiveThreshold(scan_region, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                         cv2.THRESH_BINARY, 11, 2)
+        preprocessed_variants.append(('adaptive', adaptive))
+    except Exception:
+        pass
+    
+    # 轻微锐化
+    try:
+        blurred = cv2.GaussianBlur(scan_region, (3, 3), 0)
+        sharpened = cv2.addWeighted(scan_region, 1.5, blurred, -0.5, 0)
+        preprocessed_variants.append(('sharp', sharpened))
+    except Exception:
+        pass
+    
+    # 高倍放大扫描
+    all_candidates = []
+    
+    for prep_name, prep_img in preprocessed_variants:
+        for scale in [5.0, 7.5, 10.0, 12.0, 15.0]:
+            try:
+                scaled = cv2.resize(prep_img, None, fx=scale, fy=scale,
+                                   interpolation=cv2.INTER_CUBIC)
+                if scaled.size == 0:
+                    continue
+                
+                for psm in [6, 7, 8, 12, 13]:
+                    try:
+                        pil_img = PILImage.fromarray(scaled)
+                        data = tesseract.image_to_data(
+                            pil_img, config=f'--oem 3 --psm {psm}',
+                            output_type=tesseract.Output.DICT,
+                        )
+                        
+                        if not data or 'text' not in data:
+                            continue
+                        
+                        n = len(data.get('text', []))
+                        tokens = []
+                        
+                        for i in range(n):
+                            text = str(data.get('text', [''] * n)[i]).strip()
+                            if not text:
+                                continue
+                            conf = int(data.get('conf', [0] * n)[i])
+                            if conf < 15:
+                                continue
+                            
+                            bx = int(data.get('left', [0] * n)[i])
+                            by = int(data.get('top', [0] * n)[i])
+                            bw = int(data.get('width', [0] * n)[i])
+                            bh = int(data.get('height', [0] * n)[i])
+                            
+                            # 转换回原图坐标
+                            bx_orig = int(bx / scale)
+                            by_orig = int(by / scale)
+                            bw_orig = int(bw / scale)
+                            bh_orig = int(bh / scale)
+                            
+                            abs_x = sx1 + bx_orig + bw_orig // 2
+                            abs_y = sy1 + by_orig + bh_orig // 2
+                            
+                            cleaned = re.sub(r'[£$¥#\s]', '', text)
+                            for m in re.finditer(r'(\d+\.?\d*|\.\d+)', cleaned):
+                                try:
+                                    val = float(m.group(1))
+                                    if 0.1 <= val <= 500:
+                                        tokens.append({
+                                            'val': val,
+                                            'conf': conf,
+                                            'x': abs_x,
+                                            'y': abs_y,
+                                            'w': bw_orig,
+                                            'h': bh_orig,
+                                            'text': text,
+                                            'prep': prep_name,
+                                            'scale': scale,
+                                            'psm': psm
+                                        })
+                                except ValueError:
+                                    pass
+                        
+                        # 按位置排序token
+                        if direction in ('left', 'right'):
+                            tokens.sort(key=lambda t: t['y'])
+                        else:
+                            tokens.sort(key=lambda t: t['x'])
+                        
+                        # 尝试多token组合
+                        if len(tokens) >= 2:
+                            for i in range(len(tokens)):
+                                # 单个token
+                                all_candidates.append(tokens[i])
+                                
+                                # 尝试与相邻token组合
+                                for j in range(i + 1, min(i + 3, len(tokens))):
+                                    t1 = tokens[i]
+                                    t2 = tokens[j]
+                                    
+                                    # 检查token间距是否合理
+                                    if direction in ('left', 'right'):
+                                        dist = abs(t2['y'] - t1['y'])
+                                        max_dist = max(t1['h'], t2['h']) * 2.5
+                                    else:
+                                        dist = abs(t2['x'] - t1['x'])
+                                        max_dist = max(t1['w'], t2['w']) * 2.5
+                                    
+                                    if dist < max_dist:
+                                        # 尝试拼接
+                                        v1 = t1['val']
+                                        v2 = t2['val']
+                                        
+                                        # 组合方式1: 直接拼接字符串
+                                        s1 = str(int(v1)) if v1 == int(v1) else f"{v1:.0f}"
+                                        s2 = str(int(v2)) if v2 == int(v2) else f"{v2:.0f}"
+                                        try:
+                                            combined = float(s1 + s2)
+                                            all_candidates.append({
+                                                'val': combined,
+                                                'conf': min(t1['conf'], t2['conf']) * 0.8,
+                                                'x': (t1['x'] + t2['x']) // 2,
+                                                'y': (t1['y'] + t2['y']) // 2,
+                                                'w': t1['w'] + t2['w'],
+                                                'h': max(t1['h'], t2['h']),
+                                                'text': f"{s1}{s2}",
+                                                'prep': f"{prep_name}_combo",
+                                                'scale': scale,
+                                                'psm': psm
+                                            })
+                                        except ValueError:
+                                            pass
+                                        
+                                        # 组合方式2: 带小数点拼接
+                                        if v2 < 10 and v2 > 0:
+                                            s1 = str(int(v1)) if v1 == int(v1) else f"{v1:.0f}"
+                                            s2 = f".{int(v2)}" if v2 == int(v2) else f".{v2:.0f}"
+                                            try:
+                                                combined = float(s1 + s2)
+                                                all_candidates.append({
+                                                    'val': combined,
+                                                    'conf': min(t1['conf'], t2['conf']) * 0.8,
+                                                    'x': (t1['x'] + t2['x']) // 2,
+                                                    'y': (t1['y'] + t2['y']) // 2,
+                                                    'w': t1['w'] + t2['w'],
+                                                    'h': max(t1['h'], t2['h']),
+                                                    'text': f"{s1}{s2}",
+                                                    'prep': f"{prep_name}_combo_dec",
+                                                    'scale': scale,
+                                                    'psm': psm
+                                                })
+                                            except ValueError:
+                                                pass
+                        elif len(tokens) == 1:
+                            all_candidates.append(tokens[0])
+                            
+                    except Exception as e:
+                        continue
+            except Exception:
+                continue
+    
+    if not all_candidates:
+        logger.info(f"[几何驱动] 重新扫描 {direction}: 未找到任何候选")
+        return None
+    
+    # 去重和筛选
+    seen_vals = {}
+    for c in all_candidates:
+        val_key = round(c['val'], 1)
+        if val_key not in seen_vals:
+            seen_vals[val_key] = c
+        else:
+            # 保留置信度更高的
+            if c['conf'] > seen_vals[val_key]['conf']:
+                seen_vals[val_key] = c
+    
+    unique_candidates = list(seen_vals.values())
+    
+    # 计算几何参考范围
+    _outer_max = max(outer_w_cm, outer_h_cm)
+    _side_max = _outer_max * 0.50  # 单个边距上限：外框边长的50%
+    geo_min = max(0.5, geo_val * 0.3)  # 几何值的30%
+    geo_max = min(_side_max, geo_val * 2.0)  # 几何值的2倍或边距上限
+    
+    # 评分：考虑与几何值的接近程度、置信度、距标签距离
+    scored_candidates = []
+    filtered_out = []
+    for c in unique_candidates:
+        val = c['val']
+        conf = c['conf']
+        
+        # 硬过滤：单个边距不能超过外框边长的50%
+        if val < 0.5 or val > _side_max:
+            filtered_out.append(f"val={val} conf={conf} (超出范围: {val:.1f} > {_side_max:.1f}cm)")
+            continue
+        
+        # 计算距标签的距离
+        dist_to_label = ((c['x'] - lx) ** 2 + (c['y'] - ly) ** 2) ** 0.5
+        
+        # 与几何值的接近程度
+        geo_diff = abs(val - geo_val)
+        geo_score = max(0, 1.0 - geo_diff / max(geo_val, 1.0))
+        
+        # 如果值在几何参考范围内，给予额外加分
+        range_bonus = 0
+        if geo_min <= val <= geo_max:
+            range_bonus = 20
+        
+        # 综合评分：几何接近度权重最高
+        score = conf * 0.3 + geo_score * 50 + range_bonus + max(0, 100 - dist_to_label * 0.3) * 0.2
+        
+        scored_candidates.append({
+            'candidate': c,
+            'score': score,
+            'geo_score': geo_score,
+            'dist': dist_to_label,
+            'in_range': geo_min <= val <= geo_max
+        })
+    
+    if filtered_out:
+        logger.info(f"[几何驱动] 重新扫描 {direction}: 过滤掉 {len(filtered_out)} 个不合理候选")
+        for _fo in filtered_out[:3]:
+            logger.info(f"  过滤: {_fo}")
+    
+    if not scored_candidates:
+        logger.info(f"[几何驱动] 重新扫描 {direction}: 无合理候选")
+        return None
+    
+    # 按综合分排序
+    scored_candidates.sort(key=lambda x: -x['score'])
+    
+    best = scored_candidates[0]
+    best_val = best['candidate']['val']
+    best_conf = best['candidate']['conf']
+    
+    logger.info(
+        f"[几何驱动] 重新扫描 {direction}: 最佳候选 val={best_val} conf={best_conf} "
+        f"geo_score={best['geo_score']:.2f} dist={best['dist']:.0f}px "
+        f"(geo_val={geo_val:.1f}, 评分={best['score']:.1f})"
+    )
+    
+    # 记录前3个候选
+    for i, sc in enumerate(scored_candidates[:3]):
+        c = sc['candidate']
+        logger.info(
+            f"  候选#{i+1}: val={c['val']} conf={c['conf']} "
+            f"geo_score={sc['geo_score']:.2f} dist={sc['dist']:.0f}px "
+            f"prep={c['prep']} scale={c['scale']}"
+        )
+    
+    return (best_val, best_conf)
 
 
 def _scan_inner_dimensions(cv2, gray_img, tesseract, gaps, inner,
@@ -1224,11 +1761,11 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False):
             variants.append((1.0, 'otsu', otsu))
         except Exception:
             pass
-        for scale in [2.5, 4.0, 5.5]:
+        for scale in [2.5, 4.0, 5.5, 7.0, 9.0]:
             scaled = cv2.resize(region_img, None, fx=scale, fy=scale,
                                 interpolation=cv2.INTER_CUBIC)
             variants.append((scale, f'scale{scale}', scaled))
-        _psm_list = [6, 7, 11, 8, 13]
+        _psm_list = [6, 7, 11, 8, 13, 12]
 
     for scale, _vname, variant in variants:
         if variant.size == 0:
@@ -1405,8 +1942,9 @@ def _validate_geometric_constraints(margins, result, outer, inner,
         """判断几何计算的边距值是否物理合理。"""
         if val <= 0 or outer_side <= 0:
             return False
-        # 单个边距不能超过外框边长的 50%（否则两个边距加起来就超过外框了）
-        if val > outer_side * 0.5:
+        # 单个边距不能超过外框边长的 80%（允许偏心内框场景）
+        # 原50%限制过于严格，当内框偏心放置（如左小右大）时会误判
+        if val > outer_side * 0.80:
             return False
         # 边距不能太小（小于 0.5cm 视为异常）
         if val < 0.5:
@@ -1426,50 +1964,114 @@ def _validate_geometric_constraints(margins, result, outer, inner,
     # 但方向标签的数值识别通常是准确的。
     _ocr_h_self_consistent = False
     _ocr_v_self_consistent = False
+    
+    # 单个边距的物理上限：不能超过对应外框边长的80%
+    _h_side_max = outer_w_cm * 0.80
+    _v_side_max = outer_h_cm * 0.80
+    
+    # 实际像素检测到的内框尺寸（厘米）
+    _actual_inner_w_cm = iw * cm_px_w
+    _actual_inner_h_cm = ih * cm_px_h
 
     # 水平方向自洽检查：left+right是否能推导出合理的inner_w
+    # 同时检查每个边距是否在物理合理范围内
     if ml > 0 and mr > 0:
-        _implied_inner_w = outer_w_cm - ml - mr
-        if 0 < _implied_inner_w < outer_w_cm:
-            _implied_ratio_w = _implied_inner_w / outer_w_cm
-            if 0.10 <= _implied_ratio_w <= 0.90:
-                _ocr_h_self_consistent = True
-                logger.info(
-                    f"[几何驱动] OCR水平边距自洽: left={ml:.1f}+right={mr:.1f} → "
-                    f"implied_inner_w={_implied_inner_w:.1f}cm (占外框{_implied_ratio_w:.0%})"
-                )
+        # 检查单个边距是否在合理范围内
+        _ml_plausible = ml <= _h_side_max
+        _mr_plausible = mr <= _h_side_max
+        
+        if not _ml_plausible or not _mr_plausible:
+            logger.warning(
+                f"[几何驱动] OCR水平边距不合理: left={ml:.1f}cm(上限{_h_side_max:.1f}cm) "
+                f"right={mr:.1f}cm(上限{_h_side_max:.1f}cm)"
+            )
+        
+        if _ml_plausible and _mr_plausible:
+            _implied_inner_w = outer_w_cm - ml - mr
+            if 0 < _implied_inner_w < outer_w_cm:
+                _implied_ratio_w = _implied_inner_w / outer_w_cm
+                if 0.10 <= _implied_ratio_w <= 0.90:
+                    # 只有内框不可靠时，仅检查比例；内框可靠时还需与实际尺寸匹配
+                    if _inner_unreliable:
+                        _ocr_h_self_consistent = True
+                        logger.info(
+                            f"[几何驱动] OCR水平边距自洽(内框不可靠): left={ml:.1f}+right={mr:.1f} → "
+                            f"implied_inner_w={_implied_inner_w:.1f}cm (占外框{_implied_ratio_w:.0%})"
+                        )
+                    else:
+                        # 内框可靠时，推导值必须与实际内框宽度匹配
+                        _match_tol_w = max(5.0, outer_w_cm * 0.15)  # 容差：5cm或外框15%
+                        if abs(_implied_inner_w - _actual_inner_w_cm) <= _match_tol_w:
+                            _ocr_h_self_consistent = True
+                            logger.info(
+                                f"[几何驱动] OCR水平边距自洽: left={ml:.1f}+right={mr:.1f} → "
+                                f"implied_inner_w={_implied_inner_w:.1f}cm ≈ 实际{_actual_inner_w_cm:.1f}cm"
+                            )
+                        else:
+                            logger.info(
+                                f"[几何驱动] OCR水平边距不自洽: implied_inner_w={_implied_inner_w:.1f}cm "
+                                f"与实际内框{_actual_inner_w_cm:.1f}cm差异超过容差{_match_tol_w:.1f}cm"
+                            )
+                else:
+                    logger.info(
+                        f"[几何驱动] OCR水平边距不自洽: implied_inner_w={_implied_inner_w:.1f}cm "
+                        f"(占外框{_implied_ratio_w:.0%}，超出10%-90%范围)"
+                    )
             else:
                 logger.info(
                     f"[几何驱动] OCR水平边距不自洽: implied_inner_w={_implied_inner_w:.1f}cm "
-                    f"(占外框{_implied_ratio_w:.0%}，超出10%-90%范围)"
+                    f"(无效值)"
                 )
-        else:
-            logger.info(
-                f"[几何驱动] OCR水平边距不自洽: implied_inner_w={_implied_inner_w:.1f}cm "
-                f"(无效值)"
-            )
 
     # 垂直方向自洽检查：top+bottom是否能推导出合理的inner_h
+    # 同时检查每个边距是否在物理合理范围内
     if mt > 0 and mb > 0:
-        _implied_inner_h = outer_h_cm - mt - mb
-        if 0 < _implied_inner_h < outer_h_cm:
-            _implied_ratio_h = _implied_inner_h / outer_h_cm
-            if 0.10 <= _implied_ratio_h <= 0.90:
-                _ocr_v_self_consistent = True
-                logger.info(
-                    f"[几何驱动] OCR垂直边距自洽: top={mt:.1f}+bottom={mb:.1f} → "
-                    f"implied_inner_h={_implied_inner_h:.1f}cm (占外框{_implied_ratio_h:.0%})"
-                )
+        # 检查单个边距是否在合理范围内
+        _mt_plausible = mt <= _v_side_max
+        _mb_plausible = mb <= _v_side_max
+        
+        if not _mt_plausible or not _mb_plausible:
+            logger.warning(
+                f"[几何驱动] OCR垂直边距不合理: top={mt:.1f}cm(上限{_v_side_max:.1f}cm) "
+                f"bottom={mb:.1f}cm(上限{_v_side_max:.1f}cm)"
+            )
+        
+        if _mt_plausible and _mb_plausible:
+            _implied_inner_h = outer_h_cm - mt - mb
+            if 0 < _implied_inner_h < outer_h_cm:
+                _implied_ratio_h = _implied_inner_h / outer_h_cm
+                if 0.10 <= _implied_ratio_h <= 0.90:
+                    # 只有内框不可靠时，仅检查比例；内框可靠时还需与实际尺寸匹配
+                    if _inner_unreliable:
+                        _ocr_v_self_consistent = True
+                        logger.info(
+                            f"[几何驱动] OCR垂直边距自洽(内框不可靠): top={mt:.1f}+bottom={mb:.1f} → "
+                            f"implied_inner_h={_implied_inner_h:.1f}cm (占外框{_implied_ratio_h:.0%})"
+                        )
+                    else:
+                        # 内框可靠时，推导值必须与实际内框高度匹配
+                        _match_tol_h = max(5.0, outer_h_cm * 0.15)  # 容差：5cm或外框15%
+                        if abs(_implied_inner_h - _actual_inner_h_cm) <= _match_tol_h:
+                            _ocr_v_self_consistent = True
+                            logger.info(
+                                f"[几何驱动] OCR垂直边距自洽: top={mt:.1f}+bottom={mb:.1f} → "
+                                f"implied_inner_h={_implied_inner_h:.1f}cm ≈ 实际{_actual_inner_h_cm:.1f}cm"
+                            )
+                        else:
+                            logger.info(
+                                f"[几何驱动] OCR垂直边距不自洽: implied_inner_h={_implied_inner_h:.1f}cm "
+                                f"与实际内框{_actual_inner_h_cm:.1f}cm差异超过容差{_match_tol_h:.1f}cm"
+                            )
+                else:
+                    logger.info(
+                        f"[几何驱动] OCR垂直边距不自洽: implied_inner_h={_implied_inner_h:.1f}cm "
+                        f"(占外框{_implied_ratio_h:.0%}，超出10%-90%范围)"
+                    )
             else:
                 logger.info(
                     f"[几何驱动] OCR垂直边距不自洽: implied_inner_h={_implied_inner_h:.1f}cm "
-                    f"(占外框{_implied_ratio_h:.0%}，超出10%-90%范围)"
+                    f"(无效值)"
                 )
-        else:
-            logger.info(
-                f"[几何驱动] OCR垂直边距不自洽: implied_inner_h={_implied_inner_h:.1f}cm "
-                f"(无效值)"
-            )
 
     validated = {}
 
@@ -1489,7 +2091,7 @@ def _validate_geometric_constraints(margins, result, outer, inner,
             elif not _is_geo_val_plausible(_px_mt, outer_h_cm, is_horizontal=False):
                 logger.warning(
                     f"[几何驱动] 上边距OCR={mt:.1f} 与几何值={_px_mt:.1f} 差异大，"
-                    f"但几何值物理不合理(>50%外框高={outer_h_cm*0.5:.1f}cm)，保留OCR值"
+                    f"但几何值物理不合理(>80%外框高={outer_h_cm*0.80:.1f}cm)，保留OCR值"
                 )
             else:
                 logger.warning(f"[几何驱动] 上边距OCR={mt:.1f} 与几何值={_px_mt:.1f} 差异过大，使用几何值")
@@ -1515,7 +2117,7 @@ def _validate_geometric_constraints(margins, result, outer, inner,
             elif not _is_geo_val_plausible(_px_mb, outer_h_cm, is_horizontal=False):
                 logger.warning(
                     f"[几何驱动] 下边距OCR={mb:.1f} 与几何值={_px_mb:.1f} 差异大，"
-                    f"但几何值物理不合理(>50%外框高={outer_h_cm*0.5:.1f}cm)，保留OCR值"
+                    f"但几何值物理不合理(>80%外框高={outer_h_cm*0.80:.1f}cm)，保留OCR值"
                 )
             else:
                 logger.warning(f"[几何驱动] 下边距OCR={mb:.1f} 与几何值={_px_mb:.1f} 差异过大，使用几何值")
@@ -1541,7 +2143,7 @@ def _validate_geometric_constraints(margins, result, outer, inner,
             elif not _is_geo_val_plausible(_px_ml, outer_w_cm, is_horizontal=True):
                 logger.warning(
                     f"[几何驱动] 左边距OCR={ml:.1f} 与几何值={_px_ml:.1f} 差异大，"
-                    f"但几何值物理不合理(>50%外框宽={outer_w_cm*0.5:.1f}cm)，保留OCR值"
+                    f"但几何值物理不合理(>80%外框宽={outer_w_cm*0.80:.1f}cm)，保留OCR值"
                 )
             else:
                 logger.warning(f"[几何驱动] 左边距OCR={ml:.1f} 与几何值={_px_ml:.1f} 差异过大，使用几何值")
@@ -1567,7 +2169,7 @@ def _validate_geometric_constraints(margins, result, outer, inner,
             elif not _is_geo_val_plausible(_px_mr, outer_w_cm, is_horizontal=True):
                 logger.warning(
                     f"[几何驱动] 右边距OCR={mr:.1f} 与几何值={_px_mr:.1f} 差异大，"
-                    f"但几何值物理不合理(>50%外框宽={outer_w_cm*0.5:.1f}cm)，保留OCR值"
+                    f"但几何值物理不合理(>80%外框宽={outer_w_cm*0.80:.1f}cm)，保留OCR值"
                 )
             else:
                 logger.warning(f"[几何驱动] 右边距OCR={mr:.1f} 与几何值={_px_mr:.1f} 差异过大，使用几何值")
@@ -4893,7 +5495,11 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
         if focused_val is not None:
             # —— [Fix-2026-08-17 合理性校验] 聚焦OCR返回的值不能等于外框尺寸，也不能过大
             # 方向标签附近常有外框尺寸(如58×120)的标注，聚焦OCR裁剪区域不够精准时会读到
-            _margin_sanity_cap = min(ow, oh) * 0.55
+            # 方向感知的上限：水平方向用外框宽度，垂直方向用外框高度
+            if dchar in ('left', 'right'):
+                _margin_sanity_cap = ow * 0.80
+            else:
+                _margin_sanity_cap = oh * 0.80
             if (abs(focused_val - ow) <= 2.0 or abs(focused_val - oh) <= 2.0):
                 logger.warning(
                     f"[sketch_parser] 聚焦OCR {dchar}: 值={focused_val:.1f}与外框尺寸"
@@ -4903,7 +5509,7 @@ def _match_direction_labels_to_numbers(dir_labels, ocr_hits, outer_rect,
             elif focused_val > _margin_sanity_cap and focused_val > 15:
                 logger.warning(
                     f"[sketch_parser] 聚焦OCR {dchar}: 值={focused_val:.1f}超过边距合理上限"
-                    f"{_margin_sanity_cap:.1f}(外框短边的55%)，跳过聚焦OCR结果"
+                    f"{_margin_sanity_cap:.1f}(对应外框边的80%)，跳过聚焦OCR结果"
                 )
                 focused_val = None
 
@@ -6293,13 +6899,18 @@ def _classic_run_ocr(cv2, gray, img, ox, oy, ow, oh, ix, iy, iw, ih,
         # 如果方向标签本身带有数值（如"上6"），验证后再使用
         if existing_val is not None and 0.5 <= existing_val <= 500:
             # 几何合理性检查：防止OCR错误值直接使用
-            _outer_max = max(target_outer_w_cm or 100, target_outer_h_cm or 100)
+            _outer_max_w = target_outer_w_cm or 100
+            _outer_max_h = target_outer_h_cm or 100
             _is_suspicious_val = False
             
-            # 检查1: 值是否超过外框的50%（边距不应超过外框一半）
-            if existing_val > _outer_max * 0.5:
+            # 检查1: 值是否超过外框的80%（边距不应超过外框的80%）
+            if dchar in ('left', 'right'):
+                _side_max = _outer_max_w
+            else:
+                _side_max = _outer_max_h
+            if existing_val > _side_max * 0.80:
                 _is_suspicious_val = True
-                logger.warning(f"[sketch_parser] 方向标签 {dchar} 值={existing_val} > 外框50%({_outer_max*0.5:.0f})，疑似错误")
+                logger.warning(f"[sketch_parser] 方向标签 {dchar} 值={existing_val} > 外框边合理上限({_side_max*0.80:.0f})，疑似错误")
             
             # 检查2: 与几何OCR结果交叉验证
             if not _is_suspicious_val and geometry_margins and mfield in geometry_margins:
