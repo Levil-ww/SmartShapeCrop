@@ -12050,3 +12050,35 @@ UnboundLocalError: cannot access local variable 'inner' where it is not associat
 [2026-08-21 14:16:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石7;85x95CM'
 [2026-08-21 14:16:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-素华牡丹;34x249CM'
 [2026-08-21 14:26:25] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-21 14:33:12] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-21 14:34:54] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.exe
+[2026-08-21 14:34:54] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 3 个矩形候选
+[2026-08-21 14:34:54] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(0, 0, 258, 141) 内框=(0, 0, 202, 141) 得分=7.60
+[2026-08-21 14:34:54] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['right']
+[2026-08-21 14:35:00] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 5 条数值候选
+[2026-08-21 14:35:00] [INFO] [core.pool_designer.sketch_parser]   val=7.0 conf=27 bbox=(80,31,5,2) cx=82 cy=32
+[2026-08-21 14:35:00] [INFO] [core.pool_designer.sketch_parser]   val=7.0 conf=38 bbox=(102,34,8,2) cx=106 cy=35
+[2026-08-21 14:35:00] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=86 bbox=(192,22,4,9) cx=194 cy=26
+[2026-08-21 14:35:00] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=45 bbox=(237,29,4,6) cx=239 cy=32
+[2026-08-21 14:35:00] [INFO] [core.pool_designer.sketch_parser]   val=2.0 conf=74 bbox=(4,51,8,11) cx=8 cy=56
+[2026-08-21 14:35:09] [INFO] [core.pool_designer.sketch_parser] [Step4] 方向标签锁定 0 个字段: []
+[2026-08-21 14:35:09] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_h] 候选数=2 top1=2.0
+[2026-08-21 14:35:09] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_w] 候选数=2 top1=4.0
+[2026-08-21 14:35:09] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[margin_right] 候选数=1 top1=4.0
+[2026-08-21 14:35:09] [INFO] [core.pool_designer.sketch_parser] [Step6] 纵向对称(已知inner): top=bottom=34.0
+[2026-08-21 14:35:09] [INFO] [core.pool_designer.sketch_parser] [Step7终态] 赋值: total=50.0x70.0 inner=4.0x2.0 边距上34.0下34.0左0.0右4.0
+[2026-08-21 14:35:14] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;52x196cm剪裁有图'
+[2026-08-21 14:35:14] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.exe
+[2026-08-21 14:35:14] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 3 个矩形候选
+[2026-08-21 14:35:14] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(0, 0, 258, 141) 内框=(0, 0, 202, 141) 得分=7.60
+[2026-08-21 14:35:14] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['right']
+[2026-08-21 14:35:16] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-克罗印花;52x196cm剪裁有图'
+[2026-08-21 14:35:16] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=吸水皮革-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=52.0x196.0cm
+[2026-08-21 14:35:16] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸修正：文件名数值 52.0x196.0 → 外框参考 宽196.0 x 高52.0（与草图横/竖标注一致）
+[2026-08-21 14:35:18] [INFO] [gui.property_panel] [PoolMatcher] 💾 加载磁盘缓存成功（206124 个条目，上次扫描 2026-08-21 14:16:36）
+[2026-08-21 14:35:21] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 5 条数值候选
+[2026-08-21 14:35:21] [INFO] [core.pool_designer.sketch_parser]   val=7.0 conf=27 bbox=(80,31,5,2) cx=82 cy=32
+[2026-08-21 14:35:21] [INFO] [core.pool_designer.sketch_parser]   val=7.0 conf=38 bbox=(102,34,8,2) cx=106 cy=35
+[2026-08-21 14:35:21] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=86 bbox=(192,22,4,9) cx=194 cy=26
+[2026-08-21 14:35:21] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=45 bbox=(237,29,4,6) cx=239 cy=32
+[2026-08-21 14:35:21] [INFO] [core.pool_designer.sketch_parser]   val=2.0 conf=74 bbox=(4,51,8,11) cx=8 cy=56
