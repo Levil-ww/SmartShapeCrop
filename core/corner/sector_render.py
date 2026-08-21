@@ -275,71 +275,92 @@ def _redraw_border_on_corner(
     if content_ref_arr is None:
         content_ref_arr = _sample_content_ref(result_arr, roi_w, roi_h)
 
-    GAP_COLOR_DIST = 40.0  # Reduced from 60 to be more strict about gap detection
-    GAP_MAX_THICKNESS = 30.0
+    # [Fix 多余边框弧线 2026-08-21 v2] 增强间隙检测参数
+    GAP_COLOR_DIST = 55.0  # 放宽至55：更好识别米色/浅色间隙层
+    GAP_MAX_THICKNESS = 40.0  # 放宽至40：覆盖更厚的间隙层
+    GAP_BG_DIST = 50.0  # 与背景色相似度阈值
     MAX_BORDER_DEPTH_RATIO = 2.0
     MAX_BORDER_DEPTH_HARD_PX = 500
 
     capped_by_ratio = MAX_BORDER_DEPTH_RATIO * R_total
     effective_border_depth = min(MAX_BORDER_DEPTH_HARD_PX, capped_by_ratio, total_border_depth)
+    
+    # 计算背景色参考（用于间隙检测）
+    bg_arr_detect = np.array(bg_color, dtype=np.float64)
 
     is_gap_layer = []
     for i, (c, t) in enumerate(border_layers):
         dist_to_content = float(np.sqrt(np.sum((np.array(c, dtype=np.float64) - content_ref_arr) ** 2)))
+        dist_to_bg = float(np.sqrt(np.sum((np.array(c, dtype=np.float64) - bg_arr_detect) ** 2)))
         cum_before = cumulative_depths[i]
         forced_gap = cum_before >= effective_border_depth
         col_arr = np.array(c, dtype=np.float64)
 
-        # === [Fix 图二/图三] 增强型间隙检测 ===
-        # 三判定策略，任一满足则为间隙层：
-        #   1) 内容匹配: 颜色接近内容参考色 (dist < 60)
-        #   2) 夹层判定: 被两个边框层夹住，且与两者颜色差异都大 (>25)
-        #   3) 真间隙兜底: 颜色接近背景色，且被边框层夹住
+        # === [Fix v2] 鲁棒间隙检测 ===
+        # 四判定策略，任一满足则为间隙层：
+        #   1) 背景色匹配: 颜色接近背景色 (dist_to_bg < 50) → 必定是间隙
+        #   2) 内容色匹配: 颜色接近内容参考色 (dist_to_content < 55) → 间隙
+        #   3) 邻接差异大: 与相邻层颜色差异都很大 (>35) 且厚度小 → 间隙
+        #   4) 夹层检测: 被两层夹住的异色薄层 → 间隙
+        #
+        # 安全约束: 首层(最外边框)和末层(最内边框)默认非间隙，
+        #           除非满足强制间隙条件 (forced_gap)
 
         is_gap = False
-        if not forced_gap and i > 0:
-            # 判定1: 颜色接近内容参考色
-            cond_content = (dist_to_content < GAP_COLOR_DIST and
-                            t <= GAP_MAX_THICKNESS)
-
-            # 判定2: 夹层检测 — 被两个非间隙边框层夹住的异色层
-            # 这是间隙层的典型特征：边框-间隙-边框 结构
-            cond_sandwich = False
-            if i > 0 and i < len(border_layers) - 1:
-                prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
-                next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
-                d_prev = float(np.sqrt(np.sum((col_arr - prev_c) ** 2)))
-                d_next = float(np.sqrt(np.sum((col_arr - next_c) ** 2)))
-                # 与两侧颜色都差异大 (>25)，且两侧颜色相互接近 (<35)
-                d_adjacent = float(np.sqrt(np.sum((prev_c - next_c) ** 2)))
-                if (d_prev > 25.0 and d_next > 25.0 and
-                    d_adjacent < 35.0 and t <= GAP_MAX_THICKNESS):
-                    cond_sandwich = True
-
-            # 判定3: 与相邻层颜色都差异大 (>30)，且夹在两层之间
+        if not forced_gap:
+            is_sentinel = (i == 0) or (i == len(border_layers) - 1)
+            
+            # [Fix v3] 允许 sentinel 层（最外/最内）被识别为间隙
+            # 条件：必须满足强间隙特征（与背景色接近 或 与内容色接近）
+            # 这是为了处理素锦、塞纳时光等"外层间隙"的情况
+            sentinel_can_be_gap = False
+            if is_sentinel and t <= GAP_MAX_THICKNESS:
+                # 强条件：与背景色/内容色都很接近，或与邻居差异巨大
+                sentinel_can_be_gap = (dist_to_bg < GAP_BG_DIST) or (dist_to_content < GAP_COLOR_DIST)
+            
+            # 判定1: 颜色接近背景色 → 强间隙信号
+            cond_bg = (dist_to_bg < GAP_BG_DIST and t <= GAP_MAX_THICKNESS and 
+                       (not is_sentinel or sentinel_can_be_gap))
+            
+            # 判定2: 颜色接近内容参考色 → 间隙信号
+            cond_content = (dist_to_content < GAP_COLOR_DIST and 
+                           t <= GAP_MAX_THICKNESS and 
+                           (not is_sentinel or sentinel_can_be_gap))
+            
+            # 判定3: 与相邻层差异大 → 间隙
             cond_neighbor_gap = False
             if i > 0 and i < len(border_layers) - 1 and t <= GAP_MAX_THICKNESS:
                 prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
                 next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
                 d_prev = float(np.sqrt(np.sum((col_arr - prev_c) ** 2)))
                 d_next = float(np.sqrt(np.sum((col_arr - next_c) ** 2)))
-                if d_prev > 30.0 and d_next > 30.0:
+                # 两侧差异都大 (>35)，且自身厚度小
+                if d_prev > 35.0 and d_next > 35.0:
                     cond_neighbor_gap = True
-
-            is_gap = cond_content or cond_sandwich or cond_neighbor_gap
             
-            # DEBUG: 检查每层的间隙判定
-            if d == 0:  # 这是外层循环的 d，暂时无效
-                pass
+            # 判定4: 夹层检测 — 被两个边框层夹住的异色薄层
+            cond_sandwich = False
+            if i > 0 and i < len(border_layers) - 1 and t <= GAP_MAX_THICKNESS:
+                prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
+                next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
+                d_prev = float(np.sqrt(np.sum((col_arr - prev_c) ** 2)))
+                d_next = float(np.sqrt(np.sum((col_arr - next_c) ** 2)))
+                d_adjacent = float(np.sqrt(np.sum((prev_c - next_c) ** 2)))
+                # 与两侧差异都大，但两侧之间可以是任意关系
+                # 放宽条件：不再要求两侧颜色互相接近
+                if d_prev > 20.0 and d_next > 20.0:
+                    cond_sandwich = True
 
-            # 反向安全检查：如果与相邻边框层颜色非常接近 (< 15)，
-            # 则为实心边框层而非间隙
+            is_gap = cond_bg or cond_content or cond_neighbor_gap or cond_sandwich
+
+            # 反向安全检查：如果与任一相邻层颜色非常接近 (< 12)，
+            # 则为实心边框层而非间隙（这是相邻边框的过渡层）
             if is_gap:
                 for ni in (i - 1, i + 1):
                     if 0 <= ni < len(border_layers) and ni != i:
                         nc = np.array(border_layers[ni][0], dtype=np.float64)
                         d_adj = float(np.sqrt(np.sum((col_arr - nc) ** 2)))
-                        if d_adj < 15.0:
+                        if d_adj < 12.0:
                             is_gap = False
                             break
 
@@ -435,30 +456,22 @@ def _redraw_border_on_corner(
 
         # === 间隙层与实心层分离处理 ===
         if is_gap:
-            # [Fix 安妮森林/克罗印花] 间隙层处理：
-            # 1. outside_arc 区域（裁切区域）：填充为白色
-            # 2. inside_arc 区域（保留区域）：
-            #    - 如果间隙层颜色接近背景色，填充为白色（消除米色缺口）
-            #    - 如果间隙层颜色接近内容色，保持原色
-            gap_color_arr = np.array(target_color, dtype=np.float64)
-            dist_to_bg = float(np.sqrt(np.sum((gap_color_arr - np.array(bg_color, dtype=np.float64)) ** 2)))
-            dist_to_content = float(np.sqrt(np.sum((gap_color_arr - content_ref_arr) ** 2)))
+            # [Fix 多余边框弧线 2026-08-21 v2] 间隙层处理：
+            #   间隙层（gap layer）是位于实心边框层之间的非边框层（米色、浅灰色等）。
+            #   在圆角区域，间隙层的任何像素都不应可见——它们必须被强制填充为背景色。
+            #   这包括：弧外侧（裁切区）、弧内侧（保留区）的所有间隙层像素。
+            #
+            #   不变量：间隙层像素 ∩ 圆角区域 → 全部映射为 bg_color
+            #
+            #   原逻辑缺陷：
+            #     - 背景色间隙：清除了非间隙区域像素，跳过了间隙区域像素（逻辑反转）
+            #     - 非背景色间隙：只清除 in_gap_region 像素，其余保留（残留间隙颜色）
+            #   修复：所有间隙层像素一律强制填充为 bg_color，不做任何区分。
             
-            # 如果间隙层颜色既接近背景色，又在 inside_arc 区域，填充为白色
-            if dist_to_bg < 30.0 and dist_to_bg < dist_to_content:
-                # 这是背景色间隙，填充为白色
-                # 但需要保留内容色间隙
-                if np.any(in_gap_region):
-                    keep_mask = ~in_gap_region
-                    if not np.any(keep_mask):
-                        continue
-                    local_coords = (local_coords[0][keep_mask], local_coords[1][keep_mask])
-                # Fill with white bg_color to eliminate gap notches
-                bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
-                result_arr[local_coords[0], local_coords[1], :] = bg_arr
-            else:
-                # 内容色间隙，保持原色
-                continue
+            bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
+            # 强制清除所有间隙层像素为背景色
+            result_arr[local_coords[0], local_coords[1], :] = bg_arr
+            continue
         else:
             # Solid border layer:
             # 1. Skip pixels in classified gap regions
@@ -829,13 +842,42 @@ def _redraw_border_on_corner(
             color_fill = np.array(target_color, dtype=result_arr.dtype)
             result_arr[apply_y, apply_x, :] = color_fill.reshape(1, 3)
 
-    # [Fix 青芜漫野] Final pass: ensure outside_arc region is completely white
-    # Outside_arc pixels (dist >= R_total) may have been overwritten by subsequent operations
+    # [Fix 多余边框弧线 v2] 增强最终清理：
+    #   1. outside_arc 区域 → 全部填充背景色
+    #   2. 扫描 arc 区域所有像素 → 清除任何与间隙层颜色匹配的残留像素
+    
+    bg_uint8 = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
+    
+    # Pass 1: 确保 outside_arc 区域完全为背景色
     final_beyond = valid_angle & (dist >= float(R_total)) & (dist <= float(R_total) + 5.0)
     if np.any(final_beyond):
         final_coords = np.where(final_beyond)
-        bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
-        result_arr[final_coords[0], final_coords[1], :] = bg_arr
+        result_arr[final_coords[0], final_coords[1], :] = bg_uint8
+    
+    # Pass 2: 间隙颜色残留清扫
+    # 扫描整个角扇区区域，清除任何与间隙层颜色匹配的像素
+    # 这是对逐深度间隙清除的补充，确保无遗漏
+    gap_colors_list = [np.array(c, dtype=np.float64) for (c, _), ig in zip(border_layers, is_gap_layer) if ig]
+    if gap_colors_list:
+        # 在 valid_angle 区域内查找间隙色像素
+        scan_region = valid_angle & (dist <= float(R_total) + 3.0)
+        if np.any(scan_region):
+            scan_coords = np.where(scan_region)
+            scan_colors = result_arr[scan_coords[0], scan_coords[1], :].astype(np.float64)
+            
+            for gc in gap_colors_list:
+                dist_to_gc = np.sqrt(np.sum((scan_colors - gc.reshape(1, 3)) ** 2, axis=1))
+                # 使用与间隙层检测一致的距离阈值
+                residual_gap = dist_to_gc < 25.0
+                if np.any(residual_gap):
+                    idx = np.where(residual_gap)[0]
+                    result_arr[scan_coords[0][idx], scan_coords[1][idx], :] = bg_uint8
+                    # 已清理的像素不再重复检查
+                    remaining = ~residual_gap
+                    if not np.any(remaining):
+                        break
+                    scan_coords = (scan_coords[0][remaining], scan_coords[1][remaining])
+                    scan_colors = scan_colors[remaining]
 
     # 回写结果
     new_img = Image.fromarray(result_arr.astype(np.uint8), mode='RGB')

@@ -319,3 +319,27 @@ Traceback (most recent call last):
     dt = dt.astype(np.float64)
 numpy._core._exceptions._ArrayMemoryError: Unable to allocate 2.31 GiB for an array with shape (2, 6555, 23681) and data type float64
 
+============================================================
+崩溃时间: 2026-08-21 08:36:00
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
+    def paintEvent(self, event):
+    
+KeyboardInterrupt
+
+============================================================
+崩溃时间: 2026-08-21 09:12:46
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 78, in paintEvent
+    def paintEvent(self, event):
+    
+KeyboardInterrupt
+
