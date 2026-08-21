@@ -130,66 +130,15 @@ def render_design(design: CropDesign) -> Image.Image:
     inner_fill_arr = np.array(inner_fill, dtype=np.uint8)
     inner_mask = _get_inner_pixel_mask(design)
     
-    # 3.0 池模式：保存素材图非白色像素（在白色填充之前）
-    # 防止白色填充覆盖素材图原有的边框和花纹
-    is_pool_with_material = (design.pool_hole_transparent
-                             and design.pool_outer_material_image
-                             and os.path.isfile(design.pool_outer_material_image))
-    
-    saved_border_pixels = None
-    non_white_mask = None
-    
-    if is_pool_with_material:
-        # 计算 inner_mask 区域内的非白色像素
-        # 白色背景的阈值：R>230, G>230, B>230
-        WHITE_THRESHOLD = 230
-        inner_region = canvas_arr[inner_mask]
-        non_white_mask_in_region = (inner_region[:, 0] < WHITE_THRESHOLD) | \
-                                   (inner_region[:, 1] < WHITE_THRESHOLD) | \
-                                   (inner_region[:, 2] < WHITE_THRESHOLD)
-        if non_white_mask_in_region.any():
-            # 创建完整的 non_white_mask（全图尺寸）
-            non_white_mask = np.zeros_like(inner_mask, dtype=bool)
-            non_white_mask[inner_mask] = non_white_mask_in_region
-            # 保存这些非白色像素
-            saved_border_pixels = canvas_arr[non_white_mask].copy()
+    # 池模式：素材图的边框花纹保留在 inner_mask 外部
+    # 不需要保存/恢复 inner_mask 内部的像素
+    # 白色填充只作用于 inner_mask 内部，外部的素材图花纹自然保留
     
     # 白色填充内部挖空区域
     canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
-    
-    # 3.0b 池模式：恢复素材图非白色像素（在白色填充之后）
-    if is_pool_with_material and saved_border_pixels is not None and non_white_mask is not None:
-        canvas_arr[non_white_mask] = saved_border_pixels
 
-    # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线（最后绘制，确保不被覆盖）
-    #
-    # [因果说明 2026-08-14] 形态学腐蚀法 ≠ 圆角裁剪！ 两者严格解耦：
-    # ┌─────────────────────────────────────────────────────────────────────┐
-    # │  阶段 1 · 圆角裁剪（已在上一步 3.4 完成，结果锁死为 inner_mask）     │
-    # │    inner_mask = _get_inner_pixel_mask(design)                       │
-    # │       → fill_rect_mask 填充像素对齐矩形                             │
-    # │       → carve_corner_on_mask（纯 numpy 距离场，几何精确）切四角      │
-    # │    canvas_arr[inner_mask] = inner_fill  ← 挖空形状、尺寸、圆角       │
-    # │            全部在这一行写入 canvas，自此不可被后续代码修改！          │
-    # ├─────────────────────────────────────────────────────────────────────┤
-    # │  阶段 2 · 边框绘制（本步骤，仅定位 + 染色，不碰裁剪）                │
-    # │    计算：                                                           │
-    # │      dist_to_edge = distance_transform_edt(~inner_mask)            │
-    # │      border_mask = inner_mask & (dist_to_edge ≤ 10)                 │
-    # │    含义：对每个 True(挖空)像素，dist_to_edge = 到最近 False(外框)    │
-    # │          像素的欧氏距离。取 dist ≤ 10 的 True 像素 = 精确 10px 等距  │
-    # │          边界环，法线方向严格 10px，无对角延伸                        │
-    # │    执行：canvas_arr[border_mask] = (0,0,0) ← 只改颜色，不改形状     │
-    # └─────────────────────────────────────────────────────────────────────┘
-    #
-    # distance_transform_edt 用法：
-    #   输入 = ~inner_mask（True=外框，False=挖空）
-    #   输出 = 每个 True(外框) 像素到最近 False(挖空) 像素的距离
-    #   但我们需要的是"挖空像素到外框的距离"，所以应该用 inner_mask 作为输入
-    #   inner_mask 作为输入时，dist[i] = 每个 True(挖空) 像素到最近 False(外框) 像素的距离
-    #   取 dist ≤ 10 的像素 = 挖空区域最外圈 10px 的等距环
-    #
-    # 通用：rect_hole / ellipse_hole / rect_lshape 全部适用。
+    # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线
+    # 这条边框线是"挖洞"的视觉分隔线，确保有明显的层次感
     BORDER_WIDTH_PX = 10
     BLACK_RGB = (0, 0, 0)
     from scipy.ndimage import distance_transform_edt
