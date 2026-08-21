@@ -248,7 +248,9 @@ from .corner.algorithm import carve_corner_on_mask as _carve_corner_on_mask
 
 
 def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
-                                   corners: dict[str, float]) -> None:
+                                   corners: dict[str, float],
+                                   fill_value: int = 255,
+                                   inverse: bool = False) -> None:
     """
     在 mask 上应用圆角：对内部矩形的四个角，先挖正方形再填回 1/4 圆。
     切掉的是 L 形（正方形减去 1/4 圆），即只切掉尖角，保留圆弧。
@@ -266,6 +268,10 @@ def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
     导致最后一(几)列 mask 漏填为 0 → 仍是 255(挖空白) → 视觉上是紧贴右边缘的白竖线。
     TL/BL 因截断方向向内不外露所以看不出来。修复方式是：在此处先把 float 矩形
     对齐到与 fill_rect_mask 完全相同的整数网格，再把整数版 (x_i, y_i, w_i, h_i) 传下去。
+
+    Args:
+        fill_value: 圆弧填充值（默认 255）
+        inverse: True=反转角落操作，用于内层矩形的精确圆弧挖空
     """
     # 与 fill_rect_mask 用完全相同的整数对齐策略
     x_i = int(round(inner_rect.x))
@@ -279,6 +285,8 @@ def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
         (x_i, y_i, w_i, h_i),
         corners,
         canvas_size=mask_img.size,
+        fill_value=fill_value,
+        inverse=inverse,
     )
 
 
@@ -340,29 +348,28 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
       - 内层：距 outer_rect 偏移 t_outer + t_layer 的圆角矩形（圆角半径 max(0, R - t_outer - t_layer)）
       - band = 外层 & ~内层
 
-      这样每层在直线部分是矩形带，在角落是同心环扇形，
-      不会出现白色覆盖，边框自身颜色和线条完整保留。
+      使用双 mask 独立绘制差集：两个圆角矩形分别独立计算，取差集，
+      避免单 mask inverse 模式在角落产生像素异常。
     """
     w, h = design.canvas_w_px, design.canvas_h_px
     outer = design.outer_rect_px()
     corners = design.corners_px
     inner_rect = design.inner_rect_px()
 
-    # 1. 计算 frame_mask（总边框带）：外层圆角矩形 - 内层圆角矩形
-    outer_solid = make_mask((w, h))
-    fill_rect_mask(outer_solid, outer, 255)
-    apply_rounded_corners_to_mask(outer_solid, outer, corners)
+    # 1. 计算 frame_mask（总边框带）：双 mask 差集
+    frame_outer_img = make_mask((w, h))
+    fill_rect_mask(frame_outer_img, outer, 255)
+    apply_rounded_corners_to_mask(frame_outer_img, outer, corners, fill_value=255)
 
-    inner_solid = make_mask((w, h))
-    fill_rect_mask(inner_solid, inner_rect, 255)
-    # 使用正确的算法计算内层圆角半径（每个角落独立计算）
     inner_corners = compute_inner_corner_radii(outer, inner_rect, corners)
+    frame_inner_img = make_mask((w, h))
+    fill_rect_mask(frame_inner_img, inner_rect, 255)
     if any(r > 0 for r in inner_corners.values()):
-        apply_rounded_corners_to_mask(inner_solid, inner_rect, inner_corners)
+        apply_rounded_corners_to_mask(frame_inner_img, inner_rect, inner_corners, fill_value=255)
 
-    frame_mask = np.array(outer_solid, dtype=bool) & ~np.array(inner_solid, dtype=bool)
+    frame_mask = np.array(frame_outer_img, dtype=bool) & ~np.array(frame_inner_img, dtype=bool)
 
-    # 2. 按每层边框 offset 切分 band
+    # 2. 按每层边框 offset 切分 band（双 mask 差集）
     bands: list[tuple[np.ndarray, BorderLayer]] = []
     cumulative_offset = 0
 
@@ -376,28 +383,31 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
         outer_rect_i = RectShape(
             x=outer.x + t_outer, y=outer.y + t_outer,
             w=outer.w - 2 * t_outer, h=outer.h - 2 * t_outer,
-            corner_r=max(0, corners.get('br', 0.0) - t_outer)
+            corner_r=0.0
         )
         outer_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_outer) for ck in ('tl', 'tr', 'bl', 'br')}
-        outer_mask_i = make_mask((w, h))
-        fill_rect_mask(outer_mask_i, outer_rect_i, 255)
-        if any(r > 0 for r in outer_radii_i.values()):
-            apply_rounded_corners_to_mask(outer_mask_i, outer_rect_i, outer_radii_i)
 
         # 内层：距 outer_rect 偏移 t_outer + t_layer 的圆角矩形
         t_inner = t_outer + t_layer
         inner_rect_i = RectShape(
             x=outer.x + t_inner, y=outer.y + t_inner,
             w=outer.w - 2 * t_inner, h=outer.h - 2 * t_inner,
-            corner_r=max(0, corners.get('br', 0.0) - t_inner)
+            corner_r=0.0
         )
         inner_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_inner) for ck in ('tl', 'tr', 'bl', 'br')}
-        inner_mask_i = make_mask((w, h))
-        fill_rect_mask(inner_mask_i, inner_rect_i, 255)
-        if any(r > 0 for r in inner_radii_i.values()):
-            apply_rounded_corners_to_mask(inner_mask_i, inner_rect_i, inner_radii_i)
 
-        band = np.array(outer_mask_i, dtype=bool) & ~np.array(inner_mask_i, dtype=bool)
+        # 双 mask：外层 255 - 内层 255 = band
+        band_outer_img = make_mask((w, h))
+        fill_rect_mask(band_outer_img, outer_rect_i, 255)
+        if any(r > 0 for r in outer_radii_i.values()):
+            apply_rounded_corners_to_mask(band_outer_img, outer_rect_i, outer_radii_i, fill_value=255)
+
+        band_inner_img = make_mask((w, h))
+        fill_rect_mask(band_inner_img, inner_rect_i, 255)
+        if any(r > 0 for r in inner_radii_i.values()):
+            apply_rounded_corners_to_mask(band_inner_img, inner_rect_i, inner_radii_i, fill_value=255)
+
+        band = np.array(band_outer_img, dtype=bool) & ~np.array(band_inner_img, dtype=bool)
         bands.append((band, layer))
 
     # 3. 处理剩余区域

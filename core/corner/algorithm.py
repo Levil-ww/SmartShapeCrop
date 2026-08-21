@@ -92,6 +92,8 @@ def carve_corner_on_mask(
     rect: tuple,
     corners: dict,
     canvas_size: tuple[int, int] | None = None,
+    fill_value: int = 255,
+    inverse: bool = False,
 ) -> None:
     """
     在已有的 L 模式 mask 上，对指定矩形的四个角刻出圆角（原地修改）。
@@ -99,9 +101,13 @@ def carve_corner_on_mask(
     纯 numpy 距离场算法（v2，2026-08-14 重写）：
       对每个圆角 r、圆心 (cx, cy)：
         1. 将 r×r corner square 内的所有像素先设为 0（挖掉尖角）
-        2. 用距离公式 dist(px,py) ≤ r 且 px/py 在对应象限 → 填回 255（保留 1/4 圆弧）
+        2. 用距离公式 dist(px,py) ≤ r 且 px/py 在对应象限 → 填回 fill_value（保留 1/4 圆弧）
       几何上保证过渡点无 C 形缺口、无过绘、对 TR/BR 角不外溢到外框交界。
       不再依赖 PIL pieslice 的栅格化（其在 R 较大时会产生锯齿与过画）。
+
+    inverse=True 模式（用于单 mask 双层绘制的内层矩形）：
+      反转上述操作：corner square → fill_value（带），arc → 0（洞）。
+      适用于"外层矩形 255，内层矩形 0"的同心差集场景，确保内层角落圆弧精确挖空。
 
     本函数是项目中所有圆角处理的唯一入口，确保 image_cropper.py、
     geometry.py、process_image.py 三处的圆角逻辑完全一致。
@@ -111,6 +117,9 @@ def carve_corner_on_mask(
         rect: (x, y, w, h) 目标矩形坐标（左上角 + 宽高，整数对齐）
         corners: {corner_key: radius_px} 圆角半径（像素）；None 或 <= 0 的角跳过
         canvas_size: 可选，用于 clip 坐标到合法范围；None 则用 mask.size
+        fill_value: 圆弧填充值（默认 255）
+        inverse: True=反转角落操作（corner square→fill_value, arc→0），
+                 用于内层矩形的精确圆弧挖空
     """
     W, H = canvas_size if canvas_size is not None else mask.size
     x, y, w, h = rect
@@ -142,8 +151,7 @@ def carve_corner_on_mask(
         else:  # br
             cx, cy = x + w - r_px, y + h - r_px
 
-        # 1. 挖空 r×r corner square（切掉尖角）
-        #    范围外扩 1px 以覆盖 PIL inclusive 语义的右/下边界列
+        # 1. 处理 corner square
         sq = get_corner_square(rect, corner_key, r_px)
         sq_x0 = max(0, int(sq[0]))
         sq_y0 = max(0, int(sq[1]))
@@ -151,9 +159,11 @@ def carve_corner_on_mask(
         sq_y1 = min(H, int(sq[3]) + 1)
 
         if sq_x1 > sq_x0 and sq_y1 > sq_y0:
-            mask_arr[sq_y0:sq_y1, sq_x0:sq_x1] = 0
+            # inverse=True: corner square → fill_value (带的一部分)
+            # inverse=False: corner square → 0 (切掉尖角)
+            mask_arr[sq_y0:sq_y1, sq_x0:sq_x1] = fill_value if inverse else 0
 
-        # 2. 用距离场公式把 1/4 圆弧像素填回 255（纯几何，无栅格化伪影）
+        # 2. 用距离场公式把 1/4 圆弧像素填充
         ys = np.arange(sq_y0, sq_y1)
         xs = np.arange(sq_x0, sq_x1)
         yy, xx = np.meshgrid(ys, xs, indexing='ij')
@@ -177,7 +187,9 @@ def carve_corner_on_mask(
         fill_mask = inside_circle & quadrant_mask
 
         if fill_mask.any():
-            mask_arr[sq_y0:sq_y1, sq_x0:sq_x1][fill_mask] = 255
+            # inverse=True: arc → 0 (洞，精确挖空)
+            # inverse=False: arc → fill_value (保留圆角)
+            mask_arr[sq_y0:sq_y1, sq_x0:sq_x1][fill_mask] = 0 if inverse else fill_value
 
     # 回写 PIL Image（L 模式）
     mask.paste(Image.fromarray(mask_arr, 'L'))
