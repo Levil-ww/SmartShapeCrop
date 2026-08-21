@@ -190,22 +190,8 @@ class PoolRenderWorker(QThread):
             design.canvas_w_cm = canvas_w_cm + TRIM_CM
             design.canvas_h_cm = canvas_h_cm + TRIM_CM
             design.dpi = 150
+            design.mode = 'rect_hole'
             design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
-
-            # 判断草图类型：椭圆草图切换到椭圆模式
-            if sketch_result and sketch_result.success and sketch_result.is_ellipse_sketch:
-                design.mode = 'ellipse_hole'
-                # 椭圆参数用识别到的值（+0cm损耗，因为是直径值）
-                if sketch_result.ellipse_rx_cm > 0:
-                    design.ellipse_rx_cm = sketch_result.ellipse_rx_cm
-                if sketch_result.ellipse_ry_cm > 0:
-                    design.ellipse_ry_cm = sketch_result.ellipse_ry_cm
-                self._log(
-                    f"🟢 检测到椭圆草图：自动切换到椭圆挖洞模式，"
-                    f"椭圆参数 {design.ellipse_rx_cm:.1f}×{design.ellipse_ry_cm:.1f} cm"
-                )
-            else:
-                design.mode = 'rect_hole'
 
             # 边距优先用草图，否则用默认等比例值（10% 短边）
             # [尺寸偏移修正 2026-08-15] 画布已 +TRIM_CM(1cm)，4 个边距也需各 +1cm，
@@ -399,12 +385,12 @@ class PropertyPanel(QWidget):
         self._inner_layout.addWidget(self._gb_l)
 
         # 5) 椭圆参数
-        self._gb_e = QGroupBox("椭圆参数（厘米）")
+        self._gb_e = QGroupBox("椭圆参数")
         fe = QVBoxLayout(self._gb_e)
-        self._sp_erx = self._dspin(0.5, 500, self.design.ellipse_rx_cm, decimals=1)
-        self._sp_ery = self._dspin(0.5, 500, self.design.ellipse_ry_cm, decimals=1)
-        fe.addLayout(self._row("椭圆长(cm)", self._sp_erx))
-        fe.addLayout(self._row("椭圆宽(cm)", self._sp_ery))
+        self._sp_erx = self._dspin(0.05, 0.49, self.design.ellipse_rx_ratio, decimals=2)
+        self._sp_ery = self._dspin(0.05, 0.49, self.design.ellipse_ry_ratio, decimals=2)
+        fe.addLayout(self._row("X半径/画布宽", self._sp_erx))
+        fe.addLayout(self._row("Y半径/画布高", self._sp_ery))
         self._inner_layout.addWidget(self._gb_e)
 
         # 6) 边框层
@@ -939,17 +925,6 @@ class PropertyPanel(QWidget):
                     self._sp_ml.blockSignals(False)
                     self._sp_mr.blockSignals(False)
 
-                # —— 回填椭圆参数（如果是椭圆草图）——
-                if result.is_ellipse_sketch and result.ellipse_rx_cm > 0:
-                    self._sp_erx.blockSignals(True)
-                    self._sp_ery.blockSignals(True)
-                    try:
-                        self._sp_erx.setValue(result.ellipse_rx_cm)
-                        self._sp_ery.setValue(result.ellipse_ry_cm)
-                    finally:
-                        self._sp_erx.blockSignals(False)
-                        self._sp_ery.blockSignals(False)
-
                 # 构造状态消息（带 try/except 防护）
                 try:
                     dir_vals = result.debug.get("direction_margins", {}) if isinstance(result.debug, dict) else {}
@@ -965,20 +940,10 @@ class PropertyPanel(QWidget):
                                 f"\n  🔤 方向标注: 上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm"
                             )
 
-                    # 椭圆草图显示椭圆参数
-                    if result.is_ellipse_sketch and result.ellipse_rx_cm > 0:
-                        shape_info = (
-                            f"  椭圆：长{result.ellipse_rx_cm:.1f} × 宽{result.ellipse_ry_cm:.1f} cm"
-                        )
-                    else:
-                        shape_info = (
-                            f"  内挖：{result.inner_w_cm:.1f} × {result.inner_h_cm:.1f} cm"
-                        )
-
                     self._set_pool_status(
                         f"✅ 识别草图成功：\n"
                         f"  外框：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm\n"
-                        f"{shape_info}\n"
+                        f"  内挖：{result.inner_w_cm:.1f} × {result.inner_h_cm:.1f} cm\n"
                         f"  边距：上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f} cm"
                         f"{dir_info}"
                         f"\n（已自动填入【内挖边距】栏，可微调）"
@@ -1123,9 +1088,6 @@ class PropertyPanel(QWidget):
             self._sp_mb.setValue(max(0, design.inner_margin_bottom_cm))
             self._sp_ml.setValue(max(0, design.inner_margin_left_cm))
             self._sp_mr.setValue(max(0, design.inner_margin_right_cm))
-            # 椭圆参数回填
-            self._sp_erx.setValue(max(0.5, design.ellipse_rx_cm))
-            self._sp_ery.setValue(max(0.5, design.ellipse_ry_cm))
             # 外框素材路径写到"背景设置"编辑框
             if design.outer_bg_image:
                 self._ed_outer_img.setText(design.outer_bg_image)
@@ -1144,10 +1106,7 @@ class PropertyPanel(QWidget):
                     sr = sketch_result
                     info += f"识别草图成功：\n"
                     info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
-                    if sr.is_ellipse_sketch and sr.ellipse_rx_cm > 0:
-                        info += f"  椭圆：长{sr.ellipse_rx_cm:.1f} × 宽{sr.ellipse_ry_cm:.1f} cm\n"
-                    else:
-                        info += f"  内挖：{sr.inner_w_cm:.1f} × {sr.inner_h_cm:.1f} cm\n"
+                    info += f"  内挖：{sr.inner_w_cm:.1f} × {sr.inner_h_cm:.1f} cm\n"
                     info += f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f} cm\n"
                     if hasattr(sr, 'debug') and sr.debug:
                         dir_vals = sr.debug.get("direction_margins", {}) if isinstance(sr.debug, dict) else {}
@@ -1236,8 +1195,8 @@ class PropertyPanel(QWidget):
         d.corner_tr_cm = self._sp_design_corners['tr'].value()
         d.corner_bl_cm = self._sp_design_corners['bl'].value()
         d.corner_br_cm = self._sp_design_corners['br'].value()
-        d.ellipse_rx_cm = self._sp_erx.value()
-        d.ellipse_ry_cm = self._sp_ery.value()
+        d.ellipse_rx_ratio = self._sp_erx.value()
+        d.ellipse_ry_ratio = self._sp_ery.value()
         d.outer_bg_color = self._btn_outer_color.color()
         d.hole_bg_color = self._btn_hole_color.color()
         d.outer_bg_image = self._ed_outer_img.text().strip() or None

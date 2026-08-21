@@ -876,14 +876,18 @@ def _score_assignment_consistency(assignment):
     return max(h_score, v_score)
 
 
-def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0):
+def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0, dir_locked_fields=None):
     """用几何约束修正边距：缺失反推 / 异常裁剪。
 
     1. outer_w 优先用 target（若提供），其次用 OCR 值
     2. 若 left+right+inner_w ≠ outer_w，找最可疑值反推
     3. 垂直方向同理
     4. 边距值不得超过外框对应边的 80%
+    5. 方向标签锁定的字段不修改，改为反推外框尺寸
     """
+    if dir_locked_fields is None:
+        dir_locked_fields = set()
+
     def get(name, default=0.0):
         return assignment.get(name, (default, 0.5))[0]
 
@@ -892,10 +896,42 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
 
     tw = target_outer_w if target_outer_w > 0 else get('total_w')
     th = target_outer_h if target_outer_h > 0 else get('total_h')
-    if tw > 0:
-        put('total_w', tw, 0.95 if target_outer_w > 0 else 0.6)
-    if th > 0:
-        put('total_h', th, 0.95 if target_outer_h > 0 else 0.6)
+
+    # 如果有方向标签锁定的边距，用它们反推外框尺寸
+    dir_margin_fields_h = [f for f in ('margin_left', 'margin_right') if f in dir_locked_fields]
+    dir_margin_fields_v = [f for f in ('margin_top', 'margin_bottom') if f in dir_locked_fields]
+
+    if dir_margin_fields_h or dir_margin_fields_v:
+        # 用方向标签边距 + inner 值反推外框
+        iw = get('inner_w')
+        ml = get('margin_left')
+        mr = get('margin_right')
+        ih = get('inner_h')
+        mt = get('margin_top')
+        mb = get('margin_bottom')
+
+        # 横向：如果有方向标签边距，用它们和 inner_w 计算 total_w
+        h_sum = sum(v for v in (ml, mr) if v > 0)
+        if h_sum > 0 and iw > 0:
+            new_tw = iw + h_sum
+            if new_tw > 0:
+                tw = new_tw
+                put('total_w', tw, 0.90)
+                logger.info(f"[Step6] 横向外框修正(方向标签): total_w={tw:.1f} (inner={iw:.1f} left={ml:.1f} right={mr:.1f})")
+
+        # 纵向：同理
+        v_sum = sum(v for v in (mt, mb) if v > 0)
+        if v_sum > 0 and ih > 0:
+            new_th = ih + v_sum
+            if new_th > 0:
+                th = new_th
+                put('total_h', th, 0.90)
+                logger.info(f"[Step6] 纵向外框修正(方向标签): total_h={th:.1f} (inner={ih:.1f} top={mt:.1f} bottom={mb:.1f})")
+    else:
+        if tw > 0:
+            put('total_w', tw, 0.95 if target_outer_w > 0 else 0.6)
+        if th > 0:
+            put('total_h', th, 0.95 if target_outer_h > 0 else 0.6)
 
     # ---- 横向修正：outer_w = left + inner_w + right ----
     if tw > 0:
@@ -913,9 +949,12 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
                     ('inner_w', tw - ml - mr),
                 ]
                 # 选反推后物理最合理的（>0 且 < outer*0.9）
+                # 跳过方向标签锁定的字段
                 best = None
                 best_err = float('inf')
                 for fn, fv in candidates:
+                    if fn in dir_locked_fields:
+                        continue  # 方向标签锁定的字段不修改
                     if fv <= 0:
                         continue
                     if fn in ('margin_left', 'margin_right') and fv > tw * 0.8:
@@ -994,6 +1033,8 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
                 best = None
                 best_err = float('inf')
                 for fn, fv in candidates:
+                    if fn in dir_locked_fields:
+                        continue  # 方向标签锁定的字段不修改
                     if fv <= 0:
                         continue
                     if fn in ('margin_top', 'margin_bottom') and fv > th * 0.8:
@@ -1067,7 +1108,8 @@ def _validate_geometric_constraints(margins, result, outer, inner,
     asg['total_h'] = (target_outer_h_cm if target_outer_h_cm > 0 else result.get('outer_h', 0), 0.8)
     asg['inner_w'] = (result.get('inner_w', 0), 0.6)
     asg['inner_h'] = (result.get('inner_h', 0), 0.6)
-    fixed = _validate_and_fix_margins(asg, target_outer_w_cm, target_outer_h_cm)
+    fixed = _validate_and_fix_margins(asg, target_outer_w_cm, target_outer_h_cm,
+                                       dir_locked_fields=set(margins.keys()))
     fm = {}
     for k in ('margin_top', 'margin_bottom', 'margin_left', 'margin_right'):
         if k in fixed:
@@ -1098,6 +1140,20 @@ def _build_assignment(dir_locked, buckets, target_outer_w, target_outer_h):
         return len(s)
 
     # ---- total_w / total_h：target > OCR（outer_w/h桶top1，优先位数多+合理范围）----
+    # 如果有方向标签边距，用它们反推外框尺寸（用于合理性检查）
+    est_tw = target_outer_w
+    est_th = target_outer_h
+    if dir_locked:
+        ml_v = dir_locked.get('margin_left', (0, 0))[0]
+        mr_v = dir_locked.get('margin_right', (0, 0))[0]
+        mt_v = dir_locked.get('margin_top', (0, 0))[0]
+        mb_v = dir_locked.get('margin_bottom', (0, 0))[0]
+        if ml_v > 0 and mr_v > 0 and est_tw <= 0:
+            # 估算合理的外框宽
+            est_tw = (ml_v + mr_v) * 2  # 假设内框约等于边距和
+        if mt_v > 0 and mb_v > 0 and est_th <= 0:
+            est_th = (mt_v + mb_v) * 2
+
     if target_outer_w > 0:
         asg['total_w'] = (target_outer_w, 0.99)
     elif 'outer_w' in buckets and buckets['outer_w']:
@@ -1258,7 +1314,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
 
     def _try_assignment(tw_cand, th_cand):
         asg = _build_assignment(dir_locked, buckets, tw_cand, th_cand)
-        asg = _validate_and_fix_margins(asg, tw_cand, th_cand)
+        asg = _validate_and_fix_margins(asg, tw_cand, th_cand,
+                                         dir_locked_fields=set(dir_locked.keys()))
         sc = _score_assignment_consistency(asg)
         # 像素比例匹配分
         px_r = ow / max(oh, 1)
@@ -1266,8 +1323,20 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
         ratio_match = 1.0 - min(abs(px_r - cm_r) / max(px_r, cm_r, 0.1), 1.0)
         # 圆整数偏好：外框宽高为5/10/50/100倍数的加分
         round_bonus = _round_pref_bonus(tw_cand) + _round_pref_bonus(th_cand)
-        # 综合得分：自洽70% + 比例匹配15% + 圆整偏好15%
-        return sc * 0.7 + ratio_match * 0.15 + round_bonus * 0.15, sc, asg
+        # 外框桶匹配奖励：若候选值来自 outer_w/outer_h 桶，给予额外加分
+        outer_w_set = set(round(v, 1) for v, _, _ in buckets.get('outer_w', []))
+        outer_h_set = set(round(v, 1) for v, _, _ in buckets.get('outer_h', []))
+        bucket_bonus = 0.0
+        if round(tw_cand, 1) in outer_w_set:
+            bucket_bonus += 0.10
+        if round(th_cand, 1) in outer_h_set:
+            bucket_bonus += 0.10
+        # 尺寸合理性：若外框两边都很小（<40cm），给予惩罚
+        size_penalty = 1.0
+        if tw_cand < 40 and th_cand < 40:
+            size_penalty = 0.5
+        # 综合得分：自洽65% + 比例匹配10% + 圆整偏好10% + 桶匹配15%
+        return (sc * 0.65 + ratio_match * 0.10 + round_bonus * 0.10 + bucket_bonus) * size_penalty, sc, asg
 
     if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
         # 收集所有可能的大值候选（20~600）
@@ -1322,7 +1391,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
         # 兜底：同时尝试只取单个最大外框值，另一侧用对称比例估算
         if best_asg is None:
             best_asg = _build_assignment(dir_locked, buckets, 0.0, 0.0)
-            best_asg = _validate_and_fix_margins(best_asg, 0.0, 0.0)
+            best_asg = _validate_and_fix_margins(best_asg, 0.0, 0.0,
+                                                  dir_locked_fields=set(dir_locked.keys()))
             best_sc = _score_assignment_consistency(best_asg)
         assignment = best_asg
         sc_after = best_sc
@@ -1331,7 +1401,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     else:
         # target模式：直接用用户指定外框尺寸
         assignment = _build_assignment(dir_locked, buckets, target_outer_w_cm, target_outer_h_cm)
-        assignment = _validate_and_fix_margins(assignment, target_outer_w_cm, target_outer_h_cm)
+        assignment = _validate_and_fix_margins(assignment, target_outer_w_cm, target_outer_h_cm,
+                                                dir_locked_fields=set(dir_locked.keys()))
         sc_after = _score_assignment_consistency(assignment)
 
     # ---- Step 6.5：像素比例 vs cm比例 对齐校验（方向搞反则swap）----
@@ -1357,7 +1428,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
             assignment['margin_bottom'] = mr
             assignment['margin_left'] = mt
             assignment['margin_right'] = mb
-            assignment = _validate_and_fix_margins(assignment, 0.0, 0.0)
+            assignment = _validate_and_fix_margins(assignment, 0.0, 0.0,
+                                                    dir_locked_fields=set(dir_locked.keys()))
             sc_after = _score_assignment_consistency(assignment)
             logger.info(f"[Step6.5后] 新值: "
                         f"total={assignment.get('total_w',(0,0))[0]:.1f}x{assignment.get('total_h',(0,0))[0]:.1f} "
@@ -1416,7 +1488,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
                         alt_asg = dict(assignment)
                         alt_asg['total_w'] = (tw_c, 0.9)
                         alt_asg['total_h'] = (th_c, 0.9)
-                        alt_asg = _validate_and_fix_margins(alt_asg, tw_c, th_c)
+                        alt_asg = _validate_and_fix_margins(alt_asg, tw_c, th_c,
+                                                                dir_locked_fields=set(dir_locked.keys()))
                         alt_sc = _score_assignment_consistency(alt_asg)
                         alt_round = _round_pref_bonus(tw_c) + _round_pref_bonus(th_c)
                         alt_total = alt_sc * 0.6 + alt_round * 0.4
@@ -1494,10 +1567,12 @@ def parse_sketch(
     cached = _get_cached_result(image_path, target_outer_w_cm, target_outer_h_cm)
     if cached is not None:
         return cached
-    consistent = _get_consistent_cached_result(image_path)
-    if consistent is not None:
-        _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent)
-        return consistent
+    # 只有在没有目标尺寸时才使用一致缓存（目标尺寸不同时需要重新解析）
+    if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
+        consistent = _get_consistent_cached_result(image_path)
+        if consistent is not None:
+            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent)
+            return consistent
 
     ok, reason = validate_sketch_file(image_path)
     if not ok:
