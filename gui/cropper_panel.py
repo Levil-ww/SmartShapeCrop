@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import logging
 import time
+from datetime import date, datetime, timedelta
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QColor
 from PyQt5.QtWidgets import (
@@ -80,6 +81,7 @@ class CropperPanel(QWidget):
         self._progress: QProgressDialog | None = None
         self._build_ui()
         self._restore_last_template_dir()
+        self._refresh_target_history_ui()
     
     def _on_matcher_log(self, msg: str):
         """接收匹配引擎日志"""
@@ -135,6 +137,14 @@ class CropperPanel(QWidget):
         self._ed_target_name = QLineEdit()
         self._ed_target_name.setPlaceholderText("如: 双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角半径2厘米")
         row_target.addWidget(self._ed_target_name, 1)
+        # 目标文件名历史记录按钮（保留 3 天）
+        self._btn_target_history = QToolButton()
+        self._btn_target_history.setText("▾")
+        self._btn_target_history.setPopupMode(QToolButton.InstantPopup)
+        self._btn_target_history.setToolTip("目标文件名历史记录（保留3天）")
+        self._target_history_menu = QMenu(self._btn_target_history)
+        self._btn_target_history.setMenu(self._target_history_menu)
+        row_target.addWidget(self._btn_target_history)
         btn_match = QPushButton("自动匹配")
         btn_match.setStyleSheet("background:#e67e22; color:white; font-weight:bold; padding:4px 8px;")
         btn_match.setFixedWidth(80)
@@ -465,6 +475,80 @@ class CropperPanel(QWidget):
         self._app_settings.clear_template_history()
         self._refresh_template_history_ui()
 
+    # ================================================================
+    # 目标文件名历史记录（按日分组，保留 3 天）
+    # ================================================================
+
+    def _refresh_target_history_ui(self):
+        """刷新目标文件名历史菜单：按日期分组显示最近 3 天记录（仅圆角裁剪工具的历史）"""
+        self._target_history_menu.clear()
+        history = self._app_settings.get_target_name_history(self._app_settings.TARGET_SRC_CROPPER)
+        if not history:
+            a_empty = QAction("（暂无历史记录）", self._target_history_menu)
+            a_empty.setEnabled(False)
+            self._target_history_menu.addAction(a_empty)
+            return
+
+        today_iso = date.today().isoformat()
+        yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
+        day_before_iso = (date.today() - timedelta(days=2)).isoformat()
+        date_label = {
+            today_iso: "今天",
+            yesterday_iso: "昨天",
+            day_before_iso: "前天",
+        }
+
+        for date_str, items in history.items():
+            label = date_label.get(date_str, date_str)
+            sub = QAction(f"—— {label}（{date_str}）——", self._target_history_menu)
+            sub.setEnabled(False)
+            self._target_history_menu.addAction(sub)
+            for r in items:
+                name = r.get("name", "")
+                ts = r.get("timestamp", 0)
+                time_str = datetime.fromtimestamp(ts).strftime("%H:%M") if ts else "--:--"
+                disp = name if len(name) <= 60 else (name[:57] + "…")
+                a = QAction(f"{time_str}  {disp}", self._target_history_menu)
+                a.setToolTip(name)
+                a.setData(name)
+                a.triggered.connect(lambda _=False, n=name: self._apply_target_from_history(n))
+                self._target_history_menu.addAction(a)
+            a_clear_day = QAction(f"  清空 {label} 的记录", self._target_history_menu)
+            a_clear_day.setData(date_str)
+            a_clear_day.triggered.connect(
+                lambda _=False, d=date_str: self._clear_target_history_by_date(d))
+            self._target_history_menu.addAction(a_clear_day)
+            self._target_history_menu.addSeparator()
+
+        a_clear = QAction("清空全部历史记录", self._target_history_menu)
+        a_clear.triggered.connect(self._clear_target_history)
+        self._target_history_menu.addAction(a_clear)
+
+    def _apply_target_from_history(self, name: str):
+        """从历史菜单选中目标文件名，回填到输入框"""
+        if not name:
+            return
+        self._ed_target_name.setText(name)
+        self._ed_target_name.setFocus()
+        self._ed_target_name.setCursorPosition(len(name))
+
+    def _clear_target_history(self):
+        """清空全部目标文件名历史记录（仅圆角裁剪工具）"""
+        self._app_settings.clear_target_name_history(self._app_settings.TARGET_SRC_CROPPER)
+        self._refresh_target_history_ui()
+
+    def _clear_target_history_by_date(self, date_str: str):
+        """清空指定日期的目标文件名历史记录（仅圆角裁剪工具）"""
+        self._app_settings.clear_target_name_history_by_date(self._app_settings.TARGET_SRC_CROPPER, date_str)
+        self._refresh_target_history_ui()
+
+    def _record_target_name_history(self):
+        """记录当前目标文件名到历史（导出/生成预览成功时调用）"""
+        name = self._ed_target_name.text().strip()
+        if name:
+            self._app_settings.add_target_name_history(name, self._app_settings.TARGET_SRC_CROPPER)
+            self._refresh_target_history_ui()
+
     def _pick_template_dir(self):
         """选择模板库目录（浏览...）"""
         dir_path = QFileDialog.getExistingDirectory(self, "选择模板库目录")
@@ -772,6 +856,7 @@ class CropperPanel(QWidget):
         self._last_result = result
         self.image_cropped.emit(result)
         self._worker = None
+        self._record_target_name_history()
 
         QMessageBox.information(
             self, "预览生成",
@@ -821,6 +906,7 @@ class CropperPanel(QWidget):
         self._hide_progress()
         self._last_result = None
         self._worker = None
+        self._record_target_name_history()
 
         QMessageBox.information(
             self, "导出成功",

@@ -5,6 +5,7 @@ gui/property_panel.py
 from __future__ import annotations
 import logging
 import os
+from datetime import date, datetime, timedelta
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize
 from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (
@@ -296,6 +297,7 @@ class PropertyPanel(QWidget):
         self._build_ui()
         self._load_from_design()
         self._pool_restore_last_template_dir()
+        self._refresh_target_history_ui()
 
     # ---- UI ----
     def _build_ui(self):
@@ -547,9 +549,17 @@ class PropertyPanel(QWidget):
         btn_fn2 = QPushButton("清空")
         btn_fn2.setFixedWidth(48)
         btn_fn2.clicked.connect(lambda: self._pool_target.clear())
+        # 目标文件名历史记录按钮（保留 3 天）
+        self._pool_btn_target_history = QToolButton()
+        self._pool_btn_target_history.setText("▾")
+        self._pool_btn_target_history.setPopupMode(QToolButton.InstantPopup)
+        self._pool_btn_target_history.setToolTip("目标文件名历史记录（保留3天）")
+        self._pool_target_history_menu = QMenu(self._pool_btn_target_history)
+        self._pool_btn_target_history.setMenu(self._pool_target_history_menu)
         row_fn.addWidget(self._pool_target, 1)
         row_fn.addWidget(btn_fn1, 0)
         row_fn.addWidget(btn_fn2, 0)
+        row_fn.addWidget(self._pool_btn_target_history, 0)
         f.addLayout(row_fn)
 
         # C) 尺寸草图上传 + 缩略预览（支持拖拽 + 点击查看大图）
@@ -774,6 +784,80 @@ class PropertyPanel(QWidget):
         """清空历史记录（仅菜单/下拉清空，当前目录文本保留）"""
         self._app_settings.clear_template_history()
         self._pool_refresh_template_history_ui()
+
+    # ================================================================
+    # 目标文件名历史记录（按日分组，保留 3 天）
+    # ================================================================
+
+    def _refresh_target_history_ui(self):
+        """刷新目标文件名历史菜单：按日期分组显示最近 3 天记录（仅水池设计器的历史）"""
+        self._pool_target_history_menu.clear()
+        history = self._app_settings.get_target_name_history(self._app_settings.TARGET_SRC_POOL)
+        if not history:
+            a_empty = QAction("（暂无历史记录）", self._pool_target_history_menu)
+            a_empty.setEnabled(False)
+            self._pool_target_history_menu.addAction(a_empty)
+            return
+
+        today_iso = date.today().isoformat()
+        yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
+        day_before_iso = (date.today() - timedelta(days=2)).isoformat()
+        date_label = {
+            today_iso: "今天",
+            yesterday_iso: "昨天",
+            day_before_iso: "前天",
+        }
+
+        for date_str, items in history.items():
+            label = date_label.get(date_str, date_str)
+            sub = QAction(f"—— {label}（{date_str}）——", self._pool_target_history_menu)
+            sub.setEnabled(False)
+            self._pool_target_history_menu.addAction(sub)
+            for r in items:
+                name = r.get("name", "")
+                ts = r.get("timestamp", 0)
+                time_str = datetime.fromtimestamp(ts).strftime("%H:%M") if ts else "--:--"
+                disp = name if len(name) <= 60 else (name[:57] + "…")
+                a = QAction(f"{time_str}  {disp}", self._pool_target_history_menu)
+                a.setToolTip(name)
+                a.setData(name)
+                a.triggered.connect(lambda _=False, n=name: self._pool_apply_target_from_history(n))
+                self._pool_target_history_menu.addAction(a)
+            a_clear_day = QAction(f"  清空 {label} 的记录", self._pool_target_history_menu)
+            a_clear_day.setData(date_str)
+            a_clear_day.triggered.connect(
+                lambda _=False, d=date_str: self._pool_clear_target_history_by_date(d))
+            self._pool_target_history_menu.addAction(a_clear_day)
+            self._pool_target_history_menu.addSeparator()
+
+        a_clear = QAction("清空全部历史记录", self._pool_target_history_menu)
+        a_clear.triggered.connect(self._pool_clear_target_history)
+        self._pool_target_history_menu.addAction(a_clear)
+
+    def _pool_apply_target_from_history(self, name: str):
+        """从历史菜单选中目标文件名，回填到目标文件输入框"""
+        if not name:
+            return
+        self._pool_target.setText(name)
+        self._pool_target.setFocus()
+        self._pool_target.setCursorPosition(len(name))
+
+    def _pool_clear_target_history(self):
+        """清空全部目标文件名历史记录（仅水池设计器）"""
+        self._app_settings.clear_target_name_history(self._app_settings.TARGET_SRC_POOL)
+        self._refresh_target_history_ui()
+
+    def _pool_clear_target_history_by_date(self, date_str: str):
+        """清空指定日期的目标文件名历史记录（仅水池设计器）"""
+        self._app_settings.clear_target_name_history_by_date(self._app_settings.TARGET_SRC_POOL, date_str)
+        self._refresh_target_history_ui()
+
+    def _pool_record_target_name_history(self):
+        """记录当前目标文件名到历史（生成成功后调用，仅水池设计器）"""
+        name = self._pool_target.text().strip()
+        if name:
+            self._app_settings.add_target_name_history(name, self._app_settings.TARGET_SRC_POOL)
+            self._refresh_target_history_ui()
 
     def _pool_on_template_history_selected(self, idx: int):
         """用户从 ComboBox 下拉选了一条历史"""
@@ -1095,6 +1179,8 @@ class PropertyPanel(QWidget):
             # 3) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
             self._apply_quiet()
             logger.info("[PropertyPanel] 预览已生成")
+            # 记录目标文件名到历史（保留 3 天）
+            self._pool_record_target_name_history()
 
             # 4) 结果提示（try/except 防止状态消息失败导致整个流程中断）
             try:

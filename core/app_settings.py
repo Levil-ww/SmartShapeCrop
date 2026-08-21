@@ -15,6 +15,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field, asdict
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,26 @@ class TemplateDirHistory:
         )
 
 
+@dataclass
+class TargetNameHistory:
+    """目标文件名历史记录条目（按日分组，保留 3 天）
+
+    存储结构：dict[date_str (YYYY-MM-DD), list[record_dict]]
+    每条记录：{"name": str, "timestamp": float, "source": str}
+    source 取值：'cropper'（圆角裁剪工具）/ 'pool'（水池设计器）
+    """
+    name: str
+    timestamp: float = 0.0
+    source: str = ""
+
+    @classmethod
+    def create(cls, name: str, source: str) -> "TargetNameHistory":
+        return cls(name=name, timestamp=time.time(), source=source)
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "timestamp": self.timestamp, "source": self.source}
+
+
 # ---------------------------------------------------------------------------
 # 主设置类
 # ---------------------------------------------------------------------------
@@ -65,8 +86,12 @@ class AppSettings:
     KEY_TEMPLATE_HISTORY = "template/history"
     KEY_HISTORY_MAX = "template/history_max"
     KEY_MATCHER_CACHE_ENABLED = "matcher/cache_enabled"
+    KEY_TARGET_NAME_HISTORY = "target_name/history"
 
     DEFAULT_HISTORY_MAX = 5
+    # 目标文件名历史：保留 3 天（含今天），每天最多 50 条，同日同名去重置顶
+    TARGET_NAME_HISTORY_DAYS = 3
+    TARGET_NAME_HISTORY_PER_DAY = 50
 
     def __init__(self, organization: str = "SmartShapeCrop", app_name: str = "SmartShapeCrop"):
         self._history_max = self.DEFAULT_HISTORY_MAX
@@ -273,6 +298,123 @@ class AppSettings:
     def clear_template_history(self):
         self._history = []
         self._save_history()
+
+    # ------------------------------------------------------------
+    # 公共 API：目标文件名历史记录（按日分组，保留 3 天）
+    # 按 source（'cropper' / 'pool'）物理隔离存储，互不干扰
+    # ------------------------------------------------------------
+
+    # 支持的数据源常量（用于存储键命名与 UI 显示）
+    TARGET_SRC_CROPPER = "cropper"
+    TARGET_SRC_POOL = "pool"
+    TARGET_SRC_LABEL = {
+        TARGET_SRC_CROPPER: "圆角裁剪工具",
+        TARGET_SRC_POOL: "水池设计器",
+    }
+
+    def _target_name_key(self, source: str) -> str:
+        """按 source 生成独立的存储键，实现物理隔离"""
+        src = (source or "").strip()
+        if src not in (self.TARGET_SRC_CROPPER, self.TARGET_SRC_POOL):
+            src = self.TARGET_SRC_CROPPER
+        return f"{self.KEY_TARGET_NAME_HISTORY}/{src}"
+
+    def _load_target_name_history(self, source: str) -> dict:
+        """读取指定 source 的目标文件名历史：{date_str: [{"name","timestamp"}, ...]}"""
+        key = self._target_name_key(source)
+        raw = self._read(key, None)
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                raw = {}
+        if not isinstance(raw, dict):
+            return {}
+        result: dict = {}
+        for d, items in raw.items():
+            if not isinstance(items, list):
+                continue
+            cleaned = []
+            for r in items:
+                if not isinstance(r, dict):
+                    continue
+                name = r.get("name", "")
+                if not isinstance(name, str) or not name:
+                    continue
+                cleaned.append({
+                    "name": name,
+                    "timestamp": float(r.get("timestamp", 0) or 0),
+                })
+            if cleaned:
+                result[d] = cleaned
+        return result
+
+    def _save_target_name_history(self, source: str, data: dict):
+        key = self._target_name_key(source)
+        if self._qs is not None:
+            self._write(key, json.dumps(data, ensure_ascii=False))
+        else:
+            self._write(key, data)
+
+    @staticmethod
+    def _today_iso() -> str:
+        return date.today().isoformat()
+
+    def add_target_name_history(self, name: str, source: str = TARGET_SRC_CROPPER) -> TargetNameHistory:
+        """添加一条目标文件名历史记录。
+
+        - 按 source 独立存储，物理隔离
+        - 同日同名记录去重（已存在则移到最前，更新 timestamp）
+        - 保留近 N 天（含今天），过期自动清理
+        - 每天最多 TARGET_NAME_HISTORY_PER_DAY 条，超出截断尾部
+        """
+        name = (name or "").strip()
+        if not name:
+            return TargetNameHistory.create("", source)
+        today_str = self._today_iso()
+        now = time.time()
+        all_records = self._load_target_name_history(source)
+
+        today_list = [r for r in all_records.get(today_str, []) if r.get("name") != name]
+        today_list.insert(0, {"name": name, "timestamp": now})
+        if len(today_list) > self.TARGET_NAME_HISTORY_PER_DAY:
+            today_list = today_list[:self.TARGET_NAME_HISTORY_PER_DAY]
+        all_records[today_str] = today_list
+
+        # 清理过期记录（保留含今天在内的最近 N 天）
+        cutoff = date.today() - timedelta(days=self.TARGET_NAME_HISTORY_DAYS - 1)
+        cutoff_str = cutoff.isoformat()
+        for d in list(all_records.keys()):
+            if d < cutoff_str:
+                del all_records[d]
+
+        self._save_target_name_history(source, all_records)
+        return TargetNameHistory(name=name, timestamp=now, source=source)
+
+    def get_target_name_history(self, source: str, days: int = 0) -> dict:
+        """获取指定 source 的目标文件名历史（按日分组）。
+
+        参数 source 必传：'cropper' 或 'pool'。
+        参数 days 默认 0 表示使用 TARGET_NAME_HISTORY_DAYS（3 天，含今天）。
+        返回：{date_str: [{"name","timestamp"}, ...]}
+        日期键为 ISO 格式 (YYYY-MM-DD)，按日期降序，每日列表按时间降序。
+        """
+        n = days if days > 0 else self.TARGET_NAME_HISTORY_DAYS
+        cutoff_str = (date.today() - timedelta(days=n - 1)).isoformat()
+        all_records = self._load_target_name_history(source)
+        filtered = {d: r for d, r in all_records.items() if d >= cutoff_str}
+        return {d: filtered[d] for d in sorted(filtered.keys(), reverse=True)}
+
+    def clear_target_name_history(self, source: str):
+        """清空指定 source 的目标文件名历史"""
+        self._save_target_name_history(source, {})
+
+    def clear_target_name_history_by_date(self, source: str, date_str: str):
+        """清空指定 source 指定日期的目标文件名历史"""
+        all_records = self._load_target_name_history(source)
+        if date_str in all_records:
+            del all_records[date_str]
+            self._save_target_name_history(source, all_records)
 
 
 # ---------------------------------------------------------------------------
