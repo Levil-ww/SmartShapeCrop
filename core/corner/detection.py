@@ -216,6 +216,134 @@ def _estimate_content_reference(img: Image.Image) -> np.ndarray:
     return np.median(region, axis=0)
 
 
+# ============================================================================
+# 统一的间隙层判定 —— classify_gap_layers
+# ============================================================================
+# [Fix 安妮森林/素锦/中古花园 核心根因] 分散在 5 处代码的间隙层判定逻辑
+# 各不相同，导致 "米色间隙判为实心 + 内层深色边框判为间隙" 的反转错误。
+#
+# 单一来源标准：所有调用方（_build_multi_layer_corner_mask / _redraw_border_on_corner /
+# _post_cleanup_gap_regions / _redraw_outer_border_on_corners）必须使用此函数。
+#
+# 不变量：
+#   INV-G1: 最外层深色边框 (i=0, max(RGB) <= 150) 永不判为间隙
+#   INV-G2: 间隙层必须满足 厚度 ≤ GAP_MAX_THICKNESS (40px)
+#   INV-G3: sandwiched 中间层 与两侧邻居差异均 > GAP_NEIGHBOR_MIN_DIST (20) → 间隙
+#   INV-G4: 浅色外层 (max(RGB) > 150) + 与邻居差异大 + 非内容色 → 可能间隙
+#   INV-B4 (STRUCTURAL): 最内层 (i=n-1) 永不判为间隙 —— 间隙是两边框间空隙，
+#           最内层无内侧相邻边框作参照，只能是实心边框（接触内部图案的最内圈）
+
+# 阈值 (单一来源，与 image_cropper.py/sector_render.py 保持一致):
+GAP_MAX_THICKNESS_GLOBAL = 40.0
+GAP_NEIGHBOR_MIN_DIST_GLOBAL = 25.0
+GAP_BG_DIST_GLOBAL = 80.0
+GAP_CONTENT_DIST_GLOBAL = 70.0
+SENTINEL_OUTER_DARK_MAX_RGB = 150.0  # >= 此值视为浅色, < 此值视为深色
+
+
+def classify_gap_layers(
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    bg_color: tuple[int, int, int] = (255, 255, 255),
+    content_ref_arr: np.ndarray | None = None,
+) -> list[bool]:
+    """
+    统一的间隙层判定函数。
+
+    判定步骤 (对每层 i ∈ [0, n-1]):
+    Step 1. [INV-B4] 最内层 (i=n-1) → 实心（结构性不变量：间隙需要两侧边框夹住，最内层无内侧邻居）
+    Step 2. [INV-G2] 厚度 > GAP_MAX_THICKNESS → 实心（不可能是间隙）
+    Step 3. [INV-G1] 最外层(i=0) 深色边框 max(RGB) ≤ 150 → 实心（S-1 安全锚）
+    Step 4. 中间层 (0 < i < n-1):
+            sandwiched=True (两侧都有邻居) AND 与两侧差异均 > GAP_NEIGHBOR_MIN → 间隙
+    Step 5. sentinel 外层 (i=0):
+            浅色 (maxRGB>150) AND 与下一层差异 > 25 AND (接近BG 或 接近内容) → 间隙
+    Step 6. 其余 → 实心
+
+    Args:
+        border_layers: 从外到内的边框层 [(color, thickness), ...]
+        bg_color: 背景色 tuple(r,g,b)
+        content_ref_arr: 可选内容参考色 np.ndarray (3,) float64，None 则使用
+                        (bg_color + (128,128,128))/2 作为近似参考
+
+    Returns:
+        is_gap_layer: list[bool]，长度与 border_layers 相同，True 表示间隙层
+    """
+    n = len(border_layers)
+    if n == 0:
+        return []
+    
+    BG_ARR = np.array(bg_color, dtype=np.float64)
+    if content_ref_arr is None:
+        # 使用一个不会触发任何距离条件的参考色（近似内容参考的中位数）
+        content_ref = np.array([180.0, 180.0, 180.0], dtype=np.float64)
+    else:
+        content_ref = content_ref_arr.astype(np.float64)
+    
+    is_gap_layer = [False] * n
+
+    for i in range(n):
+        c, t = border_layers[i]
+        c_arr = np.array(c, dtype=np.float64)
+        max_rgb = float(max(c))
+        d_bg = float(np.sqrt(np.sum((c_arr - BG_ARR) ** 2)))
+        d_content = float(np.sqrt(np.sum((c_arr - content_ref) ** 2)))
+
+        # Step 1. [INV-B4] 最内层(i=n-1) -> 实心（结构性不变量）
+        if i == n - 1:
+            continue
+
+        # Step 2. 厚度太大 -> 实心
+        if t > GAP_MAX_THICKNESS_GLOBAL:
+            continue
+
+        # Step 3. [INV-G1] 最外层深色边框 -> 实心 (永不间隙)
+        if i == 0 and max_rgb <= SENTINEL_OUTER_DARK_MAX_RGB:
+            continue
+
+        has_left = i > 0
+        has_right = i < n - 1
+        d_left = d_right = 0.0
+        if has_left:
+            lc = np.array(border_layers[i - 1][0], dtype=np.float64)
+            d_left = float(np.sqrt(np.sum((c_arr - lc) ** 2)))
+        if has_right:
+            rc = np.array(border_layers[i + 1][0], dtype=np.float64)
+            d_right = float(np.sqrt(np.sum((c_arr - rc) ** 2)))
+
+        # Step 4. 中间层 sandwiched -> 间隙
+        if 0 < i < n - 1 and has_left and has_right:
+            if d_left >= GAP_NEIGHBOR_MIN_DIST_GLOBAL and \
+               d_right >= GAP_NEIGHBOR_MIN_DIST_GLOBAL:
+                is_gap_layer[i] = True
+                continue
+
+        # Step 5. sentinel 外层 -> 间隙条件
+        if i == 0 and has_right:
+            # 浅色外层 + 与下一层差异大 + (接近BG or 接近内容)
+            near_bg_or_content = d_bg < GAP_BG_DIST_GLOBAL or d_content < GAP_CONTENT_DIST_GLOBAL
+            if max_rgb > SENTINEL_OUTER_DARK_MAX_RGB and \
+               d_right >= GAP_NEIGHBOR_MIN_DIST_GLOBAL and \
+               near_bg_or_content:
+                is_gap_layer[i] = True
+                continue
+
+        # Step 6. 其余 -> 实心（默认 False 已设）
+
+    return is_gap_layer
+
+
+def get_solid_border_colors(
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    is_gap_layer: list[bool] | None = None,
+    bg_color: tuple[int, int, int] = (255, 255, 255),
+    content_ref_arr: np.ndarray | None = None,
+) -> list[tuple[int, int, int]]:
+    """获取实心边框层的颜色（用于边框色安全检查）。"""
+    if is_gap_layer is None:
+        is_gap_layer = classify_gap_layers(border_layers, bg_color, content_ref_arr)
+    return [c for (c, _), ig in zip(border_layers, is_gap_layer) if not ig]
+
+
 def _filter_layers_by_content_ref(
     layers: list[tuple[tuple[int, int, int], int]],
     content_ref: np.ndarray,

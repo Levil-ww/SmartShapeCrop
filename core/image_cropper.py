@@ -49,6 +49,13 @@ from .corner.detection import (
     _get_border_layers_robust,
     _scan_edge_boundaries,
     detect_nested_rect_layers,
+    classify_gap_layers,
+    get_solid_border_colors,
+    GAP_MAX_THICKNESS_GLOBAL,
+    GAP_NEIGHBOR_MIN_DIST_GLOBAL,
+    GAP_BG_DIST_GLOBAL,
+    GAP_CONTENT_DIST_GLOBAL,
+    SENTINEL_OUTER_DARK_MAX_RGB,
 )
 from .corner.sector_render import (
     _build_border_sector_mask,
@@ -153,7 +160,46 @@ def _redraw_outer_border_on_corners(
     content_ref_arr = _content_ref(src_arr, w, h)
     BG_ARR = np.array(bg_color, dtype=np.float64)
 
-    OUTER_BAND = 3  # [Fix 图一] Reduced from 5 to 3 to prevent extra stroke width
+    # [Fix INV-2/蔓生花/墨上花开] 计算自适应绘制带参数
+    # 基于实际边框总厚度动态调整绘制带宽度，确保与原图边框厚度一致
+    total_border_depth = sum(t for _, t in border_layers) if border_layers else 0
+    
+    # [Fix 2026-08-22 v7] 统一实心边框厚度计算
+    # 修复前：此处手写第5套间隙判定（仅看"接近背景色"），完全无法识别
+    #         素锦/安妮森林等案例的米色中间间隙层（米色不接近背景白色），
+    #         导致 solid_border_depth 多算了间隙厚度 → 绘制带过宽，边框变粗。
+    # 修复后：使用 classify_gap_layers（单一判定来源）精确识别间隙层，
+    #         确保实心厚度与 sector_render、mask构建 三处完全一致。
+    solid_border_depth = 0
+    if border_layers:
+        _is_gap = classify_gap_layers(border_layers, bg_color=bg_color,
+                                     content_ref_arr=content_ref_arr)
+        for (_c, t), ig in zip(border_layers, _is_gap):
+            if not ig:  # 仅实心边框层计入厚度
+                solid_border_depth += t
+    
+    # [Fix v6] 重新设计绘制带参数：
+    # 核心不变量INV-2: 圆角边框厚度 = 直边边框厚度
+    # 
+    # 1. inner_extent 基于实心边框厚度（排除间隙），精确匹配原图边框
+    #    - 蔓生花(细边框): solid_border_depth=3 → inner_extent=3
+    #    - 墨上花开(粗边框): solid_border_depth=70 → inner_extent=min(70, 5)=5
+    #    - 防止过粗：max 5px
+    #    - 防止过细：min max(1, solid_border_depth) 确保至少1px
+    # 2. outer_extent 设为 1.0，用于抗锯齿，不添加额外厚度
+    if solid_border_depth > 0:
+        # 使用实心边框厚度，精确匹配原图
+        # 限制范围[1, 5]，确保极细边框有最小值，极粗边框不过度绘制
+        inner_extent = min(max(1, solid_border_depth), 5)
+    elif total_border_depth > 0:
+        # fallback: 使用总厚度
+        inner_extent = min(max(1, total_border_depth), 5)
+    else:
+        inner_extent = 3  # 默认 3px
+    
+    # 绘制带外边界：1.0px用于抗锯齿，确保边框外缘平滑
+    # 蔓生花等细边框需要一定的抗锯齿空间
+    outer_extent = 1.0
 
     for corner_key, r in corners_px.items():
         if r <= 0:
@@ -173,7 +219,6 @@ def _redraw_outer_border_on_corners(
             cx, cy = w - r, h - r
 
         outer_px = r + 2
-        inner_px = max(0, r - OUTER_BAND)
         x1 = max(0, cx - outer_px)
         y1 = max(0, cy - outer_px)
         x2 = min(w, cx + outer_px + 1)
@@ -190,15 +235,21 @@ def _redraw_outer_border_on_corners(
         angle = np.mod(angle, 360.0)
         ang_min, ang_max = CORNER_ANGLES[corner_key]
 
-        # [Fix 图一] Only paint on the actual arc boundary (dist ≈ r)
-        # Not the entire band — prevents creating extra inner strokes
-        # 只在距离弧边缘 ±2px 处操作，不深入弧内部
-        in_angle = (angle >= ang_min - 2) & (angle <= ang_max + 2)
-        in_band = (dist >= float(r) - 1.5) & (dist <= float(r) + 2.0)
+        # [Fix INV-2/INV-5] 自适应绘制带：
+        # 内边界 = r - inner_extent（保证蔓生花等细边框有足够绘制范围）
+        # 外边界 = r + outer_extent（仅1.0px抗锯齿，防止墨上花开边框过粗）
+        # [Fix v6] 修复角度范围：精确匹配CORNER_ANGLES，不再±1°扩展
+        # 旧逻辑 ang_min-1 ~ ang_max+1 导致角边界外1°范围被错误绘制
+        if ang_max == 360:
+            in_angle = (angle >= ang_min) | (angle < 1)
+        else:
+            in_angle = (angle >= ang_min) & (angle <= ang_max)
+        in_band = (dist >= float(r) - float(inner_extent)) & (dist <= float(r) + float(outer_extent))
         
         # [Fix 非保护模式] Skip outside_arc pixels (dist > r) when requested
+        # 此时外边界收缩到弧边界，不绘制弧外侧像素
         if skip_outside_arc:
-            in_band = in_band & (dist <= float(r))
+            in_band = (dist >= float(r) - float(inner_extent)) & (dist <= float(r))
         
         if mask_arr is not None:
             local_valid = mask_arr[y1:y2, x1:x2] > 0
@@ -290,65 +341,20 @@ def _redraw_outer_border_on_corners(
         #   Z) [Fix v2] 代表色与任何间隙层颜色匹配 → 不绘制间隙色
         COLOR_T = 25.0
 
-        # [Fix v2] 分离实心边框色和间隙色
-        # 使用与 _build_multi_layer_corner_mask 一致的检测策略
+        # [Fix v3] 使用 classify_gap_layers 统一判定：
+        # 修复前：此处内部手写第4套间隙检测逻辑，与其他3处不一致。
+        # 修复后：统一调用 classify_gap_layers，参数直接透传 bg_color 和本函数已
+        #   计算的 content_ref_arr。
+        _is_gap = classify_gap_layers(border_layers, bg_color=bg_color,
+                                     content_ref_arr=content_ref_arr)
         gap_colors_list = []
         solid_border_colors = []
-        GAP_NEIGHBOR_MIN = 20.0
-        GAP_MAX_THICK = 40.0
-        
-        gap_indices = set()
-        n_layers = len(border_layers)
-        
-        if n_layers >= 2:
-            for i in range(n_layers):
-                c, t = border_layers[i]
-                curr_c = np.array(c, dtype=np.float64)
-                
-                # 检查两侧邻居的颜色差异
-                has_left = i > 0
-                has_right = i < n_layers - 1
-                
-                is_gap = False
-                
-                # 中间层：被两侧不同颜色的边框夹住
-                if has_left and has_right:
-                    prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
-                    next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
-                    d_prev = float(np.sqrt(np.sum((curr_c - prev_c) ** 2)))
-                    d_next = float(np.sqrt(np.sum((curr_c - next_c) ** 2)))
-                    if d_prev > GAP_NEIGHBOR_MIN and d_next > GAP_NEIGHBOR_MIN and t <= GAP_MAX_THICK:
-                        is_gap = True
-                
-                # 最外层：如果颜色接近背景色且厚度较小 → 间隙
-                if not is_gap and i == 0 and has_right:
-                    next_c = np.array(border_layers[1][0], dtype=np.float64)
-                    d_next = float(np.sqrt(np.sum((curr_c - next_c) ** 2)))
-                    if d_next > GAP_NEIGHBOR_MIN and t <= GAP_MAX_THICK:
-                        dist_to_bg = float(np.sqrt(np.sum((curr_c - np.array(bg_color, dtype=np.float64)) ** 2)))
-                        if dist_to_bg < 80.0:
-                            is_gap = True
-                
-                # 最内层：如果颜色接近内容色且厚度较小 → 间隙
-                if not is_gap and i == n_layers - 1 and has_left:
-                    prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
-                    d_prev = float(np.sqrt(np.sum((curr_c - prev_c) ** 2)))
-                    if d_prev > GAP_NEIGHBOR_MIN and t <= GAP_MAX_THICK:
-                        # 检查是否接近内容色
-                        dist_to_content = float(np.sqrt(np.sum((curr_c - content_ref_arr) ** 2)))
-                        if dist_to_content < 80.0:
-                            is_gap = True
-                
-                if is_gap:
-                    gap_indices.add(i)
-        
         for idx, (c, t) in enumerate(border_layers):
             col = tuple(c)
-            if idx in gap_indices:
+            if idx < len(_is_gap) and _is_gap[idx]:
                 gap_colors_list.append(col)
             else:
                 solid_border_colors.append(col)
-        
         # 去重
         solid_border_colors = list(set(solid_border_colors))
         gap_colors_list = list(set(gap_colors_list))
@@ -553,55 +559,26 @@ def _build_multi_layer_corner_mask(
 
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
 
-    # [Fix 多余边框弧线 2026-08-21 v2] 改进间隙层检测：
-    # 与 sector_render.py 的检测策略保持一致：
-    #   1) 中间层：与相邻层两侧颜色差异都大 → 间隙
-    #   2) 首尾层：只有与所有其他层差异都很大时才视为间隙（保守判定）
-    # 放宽阈值以覆盖更多间隙场景（如米色间隙等）
-    GAP_NEIGHBOR_MIN_DIST = 20.0  # 与相邻层最小颜色距离
-    GAP_MAX_THICKNESS = 40.0
-    gap_layer_indices = set()
-    if len(border_layers) >= 2:
-        # 检测中间层间隙（被两侧边框夹住的层）
-        for i in range(1, len(border_layers) - 1):
-            prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
-            curr_c = np.array(border_layers[i][0], dtype=np.float64)
-            next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
-            t_i = border_layers[i][1]
-            d_prev = float(np.sqrt(np.sum((curr_c - prev_c) ** 2)))
-            d_next = float(np.sqrt(np.sum((curr_c - next_c) ** 2)))
-            # 间隙层特征：被两个边框层夹住，且与两侧都差异较大
-            if d_prev > GAP_NEIGHBOR_MIN_DIST and d_next > GAP_NEIGHBOR_MIN_DIST and t_i <= GAP_MAX_THICKNESS:
-                gap_layer_indices.add(i)
-        
-        # 检测首尾层间隙
-        # 规则：
-        # 1) 最外层(idx=0): 如果与相邻层差异大且厚度小 → 间隙
-        # 2) 最内层(idx=n-1): 如果与相邻层差异大且厚度小 → 间隙（仅当有3层以上时）
-        #    因为在2层情况下，最内层紧邻内容区，通常是实心边框
-        for idx in (0, len(border_layers) - 1):
-            if idx in gap_layer_indices:
-                continue
-            # 在2层情况下，只检查最外层；最内层通常是实心边框
-            if len(border_layers) == 2 and idx == len(border_layers) - 1:
-                continue
-            if idx == 0 or idx == len(border_layers) - 1:
-                c_i = np.array(border_layers[idx][0], dtype=np.float64)
-                t_i = border_layers[idx][1]
-                if t_i > GAP_MAX_THICKNESS:
-                    continue
-                # 与所有其他层的最小距离
-                min_dist = float('inf')
-                for j in range(len(border_layers)):
-                    if j == idx:
-                        continue
-                    c_j = np.array(border_layers[j][0], dtype=np.float64)
-                    d = float(np.sqrt(np.sum((c_i - c_j) ** 2)))
-                    if d < min_dist:
-                        min_dist = d
-                # 仅当最小距离也很大时才视为间隙（保守）
-                if min_dist > 40.0 and t_i <= GAP_MAX_THICKNESS:
-                    gap_layer_indices.add(idx)
+    # [Fix 多余边框弧线 2026-08-21 v3] 使用 classify_gap_layers 统一判定
+    #
+    # 修复前：此函数内部手写一套间隙检测（50+行），与 sector_render.py、
+    #   _post_cleanup_gap_regions.py 的检测逻辑不一致，导致
+    #   素锦等3层案例中 "米色中间层判为实心 + 深色内层判为间隙" 的反转错误
+    #   → 圆角黑边框消失 + 间隙残留弧形缺口。
+    #
+    # 修复后：唯一调用 classify_gap_layers，确保 3 处调用方判定一致。
+    #   无 bg_color/content_ref 传参时，classify_gap_layers 已设合理默认值。
+    #   bg_color 参数当前函数签名未提供，使用 DEFAULT_BG_COLOR=(255,255,255)。
+    from .config import DEFAULT_BG_COLOR
+    _bg_c = DEFAULT_BG_COLOR
+    is_gap_layer = classify_gap_layers(border_layers, bg_color=_bg_c, content_ref_arr=None)
+    gap_layer_indices = {i for i, ig in enumerate(is_gap_layer) if ig}
+
+    # [Fix v5] 计算累积深度（包含间隙层），用于精确计算径向位置
+    cumulative_depths = [0]
+    for _, t in border_layers:
+        cumulative_depths.append(cumulative_depths[-1] + t)
+    total_border_depth = cumulative_depths[-1]
 
     # 计算实心边框层的累积厚度（排除间隙层）
     solid_border_depths = [0]
@@ -658,7 +635,9 @@ def _build_multi_layer_corner_mask(
             corner_protect = protect_content
 
         # 基础裁切区域：扇形外部（dist > r）
-        base_cut = (angle >= ang_min) & (angle < ang_max) & (dist > r)
+        # [Fix INV-5] 使用 <= ang_max 而非 < ang_max，确保边界像素被裁切，
+        # 防止花漾之约等案例出现白色三角伪影
+        base_cut = (angle >= ang_min) & (angle <= ang_max) & (dist > r)
 
         if corner_protect and raw_depth > 0:
             # 保护模式：只在边框条带内裁切
@@ -676,38 +655,44 @@ def _build_multi_layer_corner_mask(
             outer_cut = base_cut
 
         # Step 2: 构建实心边框保护区域（仅保护实心边框层，间隙层必须裁切）
-        # [Fix 多余边框弧线 2026-08-21]
-        # 旧逻辑：ring_region 保护整个边框厚度（包括间隙），导致间隙层在圆角处残留。
-        # 新逻辑：逐层构建实心边框的保护环，间隙层区域直接被裁切。
-        if raw_depth > 0:
-            # 实心边框的保护区域初始化：整个圆环（从 r - solid_depth 到 r + 2）
-            # 然后减去间隙区域
-            solid_depth = solid_total_depth if solid_total_depth > 0 else border_layers[0][1]
-            if r <= solid_depth * 2.0:
+        # [Fix v5] 核心修复：重建 ring_region 逻辑，确保间隙区域完全不被保护。
+        #
+        # 旧逻辑缺陷：
+        #   ring_region 基于 solid_border_depths 计算 inner_bound，但间隙层的
+        #   扣除逻辑（gap_protect_removed）在某些情况下失效，导致间隙像素残留。
+        #   特别是当 r 较大时，保护范围可能覆盖间隙层。
+        #
+        # 新逻辑：
+        #   1. 计算基础保护区域（从 r - total_border_depth 到 r + 2）
+        #   2. 如果间隙层在最外层或最内层，强制从基础保护中扣除
+        #   3. 确保间隙区域（gap_regions）的径向范围完全被排除
+        if total_border_depth > 0:
+            # 基础保护区域的内边界
+            # 使用 total_border_depth（所有层厚度）确保覆盖所有边框和间隙
+            if r <= total_border_depth * 2.0:
                 # r 较小：保护厚度限制在 r 以内
                 max_protect = max(0, r - 2)
             else:
-                max_protect = solid_depth + 2  # 实心边框厚度 + 2px 容差
+                max_protect = total_border_depth + 2  # 总厚度 + 2px 容差
 
             if max_protect > 0:
                 ring_inner_bound = max(0.0, float(r) - float(max_protect))
                 # 基础 ring_region：保护从 ring_inner_bound 到 r+2 的区域
-                ring_region = (angle >= ang_min) & (angle < ang_max) & \
+                ring_region = (angle >= ang_min) & (angle <= ang_max) & \
                               (dist >= ring_inner_bound) & (dist <= float(r) + 2.0)
             else:
                 ring_region = np.zeros_like(base_cut, dtype=bool)
 
-            # 然后减去间隙层的厚度范围：将间隙层区域从保护中移除
-            # 间隙层在 border_layers 中的索引
+            # [Fix v5] 强制扣除所有间隙层的径向范围
+            # 无论间隙层在哪个位置（最外层、中间、最内层），都必须从保护中移除
             if gap_layer_indices:
                 gap_protect_removed = np.zeros_like(ring_region, dtype=bool)
                 for g_idx in gap_layer_indices:
                     if g_idx < len(border_layers):
                         g_thickness = border_layers[g_idx][1]
-                        # 间隙层在圆弧上的位置：
-                        # 距圆心距离 r - cumulative_depth 到 r - cumulative_depth - g_thickness
-                        cum_before = solid_border_depths[g_idx]  # 间隙前的实心边框累积深度
-                        cum_after = cum_before + g_thickness  # 间隙后的累积深度（含间隙）
+                        # 使用原始 cumulative_depths（包含间隙层）来计算径向位置
+                        cum_before = cumulative_depths[g_idx]  # 间隙前的累积深度
+                        cum_after = cum_before + g_thickness  # 间隙后的累积深度
                         # 间隙层在圆弧上的径向范围：
                         gap_dist_near = float(r) - float(cum_before)  # 靠近外弧的一侧
                         gap_dist_far = float(r) - float(cum_after)    # 靠近内弧的一侧
@@ -807,7 +792,9 @@ def _build_multi_layer_corner_mask(
                 in_rect_k = in_x & in_y
 
                 # 本层需要恢复的区域（严格不越界）：
-                in_ang = (angle >= ang_min) & (angle < ang_max)  # 不扩张角度
+                # [Fix INV-5] 使用 <= ang_max 与 base_cut 保持一致，
+                # 防止花漾之约等案例在 ang_max 边界出现白色扇形角伪影
+                in_ang = (angle >= ang_min) & (angle <= ang_max)
                 dist_in_r = (dist > float(R_eff_k)) & (dist <= float(r))  # 严格 <= r，杜绝 > r 的伪保留
                 if R_eff_k <= 0:
                     # 本层及内层应保持直角 → dist ∈ [0, r] 的 in_rect_k 像素全恢复
@@ -1068,52 +1055,12 @@ def _post_cleanup_gap_regions(
         [np.array(c, dtype=np.float64) for c, _ in border_layers]
     )
 
-    # [Smart Gap Check v2] 构建不含间隙层的边框颜色数组
-    # 用于间隙区域装饰检测，避免间隙层颜色被误判为边框色
-    # 与 sector_render.py 保持一致的增强间隙层判定逻辑
-    GAP_MAX_THICKNESS_CLEANUP = 40.0  # 放宽至40，与 sector_render 对齐
-    GAP_BG_DIST_CLEANUP = 50.0
-    is_gap_layer_cleanup = []
-    bg_arr_detect = np.array(bg_color, dtype=np.float64)
-    for i, (c, t) in enumerate(border_layers):
-        col_arr = np.array(c, dtype=np.float64)
-        dist_to_content = float(np.sqrt(np.sum((col_arr - content_ref) ** 2)))
-        dist_to_bg = float(np.sqrt(np.sum((col_arr - bg_arr_detect) ** 2)))
-        
-        is_gap = False
-        if i > 0 and i < len(border_layers) - 1:
-            # 中间层：多条件判定
-            # 条件1: 颜色接近背景色
-            if dist_to_bg < GAP_BG_DIST_CLEANUP and t <= GAP_MAX_THICKNESS_CLEANUP:
-                is_gap = True
-            # 条件2: 颜色接近内容色
-            elif dist_to_content < CONTENT_COLOR_DIST and t <= GAP_MAX_THICKNESS_CLEANUP:
-                is_gap = True
-            # 条件3: 与相邻层差异都大
-            else:
-                prev_c = np.array(border_layers[i - 1][0], dtype=np.float64)
-                next_c = np.array(border_layers[i + 1][0], dtype=np.float64)
-                d_prev = float(np.sqrt(np.sum((col_arr - prev_c) ** 2)))
-                d_next = float(np.sqrt(np.sum((col_arr - next_c) ** 2)))
-                if d_prev > 20.0 and d_next > 20.0 and t <= GAP_MAX_THICKNESS_CLEANUP:
-                    is_gap = True
-        elif i == 0 or i == len(border_layers) - 1:
-            # [Fix v3] 首尾层：如果颜色接近背景色或内容色，且厚度小 → 间隙
-            if t <= GAP_MAX_THICKNESS_CLEANUP:
-                if dist_to_bg < GAP_BG_DIST_CLEANUP or dist_to_content < CONTENT_COLOR_DIST:
-                    is_gap = True
-        
-        # 安全检查：如果与任一相邻层非常接近，则不是间隙
-        if is_gap:
-            for ni in (i - 1, i + 1):
-                if 0 <= ni < len(border_layers) and ni != i:
-                    nc = np.array(border_layers[ni][0], dtype=np.float64)
-                    d_adj = float(np.sqrt(np.sum((col_arr - nc) ** 2)))
-                    if d_adj < 12.0:
-                        is_gap = False
-                        break
-        
-        is_gap_layer_cleanup.append(is_gap)
+    # [Smart Gap Check v3] 使用 classify_gap_layers 统一判定
+    # 修复前：此函数手写第5套间隙检测逻辑，60行代码与其他4处不一致。
+    # 修复后：统一调用 classify_gap_layers，透传 bg_color 和 content_ref，
+    #   确保 4 处调用方结果完全一致。
+    is_gap_layer_cleanup = classify_gap_layers(border_layers, bg_color=bg_color,
+                                                content_ref_arr=content_ref)
     solid_border_colors_arr = np.array(
         [np.array(c, dtype=np.float64) for (c, _), ig in zip(border_layers, is_gap_layer_cleanup) if not ig]
     )
@@ -1236,8 +1183,9 @@ def _post_cleanup_gap_regions(
                 straight_std = 0.0
 
             if straight_std < COLOR_STD_THRESH:
-                # [Fix v2] 均匀间隙: 清理所有间隙色像素
+                # [Fix v6] 均匀间隙: 清理所有间隙色像素
                 # 这些是真正的间隙层（米色、浅灰色等），必须完全清除
+                # 核心不变量INV-1: 间隙像素 → 背景色
                 d_bg = np.sqrt(np.sum((pixel_colors - bg_arr.reshape(1, 3)) ** 2, axis=1))
                 is_not_bg = d_bg > 5.0
 
@@ -1248,26 +1196,41 @@ def _post_cleanup_gap_regions(
                         d_border = np.sqrt(np.sum((pixel_colors - bc_arr.reshape(1, 3)) ** 2, axis=1))
                         not_border_like &= (d_border > 15.0)
 
-                to_clear = not_border_like & is_not_bg
+                # [Fix v6] 对已识别的间隙层：额外匹配间隙层颜色的像素
+                # 确保间隙色像素被完全清除（即使它们也匹配内容色）
+                is_gap_color_match = np.zeros(count, dtype=bool)
+                for gc_tuple, ig in zip(border_layers, is_gap_layer_cleanup):
+                    if not ig:
+                        continue
+                    gc_arr = np.array(gc_tuple[0], dtype=np.float64)
+                    d_to_gc = np.sqrt(np.sum((pixel_colors - gc_arr.reshape(1, 3)) ** 2, axis=1))
+                    is_gap_color_match |= (d_to_gc < 25.0)
+
+                # 清除条件：
+                # 1. 不是背景色 且 不是边框色（原逻辑）
+                # 2. 或者：匹配间隙层颜色（新增，不受边框色排除限制）
+                to_clear = (not_border_like & is_not_bg) | (is_gap_color_match & is_not_bg)
 
                 if np.any(to_clear):
                     clear_y = global_y[to_clear]
                     clear_x = global_x[to_clear]
                     arr[clear_y, clear_x, :] = bg_arr.reshape(1, 3).astype(np.uint8)
             else:
-                # [Fix v2] 装饰间隙：仍然清除匹配间隙层颜色的像素
+                # [Fix v6] 装饰间隙：仍然清除匹配间隙层颜色的像素
                 # 只保留具有独特颜色（非间隙层颜色）的装饰像素
                 d_bg = np.sqrt(np.sum((pixel_colors - bg_arr.reshape(1, 3)) ** 2, axis=1))
                 is_not_bg = d_bg > 5.0
                 
-                # 匹配间隙层颜色的像素 → 清除
+                # [Fix v6] 匹配间隙层颜色的像素 → 清除
+                # 阈值从20.0降低到25.0，更好识别米色间隙
                 matches_gap_color = np.zeros(count, dtype=bool)
                 for gc_tuple, ig in zip(border_layers, is_gap_layer_cleanup):
                     if not ig:
                         continue
                     gc_arr = np.array(gc_tuple[0], dtype=np.float64)
                     d_to_gc = np.sqrt(np.sum((pixel_colors - gc_arr.reshape(1, 3)) ** 2, axis=1))
-                    matches_gap_color |= (d_to_gc < 20.0)
+                    # [Fix v6] 放宽阈值到25.0，更好识别素锦等米色间隙
+                    matches_gap_color |= (d_to_gc < 25.0)
                 
                 not_border_like = np.ones(count, dtype=bool)
                 if len(solid_border_colors_arr) > 0:
@@ -1275,7 +1238,9 @@ def _post_cleanup_gap_regions(
                         d_border = np.sqrt(np.sum((pixel_colors - bc_arr.reshape(1, 3)) ** 2, axis=1))
                         not_border_like &= (d_border > 15.0)
                 
-                to_clear = matches_gap_color & not_border_like & is_not_bg
+                # [Fix v6] 间隙色像素直接清除，不受边框色排除限制
+                # 因为间隙色像素在间隙区域内就是间隙本身
+                to_clear = matches_gap_color & is_not_bg
                 
                 if np.any(to_clear):
                     clear_y = global_y[to_clear]
