@@ -32,7 +32,8 @@ def load_image_rgb(path: str) -> Image.Image:
 def fit_image_to_rect(src_img: Image.Image,
                       target_w: int, target_h: int,
                       mode: str = 'cover',
-                      bg_color: tuple[int, int, int] = (255, 255, 255)) -> Image.Image:
+                      bg_color: tuple[int, int, int] = (255, 255, 255),
+                      quality: str = 'export') -> Image.Image:
     """
     将素材图适配到目标矩形尺寸。
     mode:
@@ -40,7 +41,11 @@ def fit_image_to_rect(src_img: Image.Image,
       - 'contain': 按比例缩放放入目标，剩余区域用 bg_color 补齐
       - 'stretch': 直接拉伸到目标尺寸（慎用）
       - 'tile': 平铺重复填满目标区域（用于瓷砖花纹）
+    quality:
+      - 'export' (默认): LANCZOS 重采样，最终导出用，质量最高
+      - 'preview': BILINEAR 重采样，预览刷新用，3-5× 加速，肉眼差异可忽略
     """
+    resample = Image.BILINEAR if quality == 'preview' else Image.LANCZOS
     sw, sh = src_img.size
     if sw <= 0 or sh <= 0:
         return Image.new('RGB', (target_w, target_h), bg_color)
@@ -48,12 +53,12 @@ def fit_image_to_rect(src_img: Image.Image,
     if mode == 'tile':
         return _tile_fill(src_img, target_w, target_h)
     if mode == 'stretch':
-        return src_img.resize((target_w, target_h), Image.LANCZOS)
+        return src_img.resize((target_w, target_h), resample)
 
     scale = max(target_w / sw, target_h / sh) if mode == 'cover' \
         else min(target_w / sw, target_h / sh)
     nw, nh = max(1, int(sw * scale)), max(1, int(sh * scale))
-    resized = src_img.resize((nw, nh), Image.LANCZOS)
+    resized = src_img.resize((nw, nh), resample)
 
     if mode == 'cover':
         # 居中裁剪
@@ -76,12 +81,13 @@ def _tile_fill(src_img: Image.Image, tw: int, th: int) -> Image.Image:
     return out
 
 
-def load_and_fit(path: str, tw: int, th: int, mode: str = 'cover') -> Image.Image:
+def load_and_fit(path: str, tw: int, th: int, mode: str = 'cover',
+                 quality: str = 'export') -> Image.Image:
     """加载 + 适配 二合一（带错误保护，素材丢失时返回纯色占位）"""
     try:
         if not os.path.isfile(path):
             return Image.new('RGB', (tw, th), (220, 220, 220))
-        return fit_image_to_rect(load_image_rgb(path), tw, th, mode)
+        return fit_image_to_rect(load_image_rgb(path), tw, th, mode, quality=quality)
     except Exception as e:
         logger.warning(f"素材加载适配失败 path={path}: {e}")
         return Image.new('RGB', (tw, th), (220, 220, 220))
@@ -89,20 +95,26 @@ def load_and_fit(path: str, tw: int, th: int, mode: str = 'cover') -> Image.Imag
 
 # ---------- 核心渲染 ----------
 
-def render_design(design: CropDesign) -> Image.Image:
+def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
     """
     按 CropDesign 完整渲染一张全尺寸画布（RGB）。
     返回 PIL.Image，大小 = design.canvas_w_px × design.canvas_h_px
+
+    quality:
+      - 'export' (默认): LANCZOS 重采样，最终保存导出用
+      - 'preview': BILINEAR 重采样，GUI 实时预览刷新用，显著降低大图重采样耗时
     """
     W, H = design.canvas_w_px, design.canvas_h_px
     # 1. 整体背景（最外层）
     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
     if design.pool_outer_material_image and os.path.isfile(design.pool_outer_material_image):
         canvas = load_and_fit(design.pool_outer_material_image, W, H,
-                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover')
+                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover',
+                              quality=quality)
     elif design.outer_bg_image and os.path.isfile(design.outer_bg_image):
         canvas = load_and_fit(design.outer_bg_image, W, H,
-                              mode='tile' if _looks_like_tile(design.outer_bg_image) else 'cover')
+                              mode='tile' if _looks_like_tile(design.outer_bg_image) else 'cover',
+                              quality=quality)
     else:
         canvas = Image.new('RGB', (W, H), design.outer_bg_color)
 
@@ -118,7 +130,7 @@ def render_design(design: CropDesign) -> Image.Image:
             # 该层的填充颜色/图像
             if layer.fill_type == 'image' and layer.image_path and os.path.isfile(layer.image_path):
                 mode = 'tile' if layer.tile_mode else 'cover'
-                fill_img = load_and_fit(layer.image_path, W, H, mode=mode)
+                fill_img = load_and_fit(layer.image_path, W, H, mode=mode, quality=quality)
                 fill_arr = np.array(fill_img, dtype=np.uint8)
             else:
                 fill_arr = np.full((H, W, 3), layer.color, dtype=np.uint8)
@@ -126,7 +138,7 @@ def render_design(design: CropDesign) -> Image.Image:
             canvas_arr[band_mask] = fill_arr[band_mask]
 
     # 3. 挖洞后的内部区域（内矩形/椭圆/L形内部）填背景色或素材
-    inner_fill = _render_inner_area(design)
+    inner_fill = _render_inner_area(design, quality=quality)
     inner_fill_arr = np.array(inner_fill, dtype=np.uint8)
     inner_mask = _get_inner_pixel_mask(design)
     
@@ -146,13 +158,13 @@ def render_design(design: CropDesign) -> Image.Image:
     if design.mode == 'rect_hole':
         from .geometry import (make_mask, fill_rect_mask, apply_rounded_corners_to_mask,
                                compute_inner_corner_radii, RectShape)
-        W, H = design.canvas_w_px, design.canvas_h_px
         inner_rect = design.inner_rect_px()
         outer = design.outer_rect_px()
         corners = design.corners_px
 
-        # 使用与 _get_inner_pixel_mask 相同的圆角计算
-        # 水池模式(direct=True)：圆角1:1映射；普通模式：边距缩减
+        # 复用前一步 _get_inner_pixel_mask 已算好的 inner_mask 作为 mask_A
+        # （内挖圆角区域），省一次 make_mask + fill_rect_mask + apply_rounded_corners_to_mask
+        # （含 numpy 距离场 meshgrid，大半径下耗时显著）
         inner_corners = compute_inner_corner_radii(
             outer, inner_rect, corners,
             direct=design.pool_hole_transparent,
@@ -162,16 +174,8 @@ def render_design(design: CropDesign) -> Image.Image:
         shrunk_h = max(0, inner_rect.h - 2 * BORDER_WIDTH_PX)
         has_shrunk = shrunk_w > 0 and shrunk_h > 0
 
-        # 双 mask 差集：独立计算两个圆角矩形，取差集
-        # mask_A = rounded_rect(inner_rect, R)
-        # mask_B = rounded_rect(inner_rect - 10px, R - 10px)
+        # 双 mask 差集：mask_A = inner_mask（已含圆角），mask_B = 内缩 10px 的圆角矩形
         # border = mask_A \ mask_B
-        mask_a_img = make_mask((W, H))
-        fill_rect_mask(mask_a_img, inner_rect, 255)
-        if any(r > 0 for r in inner_corners.values()):
-            apply_rounded_corners_to_mask(
-                mask_a_img, inner_rect, inner_corners, fill_value=255)
-
         if has_shrunk:
             shrunk = RectShape(
                 x=inner_rect.x + BORDER_WIDTH_PX,
@@ -187,9 +191,9 @@ def render_design(design: CropDesign) -> Image.Image:
                 apply_rounded_corners_to_mask(
                     mask_b_img, shrunk, shrunk_corners, fill_value=255)
 
-            border_mask = np.array(mask_a_img, dtype=bool) & ~np.array(mask_b_img, dtype=bool)
+            border_mask = inner_mask & ~np.array(mask_b_img, dtype=bool)
         else:
-            border_mask = np.array(mask_a_img, dtype=bool)
+            border_mask = inner_mask
     else:
         from .geometry import _erode_mask
         eroded = _erode_mask(inner_mask, BORDER_WIDTH_PX)
@@ -258,7 +262,7 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
         return np.array(m, dtype=bool)
 
 
-def _render_inner_area(design: CropDesign) -> Image.Image:
+def _render_inner_area(design: CropDesign, quality: str = 'export') -> Image.Image:
     """渲染内部填充（纯色 或 适配素材图 或 水池挖空=纯白）"""
     W, H = design.canvas_w_px, design.canvas_h_px
     # 水池模式：内部挖空留白 = 纯白色（JPG 不支持透明，白色即显示为"空"）
@@ -266,7 +270,8 @@ def _render_inner_area(design: CropDesign) -> Image.Image:
         return Image.new('RGB', (W, H), (255, 255, 255))
     if design.hole_bg_image and os.path.isfile(design.hole_bg_image):
         return load_and_fit(design.hole_bg_image, W, H,
-                            mode='tile' if _looks_like_tile(design.hole_bg_image) else 'cover')
+                            mode='tile' if _looks_like_tile(design.hole_bg_image) else 'cover',
+                            quality=quality)
     return Image.new('RGB', (W, H), design.hole_bg_color)
 
 

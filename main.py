@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 
 from core.geometry import CropDesign, BorderLayer
 from core.log_setup import setup_logging
-from core.image_ops import save_jpg
+from core.image_ops import save_jpg, render_design
 from gui.canvas_widget import PreviewCanvas
 from gui.property_panel import PropertyPanel
 from gui.cropper_panel import CropperPanel
@@ -316,8 +316,9 @@ class MainWindow(QMainWindow):
 
     def _on_save(self):
         # 关键：从 canvas.full_image() 取全分辨率原图，不是预览 pixmap（经验：799713）
-        img = self.canvas.full_image()
-        if img is None:
+        # 但预览图是用 quality='preview' (BILINEAR) 渲染的，导出必须用 LANCZOS 重渲一次
+        preview_img = self.canvas.full_image()
+        if preview_img is None:
             QMessageBox.warning(self, "无法保存", "请先生成预览再保存")
             return
         # 优先使用水池设计器中的"输出文件名"，否则回退尺寸命名
@@ -328,6 +329,8 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
+            # 保存阶段用 LANCZOS 重新渲染一次，确保导出图不受预览 BILINEAR 影响
+            img = render_design(self.panel.design, quality='export')
             save_jpg(img, path, quality=95, dpi=self.panel.design.dpi)
             self.statusBar().showMessage(f"已保存：{path}", 5000)
             QMessageBox.information(self, "保存成功",

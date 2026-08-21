@@ -21,7 +21,7 @@ class PreviewCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._design = None
-        self._full_image: Image.Image | None = None  # 全分辨率原图（保存源）
+        self._full_image: Image.Image | None = None  # 预览渲染图（BILINEAR；导出由 main._on_save 重渲 LANCZOS）
         self._preview_pixmap: QPixmap | None = None  # 缩放后的预览图
         self.setMinimumSize(QSize(400, 500))
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -46,7 +46,9 @@ class PreviewCanvas(QWidget):
             self._preview_pixmap = None
             return
         from core.image_ops import render_design
-        self._full_image = render_design(self._design)
+        # 预览阶段用 BILINEAR 重采样，比 LANCZOS 快 3-5×；
+        # 最终保存会在 main._on_save 用 quality='export' 重渲一次 LANCZOS
+        self._full_image = render_design(self._design, quality='preview')
         self._update_preview_pixmap()
         self.rendered.emit(self._full_image)
 
