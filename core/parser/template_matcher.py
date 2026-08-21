@@ -1065,6 +1065,29 @@ class TemplateMatcher:
             ratio_diff = abs(t_ratio - tpl_ratio) if t_ratio is not None else float('inf')
             details['ratio_diff'] = ratio_diff
 
+            # [Fix 2026-08-21] 水池模式：使用有方向的比例匹配
+            #   目标文件 "58x78cm" 在水池模式下经 oriented_outer_w_h_cm() 交换为 78x58（横向）
+            #   素材 "58x77cm" 是竖向（58<77），方向不一致会导致渲染时边框被裁剪
+            if tgt_pool_mode:
+                # 水池模式下目标的实际画布方向：宽=t_h, 高=t_w（经 oriented_outer_w_h_cm 交换）
+                target_oriented_ratio = t_h / max(t_w, 0.001) if t_w > 0 else float('inf')
+                # 素材的原始方向比
+                tpl_oriented_ratio = pw / max(ph, 0.001) if ph > 0 else float('inf')
+                details['target_oriented_ratio'] = target_oriented_ratio
+                details['tpl_oriented_ratio'] = tpl_oriented_ratio
+                
+                # 方向一致性检查：两者都是横向(>1)或都是竖向(<1)
+                tgt_is_landscape = target_oriented_ratio > 1.0
+                tpl_is_landscape = tpl_oriented_ratio > 1.0
+                details['orientation_match'] = tgt_is_landscape == tpl_is_landscape
+                
+                # 如果方向不一致，使用有方向的比例差作为惩罚
+                if not details['orientation_match']:
+                    oriented_ratio_diff = abs(target_oriented_ratio - tpl_oriented_ratio)
+                    # 取无方向差和有方向差的较大者作为惩罚
+                    ratio_diff = max(ratio_diff, oriented_ratio_diff)
+                    details['ratio_diff'] = ratio_diff
+
             # 比例分（水池模式和普通模式权重一致）
             if ratio_diff < 0.02:
                 score += 40
@@ -1118,12 +1141,25 @@ class TemplateMatcher:
         tpl_layout = e._layout or ""
         if tpl_layout:
             tpl_is_vert = tpl_layout == "竖版"
-            if tpl_is_vert == tgt_is_vert:
-                score += 10
-                details['direction_match'] = True
+            # [Fix 2026-08-21] 水池模式方向匹配：目标方向需经 pool swap 后判断
+            #   目标文件 "58x78cm" 原是竖向(58<78)，但水池模式交换后画布为横向(78>58)
+            if tgt_pool_mode:
+                # 水池模式：目标的有效方向是交换后的方向
+                tgt_effective_is_vert = not tgt_is_vert  # 交换方向
+                if tpl_is_vert == tgt_effective_is_vert:
+                    score += 10
+                    details['direction_match'] = True
+                else:
+                    # 方向不一致惩罚：素材方向与实际画布方向不同
+                    score -= 5
+                    details['direction_match'] = False
             else:
-                if details.get('ratio_diff', float('inf')) < 0.05:
-                    score += 3
+                if tpl_is_vert == tgt_is_vert:
+                    score += 10
+                    details['direction_match'] = True
+                else:
+                    if details.get('ratio_diff', float('inf')) < 0.05:
+                        score += 3
 
         return score, details
 

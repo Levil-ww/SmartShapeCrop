@@ -107,9 +107,12 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
     W, H = design.canvas_w_px, design.canvas_h_px
     # 1. 整体背景（最外层）
     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
+    # [Fix 2026-08-21] 水池模式使用 stretch 模式适配素材（等同 simple_resize）
+    #   确保素材图四周边框线完整保留，避免 cover 模式裁剪边框
+    #   与圆角裁剪工具默认行为一致（simple_resize 直接拉伸，不裁剪不留白）
     if design.pool_outer_material_image and os.path.isfile(design.pool_outer_material_image):
         canvas = load_and_fit(design.pool_outer_material_image, W, H,
-                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover',
+                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'stretch',
                               quality=quality)
     elif design.outer_bg_image and os.path.isfile(design.outer_bg_image):
         canvas = load_and_fit(design.outer_bg_image, W, H,
