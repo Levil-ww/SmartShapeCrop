@@ -45,6 +45,7 @@
   .sev{font-weight:800;font-size:12px;padding:2px 9px;border-radius:20px;color:#fff;white-space:nowrap}
   .s-crit{background:var(--crit)} .s-high{background:var(--high)}
   .s-med{background:var(--med);color:#3a2e00} .s-low{background:var(--low)}
+  .s-fixed{background:#1a9d4b;color:#fff}
   .fid{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--accent)}
   code{background:#eef1f6;padding:1px 6px;border-radius:5px;font-size:12.5px}
   .loc{color:var(--muted);font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -154,11 +155,11 @@
 <thead><tr><th style="width:64px">编号</th><th style="width:74px">等级</th><th>问题 / 位置</th><th>风险</th><th>修复建议</th></tr></thead>
 <tbody>
 
-<tr>
-  <td><span class="fid">F1</span></td><td><span class="sev s-crit">严重</span></td>
-  <td><b>预览管线崩溃（已复现）</b><br><span class="loc">geometry.py:237 fill_rect_mask → image_ops.render_design → canvas._render_lod</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F1</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>预览管线崩溃（已复现 → 已修复）</b><br><span class="loc">geometry.py fill_rect_mask / inner_rect_px / to_int_tuple → image_ops.render_design → canvas._render_lod</span></td>
   <td>当 inner_rect 退化（x1&lt;x0，边距过大或 LOD 下采样取整反转）时 <code>d.rectangle</code> 抛 <code>ValueError</code>，预览静默失败；crash.log 已记录真实栈。</td>
-  <td>所有 fill_rect_mask / 圆角入口前统一守卫：inner_rect 宽高必须 &gt;0，否则 clamp 或跳过绘制；LOD 缩放后对坐标做 <code>min/max</code> 归一。</td>
+  <td><b>已修复（2026-08-26）：</b>① <code>RectShape.to_int_tuple</code> 归一 x0≤x1,y0≤y1；② <code>inner_rect_px/outer_rect_px</code> 将 w/h clamp 到非负并告警；③ <code>fill_rect_mask</code>、<code>apply_rounded_corners_to_mask</code>、<code>fill_ellipse_mask</code> 加退化守卫 + 圆角半径 clamp。回归测试见 <code>tests/test_f1_inner_rect_crash.py</code>（11 项全过）。</td>
 </tr>
 
 <tr>

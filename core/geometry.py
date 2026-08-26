@@ -6,8 +6,11 @@ core/geometry.py
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
+import logging
 import numpy as np
 from PIL import Image, ImageDraw
+
+logger = logging.getLogger(__name__)
 
 
 # ---------- 基础形状 ----------
@@ -30,8 +33,18 @@ class RectShape:
         return self.y + self.h
 
     def to_int_tuple(self) -> tuple[int, int, int, int]:
-        return (int(round(self.x)), int(round(self.y)),
-                int(round(self.right)), int(round(self.bottom)))
+        x0 = int(round(self.x))
+        y0 = int(round(self.y))
+        x1 = int(round(self.right))
+        y1 = int(round(self.bottom))
+        # [F1 修复] 防御性归一：保证 x0<=x1 且 y0<=y1，避免把负宽/负高矩形
+        # 传给 PIL ImageDraw 时触发 "ValueError: x1 must be greater than or
+        # equal to x0"。退化的矩形（w/h<0）被归一为 0 宽/高，绘制时等价于空操作。
+        if x1 < x0:
+            x1 = x0
+        if y1 < y0:
+            y1 = y0
+        return (x0, y0, x1, y1)
 
 
 @dataclass
@@ -181,9 +194,18 @@ class CropDesign:
     # 像素级坐标计算
     def outer_rect_px(self) -> RectShape:
         m = self.cm2px(self.outer_margin_cm)
-        return RectShape(m, m,
-                         self.canvas_w_px - 2 * m,
-                         self.canvas_h_px - 2 * m)
+        w = self.canvas_w_px - 2 * m
+        h = self.canvas_h_px - 2 * m
+        # [F1 修复] 外边距可能超过画布可用空间，clamp 到非负，
+        # 避免负宽/负高导致下游 PIL ImageDraw 抛 "x1 must be >= x0"。
+        if w <= 0 or h <= 0:
+            logger.warning(
+                f"[geometry] outer_rect_px 退化 (w={w:.1f}, h={h:.1f})，"
+                f"outer_margin_cm={self.outer_margin_cm} 超过画布可用尺寸，已 clamp 至 0"
+            )
+            w = max(0.0, w)
+            h = max(0.0, h)
+        return RectShape(m, m, w, h)
 
     def inner_rect_px(self) -> RectShape:
         outer = self.outer_rect_px()
@@ -191,9 +213,18 @@ class CropDesign:
         mb = self.cm2px(self.inner_margin_bottom_cm)
         ml = self.cm2px(self.inner_margin_left_cm)
         mr = self.cm2px(self.inner_margin_right_cm)
-        return RectShape(outer.x + ml, outer.y + mt,
-                         outer.w - ml - mr,
-                         outer.h - mt - mb)
+        w = outer.w - ml - mr
+        h = outer.h - mt - mb
+        # [F1 修复] 内边距之和可能超过外框可用空间（边距设置过大、
+        # 或 LOD 下采样取整反转），clamp 到非负，避免负宽高拖垮整个渲染链。
+        if w <= 0 or h <= 0:
+            logger.warning(
+                f"[geometry] inner_rect_px 退化 (w={w:.1f}, h={h:.1f})，"
+                f"内边距之和超过外框可用尺寸，已 clamp 至 0"
+            )
+            w = max(0.0, w)
+            h = max(0.0, h)
+        return RectShape(outer.x + ml, outer.y + mt, w, h)
 
     def ellipse_px(self) -> EllipseShape:
         cw, ch = self.canvas_w_px, self.canvas_h_px
@@ -228,20 +259,46 @@ def make_mask(size: tuple[int, int]) -> Image.Image:
 
 
 def fill_rect_mask(mask: Image.Image, rect: RectShape, value: int = 255) -> None:
-    """在 mask 上填充一个矩形区域为 value"""
+    """在 mask 上填充一个矩形区域为 value。
+
+    [F1 修复] 退化守卫：当 rect 宽或高 <= 0（内/外边距大于可用空间，
+    或 LOD 取整导致坐标反转）时直接跳过绘制，避免 PIL ImageDraw 抛
+    ValueError 使预览崩溃。圆角半径也会被 clamp 到矩形可容纳的最大值。
+    """
+    if rect.w <= 0 or rect.h <= 0:
+        logger.warning(
+            f"[geometry] fill_rect_mask 跳过退化矩形 (w={rect.w}, h={rect.h})，"
+            f"疑似边距设置大于画布可用空间"
+        )
+        return
+    x0, y0, x1, y1 = rect.to_int_tuple()
     d = ImageDraw.Draw(mask)
     if rect.corner_r > 0:
-        d.rounded_rectangle(rect.to_int_tuple(),
-                            radius=int(rect.corner_r), fill=value)
+        # 圆角半径不得超过矩形短边的一半，否则 PIL 同样会抛异常
+        max_r = max(1, min(x1 - x0, y1 - y0) // 2)
+        r = min(int(rect.corner_r), max_r)
+        if r > 0:
+            d.rounded_rectangle((x0, y0, x1, y1), radius=r, fill=value)
+        else:
+            d.rectangle((x0, y0, x1, y1), fill=value)
     else:
-        d.rectangle(rect.to_int_tuple(), fill=value)
+        d.rectangle((x0, y0, x1, y1), fill=value)
 
 
 def fill_ellipse_mask(mask: Image.Image, e: EllipseShape, value: int = 255) -> None:
     d = ImageDraw.Draw(mask)
-    box = (int(e.cx - e.rx), int(e.cy - e.ry),
-           int(e.cx + e.rx), int(e.cy + e.ry))
-    d.ellipse(box, fill=value)
+    # [F1 修复] 归一椭圆包围盒，避免负半径导致 x0>x1 触发 ValueError
+    x0 = int(round(e.cx - e.rx))
+    y0 = int(round(e.cy - e.ry))
+    x1 = int(round(e.cx + e.rx))
+    y1 = int(round(e.cy + e.ry))
+    if x1 < x0:
+        x1 = x0
+    if y1 < y0:
+        y1 = y0
+    if x1 <= x0 or y1 <= y0:
+        return
+    d.ellipse((x0, y0, x1, y1), fill=value)
 
 
 def fill_lshape_mask(mask: Image.Image, l: LShape, value: int = 255) -> None:
@@ -288,8 +345,20 @@ def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
     y_i = int(round(inner_rect.y))
     right_i = int(round(inner_rect.right))
     bottom_i = int(round(inner_rect.bottom))
+    if right_i < x_i:
+        right_i = x_i
+    if bottom_i < y_i:
+        bottom_i = y_i
     w_i = right_i - x_i
     h_i = bottom_i - y_i
+    # [F1 修复] 退化矩形（w/h<=0）无可圆角，直接返回，
+    # 避免把负宽高传入距离场算法产生几何错乱。
+    if w_i <= 0 or h_i <= 0:
+        logger.warning(
+            f"[geometry] apply_rounded_corners_to_mask 跳过退化矩形 "
+            f"(w={w_i}, h={h_i})"
+        )
+        return
     _carve_corner_on_mask(
         mask_img,
         (x_i, y_i, w_i, h_i),
