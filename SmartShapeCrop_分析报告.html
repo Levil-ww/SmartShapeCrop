@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop 项目分析报告</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2933; --muted:#647084;
+    --line:#e3e8ef; --crit:#e23b3b; --high:#ef7a1a; --med:#f2b705;
+    --low:#4a90d9; --good:#27ae60; --accent:#3b5bdb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 22px 60px;}
+  header.top{background:linear-gradient(120deg,#2b3a67,#3b5bdb);
+    color:#fff;border-radius:16px;padding:30px 34px;margin-bottom:24px;
+    box-shadow:0 8px 26px rgba(43,58,103,.25);}
+  header.top h1{margin:0 0 6px;font-size:27px;letter-spacing:.5px}
+  header.top p{margin:2px 0;opacity:.92}
+  .tag{display:inline-block;background:rgba(255,255,255,.18);border-radius:20px;
+    padding:3px 12px;font-size:12.5px;margin:6px 6px 0 0}
+  h2.sec{font-size:20px;margin:34px 0 14px;padding-left:12px;border-left:5px solid var(--accent)}
+  .grid{display:grid;gap:16px}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:820px){.g4,.g3,.g2{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 18px;box-shadow:0 2px 8px rgba(20,30,60,.05)}
+  .metric{text-align:center}
+  .metric .num{font-size:34px;font-weight:800;line-height:1.1}
+  .metric .lab{font-size:13px;color:var(--muted);margin-top:4px}
+  .c-crit .num{color:var(--crit)} .c-high .num{color:var(--high)}
+  .c-med .num{color:var(--med)} .c-low .num{color:var(--low)}
+  .c-good .num{color:var(--good)}
+  .donutwrap{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+  .legend{display:flex;flex-direction:column;gap:8px;font-size:14px}
+  .legend span{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:8px;vertical-align:-2px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:#eef2fb;font-weight:700}
+  tr:nth-child(even) td{background:#fafbfe}
+  .sev{font-weight:800;font-size:12px;padding:2px 9px;border-radius:20px;color:#fff;white-space:nowrap}
+  .s-crit{background:var(--crit)} .s-high{background:var(--high)}
+  .s-med{background:var(--med);color:#3a2e00} .s-low{background:var(--low)}
+  .fid{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--accent)}
+  code{background:#eef1f6;padding:1px 6px;border-radius:5px;font-size:12.5px}
+  .loc{color:var(--muted);font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .good-card{border-left:5px solid var(--good)}
+  .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
+  .barname{width:130px;font-size:13px;text-align:right;color:var(--muted)}
+  .bartrack{flex:1;background:#eceff5;border-radius:8px;height:18px;overflow:hidden}
+  .barfill{height:100%;border-radius:8px}
+  .barnum{width:34px;font-size:12.5px;font-weight:700}
+  .roadmap{display:grid;gap:14px;grid-template-columns:repeat(3,1fr)}
+  @media(max-width:820px){.roadmap{grid-template-columns:1fr}}
+  .pill{display:inline-block;border-radius:20px;padding:2px 10px;font-size:11.5px;font-weight:700}
+  .p0{background:#fde2e2;color:#b91c1c} .p1{background:#ffeed2;color:#b45309} .p2{background:#e2ecfb;color:#1e40af}
+  blockquote{background:#fff8f8;border-left:4px solid var(--crit);margin:8px 0;padding:10px 14px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;border-radius:8px;color:#7a1f1f;white-space:pre-wrap}
+  .foot{margin-top:36px;color:var(--muted);font-size:12.5px;text-align:center}
+  ul.tight{margin:6px 0 0;padding-left:20px} ul.tight li{margin:3px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>SmartShapeCrop — 项目分析报告</h1>
+  <p>智能形状裁剪设计器 V2.0 · 圆角裁剪工具 + 水池设计器（草图 OCR）</p>
+  <p>面向印刷/定制行业的桌面工具（Python 3 + PyQt5 + Pillow/numpy/OpenCV）</p>
+  <div>
+    <span class="tag">分析日期 2026-08-26</span>
+    <span class="tag">代码规模 ≈ 1.4 万行（core+gui）</span>
+    <span class="tag">152 个测试用例</span>
+    <span class="tag">证据：源码精读 + crash.log 复现</span>
+  </div>
+</header>
+
+<!-- ===== 概览指标 ===== -->
+<h2 class="sec">一、关键指标</h2>
+<div class="grid g4">
+  <div class="card metric c-crit"><div class="num">19</div><div class="lab">风险 / 缺陷项</div></div>
+  <div class="card metric c-high"><div class="num">4</div><div class="lab">高危（含 1 项实测崩溃）</div></div>
+  <div class="card metric c-med"><div class="num">10</div><div class="lab">中危</div></div>
+  <div class="card metric c-low"><div class="num">5</div><div class="lab">低危</div></div>
+  <div class="card metric c-good"><div class="num">11</div><div class="lab">已确认优势</div></div>
+  <div class="card metric"><div class="num">2</div><div class="lab">子系统（裁剪 / 设计器）</div></div>
+  <div class="card metric"><div class="num">8</div><div class="lab">core 子模块</div></div>
+  <div class="card metric"><div class="num">1</div><div class="lab">本地复现的真实崩溃</div></div>
+</div>
+
+<!-- ===== 严重度分布 ===== -->
+<h2 class="sec">二、风险严重度分布</h2>
+<div class="card">
+  <div class="donutwrap">
+    <svg width="220" height="220" viewBox="0 0 200 200">
+      <circle cx="100" cy="100" r="80" fill="none" stroke="#eef1f6" stroke-width="30"/>
+      <!-- High 4/19 = 21.05% ; len 105.8 -->
+      <circle cx="100" cy="100" r="80" fill="none" stroke="#ef7a1a" stroke-width="30"
+        stroke-dasharray="105.8 396.9" stroke-dashoffset="0" transform="rotate(-90 100 100)"/>
+      <!-- Medium 10/19 = 52.63% ; len 264.5 ; start 105.8 -->
+      <circle cx="100" cy="100" r="80" fill="none" stroke="#f2b705" stroke-width="30"
+        stroke-dasharray="264.5 238.2" stroke-dashoffset="-105.8" transform="rotate(-90 100 100)"/>
+      <!-- Low 5/19 = 26.32% ; len 132.3 ; start 370.4 -->
+      <circle cx="100" cy="100" r="80" fill="none" stroke="#4a90d9" stroke-width="30"
+        stroke-dasharray="132.3 370.4" stroke-dashoffset="-370.4" transform="rotate(-90 100 100)"/>
+      <text x="100" y="93" text-anchor="middle" font-size="34" font-weight="800" fill="#1f2933">19</text>
+      <text x="100" y="113" text-anchor="middle" font-size="12" fill="#647084">发现项</text>
+    </svg>
+    <div class="legend">
+      <div><span style="background:#ef7a1a"></span>高危 / 严重（4）— 含 1 项已复现崩溃</div>
+      <div><span style="background:#f2b705"></span>中危（10）— 健壮性 / 文档脱节 / 路径</div>
+      <div><span style="background:#4a90d9"></span>低危（5）— 质量 / 文档细节 / 维护</div>
+      <div style="margin-top:6px;color:var(--muted);font-size:12.5px">占比：高危 21% · 中危 53% · 低危 26%</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 分类条形 ===== -->
+<h2 class="sec">三、按子系统分布</h2>
+<div class="card">
+  <div class="barrow"><div class="barname">GUI / 线程</div><div class="bartrack"><div class="barfill" style="width:100%;background:#ef7a1a"></div></div><div class="barnum">5</div></div>
+  <div class="barrow"><div class="barname">依赖 / 打包</div><div class="bartrack"><div class="barfill" style="width:80%;background:#f2b705"></div></div><div class="barnum">4</div></div>
+  <div class="barrow"><div class="barname">圆角 / 几何算法</div><div class="bartrack"><div class="barfill" style="width:80%;background:#f2b705"></div></div><div class="barnum">4</div></div>
+  <div class="barrow"><div class="barname">草图 OCR</div><div class="bartrack"><div class="barfill" style="width:100%;background:#ef7a1a"></div></div><div class="barnum">5</div></div>
+  <div class="barrow"><div class="barname">测试 / 质量</div><div class="bartrack"><div class="barfill" style="width:60%;background:#4a90d9"></div></div><div class="barnum">3</div></div>
+  <div class="barrow"><div class="barname">安全</div><div class="bartrack"><div class="barfill" style="width:20%;background:#4a90d9"></div></div><div class="barnum">1</div></div>
+</div>
+
+<!-- ===== 优势 ===== -->
+<h2 class="sec">四、项目优势（已确认）</h2>
+<div class="grid g3">
+  <div class="card good-card"><b>① 圆角算法单一可信源</b><br><span style="color:var(--muted)"><code>carve_corner_on_mask</code> 用距离场精确刻画 1/4 圆，规避 PIL pieslice 锯齿/缺口；三处入口统一委托，架构清晰。</span></div>
+  <div class="card good-card"><b>② 健壮日志系统</b><br><span style="color:var(--muted)">RotatingFileHandler + 幂等保护 + 文件不可写时自动降级控制台，不阻断程序。</span></div>
+  <div class="card good-card"><b>③ 全局崩溃钩子</b><br><span style="color:var(--muted)"><code>sys.excepthook → crash.log</code> 为无控制台冻结包提供排障入口（本次崩溃即被其捕获）。</span></div>
+  <div class="card good-card"><b>④ OCR 容错设计</b><br><span style="color:var(--muted)">safe-import、缓存优先、公开函数永不抛异常，整体降级链路设计良好。</span></div>
+  <div class="card good-card"><b>⑤ 输入校验较全</b><br><span style="color:var(--muted)">草图扩展名/大小/像素上限 + 几何自洽 + 方向标签多重校验流程严谨。</span></div>
+  <div class="card good-card"><b>⑥ 资源路径抽象</b><br><span style="color:var(--muted)"><code>resource_path</code>/<code>PathResolver</code> 区分源码与 <code>sys._MEIPASS</code> 冻结模式，定位正确。</span></div>
+  <div class="card good-card"><b>⑦ 异步渲染模式</b><br><span style="color:var(--muted)">render_id 版本号丢弃过期结果 + LOD 分级 + requestInterruption，避免卡顿/过期覆盖。</span></div>
+  <div class="card good-card"><b>⑧ 无可变默认参数</b><br><span style="color:var(--muted)">全仓未现 <code>f(x=[])</code> 类 bug，<code>CropDesign</code> 用 <code>field(default_factory=…)</code>。</span></div>
+  <div class="card good-card"><b>⑨ 测试基数可观</b><br><span style="color:var(--muted)">152 个 <code>test_</code> 覆盖圆角/解析/裁剪/模板匹配等核心算法。</span></div>
+  <div class="card good-card"><b>⑩ 主路径解炸弹防御</b><br><span style="color:var(--muted)"><code>Image.MAX_IMAGE_PIXELS=2亿</code> 防御解压炸弹；<code>load_image_rgb</code> 处理 EXIF 方向。</span></div>
+  <div class="card good-card"><b>⑪ 配置集中化</b><br><span style="color:var(--muted)"><code>core/config.py</code> 统一常量单一来源，消除散落魔法数字。</span></div>
+  <div class="card good-card"><b>⑫ 打包脚本现代化</b><br><span style="color:var(--muted)"><code>packageV2.0.py</code> 改用相对路径 + collect-all + 自动 PyInstaller，比旧 .spec 完善。</span></div>
+</div>
+
+<!-- ===== 风险与缺陷明细 ===== -->
+<h2 class="sec">五、风险与缺陷明细</h2>
+<div class="card" style="padding:10px 12px">
+<table>
+<thead><tr><th style="width:64px">编号</th><th style="width:74px">等级</th><th>问题 / 位置</th><th>风险</th><th>修复建议</th></tr></thead>
+<tbody>
+
+<tr>
+  <td><span class="fid">F1</span></td><td><span class="sev s-crit">严重</span></td>
+  <td><b>预览管线崩溃（已复现）</b><br><span class="loc">geometry.py:237 fill_rect_mask → image_ops.render_design → canvas._render_lod</span></td>
+  <td>当 inner_rect 退化（x1&lt;x0，边距过大或 LOD 下采样取整反转）时 <code>d.rectangle</code> 抛 <code>ValueError</code>，预览静默失败；crash.log 已记录真实栈。</td>
+  <td>所有 fill_rect_mask / 圆角入口前统一守卫：inner_rect 宽高必须 &gt;0，否则 clamp 或跳过绘制；LOD 缩放后对坐标做 <code>min/max</code> 归一。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F2</span></td><td><span class="sev s-high">高</span></td>
+  <td><b>requirements.txt 缺失 pytesseract</b><br><span class="loc">requirements.txt:1-6（README 表格却列出）</span></td>
+  <td>干净安装后 <code>pip install -r requirements.txt</code> 不含 pytesseract，OCR 全局静默失效（仅“Python 包未安装”日志），草图识别功能不可用。</td>
+  <td>补充 <code>pytesseract&gt;=0.3.10</code>；并在 README/打包说明中明确需要系统 Tesseract 引擎。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F3</span></td><td><span class="sev s-high">高</span></td>
+  <td><b>sketch 先解码后校验（解炸弹顺序错）</b><br><span class="loc">sketch_parser.py:2201 _load_image 全量解码 → 2227 validate</span></td>
+  <td><code>cv2.imread</code> 无像素上限，恶意/异常图在尺寸校验前已全量解码进内存，可能 OOM；该模块从未设 <code>Image.MAX_IMAGE_PIXELS</code>。</td>
+  <td>把 <code>validate_sketch_file</code> 提前到解码前（仅 <code>PIL.open</code> 读头）；并在模块内设置 <code>Image.MAX_IMAGE_PIXELS</code> 纵深防御。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F4</span></td><td><span class="sev s-high">高</span></td>
+  <td><b>共享 CropDesign 跨线程读写</b><br><span class="loc">property_panel.PoolRenderWorker 写 design._cached_* / canvas 主线程渲染同一对象</span></td>
+  <td>同一 <code>CropDesign</code> 被子线程改写字段、主线程同时读取渲染，存在数据竞争（字段撕裂、渲染结果错乱）。</td>
+  <td>worker 内深拷贝 design 或仅回传不可变结果；用信号把结果传回主线程，杜绝原地改共享对象。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F5</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>Tesseract 缺失不降级几何估算</b><br><span class="loc">sketch_parser.py:1890；packageV2.0.py:387 / README 措辞</span></td>
+  <td>文档声称“未安装自动降级为几何估算”，实际 OCR 为空即返回 <code>success=False</code>，整次解析失败——功能缺失 + 文档误导。</td>
+  <td>实现真正的几何兜底分支，或更正所有文档/提示文案，明确“OCR 不可用则识别失败需安装引擎”。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F6</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>_PARSE_TIMEOUT_SEC 定义但从未使用</b><br><span class="loc">sketch_parser.py:30</span></td>
+  <td>无真实超时；某张触发 OCR 长时间卡死的草图会让 worker 线程永久挂起，“解析中”状态永不结束且无法取消。</td>
+  <td>worker 内加 <code>QTimer</code> 超时或在主循环累计耗时提前退出，超时返回降级结果。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F7</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>死代码 _fill_corner_boundary_pixels</b><br><span class="loc">algorithm.py:198（全仓无调用）</span></td>
+  <td>README / ProductSummary 仍声称其“大半径额外后处理”，实际从未执行；误导维护者以为有额外 C 形缺口保护。</td>
+  <td>删除死代码，或补上调用；统一文档，避免维护误判。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F8</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>inverse=True 分支永不触发 / 未测试</b><br><span class="loc">geometry.py:299 恒传 inverse=False</span></td>
+  <td><code>carve_corner_on_mask(inverse=True)</code> 是内层精确挖空逻辑，全仓无调用、无测试；将来启用极易引入圆角挖空错误而无人察觉。</td>
+  <td>补单测覆盖 inverse 路径；若当前用不到，加注释说明其保留意图，防止误用。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F9</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>椭圆模式多层边框退化成矩形逻辑</b><br><span class="loc">geometry.py:362 仅 rect_lshape 早返，ellipse 落入 rect_hole</span></td>
+  <td>椭圆挖孔若走多层边框路径，会产生“矩形洞”边框带而非椭圆边框带，视觉错误；属未覆盖边界模式。</td>
+  <td>为 ellipse_hole 显式实现椭圆边框带；或文档明确“椭圆模式不支持多层边框”并在 UI 禁用。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F10</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>依赖 opencv-python（完整版）而非 headless</b><br><span class="loc">requirements.txt:5</span></td>
+  <td>完整版自带 Qt 插件，与 PyQt5 的 Qt 在 Windows 上可能冲突或加载异常，且膨胀包体；本项目只用 imread/cvtColor/resize。</td>
+  <td>改用 <code>opencv-python-headless</code>。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F11</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>陈旧 .spec 硬编码绝对路径</b><br><span class="loc">智能裁剪设计器.spec:6,17,50</span></td>
+  <td>旧 spec 写死 <code>D:/SmartShapeCrop/…</code>，换机 <code>pyinstaller 智能裁剪设计器.spec</code> 必然失败；与良好的 packageV2.0.py 矛盾，易误导打包。</td>
+  <td>删除或归档旧 spec；统一使用 packageV2.0.py（已用相对路径）。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F12</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>硬编码绝对路径散落</b><br><span class="loc">process_image.py:23-24；config.py:165-166</span></td>
+  <td><code>process_image.py</code> 写死 <code>D:\SmartShapeCrop\psd_demo</code> 示例源/输出；config.py 含 <code>D:\Tesseract-OCR</code> 兜底路径——锁死作者机器，降低可移植性。</td>
+  <td>示例脚本改用相对路径 / 命令行参数；Tesseract 兜底仅作候选列表，不写死盘符。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F13</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>simple_resize 实为“拉伸”却标注“推荐”</b><br><span class="loc">image_cropper.py:1657 src.resize((tw,th))</span></td>
+  <td>默认模式直接非等比拉伸填满目标尺寸，源图宽高比 ≠ 目标时图像<b>变形</b>；但 UI 描述为“简单缩放 / 保持图片完整性（推荐）”，与用户预期冲突。</td>
+  <td>测试显式断言是否允许变形；UI 加“拉伸会变形”提示；或默认改为等比 cover/contain。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F14</span></td><td><span class="sev s-med">中</span></td>
+  <td><b>大量裸 except 静默吞错</b><br><span class="loc">sketch_parser.py 多处 / image_ops.py:34</span></td>
+  <td>热路径中 <code>except Exception:</code> 无日志，隐藏真实异常（缓存键、进度回调、颜色增强等），生产排障困难。</td>
+  <td>至少 <code>logger.debug</code> 记录被吞异常；仅对确属“可忽略”的降级点静默。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F15</span></td><td><span class="sev s-low">低</span></td>
+  <td><b>调试脚本混入 tests/</b><br><span class="loc">tests/ 下 9 个文件 0 个 test_ 函数</span></td>
+  <td>test_corner_analysis_simple / test_diagnose / test_gui_sim / test_sketch_fix 等调试脚本污染 <code>pytest</code> 收集与 CI 判定。</td>
+  <td>移入 scripts/ 或加 <code>pytestmark = pytest.mark.skip</code>；tests/ 仅保留真实回归用例。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F16</span></td><td><span class="sev s-low">低</span></td>
+  <td><b>PreviewRenderWorker 未正确清理</b><br><span class="loc">canvas_widget.py:112-142</span></td>
+  <td>旧 worker 仅 <code>requestInterruption()</code> 即被替换引用，可能触发“QThread destroyed while running”警告，无 finished 清理。</td>
+  <td>等待 <code>finished</code> 或 <code>deleteLater()</code> 后再释放；统一 worker 生命周期管理。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F17</span></td><td><span class="sev s-low">低</span></td>
+  <td><b>pytest.ini 忽略 DeprecationWarning</b><br><span class="loc">pytest.ini:7-8</span></td>
+  <td>掩盖 Pillow/numpy 即将移除 API 的信号，增加升级（如 Python 3.13 兼容）风险。</td>
+  <td>移除 ignore，或将告警转为显式技术债跟踪。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F18</span></td><td><span class="sev s-low">低</span></td>
+  <td><b>文档与实现不符（日志级别）</b><br><span class="loc">log_setup.py docstring vs :64</span></td>
+  <td>docstring/注释称默认 WARNING，代码实为 <code>LOG_LEVEL</code> 默认 INFO，开发者调试预期偏差。</td>
+  <td>统一文档与代码表述。</td>
+</tr>
+
+<tr>
+  <td><span class="fid">F19</span></td><td><span class="sev s-low">低</span></td>
+  <td><b>运行产物缺乏自动清理</b><br><span class="loc">logs/(125) / debug_output/(76) / ProductSummary/</span></td>
+  <td>草图诊断截图、调试中间图、日志持续累积，无滚动/清理策略，长期占用且混杂交付物。</td>
+  <td>增加产物上限/自动归档；区分“交付物”与“调试产物”目录。</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ===== 崩溃证据 ===== -->
+<h2 class="sec">六、附录：复现崩溃栈（crash.log）</h2>
+<div class="card">
+<blockquote>崩溃时间: 2026-08-26 15:25:53
+File "D:\SmartShapeCrop\main.py", line 288, in _on_design_changed
+  self.canvas.set_design(design)
+File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+  self._render_async() → _render_lod()
+File "D:\SmartShapeCrop\core\image_ops.py", line 371, in render_design_lod
+  lod_result = render_design(lod_design, quality='preview', pixel_scale=scale)
+File "D:\SmartShapeCrop\core\image_ops.py", line 539, in render_design
+  inner_mask = _get_inner_pixel_mask(design)
+File "D:\SmartShapeCrop\core\geometry.py", line 237, in fill_rect_mask
+  d.rectangle(rect.to_int_tuple(), fill=value)
+ValueError: x1 must be greater than or equal to x0</blockquote>
+<p style="color:var(--muted);font-size:13px;margin:6px 0 0">说明：全局 <code>excepthook</code> 成功把异常写入 crash.log（<b>优势③的体现</b>），但预览管线本身缺少几何合法性守卫，导致该崩溃未被预防。修复见 F1。</p>
+</div>
+
+<!-- ===== 修复路线图 ===== -->
+<h2 class="sec">七、修复优先级路线图</h2>
+<div class="roadmap">
+  <div class="card">
+    <span class="pill p0">P0 · 立即</span>
+    <ul class="tight">
+      <li><b>F1</b> 预览崩溃：inner_rect 几何守卫</li>
+      <li><b>F2</b> 补 pytesseract 到 requirements</li>
+      <li><b>F3</b> sketch 校验提前 + 设 MAX_PIXELS</li>
+    </ul>
+  </div>
+  <div class="card">
+    <span class="pill p1">P1 · 近期</span>
+    <ul class="tight">
+      <li><b>F4</b> 并发安全（深拷贝 / 信号回传）</li>
+      <li><b>F13</b> simple_resize 拉伸误导提示</li>
+      <li><b>F5/F6</b> OCR 降级真实性 + 超时</li>
+      <li><b>F11/F12</b> 清理 .spec 与硬编码路径</li>
+    </ul>
+  </div>
+  <div class="card">
+    <span class="pill p2">P2 · 优化</span>
+    <ul class="tight">
+      <li><b>F7/F8/F9</b> 死代码 / 椭圆边框 / inverse</li>
+      <li><b>F10</b> opencv-headless</li>
+      <li><b>F14</b> 减少静默吞错</li>
+      <li><b>F15–F19</b> 测试污染 / 文档对齐 / 清理</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 优化方向 ===== -->
+<h2 class="sec">八、优化方向</h2>
+<div class="grid g2">
+  <div class="card">
+    <b>稳定性与正确性</b>
+    <ul class="tight">
+      <li>为所有几何入口（圆角/矩形/椭圆）统一加“尺寸 &gt; 0 + 边界 clamp”守卫（F1 根因）。</li>
+      <li>建立多线程读写规范：渲染结果经信号回传，子线程不改共享设计对象（F4）。</li>
+      <li>为 F1/F5/F9 补充回归测试，纳入 CI。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>可复现与可移植</b>
+    <ul class="tight">
+      <li>完善依赖清单（pytesseract、PyInstaller、opencv-headless）。</li>
+      <li>固化 packageV2.0.py，移除陈旧 .spec 与硬编码路径。</li>
+      <li>提供 requirements-dev / 打包环境隔离说明。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>OCR 与草图识别</b>
+    <ul class="tight">
+      <li>落实 _PARSE_TIMEOUT_SEC 真实超时（F6）。</li>
+      <li>实现或明确“几何兜底”语义（F5）。</li>
+      <li>降低静默吞错，提升排障可见性（F14）。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>文档与实现对齐</b>
+    <ul class="tight">
+      <li>清理死代码与未启用分支，统一 C 形缺口等文档（F7/F8）。</li>
+      <li>修正 simple_resize 描述与默认行为（F13）。</li>
+      <li>README 与代码逐项对账，消除“声称已实现但无调用”的误导。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>性能（已较优，可增量）</b>
+    <ul class="tight">
+      <li>已做 EDT→erode、ROI 隔离、LOD、mask 增量复用等优化。</li>
+      <li>可加渲染结果缓存、PSD 合成并行、超大图分块。</li>
+      <li>建立像素级一致性回归，保障优化不引入视觉偏差。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>质量工程</b>
+    <ul class="tight">
+      <li>分离 tests/ 与调试脚本（F15）。</li>
+      <li>CI 跑 pytest + 覆盖率；关掉 DeprecationWarning 忽略（F17）。</li>
+      <li>产物目录治理与自动清理（F19）。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="foot">
+  SmartShapeCrop 项目分析报告 · 基于源码精读与 crash.log 实证 · 2026-08-26<br>
+  严重度判定：严重=已复现崩溃；高=功能/安全/并发硬伤；中=健壮性/文档脱节；低=质量与维护细节。
+</div>
+
+</div>
+</body>
+</html>
