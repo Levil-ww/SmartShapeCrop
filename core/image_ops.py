@@ -117,7 +117,7 @@ def render_design_lod(design: CropDesign, scale: float = 0.25) -> Image.Image:
         PIL.Image，大小 = design.canvas_w_px × design.canvas_h_px（预览显示用）
     """
     if scale >= 1.0:
-        return render_design(design, quality='preview')
+        return render_design(design, quality='preview', pixel_scale=1.0)
     
     original_w = design.canvas_w_px
     original_h = design.canvas_h_px
@@ -134,12 +134,12 @@ def render_design_lod(design: CropDesign, scale: float = 0.25) -> Image.Image:
     # 临时修改 design 尺寸进行 LOD 渲染
     lod_design = _make_lod_design(design, lod_w, lod_h)
     
-    # 在 LOD 尺寸上渲染
-    lod_result = render_design(lod_design, quality='preview')
+    # 在 LOD 尺寸上渲染，传递 pixel_scale 以缩放固定像素值（如边框宽度）
+    lod_result = render_design(lod_design, quality='preview', pixel_scale=scale)
     
-    # 放大回原尺寸
+    # 放大回原尺寸，使用 NEAREST 保持锐利边缘（如边框）
     if lod_result.size != (original_w, original_h):
-        lod_result = lod_result.resize((original_w, original_h), Image.BILINEAR)
+        lod_result = lod_result.resize((original_w, original_h), Image.NEAREST)
     
     return lod_result
 
@@ -193,7 +193,7 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
 
 # ---------- 核心渲染 ----------
 
-def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
+def render_design(design: CropDesign, quality: str = 'export', pixel_scale: float = 1.0) -> Image.Image:
     """
     按 CropDesign 完整渲染一张全尺寸画布（RGB）。
     返回 PIL.Image，大小 = design.canvas_w_px × design.canvas_h_px
@@ -201,8 +201,18 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
     quality:
       - 'export' (默认): LANCZOS 重采样，最终保存导出用
       - 'preview': BILINEAR 重采样，GUI 实时预览刷新用，显著降低大图重采样耗时
+    
+    pixel_scale:
+      - 像素缩放因子，用于 LOD 渲染时调整固定像素值（如边框宽度）
+      - 默认 1.0（全分辨率），LOD 渲染时使用 < 1.0 的值
+      - 例如 scale=0.25 时，border_width_px 会相应缩小
     """
     W, H = design.canvas_w_px, design.canvas_h_px
+    # 固定像素值按比例缩放（用于 LOD 渲染）
+    # 最小 2 像素，确保边框在低分辨率下仍可见
+    import math
+    border_width_px = max(2, int(math.ceil(10 * pixel_scale)))
+    BLACK_RGB = (0, 0, 0)
     # 1. 整体背景（最外层）
     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
     # [Fix 2026-08-21] 水池模式使用 stretch 模式适配素材（等同 simple_resize）
@@ -294,11 +304,9 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
         if cut_area_mask.any():
             canvas_arr[cut_area_mask] = inner_fill_arr[cut_area_mask]
 
-    # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线
+    # 3.5 在挖空区域边缘绘制统一的黑色边框线
     # rect_hole / rect_lshape 模式：用几何差集替代形态学腐蚀（精确等价，加速）
     # ellipse_hole 模式：降级为形态学腐蚀
-    BORDER_WIDTH_PX = 10
-    BLACK_RGB = (0, 0, 0)
 
     if design.mode in ('rect_hole', 'rect_lshape'):
         from .geometry import (make_mask, fill_rect_mask, apply_rounded_corners_to_mask,
@@ -313,35 +321,35 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
             direct=design.pool_hole_transparent,
         )
 
-        shrunk_w = max(0, inner_rect.w - 2 * BORDER_WIDTH_PX)
-        shrunk_h = max(0, inner_rect.h - 2 * BORDER_WIDTH_PX)
+        shrunk_w = max(0, inner_rect.w - 2 * border_width_px)
+        shrunk_h = max(0, inner_rect.h - 2 * border_width_px)
         has_shrunk = shrunk_w > 0 and shrunk_h > 0
 
         if has_shrunk:
             if design.mode == 'rect_lshape':
                 lshape = design.l_shape_px()
                 shrunk_rect = RectShape(
-                    x=inner_rect.x + BORDER_WIDTH_PX,
-                    y=inner_rect.y + BORDER_WIDTH_PX,
+                    x=inner_rect.x + border_width_px,
+                    y=inner_rect.y + border_width_px,
                     w=shrunk_w, h=shrunk_h,
                     corner_r=0.0,
                 )
-                shrunk_corners = {ck: max(0.0, r - BORDER_WIDTH_PX)
+                shrunk_corners = {ck: max(0.0, r - border_width_px)
                                   for ck, r in inner_corners.items()}
-                shrunk_cut_w = max(0.0, lshape.cut_w - BORDER_WIDTH_PX)
-                shrunk_cut_h = max(0.0, lshape.cut_h - BORDER_WIDTH_PX)
+                shrunk_cut_w = max(0.0, lshape.cut_w - border_width_px)
+                shrunk_cut_h = max(0.0, lshape.cut_h - border_width_px)
                 mask_b_img = build_lshape_mask(
                     (W, H), shrunk_rect, lshape.corner,
                     shrunk_cut_w, shrunk_cut_h,
                     shrunk_corners, fill_value=255)
             else:
                 shrunk = RectShape(
-                    x=inner_rect.x + BORDER_WIDTH_PX,
-                    y=inner_rect.y + BORDER_WIDTH_PX,
+                    x=inner_rect.x + border_width_px,
+                    y=inner_rect.y + border_width_px,
                     w=shrunk_w, h=shrunk_h,
                     corner_r=0.0,
                 )
-                shrunk_corners = {ck: max(0.0, r - BORDER_WIDTH_PX)
+                shrunk_corners = {ck: max(0.0, r - border_width_px)
                                   for ck, r in inner_corners.items()}
                 mask_b_img = make_mask((W, H))
                 fill_rect_mask(mask_b_img, shrunk, 255)
@@ -354,7 +362,7 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
             border_mask = inner_mask
     else:
         from .geometry import _erode_mask
-        eroded = _erode_mask(inner_mask, BORDER_WIDTH_PX)
+        eroded = _erode_mask(inner_mask, border_width_px)
         border_mask = inner_mask & ~eroded
 
     if border_mask.any():
