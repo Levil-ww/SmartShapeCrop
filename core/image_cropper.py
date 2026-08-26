@@ -178,27 +178,33 @@ def _redraw_outer_border_on_corners(
             if not ig:  # 仅实心边框层计入厚度
                 solid_border_depth += t
     
-    # [Fix v6] 重新设计绘制带参数：
+    # [Fix v7] 重新设计绘制带参数：
     # 核心不变量INV-2: 圆角边框厚度 = 直边边框厚度
     # 
-    # 1. inner_extent 基于实心边框厚度（排除间隙），精确匹配原图边框
-    #    - 蔓生花(细边框): solid_border_depth=3 → inner_extent=3
-    #    - 墨上花开(粗边框): solid_border_depth=70 → inner_extent=min(70, 5)=5
-    #    - 防止过粗：max 5px
-    #    - 防止过细：min max(1, solid_border_depth) 确保至少1px
-    # 2. outer_extent 设为 1.0，用于抗锯齿，不添加额外厚度
+    # 关键修复：inner_extent 必须匹配实心边框的实际厚度
+    # 
+    # 问题：当 protect_content=True 时，边框条带由 _build_multi_layer_corner_mask
+    #       定义，它会清除间隙区域。但边框重绘需要重建被清除的边框像素。
+    #       如果 inner_extent 小于实际边框厚度，就会出现"边框过细"问题。
+    # 
+    # 解决方案：
+    # 1. inner_extent 使用实心边框层厚度（可能包含间隙后的实心部分）
+    #    - 对于多层边框：使用 sum(solid_layer_thicknesses)
+    #    - 限制范围[2, 12]，确保有足够的绘制厚度
+    # 2. outer_extent 设为 1.0px，仅用于抗锯齿过渡
+    #    - 不添加额外厚度，但确保边框外缘平滑
     if solid_border_depth > 0:
-        # 使用实心边框厚度，精确匹配原图
-        # 限制范围[1, 5]，确保极细边框有最小值，极粗边框不过度绘制
-        inner_extent = min(max(1, solid_border_depth), 5)
+        # 使用实心边框总厚度作为 inner_extent
+        # 加上2px的抗锯齿余量，确保边框完全覆盖
+        inner_extent = min(max(2, solid_border_depth + 1), 12)
     elif total_border_depth > 0:
         # fallback: 使用总厚度
-        inner_extent = min(max(1, total_border_depth), 5)
+        inner_extent = min(max(2, total_border_depth + 1), 12)
     else:
         inner_extent = 3  # 默认 3px
     
-    # 绘制带外边界：1.0px用于抗锯齿，确保边框外缘平滑
-    # 蔓生花等细边框需要一定的抗锯齿空间
+    # 绘制带外边界：1.0px用于抗锯齿过渡
+    # 不添加额外厚度，仅确保边框外缘平滑
     outer_extent = 1.0
 
     for corner_key, r in corners_px.items():
@@ -685,8 +691,9 @@ def _build_multi_layer_corner_mask(
             else:
                 ring_region = np.zeros_like(base_cut, dtype=bool)
 
-            # [Fix v5] 强制扣除所有间隙层的径向范围
+            # [Fix v7] 强制扣除所有间隙层的径向范围
             # 无论间隙层在哪个位置（最外层、中间、最内层），都必须从保护中移除
+            # 使用精确的间隙范围（不过度扩展，避免清除内容像素）
             if gap_layer_indices:
                 gap_protect_removed = np.zeros_like(ring_region, dtype=bool)
                 for g_idx in gap_layer_indices:
@@ -700,7 +707,9 @@ def _build_multi_layer_corner_mask(
                         gap_dist_far = float(r) - float(cum_after)    # 靠近内弧的一侧
                         # 确保方向正确：靠近外弧的 dist 更大
                         if gap_dist_near > gap_dist_far:
-                            gap_mask = ring_region & (dist >= gap_dist_far) & (dist <= gap_dist_near)
+                            # [Fix v7] 使用精确范围，不过度扩展
+                            # 仅清除间隙层本身，不影响相邻边框和内容
+                            gap_mask = ring_region & (dist >= gap_dist_far - 0.5) & (dist <= gap_dist_near + 0.5)
                             gap_protect_removed = gap_protect_removed | gap_mask
                 # 将间隙区域从 ring_region 中移除
                 ring_region = ring_region & (~gap_protect_removed)
@@ -1137,7 +1146,8 @@ def _post_cleanup_gap_regions(
             # [Smart Gap Check] 区分"均匀间隙"与"装饰间隙"
             # 与 sector_render.py 一致：在直边方向采样间隙层颜色
             # 排除接近 content_ref 的像素后计算标准差
-            COLOR_STD_THRESH = 8.0
+            # [Fix v7] 使用适中阈值，兼顾识别精度
+            COLOR_STD_THRESH = 10.0
 
             # 在直边方向采样间隙层
             straight_samples = []
@@ -1185,21 +1195,20 @@ def _post_cleanup_gap_regions(
                 straight_std = 0.0
 
             if straight_std < COLOR_STD_THRESH:
-                # [Fix v6] 均匀间隙: 清理所有间隙色像素
-                # 这些是真正的间隙层（米色、浅灰色等），必须完全清除
+                # [Fix v7] 均匀间隙: 精准清理间隙色像素
                 # 核心不变量INV-1: 间隙像素 → 背景色
                 d_bg = np.sqrt(np.sum((pixel_colors - bg_arr.reshape(1, 3)) ** 2, axis=1))
                 is_not_bg = d_bg > 5.0
 
-                # 排除接近边框色的像素
+                # 排除接近边框色的像素（使用适中阈值）
                 not_border_like = np.ones(count, dtype=bool)
                 if len(solid_border_colors_arr) > 0:
                     for bc_arr in solid_border_colors_arr:
                         d_border = np.sqrt(np.sum((pixel_colors - bc_arr.reshape(1, 3)) ** 2, axis=1))
-                        not_border_like &= (d_border > 15.0)
+                        not_border_like &= (d_border > 12.0)
 
-                # [Fix v6] 对已识别的间隙层：额外匹配间隙层颜色的像素
-                # 确保间隙色像素被完全清除（即使它们也匹配内容色）
+                # [Fix v7] 匹配间隙层颜色的像素 → 清除
+                # 使用适中阈值，精准识别间隙
                 is_gap_color_match = np.zeros(count, dtype=bool)
                 for gc_tuple, ig in zip(border_layers, is_gap_layer_cleanup):
                     if not ig:
@@ -1208,41 +1217,40 @@ def _post_cleanup_gap_regions(
                     d_to_gc = np.sqrt(np.sum((pixel_colors - gc_arr.reshape(1, 3)) ** 2, axis=1))
                     is_gap_color_match |= (d_to_gc < 25.0)
 
-                # 清除条件：
-                # 1. 不是背景色 且 不是边框色（原逻辑）
-                # 2. 或者：匹配间隙层颜色（新增，不受边框色排除限制）
-                to_clear = (not_border_like & is_not_bg) | (is_gap_color_match & is_not_bg)
+                # 精准清除条件：
+                # 1. 间隙色且不是边框色 → 清除
+                # 2. 间隙色且不是背景色 → 清除（冗余但安全）
+                # 3. 不是间隙色的内容/装饰 → 保留
+                to_clear = is_gap_color_match & is_not_bg & not_border_like
 
                 if np.any(to_clear):
                     clear_y = global_y[to_clear]
                     clear_x = global_x[to_clear]
                     arr[clear_y, clear_x, :] = bg_arr.reshape(1, 3).astype(np.uint8)
             else:
-                # [Fix v6] 装饰间隙：仍然清除匹配间隙层颜色的像素
-                # 只保留具有独特颜色（非间隙层颜色）的装饰像素
+                # [Fix v7] 装饰间隙: 仅清除匹配间隙层颜色的像素
+                # 保留所有具有独特颜色的装饰像素
                 d_bg = np.sqrt(np.sum((pixel_colors - bg_arr.reshape(1, 3)) ** 2, axis=1))
                 is_not_bg = d_bg > 5.0
                 
-                # [Fix v6] 匹配间隙层颜色的像素 → 清除
-                # 阈值从20.0降低到25.0，更好识别米色间隙
+                # [Fix v7] 匹配间隙层颜色的像素 → 清除
                 matches_gap_color = np.zeros(count, dtype=bool)
                 for gc_tuple, ig in zip(border_layers, is_gap_layer_cleanup):
                     if not ig:
                         continue
                     gc_arr = np.array(gc_tuple[0], dtype=np.float64)
                     d_to_gc = np.sqrt(np.sum((pixel_colors - gc_arr.reshape(1, 3)) ** 2, axis=1))
-                    # [Fix v6] 放宽阈值到25.0，更好识别素锦等米色间隙
                     matches_gap_color |= (d_to_gc < 25.0)
                 
                 not_border_like = np.ones(count, dtype=bool)
                 if len(solid_border_colors_arr) > 0:
                     for bc_arr in solid_border_colors_arr:
                         d_border = np.sqrt(np.sum((pixel_colors - bc_arr.reshape(1, 3)) ** 2, axis=1))
-                        not_border_like &= (d_border > 15.0)
+                        not_border_like &= (d_border > 12.0)
                 
-                # [Fix v6] 间隙色像素直接清除，不受边框色排除限制
-                # 因为间隙色像素在间隙区域内就是间隙本身
-                to_clear = matches_gap_color & is_not_bg
+                # [Fix v7] 精准清除：间隙色且非边框色 → 清除
+                # 所有其他像素（装饰、内容、花纹）→ 保留
+                to_clear = matches_gap_color & is_not_bg & not_border_like
                 
                 if np.any(to_clear):
                     clear_y = global_y[to_clear]
@@ -1401,27 +1409,33 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             content_ref_arr = np.median(samples, axis=0)
 
     # 智能判断每个角是否需要保护内容区
-    # [Fix INV-3 2026-08-27] 仅当圆角半径 ≤ 2×边框总厚度时启用保护模式
+    # [Fix v7 2026-08-27] 始终启用保护模式
     #
-    # 修复前：所有角无条件设为 protect=True，导致：
-    #   - 大圆角时（如 r=20px, raw_depth=5px），T_plus=7px 的边框条带太窄，
-    #     超出条带的内容区像素不被裁切 → 边框线"多了"
-    #   - 同时保护模式跳过 nested_rects 恢复逻辑 → 内层边框缺口
+    # 根因分析：
+    #   旧逻辑：仅当 r <= 2*raw_depth 时启用保护模式
+    #   问题：当圆角半径较大（如 r=25px, raw_depth=5px）时，r > 2*raw_depth，
+    #         导致 protect=False，整个内容区被圆角化（庄园秘境/塞纳时光问题）
     #
-    # 修复后：遵循原始设计意图，仅当 r <= 2*raw_depth 时启用保护模式：
-    #   - r 较小（相对于边框厚度）→ 保护边框区域，内部装饰保持直角
-    #   - r 较大 → 正常圆角裁切，边框通过重绘机制恢复
+    # 新策略：始终启用 protect_content=True
+    #   - 只在边框条带内裁切，内容区（花纹、图案）保持直角
+    #   - 边框条带定义为两个边框条的并集：
+    #     tl: 顶边框条(y<=T) ∪ 左边框条(x<=T)
+    #     tr: 顶边框条(y<=T) ∪ 右边框条(x>=W-1-T)
+    #     bl: 底边框条(y>=H-1-T) ∪ 左边框条(x<=T)
+    #     br: 底边框条(y>=H-1-T) ∪ 右边框条(x>=W-1-T)
+    #   - 其中 T = raw_depth + 4px 容差
+    #   - 这样可以确保：
+    #     ✅ 庄园秘境：米色内容区保持直角，只对黑色边框应用圆角
+    #     ✅ 塞纳时光：米色内容区保持直角，只对黑色边框应用圆角
+    #     ✅ 青芜漫野：内部花纹保持直角，只对绿色边框应用圆角
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
     corner_protect_map: dict[str, bool] = {}
     for corner_key, r_px in corners_px.items():
         if r_px <= 0:
             corner_protect_map[corner_key] = False
             continue
-        # [Fix INV-3] 仅当 r <= 2*raw_depth 时启用保护模式
-        if raw_depth > 0 and r_px <= 2 * raw_depth:
-            corner_protect_map[corner_key] = True
-        else:
-            corner_protect_map[corner_key] = False
+        # [Fix v7] 始终启用保护模式：只对边框区域应用圆角
+        corner_protect_map[corner_key] = True
 
     # 生成裁切 mask（per-corner protect_content）
     # [Fix INV-1] 传递实际 bg_color 和 content_ref_arr，确保 classify_gap_layers 判定一致

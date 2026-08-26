@@ -255,8 +255,9 @@ def _redraw_border_on_corner(
     border_colors_arr = np.array(
         [np.array(c, dtype=np.float64) for c, _ in border_layers]
     )
-    COLOR_DIST_THRESHOLD = 15.0
-    TRANSITION_THRESHOLD = 25.0
+    # [Fix v7] 使用适中的阈值，兼顾识别精度和抗噪能力
+    COLOR_DIST_THRESHOLD = 18.0
+    TRANSITION_THRESHOLD = 28.0
 
     # [PERF] _sample_content_ref 使用 ROI 切片尺寸
     def _sample_content_ref(arr_roi: np.ndarray, rw: int, rh: int) -> np.ndarray:
@@ -279,7 +280,7 @@ def _redraw_border_on_corner(
     if content_ref_arr is None:
         content_ref_arr = _sample_content_ref(result_arr, roi_w, roi_h)
 
-    # [Fix 多余边框弧线 2026-08-22 v7] 统一间隙层判定
+    # [Fix v7] 统一间隙层判定
     # 删除原先独立的 100+ 行间隙检测逻辑（与 image_cropper.py/diagnose 判定不一致），
     # 统一调用 classify_gap_layers（单一判定来源），确保：
     #   - INV-B4: 最内层永不判间隙
@@ -293,6 +294,7 @@ def _redraw_border_on_corner(
     gap_regions: list[tuple[int, int]] = []
     for i, is_gap in enumerate(is_gap_layer):
         if is_gap:
+            # [Fix v7] 使用精确的间隙区域（不过度扩展）
             gap_regions.append((cumulative_depths[i], cumulative_depths[i + 1]))
 
     solid_border_colors_arr = np.array(
@@ -384,13 +386,13 @@ def _redraw_border_on_corner(
             bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
             target_c_arr = np.array(target_color, dtype=np.float64)
             
-            # [Fix v6] 检查间隙层的强制清除条件：
+            # [Fix v7] 检查间隙层的强制清除条件：
             # 任何间隙层（不仅首尾），如果颜色既不接近背景也不接近边框，
             # 则强制清除所有像素（因为这是真正的间隙，不是背景也不是边框）
             dist_to_bg = float(np.sqrt(np.sum((target_c_arr - bg_arr.reshape(1, 3)) ** 2)))
             is_near_border_color = False
             for bc_arr in border_colors_arr:
-                if np.sqrt(np.sum((target_c_arr - bc_arr) ** 2)) < 15.0:
+                if np.sqrt(np.sum((target_c_arr - bc_arr) ** 2)) < 20.0:  # [Fix v7] 放宽到20.0
                     is_near_border_color = True
                     break
             
@@ -401,7 +403,8 @@ def _redraw_border_on_corner(
             # - 间隙层颜色不接近背景（不是背景色）
             # - 间隙层颜色不接近任何边框色（不是边框色）
             # - 间隙层厚度在合理范围
-            force_clear_gap = (dist_to_bg > 20.0) and (not is_near_border_color) and \
+            # [Fix v7] 使用适中阈值，平衡强制清除触发率
+            force_clear_gap = (dist_to_bg > 18.0) and (not is_near_border_color) and \
                             (gap_layer_thickness <= GAP_MAX_THICKNESS_GLOBAL)
             
             if force_clear_gap:
@@ -417,14 +420,15 @@ def _redraw_border_on_corner(
                     src_pixels = src_arr[local_coords[0], local_coords[1], :].astype(np.float64)
                     
                     # 检测真正的间隙色像素：匹配当前间隙层颜色
+                    # [Fix v7] 使用适中阈值，精准识别间隙
                     dist_to_gap_color = np.sqrt(np.sum((src_pixels - target_c_arr.reshape(1, 3)) ** 2, axis=1))
-                    is_gap_colored = dist_to_gap_color <= COLOR_DIST_THRESHOLD + 15.0
+                    is_gap_colored = dist_to_gap_color <= COLOR_DIST_THRESHOLD + 10.0
                     
                     # 检测边框色像素：与任一实心边框层颜色匹配
                     is_border_colored = np.zeros(len(local_coords[0]), dtype=bool)
                     for bc_arr in border_colors_arr:
                         dist_to_bc = np.sqrt(np.sum((src_pixels - bc_arr.reshape(1, 3)) ** 2, axis=1))
-                        is_border_colored |= (dist_to_bc <= COLOR_DIST_THRESHOLD + 5.0)
+                        is_border_colored |= (dist_to_bc <= COLOR_DIST_THRESHOLD + 8.0)
                     
                     # [INV-S1] 仅清除间隙色且非边框色的像素
                     # 边框色像素即使在间隙深度带内也必须保留
@@ -445,27 +449,25 @@ def _redraw_border_on_corner(
                     result_arr[local_coords[0], local_coords[1], :] = bg_arr
                     continue
             
-            # 常规间隙层：基于颜色匹配清除（保守策略）
+            # 常规间隙层：基于颜色匹配清除（精准策略）
             if src_arr is not None and len(local_coords[0]) > 0:
                 src_pixels = src_arr[local_coords[0], local_coords[1], :].astype(np.float64)
                 
-                # 间隙色匹配：与当前间隙层颜色接近（放宽阈值到+15）
+                # 间隙色匹配：与当前间隙层颜色接近
                 dist_to_gap_color = np.sqrt(np.sum((src_pixels - target_c_arr.reshape(1, 3)) ** 2, axis=1))
-                is_gap_colored = dist_to_gap_color <= COLOR_DIST_THRESHOLD + 15.0
+                is_gap_colored = dist_to_gap_color <= COLOR_DIST_THRESHOLD + 10.0
                 
                 # 边框色匹配：与任何实心边框色接近
                 is_border_colored = np.zeros(len(local_coords[0]), dtype=bool)
                 for bc_arr in border_colors_arr:
                     dist_to_bc = np.sqrt(np.sum((src_pixels - bc_arr.reshape(1, 3)) ** 2, axis=1))
-                    is_border_colored |= (dist_to_bc <= COLOR_DIST_THRESHOLD + 5.0)
+                    is_border_colored |= (dist_to_bc <= COLOR_DIST_THRESHOLD + 8.0)
                 
-                # [Fix v6] 新清除策略：
-                # 1. 间隙色像素 → 清除（不受内容色匹配阻止！这是关键修复）
-                #    原因：如果像素匹配间隙层颜色，它就是间隙像素，
-                #    无论是否同时匹配内容色（如素锦米色间隙匹配米色内容）
+                # [Fix v7] 精准清除策略：
+                # 1. 间隙色像素 → 清除（这是关键：确保间隙区域干净）
                 # 2. 已经是背景色的像素 → 清除
                 # 3. 边框色像素 → 保留（由实心边框层负责绘制）
-                # 4. 非间隙色、非边框色像素 → 保留（可能是花纹/装饰）
+                # 4. 非间隙色、非边框色像素 → 保留（花纹/装饰/内容）
                 should_clear = is_gap_colored & (~is_border_colored)
                 
                 dist_to_bg_check = np.sqrt(np.sum((src_pixels - bg_arr.reshape(1, 3)) ** 2, axis=1))
