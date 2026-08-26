@@ -1,0 +1,12 @@
+============================================================
+崩溃时间: 2026-08-21 16:41:22
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in paintEvent
+    def paintEvent(self, event):
+    
+KeyboardInterrupt
+

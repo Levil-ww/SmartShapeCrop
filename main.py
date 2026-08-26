@@ -315,12 +315,22 @@ class MainWindow(QMainWindow):
         self.canvas.rendered.emit(pil_img)
 
     def _on_save(self):
-        # 关键：从 canvas.full_image() 取全分辨率原图，不是预览 pixmap（经验：799713）
-        # 但预览图是用 quality='preview' (BILINEAR) 渲染的，导出必须用 LANCZOS 重渲一次
-        preview_img = self.canvas.full_image()
-        if preview_img is None:
+        # 关键：保存时使用全分辨率 LANCZOS 重渲，确保导出质量
+        if self.panel.design is None:
             QMessageBox.warning(self, "无法保存", "请先生成预览再保存")
             return
+        
+        # 检查当前是否使用 LOD 预览
+        if self.canvas.is_lod_active():
+            reply = QMessageBox.question(
+                self, "保存确认",
+                "当前预览为低分辨率代理图。\n保存时将渲染全分辨率图像，可能需要一些时间。\n\n是否继续保存？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.No:
+                return
+        
         # 优先使用水池设计器中的"输出文件名"，否则回退尺寸命名
         base_name = self.panel.get_output_filename()
         default_name = base_name + ".jpg"

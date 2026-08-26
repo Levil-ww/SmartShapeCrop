@@ -23,7 +23,7 @@ from core.parser.name_parser import parse_filename
 from core.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
 from core.pool_designer import validate_sketch_file
-from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT
+from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
 
 logger = logging.getLogger(__name__)
 
@@ -1040,8 +1040,19 @@ class PropertyPanel(QWidget):
                         f"边距 上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f}"
                     )
             else:
+                # V2.0 修复：解析失败时区分"OCR引擎根本没装"和"OCR识别了但没匹配上"两类，
+                # 避免用户看到笼统的"草图未识别"而不知道需要安装Tesseract
+                try:
+                    t_status = get_tesseract_status()
+                    if not t_status.get("available"):
+                        extra = f"\n💡 原因：{t_status.get('reason', 'OCR引擎未安装')}"
+                        extra += "\n（无OCR时仅靠几何估算边距，可手动在【内挖边距】栏输入）"
+                    else:
+                        extra = "（OCR引擎已加载但未匹配到有效数值，可手动在【内挖边距】栏输入）"
+                except Exception:
+                    extra = "（可手动在【内挖边距】栏输入）"
                 self._set_pool_status(
-                    f"⚠️ 草图解析未成功：{result.message}（可手动在【内挖边距】栏输入）")
+                    f"⚠️ 草图解析未成功：{result.message}{extra}", is_error=True)
         except Exception as e:
             logger.exception(f"[PropertyPanel] _on_sketch_parsed 异常: {e}")
             self._set_pool_status(f"⚠️ 草图解析异常：{e}", is_error=True)
@@ -1107,6 +1118,22 @@ class PropertyPanel(QWidget):
         if self._pool_worker is not None and self._pool_worker.isRunning():
             QMessageBox.information(self, "提示", "正在处理中，请稍候…")
             return
+
+        # V2.0 修复：EXE 模式下用户机器可能未安装 Tesseract-OCR，在执行草图解析前
+        # 先主动检查引擎状态，给出明确的安装指引，而不是解析后模糊提示"未识别"
+        if self._sketch_path and os.path.isfile(self._sketch_path):
+            try:
+                status = get_tesseract_status()
+                if not status.get("available"):
+                    hint = status.get("reason", "OCR 引擎不可用")
+                    self._set_pool_status(
+                        f"⚠️ 草图OCR引擎未就绪：\n{hint}\n"
+                        f"（无OCR也可生成预览，但边距仅靠几何估算，建议安装Tesseract-OCR后重试）",
+                        is_error=True,
+                    )
+                    logger.warning(f"[PropertyPanel] OCR引擎未就绪，将跳过OCR层：{hint}")
+            except Exception:
+                pass
 
         target_name = self._pool_target.text().strip()
         if not target_name:

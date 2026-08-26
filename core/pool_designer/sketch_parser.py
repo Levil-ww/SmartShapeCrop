@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -28,6 +29,23 @@ logger = logging.getLogger(__name__)
 
 _PARSE_TIMEOUT_SEC = 20
 _ALGO_VERSION = 7  # 2026-08-20: 严格7步法重构版
+
+# ---------------------------------------------------------------------------
+# 字符规范化：全角→半角（OCR 在 chi_sim 模式下常输出全角数字 ０-９ 句号．）
+# ---------------------------------------------------------------------------
+_FW_HW_TRANSLATION = str.maketrans({
+    '０': '0', '１': '1', '２': '2', '３': '3', '４': '4',
+    '５': '5', '６': '6', '７': '7', '８': '8', '９': '9',
+    '．': '.', '，': '.', '、': '.', '。': '.',
+    '　': ' ',   # 全角空格→半角
+})
+
+
+def _normalize_ocr_text(text: str) -> str:
+    """OCR 识别文本规范化：全角→半角，去除多余空白。"""
+    if not text:
+        return ''
+    return text.translate(_FW_HW_TRANSLATION).strip()
 
 # ---------------------------------------------------------------------------
 # 缓存
@@ -160,53 +178,90 @@ def _safe_import_cv2():
         return None
 
 
+# OCR 引擎状态：供 GUI 层显示友好提示
+_TESSERACT_STATUS = {
+    "available": False,
+    "reason": "",           # 不可用时的原因文字
+    "tesseract_path": "",   # 可用时的 tesseract.exe 路径
+    "tessdata_path": "",    # 可用时的 tessdata 路径
+}
+
+
+def get_tesseract_status() -> dict:
+    """返回 Tesseract OCR 引擎状态（供 GUI 显示友好提示）。"""
+    return dict(_TESSERACT_STATUS)
+
+
 def _safe_import_tesseract():
+    global _TESSERACT_STATUS
     try:
         import pytesseract
     except Exception as e:
+        _TESSERACT_STATUS = {
+            "available": False,
+            "reason": f"Python 包 pytesseract 未安装: {e}",
+            "tesseract_path": "", "tessdata_path": "",
+        }
         logger.info(f"[sketch_parser] pytesseract 未安装: {e}")
         return None
-    exe_candidates = []
-    if os.name == 'nt':
-        base_dirs = [
-            r'C:\Program Files\Tesseract-OCR',
-            r'C:\Program Files (x86)\Tesseract-OCR',
-            os.path.expanduser(r'~\AppData\Local\Programs\Tesseract-OCR'),
-            r'D:\Tesseract-OCR', r'E:\Tesseract-OCR', r'F:\Tesseract-OCR', r'G:\Tesseract-OCR',
-        ]
-        for bd in base_dirs:
-            exe_candidates.append(os.path.join(bd, 'tesseract.exe'))
-    exe_candidates.append('tesseract')
-    found_exe = None
-    found_tessdata = None
-    for exe in exe_candidates:
-        if exe == 'tesseract':
-            import shutil
-            if shutil.which('tesseract'):
-                found_exe = 'tesseract'
-                break
-            continue
-        if os.path.isfile(exe):
-            found_exe = exe
-            td = os.path.join(os.path.dirname(exe), 'tessdata')
+    
+    # 使用 PathResolver 统一查找 Tesseract 路径
+    try:
+        from core.config import PathResolver
+        found_exe, found_tessdata = PathResolver.find_tesseract()
+    except Exception as e:
+        logger.warning(f"[sketch_parser] PathResolver 查找失败: {e}")
+        found_exe, found_tessdata = None, None
+    
+    # 环境变量覆盖（最高优先级）
+    env_path = os.environ.get('TESSERACT_PATH', '')
+    if env_path:
+        if os.path.isfile(env_path):
+            found_exe = env_path
+            td = os.path.join(os.path.dirname(env_path), 'tessdata')
             if os.path.isdir(td):
                 found_tessdata = td
-            break
+    
     if found_exe and found_exe != 'tesseract':
         try:
             pytesseract.pytesseract.tesseract_cmd = found_exe
             logger.info(f"[sketch_parser] 已配置 Tesseract: {found_exe}")
         except Exception:
             pass
+    
     if found_tessdata:
         try:
             os.environ['TESSDATA_PREFIX'] = found_tessdata
         except Exception:
             pass
+    
     try:
-        _ = pytesseract.get_tesseract_version()
+        version = pytesseract.get_tesseract_version()
+        _TESSERACT_STATUS = {
+            "available": True,
+            "reason": f"正常 (版本 {version})",
+            "tesseract_path": found_exe or "PATH 中",
+            "tessdata_path": found_tessdata or os.environ.get('TESSDATA_PREFIX', ''),
+        }
         return pytesseract
     except Exception as e:
+        missing_hint = (
+            "未找到 Tesseract-OCR 引擎。\n"
+            "请安装后重试：下载地址 https://github.com/UB-Mannheim/tesseract/wiki\n"
+            "安装时勾选 Chinese (Simplified) 语言包。\n"
+            "或设置环境变量 TESSERACT_PATH 指向 tesseract.exe。\n"
+            "或把便携版 tesseract.exe + tessdata 文件夹放到 EXE 同目录下 tesseract 子目录。"
+        )
+        if found_exe:
+            reason_detail = f"找到了 tesseract.exe ({found_exe}) 但无法调用: {e}"
+        else:
+            reason_detail = "未找到 tesseract.exe。"
+        _TESSERACT_STATUS = {
+            "available": False,
+            "reason": f"{reason_detail}\n{missing_hint}",
+            "tesseract_path": found_exe or "",
+            "tessdata_path": found_tessdata or "",
+        }
         logger.info(f"[sketch_parser] Tesseract 无法调用: {e}")
         return None
 
@@ -480,7 +535,10 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, **kwargs)
                 continue
             n = len(data.get('text', []))
             for i in range(n):
-                text = str(data.get('text', ['']*n)[i]).strip()
+                raw_text = str(data.get('text', ['']*n)[i])
+                # V2.0 修复：OCR chi_sim 模式下常输出全角数字（０-９/．），
+                # 先统一转为半角再提取数字，避免"全角OCR未识别"
+                text = _normalize_ocr_text(raw_text)
                 if not text:
                     continue
                 try:
@@ -750,7 +808,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img):
                 widths = data.get('width', [0]*n)
                 heights = data.get('height', [0]*n)
                 for i in range(n):
-                    raw = str(texts[i]).strip()
+                    # V2.0 修复：方向标签 OCR 文本先做全角→半角规范化
+                    raw = _normalize_ocr_text(str(texts[i]))
                     if not raw:
                         continue
                     try:
@@ -762,7 +821,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img):
                     if not m:
                         # 形式B：双token "上" + "6"
                         if raw in _DIR_CHAR_MAP and i + 1 < n:
-                            ntxt = str(texts[i+1]).strip()
+                            ntxt = _normalize_ocr_text(str(texts[i+1]))
                             nm = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt)
                             if nm:
                                 field = _DIR_CHAR_MAP[raw]

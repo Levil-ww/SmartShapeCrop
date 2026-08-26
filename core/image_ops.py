@@ -93,6 +93,104 @@ def load_and_fit(path: str, tw: int, th: int, mode: str = 'cover',
         return Image.new('RGB', (tw, th), (220, 220, 220))
 
 
+# ---------- LOD 分级渲染（用于 GUI 预览加速）----------
+
+def render_design_lod(design: CropDesign, scale: float = 0.25) -> Image.Image:
+    """
+    LOD (Level-of-Detail) 低分辨率渲染：
+    将设计按 scale 因子缩小后渲染，再放大回原尺寸，
+    用于 GUI 预览时显著降低计算量（比全分辨率快 4-16×）。
+    
+    原理：
+    1. 先将 design 的画布尺寸按 scale 缩小
+    2. 在缩小的画布上渲染（所有几何参数等比缩放）
+    3. 将渲染结果放大回原画布尺寸
+    
+    注意：此函数仅用于 GUI 预览，导出/保存仍使用 render_design() 全分辨率渲染。
+    
+    Args:
+        design: CropDesign 对象
+        scale: 缩放因子 (0.1~1.0)，推荐 0.25（1/4 分辨率）
+               scale=0.25 时，像素量仅为 1/16，渲染速度提升约 16×
+    
+    Returns:
+        PIL.Image，大小 = design.canvas_w_px × design.canvas_h_px（预览显示用）
+    """
+    if scale >= 1.0:
+        return render_design(design, quality='preview')
+    
+    original_w = design.canvas_w_px
+    original_h = design.canvas_h_px
+    
+    # 计算缩小后的画布尺寸
+    lod_w = max(1, int(original_w * scale))
+    lod_h = max(1, int(original_h * scale))
+    
+    # 保存原始值
+    orig_w_cm = design.canvas_w_cm
+    orig_h_cm = design.canvas_h_cm
+    orig_dpi = design.dpi
+    
+    # 临时修改 design 尺寸进行 LOD 渲染
+    lod_design = _make_lod_design(design, lod_w, lod_h)
+    
+    # 在 LOD 尺寸上渲染
+    lod_result = render_design(lod_design, quality='preview')
+    
+    # 放大回原尺寸
+    if lod_result.size != (original_w, original_h):
+        lod_result = lod_result.resize((original_w, original_h), Image.BILINEAR)
+    
+    return lod_result
+
+
+def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
+    """
+    创建一个临时的 LOD 版本的 CropDesign。
+    所有像素相关的参数按比例缩放，保持几何结构不变。
+    """
+    from copy import deepcopy
+    
+    lod_design = deepcopy(design)
+    orig_w = design.canvas_w_px
+    orig_h = design.canvas_h_px
+    
+    if orig_w <= 0 or orig_h <= 0:
+        return lod_design
+    
+    sx = lod_w / orig_w
+    sy = lod_h / orig_h
+    
+    # 更新画布尺寸
+    lod_design.canvas_w_cm = design.canvas_w_cm * sx
+    lod_design.canvas_h_cm = design.canvas_h_cm * sy
+    
+    # 边框层等比缩放
+    if lod_design.borders:
+        for border in lod_design.borders:
+            border.offset_cm = border.offset_cm * min(sx, sy)
+    
+    # 外边距等比缩放
+    lod_design.outer_margin_cm = design.outer_margin_cm * min(sx, sy)
+    
+    # 内边距等比缩放
+    lod_design.inner_margin_top_cm = design.inner_margin_top_cm * sy
+    lod_design.inner_margin_bottom_cm = design.inner_margin_bottom_cm * sy
+    lod_design.inner_margin_left_cm = design.inner_margin_left_cm * sx
+    lod_design.inner_margin_right_cm = design.inner_margin_right_cm * sx
+    
+    # L 形参数缩放
+    if hasattr(lod_design, 'l_cut_w_cm') and hasattr(lod_design, 'l_cut_h_cm'):
+        lod_design.l_cut_w_cm = design.l_cut_w_cm * sx
+        lod_design.l_cut_h_cm = design.l_cut_h_cm * sy
+    
+    # 椭圆参数缩放
+    if hasattr(lod_design, 'ellipse_rx_ratio') and hasattr(lod_design, 'ellipse_ry_ratio'):
+        pass  # 比率值无需缩放
+    
+    return lod_design
+
+
 # ---------- 核心渲染 ----------
 
 def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
@@ -123,10 +221,33 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
 
     canvas_arr = np.array(canvas, dtype=np.uint8)
 
-    # 2. 渲染边框 band（水池模式且有素材图时跳过——素材本身就是外框）
+    # 判断是否为水池模式+有素材图（用于跳过边框带渲染和L形遮罩）
     is_pool_with_material = (design.pool_hole_transparent
                              and design.pool_outer_material_image
                              and os.path.isfile(design.pool_outer_material_image))
+
+    # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
+    # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color
+    if design.mode == 'rect_lshape' and not is_pool_with_material:
+        from .geometry import build_lshape_mask
+        has_outer_img = design.outer_bg_image and os.path.isfile(design.outer_bg_image)
+        if has_outer_img:
+            lshape = design.l_shape_px()
+            outer = design.outer_rect_px()
+            corners = design.corners_px
+            # 构建outer_rect的L形mask（不包括cut区域）
+            lshape_mask_img = build_lshape_mask(
+                (W, H), outer, lshape.corner,
+                lshape.cut_w, lshape.cut_h,
+                corners, fill_value=255)
+            lshape_mask = np.array(lshape_mask_img, dtype=bool)
+            # 非L形区域填充为outer_bg_color
+            outer_bg_arr = np.full((H, W, 3), design.outer_bg_color, dtype=np.uint8)
+            non_lshape_mask = ~lshape_mask
+            if non_lshape_mask.any():
+                canvas_arr[non_lshape_mask] = outer_bg_arr[non_lshape_mask]
+
+    # 2. 渲染边框 band（水池模式且有素材图时跳过——素材本身就是外框）
     if not is_pool_with_material:
         bands = compute_border_bands(design)
         for band_mask, layer in bands:
@@ -152,22 +273,41 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
     # 白色填充内部挖空区域
     canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
 
+    # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
+    # inner_mask 是 L 形（不含 cut 区域），需要将 cut 区域也填充
+    if design.mode == 'rect_lshape':
+        from .geometry import build_lshape_mask, compute_inner_corner_radii
+        lshape = design.l_shape_px()
+        inner_rect = design.inner_rect_px()
+        outer = design.outer_rect_px()
+        corners = design.corners_px
+        inner_corners = compute_inner_corner_radii(
+            outer, inner_rect, corners,
+            direct=design.pool_hole_transparent,
+        )
+        full_inner_img = build_lshape_mask(
+            (W, H), inner_rect, lshape.corner,
+            0, 0,
+            inner_corners, fill_value=255)
+        full_inner_mask = np.array(full_inner_img, dtype=bool)
+        cut_area_mask = full_inner_mask & ~inner_mask
+        if cut_area_mask.any():
+            canvas_arr[cut_area_mask] = inner_fill_arr[cut_area_mask]
+
     # 3.5 在挖空区域边缘绘制统一的10像素黑色边框线
-    # 热点①优化：rect_hole 模式用圆角矩形差集替代 EDT（精确等价，33×加速）
-    # L形/椭圆模式降级为形态学腐蚀（快于 EDT，视觉差异可忽略）
+    # rect_hole / rect_lshape 模式：用几何差集替代形态学腐蚀（精确等价，加速）
+    # ellipse_hole 模式：降级为形态学腐蚀
     BORDER_WIDTH_PX = 10
     BLACK_RGB = (0, 0, 0)
 
-    if design.mode == 'rect_hole':
+    if design.mode in ('rect_hole', 'rect_lshape'):
         from .geometry import (make_mask, fill_rect_mask, apply_rounded_corners_to_mask,
-                               compute_inner_corner_radii, RectShape)
+                               compute_inner_corner_radii, RectShape,
+                               build_lshape_mask)
         inner_rect = design.inner_rect_px()
         outer = design.outer_rect_px()
         corners = design.corners_px
 
-        # 复用前一步 _get_inner_pixel_mask 已算好的 inner_mask 作为 mask_A
-        # （内挖圆角区域），省一次 make_mask + fill_rect_mask + apply_rounded_corners_to_mask
-        # （含 numpy 距离场 meshgrid，大半径下耗时显著）
         inner_corners = compute_inner_corner_radii(
             outer, inner_rect, corners,
             direct=design.pool_hole_transparent,
@@ -177,22 +317,37 @@ def render_design(design: CropDesign, quality: str = 'export') -> Image.Image:
         shrunk_h = max(0, inner_rect.h - 2 * BORDER_WIDTH_PX)
         has_shrunk = shrunk_w > 0 and shrunk_h > 0
 
-        # 双 mask 差集：mask_A = inner_mask（已含圆角），mask_B = 内缩 10px 的圆角矩形
-        # border = mask_A \ mask_B
         if has_shrunk:
-            shrunk = RectShape(
-                x=inner_rect.x + BORDER_WIDTH_PX,
-                y=inner_rect.y + BORDER_WIDTH_PX,
-                w=shrunk_w, h=shrunk_h,
-                corner_r=0.0,
-            )
-            shrunk_corners = {ck: max(0.0, r - BORDER_WIDTH_PX)
-                              for ck, r in inner_corners.items()}
-            mask_b_img = make_mask((W, H))
-            fill_rect_mask(mask_b_img, shrunk, 255)
-            if any(r > 0 for r in shrunk_corners.values()):
-                apply_rounded_corners_to_mask(
-                    mask_b_img, shrunk, shrunk_corners, fill_value=255)
+            if design.mode == 'rect_lshape':
+                lshape = design.l_shape_px()
+                shrunk_rect = RectShape(
+                    x=inner_rect.x + BORDER_WIDTH_PX,
+                    y=inner_rect.y + BORDER_WIDTH_PX,
+                    w=shrunk_w, h=shrunk_h,
+                    corner_r=0.0,
+                )
+                shrunk_corners = {ck: max(0.0, r - BORDER_WIDTH_PX)
+                                  for ck, r in inner_corners.items()}
+                shrunk_cut_w = max(0.0, lshape.cut_w - BORDER_WIDTH_PX)
+                shrunk_cut_h = max(0.0, lshape.cut_h - BORDER_WIDTH_PX)
+                mask_b_img = build_lshape_mask(
+                    (W, H), shrunk_rect, lshape.corner,
+                    shrunk_cut_w, shrunk_cut_h,
+                    shrunk_corners, fill_value=255)
+            else:
+                shrunk = RectShape(
+                    x=inner_rect.x + BORDER_WIDTH_PX,
+                    y=inner_rect.y + BORDER_WIDTH_PX,
+                    w=shrunk_w, h=shrunk_h,
+                    corner_r=0.0,
+                )
+                shrunk_corners = {ck: max(0.0, r - BORDER_WIDTH_PX)
+                                  for ck, r in inner_corners.items()}
+                mask_b_img = make_mask((W, H))
+                fill_rect_mask(mask_b_img, shrunk, 255)
+                if any(r > 0 for r in shrunk_corners.values()):
+                    apply_rounded_corners_to_mask(
+                        mask_b_img, shrunk, shrunk_corners, fill_value=255)
 
             border_mask = inner_mask & ~np.array(mask_b_img, dtype=bool)
         else:
@@ -223,7 +378,8 @@ def _looks_like_tile(path: str) -> bool:
 def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     """返回挖洞区域（即内部填充区域）的 bool mask，与边框带的同心圆角保持一致。"""
     from .geometry import (make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask, 
-                           apply_rounded_corners_to_mask, compute_inner_corner_radii)
+                           apply_rounded_corners_to_mask, compute_inner_corner_radii,
+                           build_lshape_mask)
     W, H = design.canvas_w_px, design.canvas_h_px
     m = make_mask((W, H))
 
@@ -243,22 +399,12 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
         return np.array(m, dtype=bool)
 
     elif design.mode == 'rect_lshape':
-        fill_rect_mask(m, inner_rect, 255)
-        cut = design.l_shape_px().cut_rect()
-        cut_mask = make_mask((W, H))
-        fill_rect_mask(cut_mask, cut, 255)
-        m_arr = np.array(m, dtype=bool) & ~np.array(cut_mask, dtype=bool)
-
-        cut_corner = design.l_shape_px().corner
-        for ck in ('tl', 'tr', 'bl', 'br'):
-            if ck == cut_corner:
-                continue
-            if inner_corners[ck] > 0:
-                corner_mask = make_mask((W, H))
-                fill_rect_mask(corner_mask, inner_rect, 255)
-                apply_rounded_corners_to_mask(corner_mask, inner_rect, {ck2: (inner_corners[ck2] if ck2 == ck else 0) for ck2 in ('tl', 'tr', 'bl', 'br')})
-                m_arr = m_arr | np.array(corner_mask, dtype=bool)
-        return m_arr.astype(bool)
+        lshape = design.l_shape_px()
+        m = build_lshape_mask(
+            (W, H), inner_rect, lshape.corner,
+            lshape.cut_w, lshape.cut_h,
+            inner_corners, fill_value=255)
+        return np.array(m, dtype=bool)
 
     else:  # ellipse_hole
         fill_ellipse_mask(m, design.ellipse_px(), 255)

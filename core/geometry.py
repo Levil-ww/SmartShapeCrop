@@ -343,14 +343,15 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
     返回 [(layer_mask, layer_def), ...]  从外向内
 
     核心思路：
-      每层边框带 = 同心圆角矩形差集
-      - 外层：距 outer_rect 偏移 t_outer 的圆角矩形（圆角半径 max(0, R - t_outer)）
-      - 内层：距 outer_rect 偏移 t_outer + t_layer 的圆角矩形（圆角半径 max(0, R - t_outer - t_layer)）
-      - band = 外层 & ~内层
+      - rect_hole: 同心圆角矩形差集
+      - rect_lshape: 同心 L 形差集（每层边框沿 L 形路径等距偏移）
+      - ellipse_hole: 椭圆模式暂不支持多层边框
 
-      使用双 mask 独立绘制差集：两个圆角矩形分别独立计算，取差集，
-      避免单 mask inverse 模式在角落产生像素异常。
+      使用双 mask 独立绘制差集，避免单 mask inverse 模式在角落产生像素异常。
     """
+    if design.mode == 'rect_lshape':
+        return compute_lshape_border_bands(design)
+    # —— 以下为 rect_hole 原有逻辑 ——
     w, h = design.canvas_w_px, design.canvas_h_px
     outer = design.outer_rect_px()
     corners = design.corners_px
@@ -453,3 +454,186 @@ def _erode_mask(mask_bool: np.ndarray, px: int) -> np.ndarray:
         r = max(1, px)
         img = img.filter(ImageFilter.MinFilter(r * 2 + 1))
         return np.array(img) > 127
+
+
+# ---------- L 形计算辅助 ----------
+
+def _get_lshape_cut_rect_at_offset(outer_rect: RectShape, corner_key: str,
+                                   cut_w: float, cut_h: float,
+                                   offset: float) -> RectShape:
+    """
+    当 outer_rect 向内收缩 offset 像素后，计算 cut rect 的新位置和尺寸。
+    保持 L 形拓扑：cut 矩形的外边缘始终与收缩后的 outer_rect 外边缘对齐。
+    cut 宽/高随 offset 等比缩小，直至 0。
+    """
+    new_x = outer_rect.x + offset
+    new_y = outer_rect.y + offset
+    new_right = outer_rect.right - offset
+    new_bottom = outer_rect.bottom - offset
+
+    cw = max(0.0, cut_w - offset)
+    ch = max(0.0, cut_h - offset)
+
+    if corner_key == 'tl':
+        return RectShape(new_x, new_y, cw, ch)
+    elif corner_key == 'tr':
+        return RectShape(new_right - cw, new_y, cw, ch)
+    elif corner_key == 'bl':
+        return RectShape(new_x, new_bottom - ch, cw, ch)
+    else:  # br
+        return RectShape(new_right - cw, new_bottom - ch, cw, ch)
+
+
+def build_lshape_mask(size: tuple[int, int],
+                       outer_rect: RectShape, corner_key: str,
+                       cut_w: float, cut_h: float,
+                       radii: dict[str, float],
+                       fill_value: int = 255) -> Image.Image:
+    """
+    构建带圆角的 L 形 mask。
+
+    算法：
+    1. 填充 outer_rect 为 fill_value
+    2. 挖掉 cut_rect（设为相反值）
+    3. 对 outer_rect 的 3 个非 cut 角应用圆角（单步扇形切割）
+    4. 对 cut_rect 的"对角"（内部 L 形拐角）应用圆角
+       - cut 'br' → 内部拐角在 cut_rect.TL → 按 TL 角处理
+       - cut 'tr' → 内部拐角在 cut_rect.BL → 按 BL 角处理
+       - cut 'bl' → 内部拐角在 cut_rect.TR → 按 TR 角处理
+       - cut 'tl' → 内部拐角在 cut_rect.BR → 按 BR 角处理
+    5. 当 cut 宽/高 ≤ 0 时退化为纯矩形圆角
+
+    Args:
+        size: (W, H) 画布尺寸
+        outer_rect: 外轮廓矩形
+        corner_key: 被挖掉的角 ('tl'|'tr'|'bl'|'br')
+        cut_w, cut_h: 挖角尺寸（像素）
+        radii: 4 个角的圆角半径字典
+        fill_value: 填充值（255=保留, 0=挖空）
+
+    Returns:
+        PIL Image (L mode) — L 形 mask
+    """
+    W, H = size
+    m = make_mask(size)
+    other = 0 if fill_value == 255 else 255
+
+    # Step 1: 填充外轮廓
+    fill_rect_mask(m, outer_rect, fill_value)
+
+    cut = _get_lshape_cut_rect_at_offset(outer_rect, corner_key, cut_w, cut_h, 0)
+    has_cut = cut.w > 0.5 and cut.h > 0.5
+
+    if has_cut:
+        # Step 2: 挖掉 cut 区域
+        fill_rect_mask(m, cut, other)
+
+        # Step 3: 圆角处理 outer_rect 的 3 个非 cut 角
+        for ck in ('tl', 'tr', 'bl', 'br'):
+            if ck == corner_key:
+                continue
+            r = radii.get(ck, 0.0)
+            if r > 0.5:
+                corner_radii = {k: (r if k == ck else 0.0) for k in ('tl', 'tr', 'bl', 'br')}
+                apply_rounded_corners_to_mask(m, outer_rect, corner_radii, fill_value=fill_value)
+
+        # Step 4: 圆角处理内部 L 形拐角（cut_rect 的对角）
+        opposite_map = {'br': 'tl', 'tr': 'bl', 'bl': 'tr', 'tl': 'br'}
+        internal_key = opposite_map[corner_key]
+        internal_r = radii.get(corner_key, 0.0)
+
+        if internal_r > 0.5:
+            corner_radii = {k: (internal_r if k == internal_key else 0.0) for k in ('tl', 'tr', 'bl', 'br')}
+            apply_rounded_corners_to_mask(m, cut, corner_radii, fill_value=fill_value)
+    else:
+        # 退化为纯矩形：对所有 4 个角应用圆角
+        if any(v > 0.5 for v in radii.values()):
+            apply_rounded_corners_to_mask(m, outer_rect, radii, fill_value=fill_value)
+
+    return m
+
+
+def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLayer]]:
+    """
+    L 形边框带计算：每层边框 = 两个同心 L 形 mask 的差集。
+
+    与矩形模式的区别：每层边框的内缩/外扩同时作用于 outer rect 和 cut rect，
+    保证 L 形拐弯处的边框厚度与直线段完全一致。
+    """
+    w, h = design.canvas_w_px, design.canvas_h_px
+    outer = design.outer_rect_px()
+    inner = design.inner_rect_px()
+    lshape = design.l_shape_px()
+    cut_corner = lshape.corner
+    cut_w = lshape.cut_w
+    cut_h = lshape.cut_h
+    corners = design.corners_px
+
+    # 1. 计算 frame_mask（总边框带）
+    frame_outer_img = build_lshape_mask(
+        (w, h), outer, cut_corner, cut_w, cut_h, corners, fill_value=255)
+
+    inner_corners = compute_inner_corner_radii(outer, inner, corners)
+    frame_inner_img = build_lshape_mask(
+        (w, h), inner, cut_corner, cut_w, cut_h, inner_corners, fill_value=255)
+
+    frame_mask = np.array(frame_outer_img, dtype=bool) & ~np.array(frame_inner_img, dtype=bool)
+
+    # 2. 按每层 border offset 切分 band
+    bands: list[tuple[np.ndarray, BorderLayer]] = []
+    cumulative_offset = 0
+
+    for layer in design.borders:
+        layer.offset_px = design.cm2px(layer.offset_cm)
+        t_layer = int(round(max(1, layer.offset_px)))
+        t_outer = cumulative_offset
+        cumulative_offset += t_layer
+
+        # 外层 L 形（偏移 t_outer）
+        outer_at = RectShape(
+            x=outer.x + t_outer, y=outer.y + t_outer,
+            w=max(1, outer.w - 2 * t_outer),
+            h=max(1, outer.h - 2 * t_outer),
+            corner_r=0.0
+        )
+        outer_cut_w = max(0.0, cut_w - t_outer)
+        outer_cut_h = max(0.0, cut_h - t_outer)
+        outer_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_outer)
+                         for ck in ('tl', 'tr', 'bl', 'br')}
+
+        band_outer_img = build_lshape_mask(
+            (w, h), outer_at, cut_corner,
+            outer_cut_w, outer_cut_h,
+            outer_radii_i, fill_value=255)
+
+        # 内层 L 形（偏移 t_outer + t_layer）
+        t_inner = t_outer + t_layer
+        inner_at = RectShape(
+            x=outer.x + t_inner, y=outer.y + t_inner,
+            w=max(1, outer.w - 2 * t_inner),
+            h=max(1, outer.h - 2 * t_inner),
+            corner_r=0.0
+        )
+        inner_cut_w = max(0.0, cut_w - t_inner)
+        inner_cut_h = max(0.0, cut_h - t_inner)
+        inner_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_inner)
+                         for ck in ('tl', 'tr', 'bl', 'br')}
+
+        band_inner_img = build_lshape_mask(
+            (w, h), inner_at, cut_corner,
+            inner_cut_w, inner_cut_h,
+            inner_radii_i, fill_value=255)
+
+        band = np.array(band_outer_img, dtype=bool) & ~np.array(band_inner_img, dtype=bool)
+        bands.append((band, layer))
+
+    # 3. 处理剩余区域
+    all_bands = np.zeros((h, w), dtype=bool)
+    for b, _ in bands:
+        all_bands = all_bands | b
+    remaining = frame_mask & (~all_bands)
+    if remaining.any():
+        extra = BorderLayer(fill_type='solid', color=design.hole_bg_color)
+        bands.append((remaining, extra))
+
+    return bands
