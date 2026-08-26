@@ -218,7 +218,12 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     # [Fix 2026-08-21] 水池模式使用 stretch 模式适配素材（等同 simple_resize）
     #   确保素材图四周边框线完整保留，避免 cover 模式裁剪边框
     #   与圆角裁剪工具默认行为一致（simple_resize 直接拉伸，不裁剪不留白）
-    if design.pool_outer_material_image and os.path.isfile(design.pool_outer_material_image):
+    # [优化 2026-08-26] 优先使用 Worker 预加载的缓存图，避免主线程网络读取阻塞
+    cached_img = getattr(design, '_cached_outer_image', None)
+    if cached_img is not None and design.pool_outer_material_image:
+        mode = 'tile' if _looks_like_tile(design.pool_outer_material_image) else 'stretch'
+        canvas = fit_image_to_rect(cached_img, W, H, mode=mode, quality=quality)
+    elif design.pool_outer_material_image and os.path.isfile(design.pool_outer_material_image):
         canvas = load_and_fit(design.pool_outer_material_image, W, H,
                               mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'stretch',
                               quality=quality)
@@ -234,7 +239,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     # 判断是否为水池模式+有素材图（用于跳过边框带渲染和L形遮罩）
     is_pool_with_material = (design.pool_hole_transparent
                              and design.pool_outer_material_image
-                             and os.path.isfile(design.pool_outer_material_image))
+                             and (cached_img is not None or os.path.isfile(design.pool_outer_material_image)))
 
     # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
     # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color

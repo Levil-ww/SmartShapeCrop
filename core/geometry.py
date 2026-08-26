@@ -156,6 +156,9 @@ class CropDesign:
     pool_hole_transparent: bool = False           # True=内部挖空留白（纯白色 JPG 背景）
     pool_outer_material_image: str | None = None  # 水池外框素材图：匹配到的花纹图，整幅铺满再挖中间
 
+    # —— 渲染加速：Worker 预加载的模板图缓存 ——
+    _cached_outer_image: Image.Image | None = None
+
     # —— 辅助：像素级尺寸换算 ——
     def cm2px(self, cm: float) -> float:
         return cm * self.dpi / 2.54

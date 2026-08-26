@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
     QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
     QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
-    QToolButton, QMenu, QAction, QDialog,
+    QToolButton, QMenu, QAction, QDialog, QApplication,
 )
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
@@ -215,6 +215,16 @@ class PoolRenderWorker(QThread):
             design.pool_outer_material_image = best.path
             # 同时也写到外框素材字段（方便用户在"背景设置"里看到并编辑）
             design.outer_bg_image = best.path
+
+            # 预加载模板图到内存缓存（渲染时直接使用，避免主线程网络读取阻塞）
+            self.progress.emit(92, "预加载素材图…")
+            try:
+                from core.image_ops import load_image_rgb
+                cached_img = load_image_rgb(best.path)
+                design._cached_outer_image = cached_img
+                self._log(f"素材预加载完成: {cached_img.size[0]}x{cached_img.size[1]}px")
+            except Exception as e:
+                self._log(f"素材预加载失败（渲染时重试）: {e}")
 
             # 多层边框：水池模式下保留默认边框层（黑-白-黑），用户可在【多层边框】区修改或删除
             # 若素材图本身已有边框，用户可手动清空 borders 列表
@@ -1204,6 +1214,8 @@ class PropertyPanel(QWidget):
                 self._ed_outer_img.setText(design.outer_bg_image)
 
             # 3) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
+            self._set_pool_status("正在生成预览图…", is_error=False)
+            QApplication.processEvents()
             self._apply_quiet()
             logger.info("[PropertyPanel] 预览已生成")
             # 记录目标文件名到历史（保留 3 天）
