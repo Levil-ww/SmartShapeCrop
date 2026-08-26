@@ -90,6 +90,230 @@ def _tile_fill(src_img: Image.Image, tw: int, th: int) -> Image.Image:
     return out
 
 
+def _edge_extend_fill(centered_img: Image.Image, tw: int, th: int) -> Image.Image:
+    """把等比缩放后居中的素材图，用边缘像素延展填满目标画布（不留白、边框不糊）。
+
+    适用于水池模式：画布AR与素材AR略有差异时，不希望出现白边。
+    算法：把 centered_img 贴到中央，四周空白区域用最外1px 边缘向外平铺延展（对称镜像-填充方式保证边缘颜色连续）。
+    """
+    sw, sh = centered_img.size
+    canvas = Image.new('RGB', (tw, th), (255, 255, 255))
+    cx = (tw - sw) // 2
+    cy = (th - sh) // 2
+    canvas.paste(centered_img, (cx, cy))
+
+    if sw >= tw and sh >= th:
+        return canvas  # 已完全填满
+
+    arr = np.array(canvas, dtype=np.uint8)
+    # 延展顶部空白（0..cy-1）：取 cy 行横向复制
+    if cy > 0:
+        top_row = arr[cy:cy + 1, :, :]
+        arr[:cy, :, :] = np.broadcast_to(top_row, (cy, tw, 3)).copy()
+    # 延展底部空白（cy+sh..th-1）
+    if cy + sh < th:
+        bot_row = arr[cy + sh - 1:cy + sh, :, :]
+        remain = th - (cy + sh)
+        arr[cy + sh:, :, :] = np.broadcast_to(bot_row, (remain, tw, 3)).copy()
+    # 延展左侧空白（0..cx-1）：取 cx 列纵向复制
+    if cx > 0:
+        left_col = arr[:, cx:cx + 1, :]
+        arr[:, :cx, :] = np.broadcast_to(left_col, (th, cx, 3)).copy()
+    # 延展右侧空白（cx+sw..tw-1）
+    if cx + sw < tw:
+        right_col = arr[:, cx + sw - 1:cx + sw, :]
+        remain = tw - (cx + sw)
+        arr[:, cx + sw:, :] = np.broadcast_to(right_col, (th, remain, 3)).copy()
+
+    return Image.fromarray(arr, mode='RGB')
+
+
+def adapt_pool_material(src_img: Image.Image,
+                        target_w: int, target_h: int,
+                        material_design_w_cm: float = 0.0,
+                        material_design_h_cm: float = 0.0,
+                        canvas_w_cm: float = 0.0,
+                        canvas_h_cm: float = 0.0,
+                        quality: str = 'export') -> Image.Image:
+    """[水池模式专用] 素材适配：保持图案完整性 + 不变形 + 尽量填满画布。
+
+    算法（保守零误判版 — 2026-08-26 二次修复根因：文件名方向≠像素存储方向导致误旋转）：
+
+      1. 方向校正（三重校验后才允许旋转，缺任何一个条件都信任像素方向）：
+         - 条件A：像素方向 vs 画布方向 相反（一竖一横）
+         - 条件B：有文件名设计方向元数据 且 文件名设计方向 = 画布方向（证明设计意图是适配当前方向）
+         - 条件C（AR硬校验）：像素宽高比 ≈ 设计尺寸的倒数宽高比（误差<15%，证明确实是PS横排后存反了方向）
+         → 仅当 A ∧ B ∧ C 全部满足，才旋转90度
+         → 其他所有情况：默认**信任像素方向**（图3红框的文件预览就是按像素方向显示的，这是用户认知的基准）
+
+         为什么这么保守？
+         反例（用户本次事故）：文件名"中古大花-58x121CM"(竖版)，但设计师在PS中横排导出（像素横版，内容方位仍正确）
+         → 旧算法只凭"文件名方向≠画布方向"就强制ROTATE_90 → 本来正确的内容被误旋转 → 四个边框全部错位（上绿→左、下蓝→右…）
+         → 用户视觉上以为"过度裁剪/花纹丢失"
+
+      2. contain 等比缩放（绝不裁剪边框花纹 → 图案100%完整显示，形状不变形）
+      3. 边缘延展填充：contain 产生的少量四周空白，用外边缘 1px 颜色向外延展填充
+
+    对比旧方案（stretch / cover / 过度旋转）：
+      stretch:          完整但变形            →  ✅ ❌
+      cover:            不变形但过度裁剪       →  ❌ ✅
+      旧误旋转版:        错位❌                →  ❌ ❌
+      当前保守版:        完整+不变形+边缘填满   → ✅ ✅ ✅
+    """
+    resample = Image.BILINEAR if quality == 'preview' else Image.LANCZOS
+    sw, sh = src_img.size
+    if sw <= 0 or sh <= 0:
+        return Image.new('RGB', (target_w, target_h), (255, 255, 255))
+
+    # ---- 步骤1：方向校正（三重校验 A ∧ B ∧ C → 才允许旋转90度）----
+    # 画布方向
+    if canvas_w_cm > 0 and canvas_h_cm > 0:
+        canvas_ar = canvas_w_cm / canvas_h_cm
+        canvas_is_landscape = canvas_w_cm > canvas_h_cm
+    else:
+        canvas_ar = target_w / target_h
+        canvas_is_landscape = target_w > target_h
+
+    # 像素方向（内容方位真实基准 = 像素存储方向 — 图3红框文件预览就是按这个显示的）
+    pixel_ar = sw / sh
+    pixel_is_landscape = sw > sh
+
+    # 条件A：像素方向 vs 画布方向 不一致（一竖一横）
+    cond_a = (pixel_is_landscape != canvas_is_landscape)
+
+    # 条件B：有文件名设计方向元数据 且 文件名设计方向 = 画布方向
+    has_design_meta = (material_design_w_cm > 0 and material_design_h_cm > 0)
+    cond_b = False
+    design_is_landscape = False
+    if has_design_meta:
+        design_is_landscape = (material_design_w_cm > material_design_h_cm)
+        cond_b = (design_is_landscape == canvas_is_landscape)
+
+    # 条件C（硬校验）：像素AR ≈ 设计尺寸的倒数AR（误差<15% → 证明PS存反了方向）
+    #   例：设计是竖版 58×121（设计AR=58/121=0.479），但PS横排存储为像素 121×58（像素AR=121/58=2.086）
+    #   → 设计倒数AR = 121/58 = 2.086 = 像素AR  → 相等！→ 确认存反了方向
+    cond_c = False
+    if has_design_meta:
+        design_reciprocal_ar = material_design_h_cm / material_design_w_cm
+        ar_diff = abs(pixel_ar - design_reciprocal_ar) / max(design_reciprocal_ar, 1e-6)
+        cond_c = (ar_diff < 0.15)
+
+    # 方向校正：以"像素方向 vs 画布方向"为唯一判据（cond_a）
+    # [Fix 2026-08-26 三次修复] 三重校验(cond_a∧cond_b∧cond_c)过严：
+    #   cond_b 要求"设计方向=画布方向"，但水池场景中素材常为竖版、画布为横版，
+    #   cond_b 必然失败 → 拒绝旋转 → 竖版素材被等比缩成细长条 + 画布79%被纯色填充。
+    #   正确判据应是 cond_a（像素方向≠画布方向 → 旋转对齐）：
+    #     1) 设计竖版+像素竖版+画布横版 → cond_a真 → 旋转✅（本次修复主场景）
+    #     2) 设计竖版+像素横版(PS存反)+画布横版 → cond_a假 → 不旋转✅（13:18事故场景已正确处理）
+    #     3) 设计横版+像素横版+画布竖版 → cond_a真 → 旋转✅
+    #   即 cond_a 单独即可覆盖全部场景；cond_b/cond_c 仅保留作日志诊断，不再作为门控。
+    # 旋转方向 ROTATE_270(顺时针90°)：经实测顺时针→正确，逆时针→上下颠倒。
+    if cond_a:
+        src_img = src_img.transpose(Image.ROTATE_270)  # 顺时针90度
+        sw, sh = sh, sw
+        logger.info(
+            f"[adapt_pool_material] 方向校正(像素≠画布方向): "
+            f"像素{'横版' if pixel_is_landscape else '竖版'}(AR={pixel_ar:.2f}) "
+            f"↔ 画布{'横版' if canvas_is_landscape else '竖版'}(AR={canvas_ar:.2f}) "
+            f"→ ROTATE_270(顺时针90°)对齐; "
+            f"诊断[设计{'横版' if design_is_landscape else '竖版' if has_design_meta else '未知'}, "
+            f"cond_b={cond_b}, cond_c={cond_c}]"
+        )
+    else:
+        logger.info(
+            f"[adapt_pool_material] 不旋转(像素方向=画布方向): "
+            f"像素{'横版' if pixel_is_landscape else '竖版'}({sw}x{sh}); "
+            f"画布{'横版' if canvas_is_landscape else '竖版'}({target_w}x{target_h})"
+        )
+
+    # ---- 步骤2：scale-to-fit 适配 (light-cover 模式) ----
+    # 核心目标：素材图案 100% 完整显示 + 画布不留白 + 不变形
+    #
+    # 策略（2026-08-26 修复：解决"边框位置不对/裁剪超出素材"问题）：
+    #   A. 先按 min(宽比, 高比) 等比缩放 —— 保持图案 100% 完整
+    #   B. 缩放后若一个方向恰好填满，另一方向需要 "延展/裁剪" 来对齐目标尺寸
+    #      B1. 若缩放后缺失量在 SAFE_EXTEND 阈值内（任一侧≤8%）：用边缘像素对称延展填充
+    #          优点：保留完整花纹；缺点：延展区无花纹图案（仅纯色边缘延伸）
+    #      B2. 若需要更均匀的花纹覆盖（"整幅都是花纹"视觉需求）：改用 cover 模式裁剪
+    #          用 max(宽比, 高比) 等比缩放，居中裁剪超出部分
+    #          最大任一侧裁剪量 ≤ MAX_CROP_PCT（15%）
+    #   C. 裁剪量过大 (任一侧>15%) 时回退到 B1，保证花纹尽量完整
+    #
+    # 为什么不直接用 cover?
+    #   cover 模式需要素材 "在两个方向都大于目标"，否则会放大到失真。
+    #   水池场景下素材设计尺寸通常略小于画布 (如 110×62.5 vs 116×54)，
+    #   此时 cover 会先放大 1.055× 导致花纹失真。
+    #
+    # 为什么不直接用 contain+edge-extend?
+    #   纯 contain 后两边空白可能过大 (如 6cm 空白占画布 5%)，
+    #   边缘延展的 "非花纹" 区域会被用户看到（投诉：边框位置不对/裁到素材外）
+    # [Fix 2026-08-26] 阈值从 8% 提到 15%：水池素材四周边框花纹必须完整不可裁剪，
+    #   cover 模式会切掉边框（违反"无缺失线条"硬约束）。延展填充用素材最外1px颜色
+    #   （通常为黑色边框）向外平铺，视觉上等同边框加粗，可接受。
+    #   仅当延展空白>15%（过大纯色区）才回退到 cover 裁剪。
+    MAX_SAFE_EXTEND_PCT = 0.15   # 单侧允许最大延展 15%（保护边框完整性优先于花纹覆盖均匀性）
+    MAX_SAFE_CROP_PCT = 0.15     # 单侧允许最大裁剪 15%
+
+    scale_fit = min(target_w / sw, target_h / sh)
+    nw_fit = max(1, int(round(sw * scale_fit)))
+    nh_fit = max(1, int(round(sh * scale_fit)))
+    resized_fit = src_img.resize((nw_fit, nh_fit), resample)
+
+    # 计算两个方向的 "缺失量"（相对于目标的空白）
+    gap_w = max(0, target_w - nw_fit)
+    gap_h = max(0, target_h - nh_fit)
+    extend_pct_w = gap_w / target_w if target_w > 0 else 0
+    extend_pct_h = gap_h / target_h if target_h > 0 else 0
+
+    # 计算 cover 模式下的裁剪量（用于决定是否切换策略）
+    scale_cover = max(target_w / sw, target_h / sh)
+    nw_cover = max(1, int(round(sw * scale_cover)))
+    nh_cover = max(1, int(round(sh * scale_cover)))
+    crop_w_total = max(0, nw_cover - target_w)
+    crop_h_total = max(0, nh_cover - target_h)
+    crop_pct_per_side_w = (crop_w_total / 2) / target_w if target_w > 0 else 0
+    crop_pct_per_side_h = (crop_h_total / 2) / target_h if target_h > 0 else 0
+
+    # 决策：哪种方式更好？
+    #   若两个方向的延展都 ≤ SAFE_EXTEND：使用延展（花纹完整，小区域纯色边缘）
+    #   否则若裁剪 ≤ SAFE_CROP 且不放大失真：使用 cover（花纹覆盖更均匀）
+    #   否则回退到延展
+    both_extend_safe = (extend_pct_w <= MAX_SAFE_EXTEND_PCT
+                        and extend_pct_h <= MAX_SAFE_EXTEND_PCT)
+    cover_safe = (crop_pct_per_side_w <= MAX_SAFE_CROP_PCT
+                  and crop_pct_per_side_h <= MAX_SAFE_CROP_PCT
+                  and scale_cover <= 1.05)  # 放大不超过 5% 避免花纹失真
+
+    if not both_extend_safe and cover_safe:
+        # Cover 模式：居中裁剪，图案完全覆盖画布
+        covered = src_img.resize((nw_cover, nh_cover), resample)
+        left = (nw_cover - target_w) // 2
+        top = (nh_cover - target_h) // 2
+        logger.info(
+            f"[adapt_pool_material] 使用 cover 模式（更均匀花纹覆盖）: "
+            f"scale={scale_cover:.3f}, resized={nw_cover}x{nh_cover} → target={target_w}x{target_h}, "
+            f"crop_per_side=({crop_pct_per_side_w*100:.1f}%, {crop_pct_per_side_h*100:.1f}%)"
+        )
+        return covered.crop((left, top, left + target_w, top + target_h))
+
+    # Contain + Edge-extend 模式（默认）
+    if nw_fit >= target_w and nh_fit >= target_h:
+        left = (nw_fit - target_w) // 2
+        top = (nh_fit - target_h) // 2
+        logger.info(
+            f"[adapt_pool_material] 图案完全覆盖，居中裁剪: "
+            f"resized={nw_fit}x{nh_fit} → target={target_w}x{target_h}"
+        )
+        return resized_fit.crop((left, top, left + target_w, top + target_h))
+
+    logger.info(
+        f"[adapt_pool_material] 使用 contain+edge-extend 模式: "
+        f"scale={scale_fit:.3f}, resized={nw_fit}x{nh_fit} → target={target_w}x{target_h}, "
+        f"gap=({gap_w}px[{extend_pct_w*100:.1f}%], {gap_h}px[{extend_pct_h*100:.1f}%])"
+    )
+    return _edge_extend_fill(resized_fit, target_w, target_h)
+
+
 def load_and_fit(path: str, tw: int, th: int, mode: str = 'cover',
                  quality: str = 'export') -> Image.Image:
     """加载 + 适配 二合一（带错误保护，素材丢失时返回纯色占位）"""
@@ -224,19 +448,43 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     BLACK_RGB = (0, 0, 0)
     # 1. 整体背景（最外层）
     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
-    # [Fix 2026-08-26] 水池模式外框素材改回 cover 模式（保持宽高比，消除变形）
-    #   原 stretch 模式会导致竖版素材横向拉伸严重变形（如 57.5x120 素材适配 122x51 画布）
-    #   cover 模式等比缩放 + 居中裁剪，虽可能裁掉少量边框线，但整体不变形
-    # [优化 2026-08-26] 优先使用 Worker 预加载的缓存图，避免主线程网络读取阻塞
+    # [Fix 2026-08-26 二次修复] 改用 adapt_pool_material（方向校正 + contain等比 + 边缘延展填充）
+    #   历史问题链：
+    #     08-21 cover → stretch：避免cover裁掉边框花纹，但 stretch 变形严重（用户投诉1）
+    #     08-26 stretch → cover：解决变形，但 cover 过度裁剪边框花纹完整性（用户投诉2）
+    #     08-26 当前方案：方向校正+contain等比+边缘延展 → 图案完整不变形，边缘无白边
     cached_img = getattr(design, '_cached_outer_image', None)
+    is_pool = bool(design.pool_outer_material_image and (cached_img is not None or os.path.isfile(design.pool_outer_material_image)))
+
     if cached_img is not None and design.pool_outer_material_image:
-        mode = 'tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover'
-        canvas = fit_image_to_rect(cached_img, W, H, mode=mode, quality=quality)
+        is_tile = _looks_like_tile(design.pool_outer_material_image)
+        if is_tile:
+            canvas = fit_image_to_rect(cached_img, W, H, mode='tile', quality=quality)
+        else:
+            canvas = adapt_pool_material(
+                cached_img, W, H,
+                material_design_w_cm=getattr(design, 'pool_material_design_w_cm', 0.0),
+                material_design_h_cm=getattr(design, 'pool_material_design_h_cm', 0.0),
+                canvas_w_cm=design.canvas_w_cm,
+                canvas_h_cm=design.canvas_h_cm,
+                quality=quality,
+            )
     elif design.pool_outer_material_image and os.path.isfile(design.pool_outer_material_image):
-        canvas = load_and_fit(design.pool_outer_material_image, W, H,
-                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover',
-                              quality=quality)
+        is_tile = _looks_like_tile(design.pool_outer_material_image)
+        if is_tile:
+            canvas = load_and_fit(design.pool_outer_material_image, W, H, mode='tile', quality=quality)
+        else:
+            src = load_image_rgb(design.pool_outer_material_image)
+            canvas = adapt_pool_material(
+                src, W, H,
+                material_design_w_cm=getattr(design, 'pool_material_design_w_cm', 0.0),
+                material_design_h_cm=getattr(design, 'pool_material_design_h_cm', 0.0),
+                canvas_w_cm=design.canvas_w_cm,
+                canvas_h_cm=design.canvas_h_cm,
+                quality=quality,
+            )
     elif design.outer_bg_image and os.path.isfile(design.outer_bg_image):
+        # 非水池背景图：保持旧模式 cover（普通背景不过度在意边框完整性）
         canvas = load_and_fit(design.outer_bg_image, W, H,
                               mode='tile' if _looks_like_tile(design.outer_bg_image) else 'cover',
                               quality=quality)

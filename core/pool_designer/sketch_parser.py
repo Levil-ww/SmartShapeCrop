@@ -845,7 +845,8 @@ def _parse_dir_num_token(text):
     return None, None
 
 
-def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=None):
+def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=None,
+                                     target_outer_w_cm=0.0, target_outer_h_cm=0.0):
     """Phase1改进版：提取方向+数值组合（支持双向匹配 + 颜色增强 + 小数字补漏）。
 
     返回: dict {field_name: (value, conf, bbox)}
@@ -854,6 +855,27 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     result = {}
     if tesseract is None:
         return result
+
+    # ---- [防OCR噪声] 预计算边距合理性上限 ----
+    # 边距通常是外框短边的 2%~25%，或绝对不超过 25cm
+    # 此阈值用于剔除 OCR 把装饰文字/尺寸标注误识别为"边距"的情况
+    _ref_side = max(target_outer_w_cm, target_outer_h_cm, 0.0)
+    _margin_hard_cap = min(_ref_side * 0.30, 25.0) if _ref_side > 0 else 25.0
+
+    def _is_reasonable_margin(v):
+        """判断边距值是否合理（避免把外框尺寸/装饰文字误识别为边距）。"""
+        if v is None or v <= 0:
+            return False
+        # 过小（<0.3cm）也不合理
+        if v < 0.3:
+            return False
+        # 过大：若有 target 且超过 cap 则不合理
+        if _margin_hard_cap > 0 and v > _margin_hard_cap:
+            return False
+        # 绝对上限：边距不超过 30cm（水池边框极少超过此值）
+        if v > 30.0:
+            return False
+        return True
 
     # ========== 阶段1：标准尺度扫描（gray 1x/2.5x/4x + enhanced 1x/2.5x）==========
     # 原有3种尺度保留；enhanced只到2.5x节省时间（小数字由阶段2专门处理）
@@ -880,6 +902,13 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         if val is None or not (0.3 <= val <= 500):
             return
         field = _DIR_CHAR_MAP[dir_char]
+        # [防OCR噪声] 边距值合理性检查：拒绝明显是外框尺寸/装饰文字的超大值
+        if not _is_reasonable_margin(val):
+            logger.info(
+                f"[Step4] OCR噪声拒绝: {dir_char}={val}cm → {field} "
+                f"(超过边距合理上限 cap={_margin_hard_cap:.1f}cm，可能是装饰文字/尺寸标注)"
+            )
+            return
         if field not in result or conf > result[field][1]:
             result[field] = (val, conf, (bx, by, bw, bh))
             logger.info(f"[Step4] {tag}: {dir_char}={val} conf={conf} → {field}")
@@ -1363,6 +1392,9 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
     3. 若 left+right+inner_w ≠ outer_w，按比例缩放或反推
     4. 边距值不得超过外框对应边的 80%
     5. 方向标签锁定的字段不修改，改为反推外框尺寸
+    6. [防OCR噪声] 方向标签边距反推外框前校验合理性：
+       - 若 target 已知且反推值偏离 target 超过 40%，保留 target 不覆盖
+       - 避免 OCR 把装饰文字识别为"边距"导致外框被放大数倍
     """
     if dir_locked_fields is None:
         dir_locked_fields = set()
@@ -1399,23 +1431,61 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
         mt = get('margin_top')
         mb = get('margin_bottom')
 
+        # ---- [防OCR噪声] 边距合理性预过滤 ----
+        # 边距通常是外框宽度的 2%~25%（花纹/边框厚度），超出这个范围视为 OCR 把
+        # 装饰文字/尺寸标注误识别为边距，需要剔除，避免用错误边距放大外框。
+        # 阈值：相对 target 短边 30% 或绝对 30cm，取较小者。
+        ref_long = max(target_outer_w, target_outer_h, tw, th)
+        sanity_cap = min(ref_long * 0.30, 30.0) if ref_long > 0 else 30.0
+        sanity_min = 0.3  # 边距下限
+
+        def _sanitize_margin(v, axis):
+            """边距值合理性检查：返回 (清洗后值, 是否被清洗)。"""
+            if v <= 0:
+                return v, False
+            if v < sanity_min:
+                return 0.0, True
+            if v > sanity_cap:
+                logger.info(
+                    f"[Step6] OCR噪声边距剔除: {axis}={v:.1f}cm > cap={sanity_cap:.1f}cm "
+                    f"(判定为装饰文字/尺寸误识别，归零)"
+                )
+                return 0.0, True
+            return v, False
+
+        ml_s, _ = _sanitize_margin(ml, 'margin_left')
+        mr_s, _ = _sanitize_margin(mr, 'margin_right')
+        mt_s, _ = _sanitize_margin(mt, 'margin_top')
+        mb_s, _ = _sanitize_margin(mb, 'margin_bottom')
+
         # 横向：如果有方向标签边距，用它们和 inner_w 计算 total_w
-        h_sum = sum(v for v in (ml, mr) if v > 0)
+        h_sum = sum(v for v in (ml_s, mr_s) if v > 0)
         if h_sum > 0 and iw > 0:
             new_tw = iw + h_sum
-            if new_tw > 0:
+            # [防OCR噪声] 若 target 已知且反推值严重偏离 target，保留 target 不覆盖
+            if target_outer_w > 0 and abs(new_tw - target_outer_w) / target_outer_w > 0.40:
+                logger.info(
+                    f"[Step6] 横向方向标签反推偏离 target={target_outer_w:.1f} → 反推={new_tw:.1f} "
+                    f"(偏离>{40}%)，保留 target 不覆盖"
+                )
+            elif new_tw > 0:
                 tw = new_tw
                 put('total_w', tw, 0.90)
-                logger.info(f"[Step6] 横向外框修正(方向标签): total_w={tw:.1f} (inner={iw:.1f} left={ml:.1f} right={mr:.1f})")
+                logger.info(f"[Step6] 横向外框修正(方向标签): total_w={tw:.1f} (inner={iw:.1f} left={ml_s:.1f} right={mr_s:.1f})")
 
         # 纵向：同理
-        v_sum = sum(v for v in (mt, mb) if v > 0)
+        v_sum = sum(v for v in (mt_s, mb_s) if v > 0)
         if v_sum > 0 and ih > 0:
             new_th = ih + v_sum
-            if new_th > 0:
+            if target_outer_h > 0 and abs(new_th - target_outer_h) / target_outer_h > 0.40:
+                logger.info(
+                    f"[Step6] 纵向方向标签反推偏离 target={target_outer_h:.1f} → 反推={new_th:.1f} "
+                    f"(偏离>{40}%)，保留 target 不覆盖"
+                )
+            elif new_th > 0:
                 th = new_th
                 put('total_h', th, 0.90)
-                logger.info(f"[Step6] 纵向外框修正(方向标签): total_h={th:.1f} (inner={ih:.1f} top={mt:.1f} bottom={mb:.1f})")
+                logger.info(f"[Step6] 纵向外框修正(方向标签): total_h={th:.1f} (inner={ih:.1f} top={mt_s:.1f} bottom={mb_s:.1f})")
     else:
         if tw > 0:
             put('total_w', tw, 0.95 if target_outer_w > 0 else 0.6)
@@ -1820,9 +1890,11 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
         return {'success': False, 'message': '全局OCR未识别到任何数值'}
     ocr_raw = _merge_split_decimals(ocr_raw)
 
-    # Step 4: 方向标签优先锁定（传入颜色增强灰度图）
+    # Step 4: 方向标签优先锁定（传入颜色增强灰度图 + target 用于边距合理性校验）
     dir_locked = _extract_direction_label_numbers(cv2, tesseract, gray_img,
-                                                   enhanced_gray=enhanced_gray)
+                                                   enhanced_gray=enhanced_gray,
+                                                   target_outer_w_cm=target_outer_w_cm,
+                                                   target_outer_h_cm=target_outer_h_cm)
     excluded_fields = set(dir_locked.keys())
     excluded_values = [v[0] for v in dir_locked.values()]
     logger.info(f"[Step4] 方向标签锁定 {len(dir_locked)} 个字段: {list(dir_locked.keys())}")

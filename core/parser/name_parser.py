@@ -48,13 +48,10 @@ class ParsedFilename:
     def oriented_outer_w_h_cm(self) -> tuple[float, float]:
         """返回设计画布所需的外框 (宽, 高)。
 
-        水池模式：文件名 "a x b CM" 在草图中标注为 a=竖边(高)、b=横边(宽)，
-                  需交换为 (b, a) = (height_cm, width_cm)。
-        普通模式：直接返回 (width_cm, height_cm)。
-        统一在此处交换，调用方不再各自实现，避免三处副本漂移导致横竖颠倒。
+        统一规则：所有模式都直接返回 (width_cm, height_cm)。
+        width_cm/height_cm 已在解析时按"长边为宽、短边为高"标准设置。
+        水池模式下不再做二次交换，避免与标准规则冲突导致方向颠倒。
         """
-        if self.is_pool_mode():
-            return self.height_cm, self.width_cm
         return self.width_cm, self.height_cm
 
 
@@ -494,20 +491,22 @@ def parse_filename(filename: str) -> ParsedFilename:
         has_diameter = '直径' in size_context
         result.is_circular = has_circle_kw or has_diameter
     
-    # —— 水池模式修正：使用原始尺寸顺序，不强制横版/竖版
-    # 水池的 "a x b CM" 通常表示 宽×高，不应对调
-    # pool_mode 触发条件：文件名包含 "裁剪有图" 或 "水池"
+    # —— 水池模式修正：统一使用"长边为宽、短边为高"标准规则 ——
+    # 移除旧的原始顺序规则（L501-510），该规则错误地假设文件名中第一个数字是宽度。
+    # 现在所有模式（包括水池）都使用统一的标准规则：长边为宽，短边为高。
+    # 例：58x121CM → width_cm=121, height_cm=58, layout='横版'（宽>高）
+    #     121x58CM → width_cm=121, height_cm=58, layout='横版'
+    #     57.5x27.5CM → width_cm=57.5, height_cm=27.5, layout='横版'
+    #     27.5x57.5CM → width_cm=57.5, height_cm=27.5, layout='横版'
     is_pool = result.pool_mode or ('水池' in (result.product_name or '') or '水池' in (name or ''))
     if is_pool and dims:
         a, b = dims
-        # 仅当没有显式方向关键词时，使用原始顺序
+        # 水池模式也遵循标准规则：长边为宽，短边为高
         if not explicit_layout:
-            # 若第一个数较小（通常是宽度），则直接用原始顺序
-            # 对于水池，用户通常写 "宽 x 高"，例如 "60.5 x 133"
-            result.width_cm = a
-            result.height_cm = b
-            result.layout = '竖版' if a < b else '横版'
-            logger.debug(f"[name_parser] pool_mode 修正: 使用原始顺序 a={a}(宽), b={b}(高), layout={result.layout}")
+            result.width_cm = max(a, b)
+            result.height_cm = min(a, b)
+            result.layout = '横版' if result.width_cm >= result.height_cm else '竖版'
+            logger.debug(f"[name_parser] pool_mode 标准规则: a={a}, b={b}, width={result.width_cm}, height={result.height_cm}, layout={result.layout}")
     
     return result
 

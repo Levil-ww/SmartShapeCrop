@@ -10,3 +10,37 @@ Traceback (most recent call last):
     
 KeyboardInterrupt
 
+============================================================
+崩溃时间: 2026-08-26 15:25:53
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 288, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 121, in _render_async
+    self._render_lod()
+    ~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 187, in _render_lod
+    self._full_image = render_design_lod(self._design, scale=LOD_SCALE_FACTOR)
+                       ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 371, in render_design_lod
+    lod_result = render_design(lod_design, quality='preview', pixel_scale=scale)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 539, in render_design
+    inner_mask = _get_inner_pixel_mask(design)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 666, in _get_inner_pixel_mask
+    fill_rect_mask(m, inner_rect, 255)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\geometry.py", line 237, in fill_rect_mask
+    d.rectangle(rect.to_int_tuple(), fill=value)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\.venv\Lib\site-packages\PIL\ImageDraw.py", line 386, in rectangle
+    self.draw.draw_rectangle(xy, fill_ink, 1)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+ValueError: x1 must be greater than or equal to x0
+

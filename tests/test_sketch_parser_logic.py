@@ -160,6 +160,50 @@ class TestValidateAndFixMargins:
         assert out['margin_top'][0] == pytest.approx(10.0)
         assert out['margin_left'][0] == pytest.approx(10.0)
 
+    def test_ocr_noise_margin_does_not_override_target_outer(self):
+        """[2026-08 回归] OCR 把装饰文字识别为超大边距(如74cm)时，不应覆盖 target 外框尺寸。
+
+        场景：文件名外框 target_outer_w=51cm，OCR 把花纹装饰"Cross"识别为74，
+        方向标签绑定为 margin_left=74, margin_right=74。旧逻辑会反推
+        total_w=73.6+74+74=221.6（严重错误）。修复后保留 target。
+        """
+        r = _asg(tw=51.0, th=89.5, iw=73.6, ih=34.0, mt=8.8, mb=8.2, ml=74.0, mr=74.0)
+        # 传入 target_outer_w=51，target_outer_h=89.5 模拟真实场景
+        # dir_locked 包含 4 个方向标签，其中 ml/mr 是 OCR 噪声
+        out = _validate_and_fix_margins(
+            r, target_outer_w=51.0, target_outer_h=89.5,
+            dir_locked_fields={'margin_top', 'margin_bottom', 'margin_left', 'margin_right'}
+        )
+        # 关键断言：外框宽不应被噪声边距放大，应保留 target
+        assert out['total_w'][0] == pytest.approx(51.0, abs=0.01), (
+            f"total_w 应保留 target=51，实际={out['total_w'][0]}"
+        )
+        assert out['total_h'][0] == pytest.approx(89.5, abs=0.01)
+
+    def test_sanitize_oversized_dir_margin(self):
+        """方向标签边距过大(>30% target 短边)应被清洗掉。"""
+        # target_outer_w=89.5 → sanity_cap = min(89.5*0.30, 30) = 26.85
+        # margin_left=74 远超 cap，应被清洗为 0，不再参与外框反推
+        r = _asg(tw=89.5, th=51.0, iw=73.6, ih=34.0, mt=8.8, mb=8.2, ml=74.0, mr=74.0)
+        out = _validate_and_fix_margins(
+            r, target_outer_w=89.5, target_outer_h=51.0,
+            dir_locked_fields={'margin_left', 'margin_right'}
+        )
+        # 外框宽保留 target
+        assert out['total_w'][0] == pytest.approx(89.5, abs=0.01)
+
+    def test_normal_margin_still_derives_total(self):
+        """正常大小的方向标签边距(如10cm)仍可参与外框反推。"""
+        # 无 target 时，用方向标签边距 + inner 反推 total
+        r = _asg(iw=80.0, ih=40.0, mt=10.0, mb=10.0, ml=10.0, mr=10.0)
+        out = _validate_and_fix_margins(
+            r, target_outer_w=0.0, target_outer_h=0.0,
+            dir_locked_fields={'margin_top', 'margin_bottom', 'margin_left', 'margin_right'}
+        )
+        # total_w = inner_w + ml + mr = 80 + 10 + 10 = 100
+        assert out['total_w'][0] == pytest.approx(100.0, abs=0.01)
+        assert out['total_h'][0] == pytest.approx(60.0, abs=0.01)
+
 
 # ===========================================================================
 # 4. _validate_geometric_constraints

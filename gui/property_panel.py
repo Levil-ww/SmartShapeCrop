@@ -122,14 +122,15 @@ class PoolRenderWorker(QThread):
                 )
                 return
 
-            # —— 水池/裁剪有图 模式：尺寸方向统一由 ParsedFilename.oriented_outer_w_h_cm() 处理 ——
-            # 交换规则集中在此方法内，避免与 _on_pool_target_changed / _pool_auto_parse_sketch 副本漂移
+            # —— 水池/裁剪有图 模式：尺寸方向已由 name_parser 统一为标准规则 ——
+            # 所有模式（包括水池）都使用 "长边为宽、短边为高" 规则
+            # oriented_outer_w_h_cm() 现在直接返回 (width_cm, height_cm)，不再做二次交换
             is_pool = parsed.is_pool_mode()
             file_w, file_h = parsed.oriented_outer_w_h_cm()
             if is_pool:
                 self._log(
-                    f"水池模式尺寸修正：文件名数值 {parsed.width_cm}x{parsed.height_cm} "
-                    f"→ 外框参考 宽{file_w} x 高{file_h}（与草图横/竖标注一致）"
+                    f"水池模式尺寸解析：文件名尺寸 {parsed.width_cm}x{parsed.height_cm} "
+                    f"→ 画布 宽{file_w} x 高{file_h}"
                 )
 
             # 2) 匹配模板
@@ -215,6 +216,25 @@ class PoolRenderWorker(QThread):
             design.pool_outer_material_image = best.path
             # 同时也写到外框素材字段（方便用户在"背景设置"里看到并编辑）
             design.outer_bg_image = best.path
+            # [Fix 2026-08-26] 传递素材原始设计方向尺寸（文件名方向，未经过oriented交换）
+            # 渲染时用它判断素材是否需要旋转90度后再等比缩放（避免cover过度裁剪 / stretch变形）
+            try:
+                # best 是 TemplateEntry；取文件名字段中 _width_cm / _height_cm（原始方向）
+                from_core = getattr(best, '_width_cm', 0) or 0
+                from_core_h = getattr(best, '_height_cm', 0) or 0
+                if from_core > 0 and from_core_h > 0:
+                    design.pool_material_design_w_cm = float(from_core)
+                    design.pool_material_design_h_cm = float(from_core_h)
+                else:
+                    # 兜底：从已匹配文件名再解析一次（parse_filename 已在文件顶部全局导入）
+                    re_parsed = parse_filename(os.path.splitext(os.path.basename(best.path))[0])
+                    if re_parsed and re_parsed.width_cm and re_parsed.height_cm:
+                        design.pool_material_design_w_cm = float(re_parsed.width_cm)
+                        design.pool_material_design_h_cm = float(re_parsed.height_cm)
+                self._log(f"素材设计方向尺寸(原始文件名): {design.pool_material_design_w_cm:.1f}x{design.pool_material_design_h_cm:.1f}cm "
+                         f"→ 画布方向: {design.canvas_w_cm:.1f}x{design.canvas_h_cm:.1f}cm")
+            except Exception as e:
+                self._log(f"素材设计方向写入失败（渲染退化）: {e}")
 
             # 预加载模板图到内存缓存（渲染时直接使用，避免主线程网络读取阻塞）
             self.progress.emit(92, "预加载素材图…")
@@ -664,10 +684,10 @@ class PropertyPanel(QWidget):
             w, h = parsed.width_cm, parsed.height_cm
             if w > 0 and h > 0:
                 if is_pool:
-                    # —— 水池模式：外框(宽,高)由 oriented_outer_w_h_cm() 统一交换 ——
-                    # 例：60.5x133cm  →  外框 高(竖)=60.5, 宽(横)=133
+                    # —— 水池模式：外框(宽,高)直接使用解析结果 ——
+                    # 例：58x121cm → width_cm=121, height_cm=58, raw_outer_w=121, raw_outer_h=58
                     # 画布显示尺寸 = 外框 + 1cm 损耗（裁剪余料）
-                    raw_outer_w, raw_outer_h = parsed.oriented_outer_w_h_cm()
+                    raw_outer_w, raw_outer_h = parsed.width_cm, parsed.height_cm
                     gui_w = raw_outer_w + 1.0
                     gui_h = raw_outer_h + 1.0
                     # 范围夹取

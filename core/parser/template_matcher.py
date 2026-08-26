@@ -771,6 +771,12 @@ class TemplateMatcher:
         tgt_layout = tgt.layout or ""
         tgt_is_vert = (tgt_layout == "竖版")
         t_w, t_h = tgt.width_cm, tgt.height_cm
+
+        # [Fix 2026-08-26] 水池模式：已统一使用标准规则（长边为宽、短边为高）
+        #   name_parser 现在直接设置正确的 width_cm/height_cm，oriented_outer_w_h_cm()
+        #   不再做二次交换，因此直接使用解析后的尺寸即可。
+        #   例：58x121CM → width_cm=121, height_cm=58 → 正确的横版尺寸
+
         has_size = (t_w > 0 and t_h > 0)
         t_ratio = (max(t_w, t_h) / min(t_w, t_h)) if has_size else None
         force_pattern = bool(tgt.material and tgt_pattern)
@@ -1065,26 +1071,21 @@ class TemplateMatcher:
             ratio_diff = abs(t_ratio - tpl_ratio) if t_ratio is not None else float('inf')
             details['ratio_diff'] = ratio_diff
 
-            # [Fix 2026-08-21] 水池模式：使用有方向的比例匹配
-            #   目标文件 "58x78cm" 在水池模式下经 oriented_outer_w_h_cm() 交换为 78x58（横向）
-            #   素材 "58x77cm" 是竖向（58<77），方向不一致会导致渲染时边框被裁剪
+            # [Fix 2026-08-26] 水池模式：统一标准规则后，直接使用 width/height 比较方向
+            #   目标和模板都遵循 "长边为宽、短边为高" 标准，AR = width/height
+            #   方向一致性检查：两者都是横向(AR>1)或都是竖向(AR<1)
             if tgt_pool_mode:
-                # 水池模式下目标的实际画布方向：宽=t_h, 高=t_w（经 oriented_outer_w_h_cm 交换）
-                target_oriented_ratio = t_h / max(t_w, 0.001) if t_w > 0 else float('inf')
-                # 素材的原始方向比
+                target_oriented_ratio = t_w / max(t_h, 0.001) if t_h > 0 else float('inf')
                 tpl_oriented_ratio = pw / max(ph, 0.001) if ph > 0 else float('inf')
                 details['target_oriented_ratio'] = target_oriented_ratio
                 details['tpl_oriented_ratio'] = tpl_oriented_ratio
                 
-                # 方向一致性检查：两者都是横向(>1)或都是竖向(<1)
                 tgt_is_landscape = target_oriented_ratio > 1.0
                 tpl_is_landscape = tpl_oriented_ratio > 1.0
                 details['orientation_match'] = tgt_is_landscape == tpl_is_landscape
                 
-                # 如果方向不一致，使用有方向的比例差作为惩罚
                 if not details['orientation_match']:
                     oriented_ratio_diff = abs(target_oriented_ratio - tpl_oriented_ratio)
-                    # 取无方向差和有方向差的较大者作为惩罚
                     ratio_diff = max(ratio_diff, oriented_ratio_diff)
                     details['ratio_diff'] = ratio_diff
 
@@ -1141,16 +1142,13 @@ class TemplateMatcher:
         tpl_layout = e._layout or ""
         if tpl_layout:
             tpl_is_vert = tpl_layout == "竖版"
-            # [Fix 2026-08-21] 水池模式方向匹配：目标方向需经 pool swap 后判断
-            #   目标文件 "58x78cm" 原是竖向(58<78)，但水池模式交换后画布为横向(78>58)
+            # [Fix 2026-08-26] 水池模式方向匹配：统一标准规则后直接使用 layout 比较
+            #   不再需要 pool swap 反转逻辑
             if tgt_pool_mode:
-                # 水池模式：目标的有效方向是交换后的方向
-                tgt_effective_is_vert = not tgt_is_vert  # 交换方向
-                if tpl_is_vert == tgt_effective_is_vert:
+                if tpl_is_vert == tgt_is_vert:
                     score += 10
                     details['direction_match'] = True
                 else:
-                    # 方向不一致惩罚：素材方向与实际画布方向不同
                     score -= 5
                     details['direction_match'] = False
             else:
