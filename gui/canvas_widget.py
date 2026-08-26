@@ -3,14 +3,16 @@ gui/canvas_widget.py
 预览画布组件：
 - 实际渲染：始终使用 design.canvas_w_px × canvas_h_px 的全分辨率（用于保存）
 - 界面显示：按 QWidget 窗口大小等比缩放居中（仅预览，不影响保存）
-- LOD 模式：大图（像素量>100万）使用 1/4 分辨率代理图渲染，预览速度提升 4-16×
+- LOD 模式：所有预览先显示 LOD 低分辨率代理图，确保即时反馈
+- 异步渲染：完整分辨率在后台 QThread 渲染，完成后无缝替换预览
 - 避免把"预览缩放后的 QPixmap"作为保存源（经验：799713）
 """
 from __future__ import annotations
 import io
 import logging
+import time
 from PIL import Image
-from PyQt5.QtCore import Qt, QSize, pyqtSignal
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QThread
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPalette
 from PyQt5.QtWidgets import QWidget, QSizePolicy
 
@@ -19,6 +21,37 @@ logger = logging.getLogger(__name__)
 # LOD 触发阈值：像素量超过此值时使用低分辨率渲染
 LOD_PIXEL_THRESHOLD = 1_000_000  # 100万像素
 LOD_SCALE_FACTOR = 0.25  # 1/4 分辨率
+
+# 异步渲染阈值：超过此像素量的设计使用后台线程渲染
+ASYNC_RENDER_THRESHOLD = 200_000  # 20万像素
+
+
+class PreviewRenderWorker(QThread):
+    """
+    后台渲染 Worker：在独立线程中执行全分辨率 render_design。
+    避免 UI 主线程阻塞，渲染完成后通过 finished_ok 信号返回结果。
+    """
+    finished_ok = pyqtSignal(object, float)   # (PIL.Image, elapsed_seconds)
+    finished_err = pyqtSignal(str)
+
+    def __init__(self, design, parent=None):
+        super().__init__(parent)
+        self._design = design
+
+    def run(self):
+        try:
+            from core.image_ops import render_design
+            t0 = time.perf_counter()
+            img = render_design(self._design, quality='preview')
+            elapsed = time.perf_counter() - t0
+            if self.isInterruptionRequested():
+                return
+            self.finished_ok.emit(img, elapsed)
+        except Exception as e:
+            logger.exception("[PreviewRenderWorker] 后台渲染异常")
+            if self.isInterruptionRequested():
+                return
+            self.finished_err.emit(str(e))
 
 
 class PreviewCanvas(QWidget):
@@ -32,6 +65,9 @@ class PreviewCanvas(QWidget):
         self._full_image: Image.Image | None = None  # 预览渲染图（LOD 或全分辨率）
         self._preview_pixmap: QPixmap | None = None  # 缩放后的预览图
         self._use_lod: bool = False  # 当前是否使用 LOD 渲染
+        self._is_rendering: bool = False  # 是否正在后台渲染
+        self._render_worker: PreviewRenderWorker | None = None  # 后台渲染 Worker
+        self._last_render_id: int = 0  # 渲染版本号，用于丢弃过期结果
         self.setMinimumSize(QSize(400, 500))
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setBackgroundRole(QPalette.Dark)
@@ -39,10 +75,9 @@ class PreviewCanvas(QWidget):
 
     # ---- 外部接口 ----
     def set_design(self, design) -> None:
-        """设置设计并触发重渲染"""
+        """设置设计并触发重渲染（异步分级渲染）"""
         self._design = design
-        self._render()
-        self.update()
+        self._render_async()
 
     def full_image(self) -> Image.Image | None:
         """返回全尺寸渲染图（保存时使用这个，不要用预览图）"""
@@ -52,44 +87,105 @@ class PreviewCanvas(QWidget):
         """当前预览是否使用 LOD 低分辨率渲染"""
         return self._use_lod
 
-    # ---- 内部渲染 ----
-    def _render(self) -> None:
+    def is_rendering(self) -> bool:
+        """当前是否正在后台渲染"""
+        return self._is_rendering
+
+    # ---- 异步分级渲染 ----
+    def _render_async(self) -> None:
+        """
+        异步分级渲染流程：
+        1. 立即同步渲染 LOD 低分辨率预览（<100ms），让用户立刻看到效果
+        2. 在后台 QThread 中渲染全分辨率
+        3. 完成后无缝替换预览图
+        """
         if self._design is None:
             self._full_image = None
             self._preview_pixmap = None
             self._use_lod = False
+            self.update()
             return
 
         total_pixels = self._design.canvas_w_px * self._design.canvas_h_px
 
+        # 取消之前未完成的后台渲染
+        if self._render_worker is not None and self._render_worker.isRunning():
+            self._render_worker.requestInterruption()
+
+        render_id = self._last_render_id + 1
+        self._last_render_id = render_id
+
+        # 1. 立即渲染 LOD 预览（保证即时反馈）
         if total_pixels > LOD_PIXEL_THRESHOLD:
-            # 大图使用 LOD 低分辨率渲染
+            # 大图直接 LOD
             self._render_lod()
         else:
-            # 小图使用全分辨率 BILINEAR 渲染
-            self._render_full()
+            # 小图也先用 LOD 快速预览
+            self._render_lod()
 
         self._update_preview_pixmap()
-        self.rendered.emit(self._full_image)
+        self.update()
 
-    def _render_full(self) -> None:
-        """全分辨率渲染（小图或用于保存）"""
+        # 2. 对较大的设计，启动后台全分辨率渲染
+        if total_pixels > ASYNC_RENDER_THRESHOLD:
+            self._is_rendering = True
+            logger.info(
+                f"[PreviewCanvas] 启动后台全分辨率渲染: "
+                f"{total_pixels}px (LOD已显示，将替换为全分辨率)"
+            )
+            worker = PreviewRenderWorker(self._design, self)
+            worker.finished_ok.connect(
+                lambda img, t, rid=render_id: self._on_full_render_done(img, t, rid)
+            )
+            worker.finished_err.connect(self._on_full_render_err)
+            self._render_worker = worker
+            worker.start()
+        else:
+            # 小图直接在主线程渲染全分辨率（<200Kpx 通常 <100ms）
+            self._render_full_sync()
+
+    def _on_full_render_done(self, img: Image.Image, elapsed: float, render_id: int) -> None:
+        """后台渲染完成：替换预览图"""
+        self._is_rendering = False
+        # 丢弃过期结果（用户已经切换了设计）
+        if render_id != self._last_render_id:
+            logger.info("[PreviewCanvas] 丢弃过期渲染结果")
+            return
+        self._full_image = img
+        self._use_lod = False
+        self._update_preview_pixmap()
+        self.update()
+        self.rendered.emit(self._full_image)
+        logger.info(
+            f"[PreviewCanvas] 全分辨率渲染完成: "
+            f"{img.width}x{img.height}px, 耗时 {elapsed:.2f}s"
+        )
+
+    def _on_full_render_err(self, err_msg: str) -> None:
+        """后台渲染异常"""
+        self._is_rendering = False
+        logger.error(f"[PreviewCanvas] 后台渲染失败: {err_msg}")
+
+    # ---- 同步渲染（用于小图或保存） ----
+    def _render_full_sync(self) -> None:
+        """全分辨率同步渲染（小图或用于保存）"""
         from core.image_ops import render_design
-        # 预览阶段用 BILINEAR 重采样，比 LANCZOS 快 3-5×
+        t0 = time.perf_counter()
         self._full_image = render_design(self._design, quality='preview')
         self._use_lod = False
+        elapsed = time.perf_counter() - t0
+        self._update_preview_pixmap()
+        self.rendered.emit(self._full_image)
+        logger.info(
+            f"[PreviewCanvas] 同步渲染完成: "
+            f"{self._full_image.width}x{self._full_image.height}px, 耗时 {elapsed:.2f}s"
+        )
 
     def _render_lod(self) -> None:
-        """LOD 低分辨率渲染（大图预览加速）"""
+        """LOD 低分辨率渲染（即时预览）"""
         from core.image_ops import render_design_lod
-        # 使用 1/4 分辨率代理图渲染，像素量减少 16×
         self._full_image = render_design_lod(self._design, scale=LOD_SCALE_FACTOR)
         self._use_lod = True
-        logger.info(
-            f"[LOD] 使用低分辨率预览: "
-            f"{self._design.canvas_w_px}x{self._design.canvas_h_px} → "
-            f"scale={LOD_SCALE_FACTOR}"
-        )
 
     def _render_full_for_save(self) -> Image.Image | None:
         """
@@ -105,10 +201,22 @@ class PreviewCanvas(QWidget):
         if self._full_image is None:
             self._preview_pixmap = None
             return
-        # PIL -> QImage -> QPixmap
-        pil = self._full_image.convert('RGB')
-        data = pil.tobytes('raw', 'RGB')
-        qimg = QImage(data, pil.width, pil.height, pil.width * 3, QImage.Format_RGB888).copy()
+        # 若源图远大于 widget 显示区域，先降采样再转 QPixmap，避免大图转换开销
+        src = self._full_image.convert('RGB')
+        w, h = max(1, self.width()), max(1, self.height())
+        src_w, src_h = src.size
+        # 如果源图像素 > widget 像素 2x 以上，先缩小到 widget 2x 再转换
+        # 防止百万级像素图像转换为 QImage/QPixmap 耗时巨大
+        widget_pixels = w * h
+        src_pixels = src_w * src_h
+        if src_pixels > widget_pixels * 4:
+            # 先 PIL 端缩小（保留 2x 显示精度即可）
+            target_w = min(src_w, w * 2)
+            target_h = min(src_h, h * 2)
+            src = src.resize((target_w, target_h), Image.BILINEAR)
+
+        data = src.tobytes('raw', 'RGB')
+        qimg = QImage(data, src.width, src.height, src.width * 3, QImage.Format_RGB888).copy()
         self._source_pixmap = QPixmap.fromImage(qimg)
         self._rescale_preview()
 
@@ -116,10 +224,12 @@ class PreviewCanvas(QWidget):
         if not hasattr(self, '_source_pixmap') or self._source_pixmap is None:
             self._preview_pixmap = None
             return
-        # 预览按 widget 尺寸缩放，保持比例（经验：799713）
+        # LOD 预览使用 FastTransformation 加速（LOD 已缩小 4×，放大无需平滑）
+        # 全分辨率预览使用 SmoothTransformation 保证显示质量
         w, h = max(1, self.width()), max(1, self.height())
+        transform = Qt.FastTransformation if self._use_lod else Qt.SmoothTransformation
         self._preview_pixmap = self._source_pixmap.scaled(
-            w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            w, h, Qt.KeepAspectRatio, transform)
 
     # ---- Qt 事件 ----
     def resizeEvent(self, event):
@@ -132,8 +242,12 @@ class PreviewCanvas(QWidget):
         p.fillRect(self.rect(), QColor(40, 40, 40))  # 画布周围深灰
         if self._preview_pixmap is None or self._preview_pixmap.isNull():
             p.setPen(QColor(180, 180, 180))
-            p.drawText(self.rect(), Qt.AlignCenter,
-                       "请在右侧设置参数后生成预览")
+            if self._is_rendering:
+                p.drawText(self.rect(), Qt.AlignCenter,
+                           "正在渲染预览图…")
+            else:
+                p.drawText(self.rect(), Qt.AlignCenter,
+                           "请在右侧设置参数后生成预览")
             return
         # 居中绘制
         pm_w, pm_h = self._preview_pixmap.width(), self._preview_pixmap.height()
@@ -149,8 +263,13 @@ class PreviewCanvas(QWidget):
             font = p.font()
             font.setPointSize(8)
             p.setFont(font)
+            tip = "预览为低分辨率代理图"
+            if self._is_rendering:
+                tip += "（正在渲染全分辨率…）"
+            else:
+                tip += "，保存时会渲染全分辨率"
             p.drawText(
                 self.rect().adjusted(5, 5, -5, -5),
                 Qt.AlignTop | Qt.AlignRight,
-                "预览为低分辨率代理图，保存时会渲染全分辨率"
+                tip
             )
