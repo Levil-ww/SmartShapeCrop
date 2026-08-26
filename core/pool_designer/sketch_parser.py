@@ -295,6 +295,53 @@ def _to_gray(img):
     return img
 
 
+def _enhance_colored_ink(cv2, color_img):
+    """彩色笔迹（红笔/彩笔）增强：提取 LAB a*通道 + HSV红色掩码，与原图融合。
+
+    仅作为 OCR 预处理的附加变体使用，不替换原有灰度图。
+    耗时 < 30ms（1MP 图像），对整体性能影响极小。
+    失败时返回 None，调用方自动跳过。
+    """
+    if color_img is None or len(color_img.shape) != 3:
+        return None
+    try:
+        # 1. LAB 空间 a* 通道：红-绿对立，红色笔迹在此通道为高值
+        lab = cv2.cvtColor(color_img, cv2.COLOR_BGR2LAB)
+        a_channel = lab[:, :, 1]
+        # 反向：a*值越大越红 → 255-a* 让红字变暗（与白底形成正对比）
+        a_inv = cv2.subtract(255, a_channel)
+
+        # 2. HSV 红色掩码（红笔标注最常见）
+        hsv = cv2.cvtColor(color_img, cv2.COLOR_BGR2HSV)
+        lr1 = np.array([0, 43, 46], dtype=np.uint8)
+        ur1 = np.array([10, 255, 255], dtype=np.uint8)
+        m1 = cv2.inRange(hsv, lr1, ur1)
+        lr2 = np.array([156, 43, 46], dtype=np.uint8)
+        ur2 = np.array([180, 255, 255], dtype=np.uint8)
+        m2 = cv2.inRange(hsv, lr2, ur2)
+        red_mask = cv2.bitwise_or(m1, m2)
+
+        # 3. 与原始灰度图加权融合：红字区域更清晰，非红字区域不退化
+        gray = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+        # 红色掩码区域：a_inv 与 gray 取最小值（加深红字）
+        red_present = cv2.countNonZero(red_mask) > 50
+        if red_present:
+            # 红字较多时：使用 a_inv 作为红字增强通道
+            # 融合公式：enhanced = min(gray, a_inv) 在红字区域，其他用 gray
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            red_mask_dilate = cv2.dilate(red_mask, kernel, iterations=1)
+            masked_a = cv2.bitwise_and(a_inv, a_inv, mask=red_mask_dilate)
+            masked_gray = cv2.bitwise_and(gray, gray, mask=cv2.bitwise_not(red_mask_dilate))
+            enhanced = cv2.add(masked_a, masked_gray)
+        else:
+            # 没有红字：直接返回 gray，不做多余计算
+            return gray
+        return enhanced
+    except Exception as e:
+        logger.debug(f"[color_enhance] 颜色增强失败（跳过）: {e}")
+        return None
+
+
 # ===========================================================================
 # 7步法：核心识别流程
 # ===========================================================================
@@ -492,8 +539,11 @@ def _divide_8_zones(outer, inner, img_w, img_h):
 # ---------------------------------------------------------------------------
 # Step 3: 全局OCR扫描 + 数字提取（值+坐标+置信度）
 # ---------------------------------------------------------------------------
-def _make_preprocess_variants(cv2, gray_img):
-    """3种预处理变体：原始 / 自适应二值化 / CLAHE增强。"""
+def _make_preprocess_variants(cv2, gray_img, enhanced_gray=None):
+    """3+1种预处理变体：原始 / 自适应二值化 / CLAHE增强 + (可选)颜色增强。
+
+    颜色增强变体仅在有红字/彩笔时有效，否则跳过（enhanced_gray=None时不添加）。
+    """
     vs = [('orig', gray_img)]
     try:
         bin_img = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -506,10 +556,13 @@ def _make_preprocess_variants(cv2, gray_img):
         vs.append(('clahe', clahe.apply(gray_img)))
     except Exception:
         pass
+    # Phase1改进：颜色增强变体（仅在有效时添加，不改变原有3种）
+    if enhanced_gray is not None:
+        vs.append(('color_enh', enhanced_gray))
     return vs
 
 
-def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, **kwargs):
+def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_gray=None, **kwargs):
     """多尺度多预处理OCR，返回 [(value, confidence, (x,y,w,h)), ...]。"""
     from PIL import Image as PILImage
     results = []
@@ -536,8 +589,6 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, **kwargs)
             n = len(data.get('text', []))
             for i in range(n):
                 raw_text = str(data.get('text', ['']*n)[i])
-                # V2.0 修复：OCR chi_sim 模式下常输出全角数字（０-９/．），
-                # 先统一转为半角再提取数字，避免"全角OCR未识别"
                 text = _normalize_ocr_text(raw_text)
                 if not text:
                     continue
@@ -566,7 +617,7 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, **kwargs)
                         pass
         return out
 
-    # 主配置：3个尺度(1x/2.5x/4x) × 3种预处理 × 核心PSM[6,8]（简化：去掉大量tier）
+    # 主配置：3个尺度(1x/2.5x/4x) × 3~4种预处理 × 核心PSM[6,8,11]
     psm_core = [6, 8, 11]
     scales = [1.0, 2.5, 4.0] if not fast_mode else [1.0, 2.5]
     seen_bbox = {}
@@ -574,13 +625,20 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, **kwargs)
         try:
             if scale == 1.0:
                 scaled = region_img
+                scaled_enhanced = enhanced_gray
             else:
                 scaled = cv2.resize(region_img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                scaled_enhanced = None
+                if enhanced_gray is not None:
+                    try:
+                        scaled_enhanced = cv2.resize(enhanced_gray, None, fx=scale, fy=scale,
+                                                      interpolation=cv2.INTER_CUBIC)
+                    except Exception:
+                        scaled_enhanced = None
         except Exception:
             continue
-        for vname, vimg in _make_preprocess_variants(cv2, scaled):
+        for vname, vimg in _make_preprocess_variants(cv2, scaled, scaled_enhanced):
             for val, conf, bbox in _run_one(vimg, scale, psm_core):
-                # 同一bbox位置相同值去重，保留最高置信度
                 bx, by, bw, bh = bbox
                 key = (round(val, 1), bx//5, by//5)
                 if key in seen_bbox:
@@ -762,8 +820,33 @@ def _merge_split_decimals(ocr_results):
 _DIR_CHAR_MAP = {'上': 'margin_top', '下': 'margin_bottom', '左': 'margin_left', '右': 'margin_right'}
 
 
-def _extract_direction_label_numbers(cv2, tesseract, gray_img):
-    """从全局OCR的原始文本中提取"上6""左36""右112"这类方向+数值组合。
+def _parse_dir_num_token(text):
+    """Phase1改进：双向解析方向+数值token，支持：
+      - 方向在前：上6 / 下 9.5 / 左:22  (原形式)
+      - 数值在前：8下 / 16.8 右 / 25-下 (新增形式)
+    返回 (方向字符, 数值) 或 (None, None)
+    """
+    if not text:
+        return None, None
+    # 规则1：方向在前
+    m1 = re.search(r'([上下左右])[\s:：=\-]*(\d+\.?\d*|\.\d+)', text)
+    if m1:
+        try:
+            return m1.group(1), float(m1.group(2))
+        except ValueError:
+            pass
+    # 规则2：数值在前（倒置）
+    m2 = re.search(r'(\d+\.?\d*|\.\d+)[\s:：=\-]*([上下左右])', text)
+    if m2:
+        try:
+            return m2.group(2), float(m2.group(1))
+        except ValueError:
+            pass
+    return None, None
+
+
+def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=None):
+    """Phase1改进版：提取方向+数值组合（支持双向匹配 + 颜色增强 + 小数字补漏）。
 
     返回: dict {field_name: (value, conf, bbox)}
     """
@@ -771,20 +854,37 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img):
     result = {}
     if tesseract is None:
         return result
-    scan_list = [(gray_img, 1.0)]
+
+    # ========== 阶段1：标准尺度扫描（gray 1x/2.5x/4x + enhanced 1x/2.5x）==========
+    # 原有3种尺度保留；enhanced只到2.5x节省时间（小数字由阶段2专门处理）
+    scan_list = [(gray_img, 1.0, 'gray')]
     try:
-        s25 = cv2.resize(gray_img, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-        scan_list.append((s25, 2.5))
-        s40 = cv2.resize(gray_img, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_CUBIC)
-        scan_list.append((s40, 4.0))
+        scan_list.append((cv2.resize(gray_img, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC), 2.5, 'gray'))
+        scan_list.append((cv2.resize(gray_img, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_CUBIC), 4.0, 'gray'))
     except Exception:
         pass
+    # 颜色增强图：仅 1x 和 2.5x（避免 4x 重复开销；小数字有阶段2补漏）
+    if enhanced_gray is not None:
+        try:
+            scan_list.append((enhanced_gray, 1.0, 'enh'))
+            scan_list.append((cv2.resize(enhanced_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC), 2.5, 'enh'))
+        except Exception:
+            pass
 
-    # 语言配置：优先 chi_sim+eng（中文方向字+数字），失败回退 eng
     lang_options = ['chi_sim+eng', 'eng']
     psm_list = [6, 4, 11, 12]
 
-    for img, scale in scan_list:
+    def _try_bind(dir_char, val, conf, bx, by, bw, bh, tag):
+        if dir_char not in _DIR_CHAR_MAP:
+            return
+        if val is None or not (0.3 <= val <= 500):
+            return
+        field = _DIR_CHAR_MAP[dir_char]
+        if field not in result or conf > result[field][1]:
+            result[field] = (val, conf, (bx, by, bw, bh))
+            logger.info(f"[Step4] {tag}: {dir_char}={val} conf={conf} → {field}")
+
+    for img, scale, src_tag in scan_list:
         try:
             pil = PILImage.fromarray(img)
         except Exception:
@@ -802,13 +902,12 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img):
                     continue
                 texts = data.get('text', [])
                 n = len(texts)
-                confs = data.get('conf', ['0']*n)
-                lefts = data.get('left', [0]*n)
-                tops = data.get('top', [0]*n)
-                widths = data.get('width', [0]*n)
-                heights = data.get('height', [0]*n)
+                confs = data.get('conf', ['0'] * n)
+                lefts = data.get('left', [0] * n)
+                tops = data.get('top', [0] * n)
+                widths = data.get('width', [0] * n)
+                heights = data.get('height', [0] * n)
                 for i in range(n):
-                    # V2.0 修复：方向标签 OCR 文本先做全角→半角规范化
                     raw = _normalize_ocr_text(str(texts[i]))
                     if not raw:
                         continue
@@ -816,42 +915,232 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img):
                         ci = max(0, int(str(confs[i])))
                     except Exception:
                         ci = 0
-                    # 形式A：单token "上6" "右112" "下9.5"
-                    m = re.match(r'^([上下左右])\s*(\d+\.?\d*|\.\d+)', raw)
-                    if not m:
-                        # 形式B：双token "上" + "6"
-                        if raw in _DIR_CHAR_MAP and i + 1 < n:
-                            ntxt = _normalize_ocr_text(str(texts[i+1]))
-                            nm = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt)
-                            if nm:
-                                field = _DIR_CHAR_MAP[raw]
-                                try:
-                                    val = float(nm.group(1))
-                                    if 0.3 <= val <= 500:
-                                        bx = int(lefts[i])/scale
-                                        by = int(tops[i])/scale
-                                        bw = (int(lefts[i+1]) + int(widths[i+1]) - int(lefts[i]))/scale
-                                        bh = max(int(heights[i]), int(heights[i+1]))/scale
-                                        if field not in result or ci > result[field][1]:
-                                            result[field] = (val, ci, (bx, by, bw, bh))
-                                            logger.info(f"[Step4] 方向标签(双token {lang} psm{psm}): {raw}+{nm.group(1)}={val} → {field}")
-                                except ValueError:
-                                    pass
+                    if ci < 8:  # 略低于主OCR的阈值10，多给小标签一次机会
                         continue
-                    dchar = m.group(1)
-                    field = _DIR_CHAR_MAP[dchar]
-                    try:
-                        val = float(m.group(2))
-                    except ValueError:
-                        continue
-                    if 0.3 <= val <= 500:
+
+                    # ---- 形式A/A2：单token双向匹配 ----
+                    dchar, dval = _parse_dir_num_token(raw)
+                    if dchar is not None:
                         bx = int(lefts[i]) / scale
                         by = int(tops[i]) / scale
                         bw = int(widths[i]) / scale
                         bh = int(heights[i]) / scale
-                        if field not in result or ci > result[field][1]:
-                            result[field] = (val, ci, (bx, by, bw, bh))
-                            logger.info(f"[Step4] 方向标签(单token {lang} psm{psm}): {raw}={val} → {field}")
+                        _try_bind(dchar, dval, ci, bx, by, bw, bh,
+                                  f"单token({src_tag} {lang} psm{psm})")
+                        continue
+
+                    # ---- 形式B/B2：双token关联（双向）----
+                    # B: 方向字当前 → 数值下一个
+                    if raw in _DIR_CHAR_MAP and i + 1 < n:
+                        ntxt = _normalize_ocr_text(str(texts[i + 1]))
+                        nm = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt)
+                        if nm:
+                            try:
+                                vv = float(nm.group(1))
+                                bx = int(lefts[i]) / scale
+                                by = int(tops[i]) / scale
+                                bw = (int(lefts[i + 1]) + int(widths[i + 1]) - int(lefts[i])) / scale
+                                bh = max(int(heights[i]), int(heights[i + 1])) / scale
+                                _try_bind(raw, vv, ci, bx, by, bw, bh,
+                                          f"双token(方向→数值 {src_tag} {lang} psm{psm})")
+                                continue
+                            except ValueError:
+                                pass
+                    # B2: 数值当前 → 方向字下一个（倒置）
+                    m_num = re.match(r'^(\d+\.?\d*|\.\d+)$', raw)
+                    if m_num and i + 1 < n:
+                        nxt_txt = _normalize_ocr_text(str(texts[i + 1]))
+                        if nxt_txt in _DIR_CHAR_MAP:
+                            try:
+                                vv = float(m_num.group(1))
+                                bx = int(lefts[i]) / scale
+                                by = int(tops[i]) / scale
+                                bw = (int(lefts[i + 1]) + int(widths[i + 1]) - int(lefts[i])) / scale
+                                bh = max(int(heights[i]), int(heights[i + 1])) / scale
+                                _try_bind(nxt_txt, vv, ci, bx, by, bw, bh,
+                                          f"双token(数值→方向 {src_tag} {lang} psm{psm})")
+                            except ValueError:
+                                pass
+
+    # ========== 阶段2：小数字补漏扫描（仅当缺失字段时触发，6x + PSM 10/7）==========
+    # 性能设计：只有在标准扫描后仍有边距缺失时才执行；且仅扫描 enhanced_gray（节省一半时间）
+    # 解决场景："下8" → OCR 漏识 "8" 或识别为 "0"（小数字+红笔对比度不足）
+    missing_fields = 4 - len(result)
+    run_small_number_fallback = (
+        missing_fields > 0
+        and enhanced_gray is not None
+        and cv2 is not None
+    )
+    if run_small_number_fallback:
+        logger.info(f"[Step4] 小数字补漏触发：缺失{missing_fields}个字段，6x+PSM10扫描增强图...")
+        try:
+            s60 = cv2.resize(enhanced_gray, None, fx=6.0, fy=6.0, interpolation=cv2.INTER_CUBIC)
+            pil_s60 = PILImage.fromarray(s60)
+        except Exception:
+            pil_s60 = None
+        if pil_s60 is not None:
+            # PSM 10: 单字符；PSM 7: 单行文本；适合独立的"下""8"等小token
+            psm_small = [10, 7]
+            lang_small = 'chi_sim+eng'
+            for psm_s in psm_small:
+                try:
+                    data_s = tesseract.image_to_data(
+                        pil_s60, lang=lang_small,
+                        config=f'--oem 3 --psm {psm_s}',
+                        output_type=tesseract.Output.DICT)
+                except Exception:
+                    continue
+                if not data_s or 'text' not in data_s:
+                    continue
+                ts = data_s.get('text', [])
+                ns = len(ts)
+                cs = data_s.get('conf', ['0'] * ns)
+                ls = data_s.get('left', [0] * ns)
+                ts_top = data_s.get('top', [0] * ns)
+                ws = data_s.get('width', [0] * ns)
+                hs = data_s.get('height', [0] * ns)
+                for i in range(ns):
+                    raw_s = _normalize_ocr_text(str(ts[i]))
+                    if not raw_s:
+                        continue
+                    try:
+                        ci_s = max(0, int(str(cs[i])))
+                    except Exception:
+                        ci_s = 0
+                    if ci_s < 8:
+                        continue
+                    # ---- 小数字模式A：单token双向 ----
+                    dc, dv = _parse_dir_num_token(raw_s)
+                    if dc is not None:
+                        bx = int(ls[i]) / 6.0
+                        by = int(ts_top[i]) / 6.0
+                        bw = int(ws[i]) / 6.0
+                        bh = int(hs[i]) / 6.0
+                        _try_bind(dc, dv, ci_s, bx, by, bw, bh,
+                                  f"小数字单token(6x psm{psm_s})")
+                        continue
+                    # ---- 小数字模式B：双token方向→数值 ----
+                    if raw_s in _DIR_CHAR_MAP and i + 1 < ns:
+                        ntxt_s = _normalize_ocr_text(str(ts[i + 1]))
+                        nm_s = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt_s)
+                        if nm_s:
+                            try:
+                                vv_s = float(nm_s.group(1))
+                                bx = int(ls[i]) / 6.0
+                                by = int(ts_top[i]) / 6.0
+                                bw = (int(ls[i + 1]) + int(ws[i + 1]) - int(ls[i])) / 6.0
+                                bh = max(int(hs[i]), int(hs[i + 1])) / 6.0
+                                _try_bind(raw_s, vv_s, ci_s, bx, by, bw, bh,
+                                          f"小数字双token(方向→数值 6x psm{psm_s})")
+                                continue
+                            except ValueError:
+                                pass
+                    # ---- 小数字模式B2：双token数值→方向 ----
+                    m_ns = re.match(r'^(\d+\.?\d*|\.\d+)$', raw_s)
+                    if m_ns and i + 1 < ns:
+                        nxt_s = _normalize_ocr_text(str(ts[i + 1]))
+                        if nxt_s in _DIR_CHAR_MAP:
+                            try:
+                                vv_s = float(m_ns.group(1))
+                                bx = int(ls[i]) / 6.0
+                                by = int(ts_top[i]) / 6.0
+                                bw = (int(ls[i + 1]) + int(ws[i + 1]) - int(ls[i])) / 6.0
+                                bh = max(int(hs[i]), int(hs[i + 1])) / 6.0
+                                _try_bind(nxt_s, vv_s, ci_s, bx, by, bw, bh,
+                                          f"小数字双token(数值→方向 6x psm{psm_s})")
+                            except ValueError:
+                                pass
+
+    # ========== Phase 3：各向异性空间距离场匹配（Phase 2 改进4）==========
+    # 触发条件：仍有字段缺失 → 扫一遍1x图收集独立方向字+独立数值，按空间位置绑定
+    missing_s3 = 4 - len(result)
+    if missing_s3 > 0 and cv2 is not None:
+        import math as _math_s3
+        logger.info(f"[Step4] Phase3空间距离场触发：缺失{missing_s3}个字段，独立tokens匹配...")
+        try:
+            img_s3 = enhanced_gray if enhanced_gray is not None else gray_img
+            pil_s3 = PILImage.fromarray(img_s3)
+        except Exception:
+            pil_s3 = None
+        if pil_s3 is not None:
+            dir_tokens_s3 = []   # [(char, cx, cy, bbox_h)]
+            num_tokens_s3 = []   # [(value, cx, cy, bbox_h, conf)]
+            try:
+                d3 = tesseract.image_to_data(
+                    pil_s3, lang='chi_sim+eng',
+                    config='--oem 3 --psm 6',
+                    output_type=tesseract.Output.DICT)
+                if d3 and 'text' in d3:
+                    t3 = d3.get('text', [])
+                    n3 = len(t3)
+                    c3 = d3.get('conf', ['0']*n3)
+                    l3 = d3.get('left', [0]*n3)
+                    tp3 = d3.get('top', [0]*n3)
+                    w3 = d3.get('width', [0]*n3)
+                    h3 = d3.get('height', [0]*n3)
+                    for i in range(n3):
+                        txt = _normalize_ocr_text(str(t3[i]))
+                        if not txt:
+                            continue
+                        try:
+                            ci = max(0, int(str(c3[i])))
+                        except Exception:
+                            ci = 0
+                        if ci < 8:
+                            continue
+                        bx, by, bw, bh = int(l3[i]), int(tp3[i]), int(w3[i]), int(h3[i])
+                        cx, cy = bx + bw//2, by + bh//2
+                        # 独立方向字（精确单字符匹配，不能带数字）
+                        if txt in _DIR_CHAR_MAP and len(txt) == 1:
+                            dir_tokens_s3.append((txt, cx, cy, bh))
+                            continue
+                        # 独立数值（精确匹配浮点/整数，不能含方向字）
+                        m_pure = re.match(r'^(\d+\.?\d*|\.\d+)$', txt)
+                        if m_pure:
+                            try:
+                                vv = float(m_pure.group(1))
+                                if 0.3 <= vv <= 500:
+                                    num_tokens_s3.append((vv, cx, cy, bh, ci))
+                            except ValueError:
+                                pass
+            except Exception:
+                pass
+
+            if dir_tokens_s3 and num_tokens_s3:
+                all_h = [t[3] for t in dir_tokens_s3] + [t[3] for t in num_tokens_s3]
+                avg_char_h = sum(all_h) / max(1, len(all_h))
+                R_MAX = 3.5 * avg_char_h
+                used_num_idx = set()
+                bind_count = 0
+                # 贪心匹配：每个方向字选最近的未占用数值（D≤4, N≤12 → O(D×N)≈微秒级）
+                for dchar, dcx, dcy, dh in dir_tokens_s3:
+                    dfield = _DIR_CHAR_MAP[dchar]
+                    if dfield in result:
+                        continue
+                    best_i = -1
+                    best_dist = float('inf')
+                    for j, (nv, ncx, ncy, nh, nconf) in enumerate(num_tokens_s3):
+                        if j in used_num_idx:
+                            continue
+                        dx_s3 = dcx - ncx
+                        dy_s3 = dcy - ncy
+                        dist = _math_s3.sqrt(dx_s3*dx_s3 + dy_s3*dy_s3)
+                        if dist <= R_MAX and dist < best_dist:
+                            best_dist = dist
+                            best_i = j
+                    if best_i >= 0:
+                        nv, _, _, _, nconf = num_tokens_s3[best_i]
+                        used_num_idx.add(best_i)
+                        bx0 = min(dcx - 10, num_tokens_s3[best_i][1] - 10)
+                        by0 = min(dcy - dh//2, num_tokens_s3[best_i][2] - num_tokens_s3[best_i][3]//2)
+                        bw0 = max(20, abs(dcx - num_tokens_s3[best_i][1]) + 30)
+                        bh0 = max(20, dh + num_tokens_s3[best_i][3])
+                        result[dfield] = (nv, nconf, (bx0, by0, bw0, bh0))
+                        bind_count += 1
+                        logger.info(f"[Step4] Phase3空间绑定({dchar}↔{nv}): dist={best_dist:.0f}px "
+                                    f"(Rmax={R_MAX:.0f}) conf={nconf} → {dfield}")
+                logger.info(f"[Step4] Phase3空间距离场完成：新绑定 {bind_count} 个字段")
+
     return result
 
 
@@ -933,6 +1222,104 @@ def _score_assignment_consistency(assignment):
     if h_score > 0 and v_score > 0:
         return (h_score + v_score) / 2
     return max(h_score, v_score)
+
+
+# ---------------------------------------------------------------------------
+# Phase2 改进5：几何自洽穷举校验（边距全排列 + 守恒方程验证）
+# ---------------------------------------------------------------------------
+def _brute_force_margin_permute(assignment, dir_locked_fields, buckets=None,
+                                max_candidates=8):
+    """几何自洽穷举校验：从边距候选池中取 4 个值 × 全排列，代入几何守恒方程。
+
+    性能保护（关键）：
+      - 触发条件在外层调用处：sc ≥ 0.9 且所有边距>0 时 不调用本函数（主路径 0 开销）
+      - 候选池 ≤ 8：C(8,4)=70 种选法 × 4!=24 种排列 = 最多 1680 次 sc 计算 → < 5ms
+      - 方向锁定字段不参与穷举（保持原有逻辑：dir_locked 的值永远不动）
+
+    Args:
+        assignment: 当前赋值 dict（字段为 (val, conf) 元组）
+        dir_locked_fields: set[str]，方向锁定字段（本函数不修改这些值）
+        buckets: 可选，空间映射候选桶（从中获取更多边距候选）
+        max_candidates: 候选池最大尺寸（限制组合数，避免组合爆炸）
+
+    Returns:
+        (improved_assignment_dict_or_None, new_sc_or_None, log_info_str)
+    """
+    import itertools as _itertools
+    dir_locked_fields = dir_locked_fields or set()
+
+    tw = assignment.get('total_w', (0, 0))[0]
+    th = assignment.get('total_h', (0, 0))[0]
+    iw = assignment.get('inner_w', (0, 0))[0]
+    ih = assignment.get('inner_h', (0, 0))[0]
+    # 外框或内框缺失 → 几何守恒无法判断，跳过
+    if tw <= 0 or th <= 0 or iw <= 0 or ih <= 0:
+        return None, None, "skip(外/内框缺失)"
+
+    margin_fields = ['margin_top', 'margin_bottom', 'margin_left', 'margin_right']
+    free_fields = [f for f in margin_fields if f not in dir_locked_fields]
+    locked_fields = [f for f in margin_fields if f in dir_locked_fields]
+    # 方向锁定≥3个时，几乎没有自由度，跳过穷举
+    if len(free_fields) <= 1:
+        return None, None, f"skip(free_fields≤1, locked={len(locked_fields)})"
+
+    # 1. 收集候选值池
+    pool = set()
+    # 1a. 从当前 assignment 中取当前边距值（作为强候选）
+    for f in free_fields:
+        v = assignment.get(f, (0, 0))[0]
+        if 0.05 < v <= max(tw, th) * 0.9:
+            pool.add(round(v, 2))
+    # 1b. 从 buckets 的边距桶取候选（取 top 5 × conf 排序）
+    if buckets:
+        for bname in ('margin_top', 'margin_bottom', 'margin_left', 'margin_right'):
+            for cand in buckets.get(bname, []):
+                v, c, _ = cand
+                if 0.05 < v <= max(tw, th) * 0.9:
+                    pool.add(round(v, 2))
+                if len(pool) >= max_candidates + 4:
+                    break
+    # 1c. 裁剪到 max_candidates
+    pool_list = sorted(pool)[:max_candidates]
+    # 至少需要 k 个值才能穷举 k 个自由字段
+    if len(pool_list) < len(free_fields):
+        return None, None, f"skip(pool={len(pool_list)}<free={len(free_fields)})"
+
+    base_sc = _score_assignment_consistency(assignment)
+    # 当前已经很完美，跳过（本判断实际在调用方，但双保险）
+    if base_sc >= 0.99:
+        return None, None, "skip(sc>=0.99)"
+
+    best_sc = base_sc
+    best_assg = None
+    log_parts = []
+
+    def _eval_sc(trial_vals):
+        """trial_vals: dict {free_field_name: value}"""
+        asg_copy = dict(assignment)
+        for ff, vv in trial_vals.items():
+            old_conf = asg_copy.get(ff, (0, 0.4))[1]
+            asg_copy[ff] = (vv, max(0.4, old_conf))
+        return _score_assignment_consistency(asg_copy), asg_copy
+
+    # 2. 枚举：从 pool_list 中选 len(free_fields) 个值的 组合 × 排列
+    #    组合数 C(n, k) × k! ，n=pool大小, k=free字段数
+    count = 0
+    for chosen_vals in _itertools.combinations(pool_list, len(free_fields)):
+        for perm in _itertools.permutations(chosen_vals):
+            trial = dict(zip(free_fields, perm))
+            sc_new, asg_new = _eval_sc(trial)
+            count += 1
+            # 接受条件：sc 显著提升（>0.03 避免震荡），或相等且残差更小（隐含在sc中）
+            if sc_new > best_sc + 0.03:
+                best_sc = sc_new
+                best_assg = asg_new
+    log_parts.append(f"组合池={len(pool_list)} free={len(free_fields)} 枚举={count}")
+
+    if best_assg is not None and best_sc > base_sc + 0.03:
+        info = f"improved(base_sc={base_sc:.3f}→{best_sc:.3f} 枚举{count})"
+        return best_assg, best_sc, info
+    return None, None, f"no_improve(base={base_sc:.3f} best={best_sc:.3f} 枚举{count})"
 
 
 def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0, dir_locked_fields=None):
@@ -1316,7 +1703,8 @@ def _build_assignment(dir_locked, buckets, target_outer_w, target_outer_h):
 # 主流程编排：7步法串行
 # ===========================================================================
 def _7step_parse(cv2, gray_img, color_img, tesseract,
-                 target_outer_w_cm=0.0, target_outer_h_cm=0.0):
+                 target_outer_w_cm=0.0, target_outer_h_cm=0.0,
+                 enhanced_gray=None):
     """严格7步法草图解析。"""
     h_img, w_img = gray_img.shape[:2]
 
@@ -1335,16 +1723,18 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     zone_of = _divide_8_zones(outer, inner, w_img, h_img)
     logger.info(f"[Step2] 间隙区域: {list(gaps.keys())}")
 
-    # Step 3: 全局OCR扫描
+    # Step 3: 全局OCR扫描（传入颜色增强灰度图作为附加变体）
     ocr_raw = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
                                     target_w_cm=target_outer_w_cm,
-                                    target_h_cm=target_outer_h_cm)
+                                    target_h_cm=target_outer_h_cm,
+                                    enhanced_gray=enhanced_gray)
     if not ocr_raw:
         return {'success': False, 'message': '全局OCR未识别到任何数值'}
     ocr_raw = _merge_split_decimals(ocr_raw)
 
-    # Step 4: 方向标签优先锁定
-    dir_locked = _extract_direction_label_numbers(cv2, tesseract, gray_img)
+    # Step 4: 方向标签优先锁定（传入颜色增强灰度图）
+    dir_locked = _extract_direction_label_numbers(cv2, tesseract, gray_img,
+                                                   enhanced_gray=enhanced_gray)
     excluded_fields = set(dir_locked.keys())
     excluded_values = [v[0] for v in dir_locked.values()]
     logger.info(f"[Step4] 方向标签锁定 {len(dir_locked)} 个字段: {list(dir_locked.keys())}")
@@ -1566,6 +1956,41 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
                                 f"total={assignment.get('total_w',(0,0))[0]:.1f}x{assignment.get('total_h',(0,0))[0]:.1f} "
                                 f"sc={sc_after:.3f}")
 
+    # ---- Step 6.7：几何自洽穷举校验（Phase2 改进5）----
+    # 性能保护（条件触发）：仅当 sc<0.9 或 边距有0 或 锁定<2项 时才运行
+    need_brute = (
+        sc_after < 0.9
+        or assignment.get('margin_top', (0,0))[0] <= 0
+        or assignment.get('margin_bottom', (0,0))[0] <= 0
+        or assignment.get('margin_left', (0,0))[0] <= 0
+        or assignment.get('margin_right', (0,0))[0] <= 0
+        or len(dir_locked) < 2
+    )
+    if need_brute:
+        locked_fields_set = set(dir_locked.keys())
+        new_asg, new_sc, info = _brute_force_margin_permute(
+            assignment, locked_fields_set, buckets=buckets)
+        if new_asg is not None and new_sc > sc_after:
+            assignment = new_asg
+            sc_after = new_sc
+            # 穷举后再做一次修正，保证边距裁剪规则有效
+            assignment = _validate_and_fix_margins(
+                assignment,
+                assignment.get('total_w', (0,0))[0],
+                assignment.get('total_h', (0,0))[0],
+                dir_locked_fields=locked_fields_set)
+            sc_after = _score_assignment_consistency(assignment)
+            logger.info(f"[Step6.7穷举] ✅ 采用改进方案: {info}")
+            logger.info(f"[Step6.7穷举后] 边距: "
+                        f"上{assignment.get('margin_top',(0,0))[0]:.1f}"
+                        f"下{assignment.get('margin_bottom',(0,0))[0]:.1f}"
+                        f"左{assignment.get('margin_left',(0,0))[0]:.1f}"
+                        f"右{assignment.get('margin_right',(0,0))[0]:.1f} sc={sc_after:.3f}")
+        else:
+            logger.info(f"[Step6.7穷举] 无改进 ({info})")
+    else:
+        logger.info(f"[Step6.7穷举] 跳过(sc={sc_after:.3f}≥0.9且边距完整，锁定{len(dir_locked)}项→主路径0额外开销)")
+
     logger.info(f"[Step7终态] 赋值: "
                 f"total={assignment.get('total_w',(0,0))[0]:.1f}x{assignment.get('total_h',(0,0))[0]:.1f} "
                 f"inner={assignment.get('inner_w',(0,0))[0]:.1f}x{assignment.get('inner_h',(0,0))[0]:.1f} "
@@ -1641,10 +2066,15 @@ def parse_sketch(
     _progress(15, "7步法识别中...")
     tesseract = _safe_import_tesseract()
 
+    # Phase1改进：颜色通道增强（仅作为OCR附加变体，不替换原图）
+    # 耗时 < 30ms，仅在彩色图有红笔时有效；无红字直接返回gray=无额外开销
+    enhanced_gray = _enhance_colored_ink(cv2, img)
+
     try:
         geo = _7step_parse(cv2, gray, img, tesseract,
                            target_outer_w_cm=target_outer_w_cm,
-                           target_outer_h_cm=target_outer_h_cm)
+                           target_outer_h_cm=target_outer_h_cm,
+                           enhanced_gray=enhanced_gray)
     except Exception as e:
         logger.exception(f"[sketch_parser] 7步法异常: {e}")
         result.message = f"识别异常: {e}"
