@@ -3,6 +3,9 @@ Pillow>=9.0.0
 numpy>=1.21.0
 psd-tools>=1.9.28
 opencv-python>=4.5.0
+# OCR（草图尺寸识别）—— 还需在系统中安装 Tesseract-OCR 引擎（含 chi_sim 中文语言包）。
+# 干净安装时必须包含此行，否则 sketch_parser 的 _safe_import_tesseract 会静默返回 None，OCR 失效。
+pytesseract>=0.3.10
 
 # 测试依赖（开发环境）
 pytest>=7.0.0

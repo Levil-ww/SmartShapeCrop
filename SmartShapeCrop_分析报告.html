@@ -162,18 +162,18 @@
   <td><b>已修复（2026-08-26）：</b>① <code>RectShape.to_int_tuple</code> 归一 x0≤x1,y0≤y1；② <code>inner_rect_px/outer_rect_px</code> 将 w/h clamp 到非负并告警；③ <code>fill_rect_mask</code>、<code>apply_rounded_corners_to_mask</code>、<code>fill_ellipse_mask</code> 加退化守卫 + 圆角半径 clamp。回归测试见 <code>tests/test_f1_inner_rect_crash.py</code>（11 项全过）。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F2</span></td><td><span class="sev s-high">高</span></td>
-  <td><b>requirements.txt 缺失 pytesseract</b><br><span class="loc">requirements.txt:1-6（README 表格却列出）</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F2</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>requirements.txt 缺失 pytesseract</b><br><span class="loc">requirements.txt</span></td>
   <td>干净安装后 <code>pip install -r requirements.txt</code> 不含 pytesseract，OCR 全局静默失效（仅“Python 包未安装”日志），草图识别功能不可用。</td>
-  <td>补充 <code>pytesseract&gt;=0.3.10</code>；并在 README/打包说明中明确需要系统 Tesseract 引擎。</td>
+  <td><b>已修复（2026-08-26）：</b>已在 requirements.txt 补充 <code>pytesseract&gt;=0.3.10</code>，并注明仍需系统 Tesseract-OCR 引擎（含 chi_sim 语言包）。回归测试见 <code>tests/test_f2_f3_fixes.py</code>。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F3</span></td><td><span class="sev s-high">高</span></td>
-  <td><b>sketch 先解码后校验（解炸弹顺序错）</b><br><span class="loc">sketch_parser.py:2201 _load_image 全量解码 → 2227 validate</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F3</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>sketch 先解码后校验（解炸弹顺序错）</b><br><span class="loc">sketch_parser.py parse_sketch 入口</span></td>
   <td><code>cv2.imread</code> 无像素上限，恶意/异常图在尺寸校验前已全量解码进内存，可能 OOM；该模块从未设 <code>Image.MAX_IMAGE_PIXELS</code>。</td>
-  <td>把 <code>validate_sketch_file</code> 提前到解码前（仅 <code>PIL.open</code> 读头）；并在模块内设置 <code>Image.MAX_IMAGE_PIXELS</code> 纵深防御。</td>
+  <td><b>已修复（2026-08-26）：</b>① <code>parse_sketch</code> 入口把 <code>validate_sketch_file</code>（仅 PIL 头信息读取，含 40MP 像素上限）提前到 <code>cv2.imread</code> 全量解码之前；② 模块顶部设置 <code>Image.MAX_IMAGE_PIXELS = 200_000_000</code> 作为 PIL 全量加载路径的二级防御（与 image_ops.py 一致）。回归测试见 <code>tests/test_f2_f3_fixes.py</code>。</td>
 </tr>
 
 <tr>
