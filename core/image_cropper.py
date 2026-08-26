@@ -508,6 +508,8 @@ def _build_multi_layer_corner_mask(
     border_layers: list[tuple[tuple[int, int, int], int]],
     nested_rects: list[tuple[int, int, int, int]] | None = None,
     protect_content: dict[str, bool] | bool = False,
+    bg_color: tuple[int, int, int] = (255, 255, 255),
+    content_ref_arr: np.ndarray | None = None,
 ) -> Image.Image:
     """
     构建多层边框动态圆角遮罩。[升级：嵌套矩形层感知 + 内容区保护]
@@ -537,6 +539,9 @@ def _build_multi_layer_corner_mask(
         nested_rects: 可选，预检测的嵌套矩形（从 detect_nested_rect_layers 得到），
                       None 则在内部自动检测
         protect_content: 是否保护内容区（仅裁切边框区域），默认 False
+        bg_color: 背景色 tuple(r,g,b)，用于 classify_gap_layers 间隙判定
+        content_ref_arr: 内容参考色 np.ndarray(3,) float64，用于 classify_gap_layers；
+                         None 则使用默认近似值
 
     Returns:
         L 模式遮罩（255=保留原图，0=裁掉/背景色）
@@ -559,19 +564,16 @@ def _build_multi_layer_corner_mask(
 
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
 
-    # [Fix 多余边框弧线 2026-08-21 v3] 使用 classify_gap_layers 统一判定
+    # [Fix INV-1 2026-08-27] 使用调用方传入的实际 bg_color 和 content_ref_arr
     #
-    # 修复前：此函数内部手写一套间隙检测（50+行），与 sector_render.py、
-    #   _post_cleanup_gap_regions.py 的检测逻辑不一致，导致
-    #   素锦等3层案例中 "米色中间层判为实心 + 深色内层判为间隙" 的反转错误
-    #   → 圆角黑边框消失 + 间隙残留弧形缺口。
+    # 修复前：硬编码 DEFAULT_BG_COLOR=(255,255,255) 和 content_ref_arr=None，
+    #   与 sector_render._redraw_border_on_corner() 的调用参数不一致，
+    #   导致 classify_gap_layers 判定结果反转（间隙层↔实心层），
+    #   出现"边框线有的多了有的不准确"的现象。
     #
-    # 修复后：唯一调用 classify_gap_layers，确保 3 处调用方判定一致。
-    #   无 bg_color/content_ref 传参时，classify_gap_layers 已设合理默认值。
-    #   bg_color 参数当前函数签名未提供，使用 DEFAULT_BG_COLOR=(255,255,255)。
-    from .config import DEFAULT_BG_COLOR
-    _bg_c = DEFAULT_BG_COLOR
-    is_gap_layer = classify_gap_layers(border_layers, bg_color=_bg_c, content_ref_arr=None)
+    # 修复后：使用调用方传入的 bg_color 和 content_ref_arr，
+    #   确保 _build_multi_layer_corner_mask 与 _redraw_border_on_corner 判定一致。
+    is_gap_layer = classify_gap_layers(border_layers, bg_color=bg_color, content_ref_arr=content_ref_arr)
     gap_layer_indices = {i for i, ig in enumerate(is_gap_layer) if ig}
 
     # [Fix v5] 计算累积深度（包含间隙层），用于精确计算径向位置
@@ -1381,24 +1383,53 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     if not corners_px:
         return img
 
+    # 计算 content_ref_arr（从图像中心采样内容参考色，与 sector_render 保持一致）
+    content_ref_arr = None
+    if img is not None:
+        img_arr = np.array(img, dtype=np.float64)
+        h_img, w_img = img_arr.shape[:2]
+        cx_start = int(w_img * 0.15)
+        cx_end = int(w_img * 0.85)
+        cy_start = int(h_img * 0.15)
+        cy_end = int(h_img * 0.85)
+        STEPS = 21
+        xs = np.linspace(cx_start, cx_end, STEPS, dtype=np.int64).clip(0, w_img - 1)
+        ys = np.linspace(cy_start, cy_end, STEPS, dtype=np.int64).clip(0, h_img - 1)
+        gx, gy = np.meshgrid(xs, ys)
+        samples = img_arr[gy, gx, :].reshape(-1, 3)
+        if samples.shape[0] > 0:
+            content_ref_arr = np.median(samples, axis=0)
+
     # 智能判断每个角是否需要保护内容区
-    # [Fix 2026-08-27] 启用保护模式：圆角只作用于边框区域，内部装饰保持直角形式
-    # - 边框区域（黑色外框等）被圆角化
-    # - 内容区域（米色装饰、文字等）保持直角
-    # - 边框被正确重绘，弧线清晰可见
+    # [Fix INV-3 2026-08-27] 仅当圆角半径 ≤ 2×边框总厚度时启用保护模式
+    #
+    # 修复前：所有角无条件设为 protect=True，导致：
+    #   - 大圆角时（如 r=20px, raw_depth=5px），T_plus=7px 的边框条带太窄，
+    #     超出条带的内容区像素不被裁切 → 边框线"多了"
+    #   - 同时保护模式跳过 nested_rects 恢复逻辑 → 内层边框缺口
+    #
+    # 修复后：遵循原始设计意图，仅当 r <= 2*raw_depth 时启用保护模式：
+    #   - r 较小（相对于边框厚度）→ 保护边框区域，内部装饰保持直角
+    #   - r 较大 → 正常圆角裁切，边框通过重绘机制恢复
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
     corner_protect_map: dict[str, bool] = {}
     for corner_key, r_px in corners_px.items():
         if r_px <= 0:
             corner_protect_map[corner_key] = False
             continue
-        # 保护模式：圆角只作用于边框区域，内部装饰保持直角
-        corner_protect_map[corner_key] = True
+        # [Fix INV-3] 仅当 r <= 2*raw_depth 时启用保护模式
+        if raw_depth > 0 and r_px <= 2 * raw_depth:
+            corner_protect_map[corner_key] = True
+        else:
+            corner_protect_map[corner_key] = False
 
     # 生成裁切 mask（per-corner protect_content）
+    # [Fix INV-1] 传递实际 bg_color 和 content_ref_arr，确保 classify_gap_layers 判定一致
     mask = _build_multi_layer_corner_mask(
         w, h, corners_px, border_layers, nested_rects=nested_rects,
-        protect_content=corner_protect_map
+        protect_content=corner_protect_map,
+        bg_color=bg_color,
+        content_ref_arr=content_ref_arr,
     )
 
     # 生成独立的 validity_mask 用于边框重绘
@@ -1576,8 +1607,11 @@ def crop_image(config: CropConfig) -> Image.Image:
 
     # 在裁剪前检测边框层（源图上检测更准确）
     pre_detected_layers = None
-    # [Fix 2026-08-26] simple_resize 现在用 contain 也有缩放了，同样需要边框层检测
-    if config.corners:
+    # [Fix 2026-08-26 结合8.21版] simple_resize = stretch（直接拉伸，无统一缩放比例），
+    #   源图边框按单轴 scale 缩放会失真 → 跳过预检测，改由 apply_border_only_corners
+    #   在拉伸后的图上自动检测（8.21版原逻辑，经实测预览正确）。
+    #   cover/contain/light_cover/auto 有统一等比 scale，预检测更准确。
+    if config.corners and mode != 'simple_resize':
         valid_corners = {k: v for k, v in config.corners.items() if v > 0}
         if valid_corners:
             # 在源图上检测边框层
@@ -1587,12 +1621,11 @@ def crop_image(config: CropConfig) -> Image.Image:
                 sw, sh = src.size
                 if mode in ('cover', 'auto', 'light_cover'):
                     scale = max(target_w_px / sw, target_h_px / sh)
-                elif mode in ('contain', 'simple_resize'):
-                    # simple_resize 现在按 contain 方式缩放（保持宽高比）
+                elif mode == 'contain':
                     scale = min(target_w_px / sw, target_h_px / sh)
                 else:
                     scale = 1.0
-                
+
                 # 按比例缩放边框层厚度
                 pre_detected_layers = [
                     (color, max(1, int(round(thickness * scale))))
@@ -1603,13 +1636,11 @@ def crop_image(config: CropConfig) -> Image.Image:
                     logger.info(f"  第{i+1}层: 厚度={thickness}px ({thickness * 2.54 / config.dpi:.2f}cm), 颜色={color}")
 
     if mode == 'simple_resize':
-        # [Fix 2026-08-26] simple_resize 原实现 src.resize((W,H)) = stretch 强制拉伸变形
-        # 当源图宽高比 ≠ 目标时（如椭圆图变鸡蛋形），形状严重失真
-        # 改为 contain：等比缩放 + 背景色填充留白，满足描述"不裁剪、不留白（指不裁剪），保持图片完整性"
-        # 保持宽高比不变形，椭圆仍是椭圆，方形仍是方形
-        cropped = fit_image_to_rect(src, target_w_px, target_h_px,
-                                    mode='contain', bg_color=bg_color,
-                                    quality='export')
+        # [Fix 2026-08-26 结合8.21版] simple_resize = 直接缩放到目标尺寸（stretch）
+        # 项目硬约束："simple_resize 不裁剪不留白" → 必须填满目标尺寸，contain 会留白白条
+        # stretch 在源图宽高比≠目标时有变形，但这是 simple_resize 模式的设计意图
+        # （用户选"简单缩放"即接受直接拉伸；需保持宽高比请用 cover/contain）
+        cropped = src.resize((target_w_px, target_h_px), Image.LANCZOS)
     elif mode == 'auto':
         cropped = _smart_crop(src, target_w_px, target_h_px, config.max_crop_ratio, bg_color)
     elif mode == 'light_cover':
