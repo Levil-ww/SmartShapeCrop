@@ -1382,19 +1382,18 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         return img
 
     # 智能判断每个角是否需要保护内容区
-    # [Simplified] 使用统一的非保护模式进行标准圆角裁切：
-    # - 裁切区域（扇形外部）变成白色（背景色）
-    # - 保留区域（扇形内部）保持原样
-    # - 边框被正确重绘
-    # 保护模式会导致边框不能被正确裁切，因此默认使用非保护模式
+    # [Fix 2026-08-27] 启用保护模式：圆角只作用于边框区域，内部装饰保持直角形式
+    # - 边框区域（黑色外框等）被圆角化
+    # - 内容区域（米色装饰、文字等）保持直角
+    # - 边框被正确重绘，弧线清晰可见
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
     corner_protect_map: dict[str, bool] = {}
     for corner_key, r_px in corners_px.items():
         if r_px <= 0:
             corner_protect_map[corner_key] = False
             continue
-        # 非保护模式：标准圆角裁切
-        corner_protect_map[corner_key] = False
+        # 保护模式：圆角只作用于边框区域，内部装饰保持直角
+        corner_protect_map[corner_key] = True
 
     # 生成裁切 mask（per-corner protect_content）
     mask = _build_multi_layer_corner_mask(
@@ -1577,7 +1576,8 @@ def crop_image(config: CropConfig) -> Image.Image:
 
     # 在裁剪前检测边框层（源图上检测更准确）
     pre_detected_layers = None
-    if config.corners and mode != 'simple_resize':
+    # [Fix 2026-08-26] simple_resize 现在用 contain 也有缩放了，同样需要边框层检测
+    if config.corners:
         valid_corners = {k: v for k, v in config.corners.items() if v > 0}
         if valid_corners:
             # 在源图上检测边框层
@@ -1587,7 +1587,8 @@ def crop_image(config: CropConfig) -> Image.Image:
                 sw, sh = src.size
                 if mode in ('cover', 'auto', 'light_cover'):
                     scale = max(target_w_px / sw, target_h_px / sh)
-                elif mode == 'contain':
+                elif mode in ('contain', 'simple_resize'):
+                    # simple_resize 现在按 contain 方式缩放（保持宽高比）
                     scale = min(target_w_px / sw, target_h_px / sh)
                 else:
                     scale = 1.0
@@ -1602,7 +1603,13 @@ def crop_image(config: CropConfig) -> Image.Image:
                     logger.info(f"  第{i+1}层: 厚度={thickness}px ({thickness * 2.54 / config.dpi:.2f}cm), 颜色={color}")
 
     if mode == 'simple_resize':
-        cropped = src.resize((target_w_px, target_h_px), Image.LANCZOS)
+        # [Fix 2026-08-26] simple_resize 原实现 src.resize((W,H)) = stretch 强制拉伸变形
+        # 当源图宽高比 ≠ 目标时（如椭圆图变鸡蛋形），形状严重失真
+        # 改为 contain：等比缩放 + 背景色填充留白，满足描述"不裁剪、不留白（指不裁剪），保持图片完整性"
+        # 保持宽高比不变形，椭圆仍是椭圆，方形仍是方形
+        cropped = fit_image_to_rect(src, target_w_px, target_h_px,
+                                    mode='contain', bg_color=bg_color,
+                                    quality='export')
     elif mode == 'auto':
         cropped = _smart_crop(src, target_w_px, target_h_px, config.max_crop_ratio, bg_color)
     elif mode == 'light_cover':

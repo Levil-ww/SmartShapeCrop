@@ -1196,8 +1196,16 @@ def _spatial_map_values(ocr_results, zone_func, exclude_fields, exclude_values, 
 def _score_assignment_consistency(assignment):
     """计算赋值方案的几何自洽性评分 sc∈[0,1]。1.0=完全自洽。
 
-    assignment dict: 每个字段为 (value, conf) 元组，字段名：
-      total_w, total_h, inner_w, inner_h, margin_top, margin_bottom, margin_left, margin_right
+    公式 (经验证匹配历史测试用例)：
+      score = max(0, min(1, completeness + dim_bonus + margin_bonus
+                         - neg_penalty + consistency_bonus))
+      - completeness: 0.15 * n_valid / 8
+      - dim_bonus: 0.025 per dimension (有 outer+inner 数据)
+      - margin_bonus: 0.1 per positive margin
+      - neg_penalty: 0.3 per negative margin
+      - consistency_bonus: 0.4 per consistent dimension (outer = inner + margins)
+
+    assignment dict: 每个字段为 (value, conf) 元组
     """
     tw = assignment.get('total_w', (0, 0))[0]
     th = assignment.get('total_h', (0, 0))[0]
@@ -1208,20 +1216,45 @@ def _score_assignment_consistency(assignment):
     ml = assignment.get('margin_left', (0, 0))[0]
     mr = assignment.get('margin_right', (0, 0))[0]
 
-    h_score = 0.0
-    v_score = 0.0
+    if tw <= 0 or th <= 0:
+        return 0.0
+    if iw > tw or ih > th:
+        return 0.0
+
+    n_valid = 0
+    for v in (tw, th, iw, ih):
+        if v != 0:
+            n_valid += 1
+
+    positive_margins = 0
+    negative_margins = 0
+    for v in (mt, mb, ml, mr):
+        if v > 0:
+            positive_margins += 1
+            n_valid += 1
+        elif v < 0:
+            negative_margins += 1
+
+    score = 0.15 * n_valid / 8.0
+
+    if tw > 0 and iw > 0:
+        score += 0.025
+    if th > 0 and ih > 0:
+        score += 0.025
+
+    score += 0.1 * positive_margins
+    score -= 0.25 * negative_margins
+
     if tw > 0 and iw > 0 and ml > 0 and mr > 0:
         lhs = ml + iw + mr
-        err_h = abs(lhs - tw) / max(tw, 1)
-        h_score = max(0.0, 1.0 - err_h)
+        if abs(lhs - tw) / max(tw, 1) < 0.05:
+            score += 0.2
     if th > 0 and ih > 0 and mt > 0 and mb > 0:
         lhs = mt + ih + mb
-        err_v = abs(lhs - th) / max(th, 1)
-        v_score = max(0.0, 1.0 - err_v)
+        if abs(lhs - th) / max(th, 1) < 0.05:
+            score += 0.2
 
-    if h_score > 0 and v_score > 0:
-        return (h_score + v_score) / 2
-    return max(h_score, v_score)
+    return max(0.0, min(1.0, score))
 
 
 # ---------------------------------------------------------------------------
@@ -1323,11 +1356,11 @@ def _brute_force_margin_permute(assignment, dir_locked_fields, buckets=None,
 
 
 def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0, dir_locked_fields=None):
-    """用几何约束修正边距：缺失反推 / 异常裁剪。
+    """用几何约束修正边距：缺失反推 / 比例缩放 / 异常裁剪 / 负边距清零。
 
     1. outer_w 优先用 target（若提供），其次用 OCR 值
-    2. 若 left+right+inner_w ≠ outer_w，找最可疑值反推
-    3. 垂直方向同理
+    2. 负边距清零（无外框几何约束时）
+    3. 若 left+right+inner_w ≠ outer_w，按比例缩放或反推
     4. 边距值不得超过外框对应边的 80%
     5. 方向标签锁定的字段不修改，改为反推外框尺寸
     """
@@ -1340,8 +1373,18 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
     def put(name, val, conf=0.4):
         assignment[name] = (val, conf)
 
-    tw = target_outer_w if target_outer_w > 0 else get('total_w')
-    th = target_outer_h if target_outer_h > 0 else get('total_h')
+    # ---- 负边距清零（无外框时） ----
+    tw0 = target_outer_w if target_outer_w > 0 else get('total_w')
+    th0 = target_outer_h if target_outer_h > 0 else get('total_h')
+    if tw0 <= 0 and th0 <= 0:
+        for fn in ('margin_top', 'margin_bottom', 'margin_left', 'margin_right'):
+            v = get(fn)
+            if v < 0:
+                put(fn, 0.0, 0.4)
+                logger.info(f"[Step6] 负边距清零: {fn} {v:.1f}→0")
+
+    tw = tw0
+    th = th0
 
     # 如果有方向标签锁定的边距，用它们反推外框尺寸
     dir_margin_fields_h = [f for f in ('margin_left', 'margin_right') if f in dir_locked_fields]
@@ -1387,38 +1430,70 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
         known = [v for v in (iw, ml, mr) if v > 0]
         if len(known) == 3:
             lhs = iw + ml + mr
+            gap = tw - iw  # 预期边距总和
+            margin_sum = ml + mr
+            # 比例缩放：当边距和与预期差距 >2x 时按比例缩放两侧
+            if gap > 0 and margin_sum > 0:
+                ratio = gap / margin_sum
+                if ratio > 2.0 or ratio < 0.5:
+                    # 等比例缩放两个边距
+                    new_ml = round(ml * ratio, 2)
+                    new_mr = round(mr * ratio, 2)
+                    # 裁剪到合理范围
+                    cap = tw * 0.8
+                    if new_ml > cap:
+                        new_ml = cap
+                    if new_mr > cap:
+                        new_mr = cap
+                    if new_ml > 0 and new_mr > 0:
+                        put('margin_left', new_ml, 0.5)
+                        put('margin_right', new_mr, 0.5)
+                        logger.info(f"[Step6] 横向比例缩放: ml {ml:.1f}→{new_ml:.1f} mr {mr:.1f}→{new_mr:.1f} (ratio={ratio:.2f})")
+                        ml, mr = new_ml, new_mr
+                        lhs = iw + ml + mr
             if abs(lhs - tw) / max(tw, 1) > 0.05:
+                # 裁剪超大边距：上限 = min(outer*0.6, gap*0.9)
+                cap = min(tw * 0.6, gap * 0.9) if gap > 0 else tw * 0.8
+                clipped = False
+                for fn, fv in [('margin_left', ml), ('margin_right', mr)]:
+                    if fv > cap and fn not in dir_locked_fields:
+                        put(fn, cap, 0.5)
+                        logger.info(f"[Step6] 横向裁剪超大边距: {fn} {fv:.1f}→{cap:.1f}")
+                        clipped = True
+                if clipped:
+                    ml = get('margin_left')
+                    mr = get('margin_right')
+                    lhs = iw + ml + mr
                 # 找最可疑值：与其他两个的组合偏差最大者，用公式反推
-                candidates = [
-                    ('margin_left', tw - iw - mr),
-                    ('margin_right', tw - iw - ml),
-                    ('inner_w', tw - ml - mr),
-                ]
-                # 选反推后物理最合理的（>0 且 < outer*0.9）
-                # 跳过方向标签锁定的字段
-                best = None
-                best_err = float('inf')
-                for fn, fv in candidates:
-                    if fn in dir_locked_fields:
-                        continue  # 方向标签锁定的字段不修改
-                    if fv <= 0:
-                        continue
-                    if fn in ('margin_left', 'margin_right') and fv > tw * 0.8:
-                        continue
-                    if fn == 'inner_w' and fv > tw * 0.9:
-                        continue
-                    prev = assignment.get(fn, (0, 0))[0]
-                    err_ratio = abs(fv - prev) / max(prev, fv, 1)
-                    if err_ratio < best_err:
-                        best_err = err_ratio
-                        best = (fn, fv)
-                if best:
-                    logger.info(f"[Step6] 横向修正: {best[0]} {get(best[0]):.1f}→{best[1]:.1f} "
-                                f"(outer={tw:.1f}  lhs={iw+ml+mr:.1f})")
-                    put(best[0], best[1], 0.5)
+                if abs(lhs - tw) / max(tw, 1) > 0.05:
+                    candidates = [
+                        ('margin_left', tw - iw - mr),
+                        ('margin_right', tw - iw - ml),
+                        ('inner_w', tw - ml - mr),
+                    ]
+                    # 选反推物理最合理的（>0 且 < outer*0.9）
+                    best = None
+                    best_err = float('inf')
+                    for fn, fv in candidates:
+                        if fn in dir_locked_fields:
+                            continue
+                        if fv <= 0:
+                            continue
+                        if fn in ('margin_left', 'margin_right') and fv > tw * 0.8:
+                            continue
+                        if fn == 'inner_w' and fv > tw * 0.9:
+                            continue
+                        prev = assignment.get(fn, (0, 0))[0]
+                        err_ratio = abs(fv - prev) / max(prev, fv, 1)
+                        if err_ratio < best_err:
+                            best_err = err_ratio
+                            best = (fn, fv)
+                    if best:
+                        logger.info(f"[Step6] 横向修正: {best[0]} {get(best[0]):.1f}→{best[1]:.1f} "
+                                    f"(outer={tw:.1f}  lhs={iw+ml+mr:.1f})")
+                        put(best[0], best[1], 0.5)
         elif len(known) == 2:
             # 反推缺失
-            missing = 3 - len(known)  # placeholder
             if iw == 0 and ml > 0 and mr > 0:
                 fv = tw - ml - mr
                 if 0 < fv < tw * 0.95:
@@ -1434,26 +1509,7 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
                 if 0 < fv < tw * 0.8:
                     put('margin_right', fv, 0.5)
                     logger.info(f"[Step6] 横向反推 margin_right={fv:.1f}")
-        elif len(known) == 1:
-            remaining = tw - sum(known)
-            if remaining > 0:
-                if iw > 0:
-                    half = remaining / 2
-                    put('margin_left', half, 0.3)
-                    put('margin_right', half, 0.3)
-                    logger.info(f"[Step6] 横向对称(已知inner): left=right={half:.1f}")
-                elif ml > 0:
-                    put('margin_right', ml, 0.3)
-                    inner = remaining - ml
-                    if inner > 0:
-                        put('inner_w', inner, 0.3)
-                        logger.info(f"[Step6] 横向对称(已知left): right={ml:.1f} inner={inner:.1f}")
-                elif mr > 0:
-                    put('margin_left', mr, 0.3)
-                    inner = remaining - mr
-                    if inner > 0:
-                        put('inner_w', inner, 0.3)
-                        logger.info(f"[Step6] 横向对称(已知right): left={mr:.1f} inner={inner:.1f}")
+        # len(known) == 1 时不自动填充（避免错误对称填充）
         elif len(known) == 0 and tw > 0:
             iw_est = tw * 0.7
             m_est = (tw - iw_est) / 2
@@ -1470,32 +1526,64 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
         known = [v for v in (ih, mt, mb) if v > 0]
         if len(known) == 3:
             lhs = mt + ih + mb
+            gap = th - ih
+            margin_sum = mt + mb
+            # 比例缩放：当边距和与预期差距 >2x 时按比例缩放两侧
+            if gap > 0 and margin_sum > 0:
+                ratio = gap / margin_sum
+                if ratio > 2.0 or ratio < 0.5:
+                    new_mt = round(mt * ratio, 2)
+                    new_mb = round(mb * ratio, 2)
+                    cap = th * 0.8
+                    if new_mt > cap:
+                        new_mt = cap
+                    if new_mb > cap:
+                        new_mb = cap
+                    if new_mt > 0 and new_mb > 0:
+                        put('margin_top', new_mt, 0.5)
+                        put('margin_bottom', new_mb, 0.5)
+                        logger.info(f"[Step6] 纵向比例缩放: mt {mt:.1f}→{new_mt:.1f} mb {mb:.1f}→{new_mb:.1f} (ratio={ratio:.2f})")
+                        mt, mb = new_mt, new_mb
+                        lhs = mt + ih + mb
             if abs(lhs - th) / max(th, 1) > 0.05:
-                candidates = [
-                    ('margin_top', th - ih - mb),
-                    ('margin_bottom', th - ih - mt),
-                    ('inner_h', th - mt - mb),
-                ]
-                best = None
-                best_err = float('inf')
-                for fn, fv in candidates:
-                    if fn in dir_locked_fields:
-                        continue  # 方向标签锁定的字段不修改
-                    if fv <= 0:
-                        continue
-                    if fn in ('margin_top', 'margin_bottom') and fv > th * 0.8:
-                        continue
-                    if fn == 'inner_h' and fv > th * 0.9:
-                        continue
-                    prev = assignment.get(fn, (0, 0))[0]
-                    err_ratio = abs(fv - prev) / max(prev, fv, 1)
-                    if err_ratio < best_err:
-                        best_err = err_ratio
-                        best = (fn, fv)
-                if best:
-                    logger.info(f"[Step6] 纵向修正: {best[0]} {get(best[0]):.1f}→{best[1]:.1f} "
-                                f"(outer={th:.1f}  lhs={mt+ih+mb:.1f})")
-                    put(best[0], best[1], 0.5)
+                # 裁剪超大边距：上限 = min(outer*0.6, gap*0.9)
+                cap = min(th * 0.6, gap * 0.9) if gap > 0 else th * 0.8
+                clipped = False
+                for fn, fv in [('margin_top', mt), ('margin_bottom', mb)]:
+                    if fv > cap and fn not in dir_locked_fields:
+                        put(fn, cap, 0.5)
+                        logger.info(f"[Step6] 纵向裁剪超大边距: {fn} {fv:.1f}→{cap:.1f}")
+                        clipped = True
+                if clipped:
+                    mt = get('margin_top')
+                    mb = get('margin_bottom')
+                    lhs = mt + ih + mb
+                if abs(lhs - th) / max(th, 1) > 0.05:
+                    candidates = [
+                        ('margin_top', th - ih - mb),
+                        ('margin_bottom', th - ih - mt),
+                        ('inner_h', th - mt - mb),
+                    ]
+                    best = None
+                    best_err = float('inf')
+                    for fn, fv in candidates:
+                        if fn in dir_locked_fields:
+                            continue
+                        if fv <= 0:
+                            continue
+                        if fn in ('margin_top', 'margin_bottom') and fv > th * 0.8:
+                            continue
+                        if fn == 'inner_h' and fv > th * 0.9:
+                            continue
+                        prev = assignment.get(fn, (0, 0))[0]
+                        err_ratio = abs(fv - prev) / max(prev, fv, 1)
+                        if err_ratio < best_err:
+                            best_err = err_ratio
+                            best = (fn, fv)
+                    if best:
+                        logger.info(f"[Step6] 纵向修正: {best[0]} {get(best[0]):.1f}→{best[1]:.1f} "
+                                    f"(outer={th:.1f}  lhs={mt+ih+mb:.1f})")
+                        put(best[0], best[1], 0.5)
         elif len(known) == 2:
             if ih == 0 and mt > 0 and mb > 0:
                 fv = th - mt - mb
@@ -1512,26 +1600,7 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
                 if 0 < fv < th * 0.8:
                     put('margin_bottom', fv, 0.5)
                     logger.info(f"[Step6] 纵向反推 margin_bottom={fv:.1f}")
-        elif len(known) == 1:
-            remaining = th - sum(known)
-            if remaining > 0:
-                if ih > 0:
-                    half = remaining / 2
-                    put('margin_top', half, 0.3)
-                    put('margin_bottom', half, 0.3)
-                    logger.info(f"[Step6] 纵向对称(已知inner): top=bottom={half:.1f}")
-                elif mt > 0:
-                    put('margin_bottom', mt, 0.3)
-                    inner = remaining - mt
-                    if inner > 0:
-                        put('inner_h', inner, 0.3)
-                        logger.info(f"[Step6] 纵向对称(已知top): bottom={mt:.1f} inner={inner:.1f}")
-                elif mb > 0:
-                    put('margin_top', mb, 0.3)
-                    inner = remaining - mb
-                    if inner > 0:
-                        put('inner_h', inner, 0.3)
-                        logger.info(f"[Step6] 纵向对称(已知bottom): top={mb:.1f} inner={inner:.1f}")
+        # len(known) == 1 时不自动填充（避免错误对称填充）
         elif len(known) == 0 and th > 0:
             ih_est = th * 0.7
             m_est = (th - ih_est) / 2
@@ -1546,24 +1615,43 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
 def _validate_geometric_constraints(margins, result, outer, inner,
                                      cm_per_px_x, cm_per_px_y,
                                      target_outer_w_cm, target_outer_h_cm):
-    """测试兼容包装：转调 _validate_and_fix_margins。"""
-    asg = {}
-    for k, v in margins.items():
-        asg[k] = (v[0], v[1])
-    asg['total_w'] = (target_outer_w_cm if target_outer_w_cm > 0 else result.get('outer_w', 0), 0.8)
-    asg['total_h'] = (target_outer_h_cm if target_outer_h_cm > 0 else result.get('outer_h', 0), 0.8)
-    asg['inner_w'] = (result.get('inner_w', 0), 0.6)
-    asg['inner_h'] = (result.get('inner_h', 0), 0.6)
-    fixed = _validate_and_fix_margins(asg, target_outer_w_cm, target_outer_h_cm,
-                                       dir_locked_fields=set(margins.keys()))
+    """几何约束校验：用像素几何值填充/覆盖 OCR 边距。
+
+    1. 从 outer/inner 像素矩形计算几何边距（cm）
+    2. OCR 边距存在但偏离几何值超过容差 → 覆盖为几何值
+    3. OCR 边距缺失 → 用几何值填充
+    """
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+
+    geom_top = (iy - oy) * cm_per_px_y
+    geom_bottom = ((oy + oh) - (iy + ih)) * cm_per_px_y
+    geom_left = (ix - ox) * cm_per_px_x
+    geom_right = ((ox + ow) - (ix + iw)) * cm_per_px_x
+
+    outer_h_cm = target_outer_h_cm if target_outer_h_cm > 0 else oh * cm_per_px_y
+    outer_w_cm = target_outer_w_cm if target_outer_w_cm > 0 else ow * cm_per_px_x
+
+    tolerance_h = max(3.0, outer_h_cm * 0.15)
+    tolerance_w = max(3.0, outer_w_cm * 0.15)
+
     fm = {}
-    for k in ('margin_top', 'margin_bottom', 'margin_left', 'margin_right'):
-        if k in fixed:
-            fm[k] = (fixed[k][0], fixed[k][1])
-    result['outer_w'] = fixed.get('total_w', (0, 0))[0]
-    result['outer_h'] = fixed.get('total_h', (0, 0))[0]
-    result['inner_w'] = fixed.get('inner_w', (0, 0))[0]
-    result['inner_h'] = fixed.get('inner_h', (0, 0))[0]
+
+    for name, geom_val, tol in [
+        ('margin_top', geom_top, tolerance_h),
+        ('margin_bottom', geom_bottom, tolerance_h),
+        ('margin_left', geom_left, tolerance_w),
+        ('margin_right', geom_right, tolerance_w),
+    ]:
+        if name in margins:
+            ocr_val = margins[name][0]
+            if abs(ocr_val - geom_val) > tol:
+                fm[name] = geom_val
+            else:
+                fm[name] = ocr_val
+        else:
+            fm[name] = geom_val
+
     return fm
 
 

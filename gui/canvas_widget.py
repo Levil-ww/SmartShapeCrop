@@ -210,9 +210,16 @@ class PreviewCanvas(QWidget):
         widget_pixels = w * h
         src_pixels = src_w * src_h
         if src_pixels > widget_pixels * 4:
-            # 先 PIL 端缩小（保留 2x 显示精度即可）
-            target_w = min(src_w, w * 2)
-            target_h = min(src_h, h * 2)
+            # [Fix 2026-08-26] 原实现 src.resize((w*2, h*2)) 分别限制宽高 = STRETCH 变形
+            # widget 的宽高比 (w:h) 通常 ≠ 设计图源图宽高比 (src_w:src_h)
+            # 导致水池模式下预览严重变形（看截图1左侧：竖版花被横向拉扁）
+            # 修复：按等比缩放（保持 src_w:src_h 比例），避免预览变形
+            max_display_w = w * 2
+            max_display_h = h * 2
+            # 用 contain 比例：等比缩放到不超过 max_display 框
+            scale = min(max_display_w / src_w, max_display_h / src_h)
+            target_w = max(1, int(src_w * scale))
+            target_h = max(1, int(src_h * scale))
             src = src.resize((target_w, target_h), Image.BILINEAR)
 
         data = src.tobytes('raw', 'RGB')
