@@ -22,8 +22,17 @@ from .geometry import CropDesign, compute_border_bands
 # ---------- 素材加载与适配 ----------
 
 def load_image_rgb(path: str) -> Image.Image:
-    """加载素材图为 RGB 模式（JPG 通常无 alpha，转 RGB 方便合成）"""
+    """加载素材图为 RGB 模式（JPG 通常无 alpha，转 RGB 方便合成）。
+    [Fix 2026-08-26] 处理 EXIF 方向：相机/手机拍的照片会带 Orientation tag（如旋转90度）。
+    若不处理会导致竖横方向错误，后续 cover（按错误宽高比缩放）→ 看似拉伸变形。
+    """
     img = Image.open(path)
+    # 处理 EXIF 方向旋转（避免竖横颠倒导致的变形）
+    try:
+        from PIL import ImageOps
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass  # 旧版 PIL 或无 EXIF 时跳过
     if img.mode != 'RGB':
         img = img.convert('RGB')
     return img
@@ -215,17 +224,17 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     BLACK_RGB = (0, 0, 0)
     # 1. 整体背景（最外层）
     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
-    # [Fix 2026-08-21] 水池模式使用 stretch 模式适配素材（等同 simple_resize）
-    #   确保素材图四周边框线完整保留，避免 cover 模式裁剪边框
-    #   与圆角裁剪工具默认行为一致（simple_resize 直接拉伸，不裁剪不留白）
+    # [Fix 2026-08-26] 水池模式外框素材改回 cover 模式（保持宽高比，消除变形）
+    #   原 stretch 模式会导致竖版素材横向拉伸严重变形（如 57.5x120 素材适配 122x51 画布）
+    #   cover 模式等比缩放 + 居中裁剪，虽可能裁掉少量边框线，但整体不变形
     # [优化 2026-08-26] 优先使用 Worker 预加载的缓存图，避免主线程网络读取阻塞
     cached_img = getattr(design, '_cached_outer_image', None)
     if cached_img is not None and design.pool_outer_material_image:
-        mode = 'tile' if _looks_like_tile(design.pool_outer_material_image) else 'stretch'
+        mode = 'tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover'
         canvas = fit_image_to_rect(cached_img, W, H, mode=mode, quality=quality)
     elif design.pool_outer_material_image and os.path.isfile(design.pool_outer_material_image):
         canvas = load_and_fit(design.pool_outer_material_image, W, H,
-                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'stretch',
+                              mode='tile' if _looks_like_tile(design.pool_outer_material_image) else 'cover',
                               quality=quality)
     elif design.outer_bg_image and os.path.isfile(design.outer_bg_image):
         canvas = load_and_fit(design.outer_bg_image, W, H,

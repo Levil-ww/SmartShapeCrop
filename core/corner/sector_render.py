@@ -853,7 +853,13 @@ def _redraw_border_on_corner(
     
     # Pass 2: 间隙颜色残留清扫（仅限间隙层径向范围附近）
     # 对每个间隙层，精确扫描其径向距离附近的像素
+    # [Fix 2026-08-27] 增加边框像素保护：在清除间隙残留前检查像素是否为边框色，
+    # 防止黑色边框弧线被误清除（安妮森林案例 Bug 3）
     gap_colors_list = [np.array(c, dtype=np.float64) for (c, _), ig in zip(border_layers, is_gap_layer) if ig]
+    # 实心边框颜色列表（用于保护边框像素不被间隙清除误杀）
+    solid_border_colors_arr = np.array(
+        [np.array(c, dtype=np.float64) for (c, _), ig in zip(border_layers, is_gap_layer) if not ig]
+    )
     if gap_colors_list and gap_regions:
         # 合并所有间隙层的径向范围
         for gap_start, gap_end in gap_regions:
@@ -871,10 +877,19 @@ def _redraw_border_on_corner(
                     scan_coords = np.where(scan_region_gap)
                     scan_colors = result_arr[scan_coords[0], scan_coords[1], :].astype(np.float64)
                     
+                    # [Fix] 检查哪些像素是边框色（需要保护）
+                    is_border_pixel = np.zeros(len(scan_colors), dtype=bool)
+                    if len(solid_border_colors_arr) > 0:
+                        for bc_arr in solid_border_colors_arr:
+                            d_to_bc = np.sqrt(np.sum((scan_colors - bc_arr.reshape(1, 3)) ** 2, axis=1))
+                            is_border_pixel |= (d_to_bc <= COLOR_DIST_THRESHOLD + 5.0)
+                    
                     for gc in gap_colors_list:
                         dist_to_gc = np.sqrt(np.sum((scan_colors - gc.reshape(1, 3)) ** 2, axis=1))
                         # 使用更严格的阈值（20），因为已限制在间隙层附近
+                        # [Fix] 仅清除间隙色且非边框色的像素，边框像素必须保留
                         residual_gap = dist_to_gc < 20.0
+                        residual_gap = residual_gap & (~is_border_pixel)
                         if np.any(residual_gap):
                             idx = np.where(residual_gap)[0]
                             result_arr[scan_coords[0][idx], scan_coords[1][idx], :] = bg_uint8
@@ -884,6 +899,7 @@ def _redraw_border_on_corner(
                                 break
                             scan_coords = (scan_coords[0][remaining], scan_coords[1][remaining])
                             scan_colors = scan_colors[remaining]
+                            is_border_pixel = is_border_pixel[remaining]
     elif gap_colors_list:
         # 没有 gap_regions 信息但有间隙层（兜底），仅扫描弧边界附近
         # 这是保守策略，仅扫描 dist in [R_total-5, R_total+3] 的窄带
@@ -892,9 +908,18 @@ def _redraw_border_on_corner(
             scan_coords = np.where(scan_region)
             scan_colors = result_arr[scan_coords[0], scan_coords[1], :].astype(np.float64)
             
+            # [Fix] 检查哪些像素是边框色（需要保护）
+            is_border_pixel = np.zeros(len(scan_colors), dtype=bool)
+            if len(solid_border_colors_arr) > 0:
+                for bc_arr in solid_border_colors_arr:
+                    d_to_bc = np.sqrt(np.sum((scan_colors - bc_arr.reshape(1, 3)) ** 2, axis=1))
+                    is_border_pixel |= (d_to_bc <= COLOR_DIST_THRESHOLD + 5.0)
+            
             for gc in gap_colors_list:
                 dist_to_gc = np.sqrt(np.sum((scan_colors - gc.reshape(1, 3)) ** 2, axis=1))
+                # [Fix] 仅清除间隙色且非边框色的像素
                 residual_gap = dist_to_gc < 20.0
+                residual_gap = residual_gap & (~is_border_pixel)
                 if np.any(residual_gap):
                     idx = np.where(residual_gap)[0]
                     result_arr[scan_coords[0][idx], scan_coords[1][idx], :] = bg_uint8
@@ -903,6 +928,7 @@ def _redraw_border_on_corner(
                         break
                     scan_coords = (scan_coords[0][remaining], scan_coords[1][remaining])
                     scan_colors = scan_colors[remaining]
+                    is_border_pixel = is_border_pixel[remaining]
 
     # === [Fix INV-5/花漾之约] 边界角度白色像素清扫 ===
     # 核心修复：区分"设计白点"与"白色扇形伪影"
