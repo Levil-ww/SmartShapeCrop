@@ -142,14 +142,14 @@ def _estimate_outer_border(img: Image.Image, max_frac: float = 0.25,
 
 
 def _edge_extend_fill(centered_img: Image.Image, tw: int, th: int) -> Image.Image:
-    """把等比缩放后居中的素材图，用边缘像素延展填满目标画布（不留白、边框不糊）。
+    """把等比缩放后居中的素材图，用镜像/边缘延展填满目标画布（不留白、边框不糊）。
 
     适用于水池模式：画布AR与素材AR略有差异时，不希望出现白边。
-    算法：把 centered_img 贴到中央，四周空白区域用最外缘像素向外平铺延展。
+    算法：把 centered_img 贴到中央，四周空白区域用镜像对称延展填充。
 
     [Fix 2026-08-26] 修复"两侧黑色背景框"：当某侧延展量较大(>5% 画布边长)且源图该侧带
-    近似纯色外框(如克罗印花设计稿的黑色边框)时，改为从框内侧采样边缘像素，
-    避免纯色外框被拉伸放大成宽色带。其余情况下行为与旧版完全一致。
+    近似纯色外框(如克罗印花设计稿的黑色边框)时，改为使用镜像延展填充，
+    避免纯色外框被拉伸放大成宽色带，同时避免单点颜色填充产生的色块。
     """
     sw, sh = centered_img.size
     canvas = Image.new('RGB', (tw, th), (255, 255, 255))
@@ -163,49 +163,126 @@ def _edge_extend_fill(centered_img: Image.Image, tw: int, th: int) -> Image.Imag
     # 估算四边实心纯色外框厚度（仅在延展量较大时用于跳过外框）
     top_b, bot_b, left_b, right_b = _estimate_outer_border(centered_img)
     EXTEND_TRIGGER = 0.05  # 单侧延展超过画布该边 5% 才视为需要跳过外框
-    # 内侧内容区的中心像素（同时跳过上下/左右外框），用单点颜色填充延展区，
-    # 彻底避开外框及抗锯齿接缝，且不会因"整列穿过上下边框"而残留黑带。
-    content_cx = left_b + (sw - left_b - right_b) // 2
-    content_cy = top_b + (sh - top_b - bot_b) // 2
 
     arr = np.array(canvas, dtype=np.uint8)
-    fill_px = arr[cy + content_cy, cx + content_cx]  # 内容区内部单点颜色
+    src_arr = np.array(centered_img, dtype=np.uint8)
 
-    def _fill_band(mask_shape):
-        return np.broadcast_to(fill_px.reshape(1, 1, 3), mask_shape).copy()
+    def _mirror_extend_top_bottom(gap: int, target_width: int) -> np.ndarray:
+        """为顶部/底部延展生成 (gap, target_width, 3) 的填充数组。
+        从源图内容区采样，并通过平铺/裁剪调整到目标宽度。
+        """
+        # 取源图内容区中间部分作为样本
+        content_top = top_b
+        content_bottom = sh - bot_b
+        content_h = content_bottom - content_top
+        
+        if content_h <= 0:
+            # 退化为使用整图
+            content_top, content_bottom, content_h = 0, sh, sh
+        
+        # 确定要采样的行数（从源图靠近当前边界的区域）
+        sample_rows = min(gap, content_h)
+        
+        # 根据是顶部还是底部，从正确的边缘采样
+        # 从内容区的上边缘采样（用于顶部填充，镜像后方向反转）
+        sample = src_arr[content_top:content_top + sample_rows, :, :].copy()
+        
+        # 垂直翻转作为镜像（使图案看起来是从源图"反射"出来的）
+        sample = sample[::-1, :, :]
+        
+        # 如果需要更多行，平铺内容区
+        if sample_rows < gap:
+            reps = (gap // sample_rows) + 1 if sample_rows > 0 else 1
+            sample = np.tile(sample, (reps, 1, 1))
+            sample = sample[:gap, :, :]
+        
+        # 调整宽度到 target_width
+        current_w = sample.shape[1]
+        if current_w < target_width:
+            # 水平平铺
+            reps = (target_width // current_w) + 1
+            sample = np.tile(sample, (1, reps, 1))
+            sample = sample[:, :target_width, :]
+        elif current_w > target_width:
+            sample = sample[:, :target_width, :]
+        
+        return sample
+
+    def _mirror_extend_left_right(gap: int, target_height: int) -> np.ndarray:
+        """为左侧/右侧延展生成 (target_height, gap, 3) 的填充数组。
+        从源图内容区采样，并通过平铺/裁剪调整到目标高度。
+        """
+        content_left = left_b
+        content_right = sw - right_b
+        content_w = content_right - content_left
+        
+        if content_w <= 0:
+            content_left, content_right, content_w = 0, sw, sw
+        
+        sample_cols = min(gap, content_w)
+        
+        # 从内容区的左边缘采样（镜像后方向反转）
+        sample = src_arr[:, content_left:content_left + sample_cols, :].copy()
+        
+        # 水平翻转作为镜像
+        sample = sample[:, ::-1, :]
+        
+        if sample_cols < gap:
+            reps = (gap // sample_cols) + 1 if sample_cols > 0 else 1
+            sample = np.tile(sample, (1, reps, 1))
+            sample = sample[:, :gap, :]
+        
+        # 调整高度到 target_height
+        current_h = sample.shape[0]
+        if current_h < target_height:
+            reps = (target_height // current_h) + 1
+            sample = np.tile(sample, (reps, 1, 1))
+            sample = sample[:target_height, :, :]
+        elif current_h > target_height:
+            sample = sample[:target_height, :, :]
+        
+        return sample
+
+    def _row_extend(side: str) -> np.ndarray:
+        """简单的边缘像素行/列延展（用于小延展量情况）"""
+        if side == 'top':
+            edge_row = arr[cy + top_b:cy + top_b + 1, :, :]
+            if top_b > 0 and cy > th * EXTEND_TRIGGER:
+                return _mirror_extend_top_bottom(cy, tw)
+            return np.broadcast_to(edge_row, (cy, tw, 3)).copy()
+        elif side == 'bottom':
+            edge_row = arr[cy + sh - bot_b - 1:cy + sh - bot_b, :, :]
+            remain = th - (cy + sh)
+            if bot_b > 0 and remain > th * EXTEND_TRIGGER:
+                return _mirror_extend_top_bottom(remain, tw)
+            return np.broadcast_to(edge_row, (remain, tw, 3)).copy()
+        elif side == 'left':
+            edge_col = arr[:, cx + left_b:cx + left_b + 1, :]
+            if left_b > 0 and cx > tw * EXTEND_TRIGGER:
+                return _mirror_extend_left_right(cx, th)
+            return np.broadcast_to(edge_col, (th, cx, 3)).copy()
+        elif side == 'right':
+            edge_col = arr[:, cx + sw - right_b - 1:cx + sw - right_b, :]
+            remain = tw - (cx + sw)
+            if right_b > 0 and remain > tw * EXTEND_TRIGGER:
+                return _mirror_extend_left_right(remain, th)
+            return np.broadcast_to(edge_col, (th, remain, 3)).copy()
+        return np.zeros((0, 0, 3), dtype=np.uint8)
 
     # 延展顶部空白（0..cy-1）
     if cy > 0:
-        if top_b > 0 and cy > th * EXTEND_TRIGGER:
-            arr[:cy, :, :] = _fill_band((cy, tw, 3))
-        else:
-            top_row = arr[cy:cy + 1, :, :]
-            arr[:cy, :, :] = np.broadcast_to(top_row, (cy, tw, 3)).copy()
+        arr[:cy, :, :] = _row_extend('top')
     # 延展底部空白（cy+sh..th-1）
     if cy + sh < th:
-        if bot_b > 0 and (th - (cy + sh)) > th * EXTEND_TRIGGER:
-            remain = th - (cy + sh)
-            arr[cy + sh:, :, :] = _fill_band((remain, tw, 3))
-        else:
-            bot_row = arr[cy + sh - 1:cy + sh, :, :]
-            remain = th - (cy + sh)
-            arr[cy + sh:, :, :] = np.broadcast_to(bot_row, (remain, tw, 3)).copy()
+        remain = th - (cy + sh)
+        arr[cy + sh:, :, :] = _row_extend('bottom')
     # 延展左侧空白（0..cx-1）
     if cx > 0:
-        if left_b > 0 and cx > tw * EXTEND_TRIGGER:
-            arr[:, :cx, :] = _fill_band((th, cx, 3))
-        else:
-            left_col = arr[:, cx:cx + 1, :]
-            arr[:, :cx, :] = np.broadcast_to(left_col, (th, cx, 3)).copy()
+        arr[:, :cx, :] = _row_extend('left')
     # 延展右侧空白（cx+sw..tw-1）
     if cx + sw < tw:
-        if right_b > 0 and (tw - (cx + sw)) > tw * EXTEND_TRIGGER:
-            remain = tw - (cx + sw)
-            arr[:, cx + sw:, :] = _fill_band((th, remain, 3))
-        else:
-            right_col = arr[:, cx + sw - 1:cx + sw, :]
-            remain = tw - (cx + sw)
-            arr[:, cx + sw:, :] = np.broadcast_to(right_col, (th, remain, 3)).copy()
+        remain = tw - (cx + sw)
+        arr[:, cx + sw:, :] = _row_extend('right')
 
     return Image.fromarray(arr, mode='RGB')
 
@@ -217,35 +294,22 @@ def adapt_pool_material(src_img: Image.Image,
                         canvas_w_cm: float = 0.0,
                         canvas_h_cm: float = 0.0,
                         quality: str = 'export') -> Image.Image:
-    """[水池模式专用] 素材适配：保持图案完整性 + 不变形 + 尽量填满画布。
+    """[水池模式专用] 素材适配：与参考项目 pack_BigMagicCompany_copy 保持一致。
 
-    算法（保守零误判版 — 2026-08-26 二次修复根因：文件名方向≠像素存储方向导致误旋转）：
+    算法：
+      1. 方向校正（三重校验后才允许旋转）
+      2. 简单拉伸（stretch）：直接将源图拉伸到目标尺寸
 
-      1. 方向校正（三重校验后才允许旋转，缺任何一个条件都信任像素方向）：
-         - 条件A：像素方向 vs 画布方向 相反（一竖一横）
-         - 条件B：有文件名设计方向元数据 且 文件名设计方向 = 画布方向（证明设计意图是适配当前方向）
-         - 条件C（AR硬校验）：像素宽高比 ≈ 设计尺寸的倒数宽高比（误差<15%，证明确实是PS横排后存反了方向）
-         → 仅当 A ∧ B ∧ C 全部满足，才旋转90度
-         → 其他所有情况：默认**信任像素方向**（图3红框的文件预览就是按像素方向显示的，这是用户认知的基准）
-
-         为什么这么保守？
-         反例（用户本次事故）：文件名"中古大花-58x121CM"(竖版)，但设计师在PS中横排导出（像素横版，内容方位仍正确）
-         → 旧算法只凭"文件名方向≠画布方向"就强制ROTATE_90 → 本来正确的内容被误旋转 → 四个边框全部错位（上绿→左、下蓝→右…）
-         → 用户视觉上以为"过度裁剪/花纹丢失"
-
-      2. contain 等比缩放（绝不裁剪边框花纹 → 图案100%完整显示，形状不变形）
-      3. 边缘延展填充：contain 产生的少量四周空白，用外边缘 1px 颜色向外延展填充
-
-    对比旧方案（stretch / cover / 过度旋转）：
-      stretch:          完整但变形            →  ✅ ❌
-      cover:            不变形但过度裁剪       →  ❌ ✅
-      旧误旋转版:        错位❌                →  ❌ ❌
-      当前保守版:        完整+不变形+边缘填满   → ✅ ✅ ✅
+    [Fix 2026-08-27] 与参考项目对齐：使用简单拉伸模式，
+    避免 contain/cover 模式下的两侧黑边或边框线条被裁剪问题。
     """
     resample = Image.BILINEAR if quality == 'preview' else Image.LANCZOS
     sw, sh = src_img.size
     if sw <= 0 or sh <= 0:
         return Image.new('RGB', (target_w, target_h), (255, 255, 255))
+
+    # ---- 步骤0：不裁剪源图边框（保持原素材完整性）----
+    # 与参考项目 pack_BigMagicCompany_copy 保持一致
 
     # ---- 步骤1：方向校正（三重校验 A ∧ B ∧ C → 才允许旋转90度）----
     # 画布方向
@@ -308,92 +372,32 @@ def adapt_pool_material(src_img: Image.Image,
             f"画布{'横版' if canvas_is_landscape else '竖版'}({target_w}x{target_h})"
         )
 
-    # ---- 步骤2：scale-to-fit 适配 (light-cover 模式) ----
-    # 核心目标：素材图案 100% 完整显示 + 画布不留白 + 不变形
+    # ---- 步骤2：简单拉伸（stretch）----
+    # 与参考项目 pack_BigMagicCompany_copy 保持一致：
+    #   pil_resized = pil_img.resize((target_w_px, target_h_px), Image.Resampling.LANCZOS)
     #
-    # 策略（2026-08-26 修复：解决"边框位置不对/裁剪超出素材"问题）：
-    #   A. 先按 min(宽比, 高比) 等比缩放 —— 保持图案 100% 完整
-    #   B. 缩放后若一个方向恰好填满，另一方向需要 "延展/裁剪" 来对齐目标尺寸
-    #      B1. 若缩放后缺失量在 SAFE_EXTEND 阈值内（任一侧≤8%）：用边缘像素对称延展填充
-    #          优点：保留完整花纹；缺点：延展区无花纹图案（仅纯色边缘延伸）
-    #      B2. 若需要更均匀的花纹覆盖（"整幅都是花纹"视觉需求）：改用 cover 模式裁剪
-    #          用 max(宽比, 高比) 等比缩放，居中裁剪超出部分
-    #          最大任一侧裁剪量 ≤ MAX_CROP_PCT（15%）
-    #   C. 裁剪量过大 (任一侧>15%) 时回退到 B1，保证花纹尽量完整
-    #
-    # 为什么不直接用 cover?
-    #   cover 模式需要素材 "在两个方向都大于目标"，否则会放大到失真。
-    #   水池场景下素材设计尺寸通常略小于画布 (如 110×62.5 vs 116×54)，
-    #   此时 cover 会先放大 1.055× 导致花纹失真。
-    #
-    # 为什么不直接用 contain+edge-extend?
-    #   纯 contain 后两边空白可能过大 (如 6cm 空白占画布 5%)，
-    #   边缘延展的 "非花纹" 区域会被用户看到（投诉：边框位置不对/裁到素材外）
-    # [Fix 2026-08-26] 阈值从 8% 提到 15%：水池素材四周边框花纹必须完整不可裁剪，
-    #   cover 模式会切掉边框（违反"无缺失线条"硬约束）。延展填充用素材最外1px颜色
-    #   （通常为黑色边框）向外平铺，视觉上等同边框加粗，可接受。
-    #   仅当延展空白>15%（过大纯色区）才回退到 cover 裁剪。
-    MAX_SAFE_EXTEND_PCT = 0.15   # 单侧允许最大延展 15%（保护边框完整性优先于花纹覆盖均匀性）
-    MAX_SAFE_CROP_PCT = 0.15     # 单侧允许最大裁剪 15%
+    # 直接将源图拉伸到目标尺寸，不会产生两侧黑边问题，
+    # 也不会裁剪源图的边框线条。
+    # [Fix 2026-08-27] 采用简单拉伸模式，解决用户反馈的两侧黑边和边框线条被裁剪问题
 
-    scale_fit = min(target_w / sw, target_h / sh)
-    nw_fit = max(1, int(round(sw * scale_fit)))
-    nh_fit = max(1, int(round(sh * scale_fit)))
-    resized_fit = src_img.resize((nw_fit, nh_fit), resample)
+    # 计算拉伸比例（仅用于日志）
+    scale_w = target_w / sw
+    scale_h = target_h / sh
+    ar_src = sw / sh
+    ar_tgt = target_w / target_h
+    ar_diff_pct = abs(ar_src - ar_tgt) / max(ar_tgt, 1e-6) * 100
 
-    # 计算两个方向的 "缺失量"（相对于目标的空白）
-    gap_w = max(0, target_w - nw_fit)
-    gap_h = max(0, target_h - nh_fit)
-    extend_pct_w = gap_w / target_w if target_w > 0 else 0
-    extend_pct_h = gap_h / target_h if target_h > 0 else 0
-
-    # 计算 cover 模式下的裁剪量（用于决定是否切换策略）
-    scale_cover = max(target_w / sw, target_h / sh)
-    nw_cover = max(1, int(round(sw * scale_cover)))
-    nh_cover = max(1, int(round(sh * scale_cover)))
-    crop_w_total = max(0, nw_cover - target_w)
-    crop_h_total = max(0, nh_cover - target_h)
-    crop_pct_per_side_w = (crop_w_total / 2) / target_w if target_w > 0 else 0
-    crop_pct_per_side_h = (crop_h_total / 2) / target_h if target_h > 0 else 0
-
-    # 决策：哪种方式更好？
-    #   若两个方向的延展都 ≤ SAFE_EXTEND：使用延展（花纹完整，小区域纯色边缘）
-    #   否则若裁剪 ≤ SAFE_CROP 且不放大失真：使用 cover（花纹覆盖更均匀）
-    #   否则回退到延展
-    both_extend_safe = (extend_pct_w <= MAX_SAFE_EXTEND_PCT
-                        and extend_pct_h <= MAX_SAFE_EXTEND_PCT)
-    cover_safe = (crop_pct_per_side_w <= MAX_SAFE_CROP_PCT
-                  and crop_pct_per_side_h <= MAX_SAFE_CROP_PCT
-                  and scale_cover <= 1.05)  # 放大不超过 5% 避免花纹失真
-
-    if not both_extend_safe and cover_safe:
-        # Cover 模式：居中裁剪，图案完全覆盖画布
-        covered = src_img.resize((nw_cover, nh_cover), resample)
-        left = (nw_cover - target_w) // 2
-        top = (nh_cover - target_h) // 2
-        logger.info(
-            f"[adapt_pool_material] 使用 cover 模式（更均匀花纹覆盖）: "
-            f"scale={scale_cover:.3f}, resized={nw_cover}x{nh_cover} → target={target_w}x{target_h}, "
-            f"crop_per_side=({crop_pct_per_side_w*100:.1f}%, {crop_pct_per_side_h*100:.1f}%)"
-        )
-        return covered.crop((left, top, left + target_w, top + target_h))
-
-    # Contain + Edge-extend 模式（默认）
-    if nw_fit >= target_w and nh_fit >= target_h:
-        left = (nw_fit - target_w) // 2
-        top = (nh_fit - target_h) // 2
-        logger.info(
-            f"[adapt_pool_material] 图案完全覆盖，居中裁剪: "
-            f"resized={nw_fit}x{nh_fit} → target={target_w}x{target_h}"
-        )
-        return resized_fit.crop((left, top, left + target_w, top + target_h))
+    # 简单拉伸到目标尺寸
+    stretched = src_img.resize((target_w, target_h), resample)
 
     logger.info(
-        f"[adapt_pool_material] 使用 contain+edge-extend 模式: "
-        f"scale={scale_fit:.3f}, resized={nw_fit}x{nh_fit} → target={target_w}x{target_h}, "
-        f"gap=({gap_w}px[{extend_pct_w*100:.1f}%], {gap_h}px[{extend_pct_h*100:.1f}%])"
+        f"[adapt_pool_material] 使用简单拉伸(stretch)模式: "
+        f"源图={sw}x{sh}, 目标={target_w}x{target_h}, "
+        f"scale=({scale_w:.3f}, {scale_h:.3f}), "
+        f"AR差异={ar_diff_pct:.1f}%"
     )
-    return _edge_extend_fill(resized_fit, target_w, target_h)
+
+    return stretched
 
 
 def load_and_fit(path: str, tw: int, th: int, mode: str = 'cover',

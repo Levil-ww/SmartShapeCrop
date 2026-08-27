@@ -4,13 +4,10 @@ core/geometry.py
 单位：像素（渲染时用）；UI 输入单位：厘米（通过 DPI 转换）
 """
 from __future__ import annotations
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Literal
-import logging
 import numpy as np
 from PIL import Image, ImageDraw
-
-logger = logging.getLogger(__name__)
 
 
 # ---------- 基础形状 ----------
@@ -33,18 +30,8 @@ class RectShape:
         return self.y + self.h
 
     def to_int_tuple(self) -> tuple[int, int, int, int]:
-        x0 = int(round(self.x))
-        y0 = int(round(self.y))
-        x1 = int(round(self.right))
-        y1 = int(round(self.bottom))
-        # [F1 修复] 防御性归一：保证 x0<=x1 且 y0<=y1，避免把负宽/负高矩形
-        # 传给 PIL ImageDraw 时触发 "ValueError: x1 must be greater than or
-        # equal to x0"。退化的矩形（w/h<0）被归一为 0 宽/高，绘制时等价于空操作。
-        if x1 < x0:
-            x1 = x0
-        if y1 < y0:
-            y1 = y0
-        return (x0, y0, x1, y1)
+        return (int(round(self.x)), int(round(self.y)),
+                int(round(self.right)), int(round(self.bottom)))
 
 
 @dataclass
@@ -168,7 +155,6 @@ class CropDesign:
     # —— 水池设计器新增字段（默认值保持旧行为）——
     pool_hole_transparent: bool = False           # True=内部挖空留白（纯白色 JPG 背景）
     pool_outer_material_image: str | None = None  # 水池外框素材图：匹配到的花纹图，整幅铺满再挖中间
-    pool_inner_material_image: str | None = None   # 水池内挖素材图：匹配到的内挖花纹图，填入中间空白区域
 
     # [Fix 2026-08-26] 水池素材原始设计方向尺寸（文件名解析的 w×h，未经 oriented 交换）
     # 用于渲染时判断素材图是否需要旋转90度后再等比缩放（避免 cover 过度裁剪 / stretch 变形）
@@ -179,7 +165,6 @@ class CropDesign:
 
     # —— 渲染加速：Worker 预加载的模板图缓存 ——
     _cached_outer_image: Image.Image | None = None
-    _cached_inner_image: Image.Image | None = None
 
     # —— 辅助：像素级尺寸换算 ——
     def cm2px(self, cm: float) -> float:
@@ -193,43 +178,12 @@ class CropDesign:
     def canvas_h_px(self) -> int:
         return int(round(self.cm2px(self.canvas_h_cm)))
 
-    # ---------- 线程安全快照 ----------
-    def clone(self) -> "CropDesign":
-        """返回一份独立的快照，供后台渲染线程安全使用。
-
-        后台 ``PreviewRenderWorker`` 会持有该快照执行 ``render_design``，而在此期间
-        主线程仍可能原地修改 ``self.design``（用户改边距、增删 ``borders`` 等）。
-        为避免跨线程读写竞争（字段撕裂、``borders`` 列表迭代中变更、渲染结果错乱），
-        这里对**可变字段**做深拷贝：
-
-        * 标量 / 字符串 / 元组：本身不可变，按引用复制即可；
-        * ``borders`` 列表：逐层复制为新的 ``BorderLayer``；
-        * ``border_text``：复制为新的 ``BorderText``；
-        * ``_cached_outer_image``：**共享只读引用**——渲染期间不会被原地修改，
-          共享可避免每次后台渲染都复制上百 MB 的素材图（F4 修复）。
-        """
-        new = replace(self)  # 浅拷贝所有字段（列表/嵌套对象仍是同一引用）
-        # 断开可变容器的共享，使后台渲染与主线程互不干扰
-        new.borders = [replace(b) for b in self.borders]
-        if self.border_text is not None:
-            new.border_text = replace(self.border_text)
-        return new
-
     # 像素级坐标计算
     def outer_rect_px(self) -> RectShape:
         m = self.cm2px(self.outer_margin_cm)
-        w = self.canvas_w_px - 2 * m
-        h = self.canvas_h_px - 2 * m
-        # [F1 修复] 外边距可能超过画布可用空间，clamp 到非负，
-        # 避免负宽/负高导致下游 PIL ImageDraw 抛 "x1 must be >= x0"。
-        if w <= 0 or h <= 0:
-            logger.warning(
-                f"[geometry] outer_rect_px 退化 (w={w:.1f}, h={h:.1f})，"
-                f"outer_margin_cm={self.outer_margin_cm} 超过画布可用尺寸，已 clamp 至 0"
-            )
-            w = max(0.0, w)
-            h = max(0.0, h)
-        return RectShape(m, m, w, h)
+        return RectShape(m, m,
+                         self.canvas_w_px - 2 * m,
+                         self.canvas_h_px - 2 * m)
 
     def inner_rect_px(self) -> RectShape:
         outer = self.outer_rect_px()
@@ -237,18 +191,9 @@ class CropDesign:
         mb = self.cm2px(self.inner_margin_bottom_cm)
         ml = self.cm2px(self.inner_margin_left_cm)
         mr = self.cm2px(self.inner_margin_right_cm)
-        w = outer.w - ml - mr
-        h = outer.h - mt - mb
-        # [F1 修复] 内边距之和可能超过外框可用空间（边距设置过大、
-        # 或 LOD 下采样取整反转），clamp 到非负，避免负宽高拖垮整个渲染链。
-        if w <= 0 or h <= 0:
-            logger.warning(
-                f"[geometry] inner_rect_px 退化 (w={w:.1f}, h={h:.1f})，"
-                f"内边距之和超过外框可用尺寸，已 clamp 至 0"
-            )
-            w = max(0.0, w)
-            h = max(0.0, h)
-        return RectShape(outer.x + ml, outer.y + mt, w, h)
+        return RectShape(outer.x + ml, outer.y + mt,
+                         outer.w - ml - mr,
+                         outer.h - mt - mb)
 
     def ellipse_px(self) -> EllipseShape:
         cw, ch = self.canvas_w_px, self.canvas_h_px
@@ -283,46 +228,20 @@ def make_mask(size: tuple[int, int]) -> Image.Image:
 
 
 def fill_rect_mask(mask: Image.Image, rect: RectShape, value: int = 255) -> None:
-    """在 mask 上填充一个矩形区域为 value。
-
-    [F1 修复] 退化守卫：当 rect 宽或高 <= 0（内/外边距大于可用空间，
-    或 LOD 取整导致坐标反转）时直接跳过绘制，避免 PIL ImageDraw 抛
-    ValueError 使预览崩溃。圆角半径也会被 clamp 到矩形可容纳的最大值。
-    """
-    if rect.w <= 0 or rect.h <= 0:
-        logger.warning(
-            f"[geometry] fill_rect_mask 跳过退化矩形 (w={rect.w}, h={rect.h})，"
-            f"疑似边距设置大于画布可用空间"
-        )
-        return
-    x0, y0, x1, y1 = rect.to_int_tuple()
+    """在 mask 上填充一个矩形区域为 value"""
     d = ImageDraw.Draw(mask)
     if rect.corner_r > 0:
-        # 圆角半径不得超过矩形短边的一半，否则 PIL 同样会抛异常
-        max_r = max(1, min(x1 - x0, y1 - y0) // 2)
-        r = min(int(rect.corner_r), max_r)
-        if r > 0:
-            d.rounded_rectangle((x0, y0, x1, y1), radius=r, fill=value)
-        else:
-            d.rectangle((x0, y0, x1, y1), fill=value)
+        d.rounded_rectangle(rect.to_int_tuple(),
+                            radius=int(rect.corner_r), fill=value)
     else:
-        d.rectangle((x0, y0, x1, y1), fill=value)
+        d.rectangle(rect.to_int_tuple(), fill=value)
 
 
 def fill_ellipse_mask(mask: Image.Image, e: EllipseShape, value: int = 255) -> None:
     d = ImageDraw.Draw(mask)
-    # [F1 修复] 归一椭圆包围盒，避免负半径导致 x0>x1 触发 ValueError
-    x0 = int(round(e.cx - e.rx))
-    y0 = int(round(e.cy - e.ry))
-    x1 = int(round(e.cx + e.rx))
-    y1 = int(round(e.cy + e.ry))
-    if x1 < x0:
-        x1 = x0
-    if y1 < y0:
-        y1 = y0
-    if x1 <= x0 or y1 <= y0:
-        return
-    d.ellipse((x0, y0, x1, y1), fill=value)
+    box = (int(e.cx - e.rx), int(e.cy - e.ry),
+           int(e.cx + e.rx), int(e.cy + e.ry))
+    d.ellipse(box, fill=value)
 
 
 def fill_lshape_mask(mask: Image.Image, l: LShape, value: int = 255) -> None:
@@ -369,20 +288,8 @@ def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
     y_i = int(round(inner_rect.y))
     right_i = int(round(inner_rect.right))
     bottom_i = int(round(inner_rect.bottom))
-    if right_i < x_i:
-        right_i = x_i
-    if bottom_i < y_i:
-        bottom_i = y_i
     w_i = right_i - x_i
     h_i = bottom_i - y_i
-    # [F1 修复] 退化矩形（w/h<=0）无可圆角，直接返回，
-    # 避免把负宽高传入距离场算法产生几何错乱。
-    if w_i <= 0 or h_i <= 0:
-        logger.warning(
-            f"[geometry] apply_rounded_corners_to_mask 跳过退化矩形 "
-            f"(w={w_i}, h={h_i})"
-        )
-        return
     _carve_corner_on_mask(
         mask_img,
         (x_i, y_i, w_i, h_i),
@@ -454,15 +361,6 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
     """
     if design.mode == 'rect_lshape':
         return compute_lshape_border_bands(design)
-    # [F9] ellipse_hole 模式不支持多层边框：若设置了 borders，此处会按
-    # rect_hole 的矩形带逻辑渲染（视觉上为“矩形洞”边框带，不符合椭圆预期）。
-    # 出于“不改变功能逻辑”的约束，不在此处改变渲染；记录 warning 提升可见性，
-    # 文档与 UI 说明明确“椭圆模式暂不支持多层边框”。
-    if design.mode == 'ellipse_hole' and design.borders:
-        logger.warning(
-            f"[geometry] 椭圆模式不支持多层边框，将按矩形边框带渲染 "
-            f"（borders={len(design.borders)} 层）；如需正确椭圆边框请移除边框设置"
-        )
     # —— 以下为 rect_hole 原有逻辑 ——
     w, h = design.canvas_w_px, design.canvas_h_px
     outer = design.outer_rect_px()

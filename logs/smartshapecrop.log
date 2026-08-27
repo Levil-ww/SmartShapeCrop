@@ -17271,3 +17271,717 @@ UnboundLocalError: cannot access local variable 'parse_filename' where it is not
 [2026-08-27 13:29:26] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6555x3750); 画布横版(6850x3898)
 [2026-08-27 13:29:27] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.039, resized=6814x3898 → target=6850x3898, gap=(36px[0.5%], 0px[0.0%])
 [2026-08-27 13:29:28] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 1.81s
+[2026-08-27 13:45:47] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-27 13:45:56] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-庄园秘境;51x89.5CM剪裁有图'
+[2026-08-27 13:46:06] [INFO] [core.config] [PathResolver] 系统 PATH 中找到 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 13:46:06] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 13:46:06] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 20 个矩形候选
+[2026-08-27 13:46:06] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(78, 33, 880, 549) 内框=(302, 213, 498, 262) 得分=10.92
+[2026-08-27 13:46:06] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['top', 'bottom', 'left', 'right']
+[2026-08-27 13:46:07] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-庄园秘境;51x89.5CM剪裁有图'
+[2026-08-27 13:46:07] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=吸水皮革-定制-裁剪有图-庄园秘境, 花型=庄园秘境, 水池模式=True, 水池花型=庄园秘境, 尺寸=89.5x51.0cm
+[2026-08-27 13:46:07] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 89.5x51.0 → 画布 宽89.5 x 高51.0
+[2026-08-27 13:46:09] [INFO] [gui.property_panel] [PoolMatcher] 💾 加载磁盘缓存成功（208357 个条目，上次扫描 2026-08-27 13:26:37）
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser] [Step3] OCR早停：已发现9条结果，唯一值≥8
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 9 条数值候选
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=89.5 conf=95 bbox=(542,33,45,18) cx=564 cy=42
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=88.0 conf=91 bbox=(566,141,63,24) cx=598 cy=153
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=51.0 conf=96 bbox=(35,303,21,18) cx=46 cy=312
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=34.0 conf=96 bbox=(339,327,26,18) cx=352 cy=336
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=7.0 conf=74 bbox=(453,363,68,36) cx=487 cy=381
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=74 bbox=(453,363,68,36) cx=487 cy=381
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=73.6 conf=96 bbox=(507,422,46,18) cx=530 cy=431
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=65 bbox=(768,446,27,19) cx=782 cy=456
+[2026-08-27 13:46:09] [INFO] [core.pool_designer.sketch_parser]   val=82.0 conf=20 bbox=(557,524,61,24) cx=588 cy=536
+[2026-08-27 13:46:10] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 上=8.8 conf=96 → margin_top
+[2026-08-27 13:46:10] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 左=74.0 conf=92 → margin_left
+[2026-08-27 13:46:10] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(数值→方向 gray chi_sim+eng psm6): 右=3.0 conf=58 → margin_right
+[2026-08-27 13:46:10] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 右=85.0 conf=90 → margin_right
+[2026-08-27 13:46:10] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 下=8.2 conf=96 → margin_bottom
+[2026-08-27 13:46:37] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(数值→方向 enh chi_sim+eng psm6): 右=74.0 conf=92 → margin_right
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step4] 方向标签锁定 4 个字段: ['margin_top', 'margin_left', 'margin_right', 'margin_bottom']
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[outer_h] 候选数=2 top1=51.0
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_h] 候选数=2 top1=34.0
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_w] 候选数=4 top1=73.6
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step6] 权威模式: 保留 target 外框 total_w=89.5 total_h=51.0 (方向标签边距不变，缺失边距将在后续反推)
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step6] 横向比例缩放: ml 74.0→8.0 mr 74.0→8.0 (ratio=0.11)
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step6.7穷举] 跳过(sc=1.000≥0.9且边距完整，锁定4项→主路径0额外开销)
+[2026-08-27 13:46:41] [INFO] [core.pool_designer.sketch_parser] [Step7终态] 赋值: total=89.5x51.0 inner=73.6x34.0 边距上8.8下8.2左8.0右8.0
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: 'pu防水-定制-定制尺寸-白色大理石云纹;87X187CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-安妮森林;34.2X238CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-奥斯汀;42X155CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-巴洛克之星;38X80.5CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-繁花说;20.7X106.5CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-古巴夏日;22X106CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花漾之约;36.5X315CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花漾之约;40X263CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-克罗印花;60X162CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-罗马假日;40.5X220CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;35X133CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;39.5X214CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;48X160CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-婉卉;24.5X59CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-无尽夏;34.5X194CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-雾蓝花信;30X66.6CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-雾蓝花信;45X140CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;18X135CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古大花;28.5X176.3CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-中古花园;25X228CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-庄园秘境;60X119.5CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-奥斯汀;25X80CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-巴洛克之星;48.5X113.5CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-巴洛克之星;60X166CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-白色大理石4号横版;58X86CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-白色大理石4号竖版;40X58CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-克罗印花;43X162CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-素华牡丹;57X178CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-素华牡丹;58X90CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-悠米竖版;42X58CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-中古雨林;59X113CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-焦糖慕紫;63x77CM'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-标准-120x180-夏洛赫本;120x180'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-克罗印花;48x123CM1'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-35x120-翡翠空间绿色;35x120'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-标准-80x120-闲叙青釉;80x120'
+[2026-08-27 13:46:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-卡蜜拉;40x217CM'
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher] 📂 扫描完成：共 208408 文件，208395 有效图片 （增量更新 38 个；目录 扫1/跳3） [首次/已持久化] 耗时 50.82s；写缓存 1.38s
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 8ms
+[2026-08-27 13:46:58] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-庄园秘境;51x89.5CM剪裁有图'
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=吸水皮革-定制-裁剪有图-庄园秘境, 花型=庄园秘境, 尺寸=89.5x51.0cm, 布局=横版
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 14414 → 评分 14071 → 入围 14071
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 吸水皮革-定制-定制尺寸-庄园秘境;50x87cm.jpg (得分: 119.00)
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 14070 个
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;52x92cm.jpg (得分: 119.00)
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;50X88CM.jpg (得分: 119.00)
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;51.5x89.3cm.jpg (得分: 118.00)
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：吸水皮革-定制-定制尺寸-庄园秘境;50x87cm.jpg  (score=119.0, 比例差=0.015)
+[2026-08-27 13:46:58] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 缓存命中：C:/Users/Administrator/Desktop/智能裁剪设计器/测试草图文件/吸水皮革-定制-裁剪有图-庄园秘境;51x89.5CM剪裁有图_看图.png
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolWorker] 草图解析：success=True
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolWorker]   7步法识别成功（自洽sc=1.00）
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 87.0x50.0cm → 画布方向: 90.5x52.0cm
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 5197x3012px
+[2026-08-27 13:46:58] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:46:58] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(1336x767)
+[2026-08-27 13:46:58] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.255, resized=1323x767 → target=1336x767, gap=(13px[1.0%], 0px[0.0%])
+[2026-08-27 13:46:59] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 16411424px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:46:59] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:46:59] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(5344x3071)
+[2026-08-27 13:46:59] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.020, resized=5299x3071 → target=5344x3071, gap=(45px[0.8%], 0px[0.0%])
+[2026-08-27 13:47:00] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 5344x3071px, 耗时 1.27s
+[2026-08-27 13:47:23] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(1336x767)
+[2026-08-27 13:47:23] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.255, resized=1323x767 → target=1336x767, gap=(13px[1.0%], 0px[0.0%])
+[2026-08-27 13:47:23] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 16411424px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:47:23] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(5344x3071)
+[2026-08-27 13:47:24] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.020, resized=5299x3071 → target=5344x3071, gap=(45px[0.8%], 0px[0.0%])
+[2026-08-27 13:47:25] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 5344x3071px, 耗时 1.28s
+[2026-08-27 13:47:31] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(1336x767)
+[2026-08-27 13:47:31] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.255, resized=1323x767 → target=1336x767, gap=(13px[1.0%], 0px[0.0%])
+[2026-08-27 13:47:31] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 16411424px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:47:31] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(5344x3071)
+[2026-08-27 13:47:32] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.020, resized=5299x3071 → target=5344x3071, gap=(45px[0.8%], 0px[0.0%])
+[2026-08-27 13:47:33] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 5344x3071px, 耗时 1.30s
+[2026-08-27 13:47:35] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(1336x767)
+[2026-08-27 13:47:35] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.255, resized=1323x767 → target=1336x767, gap=(13px[1.0%], 0px[0.0%])
+[2026-08-27 13:47:35] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 16411424px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:47:35] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(5344x3071)
+[2026-08-27 13:47:35] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.020, resized=5299x3071 → target=5344x3071, gap=(45px[0.8%], 0px[0.0%])
+[2026-08-27 13:47:36] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 5344x3071px, 耗时 1.24s
+[2026-08-27 13:47:41] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-庄园秘境;51x89.5CM剪裁有图'
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=吸水皮革-定制-裁剪有图-庄园秘境, 花型=庄园秘境, 水池模式=True, 水池花型=庄园秘境, 尺寸=89.5x51.0cm
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 89.5x51.0 → 画布 宽89.5 x 高51.0
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 10ms
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:47:41] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-庄园秘境;51x89.5CM剪裁有图'
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=吸水皮革-定制-裁剪有图-庄园秘境, 花型=庄园秘境, 尺寸=89.5x51.0cm, 布局=横版
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 14414 → 评分 14071 → 入围 14071
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 吸水皮革-定制-定制尺寸-庄园秘境;50x87cm.jpg (得分: 119.00)
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 14070 个
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;52x92cm.jpg (得分: 119.00)
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;50X88CM.jpg (得分: 119.00)
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;51.5x89.3cm.jpg (得分: 118.00)
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：吸水皮革-定制-定制尺寸-庄园秘境;50x87cm.jpg  (score=119.0, 比例差=0.015)
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 87.0x50.0cm → 画布方向: 90.5x52.0cm
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 5197x3012px
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 3ms
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:47:41] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-裁剪有图-庄园秘境;74.6x35.0CM剪裁有图'
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=吸水皮革-定制-裁剪有图-庄园秘境, 花型=庄园秘境, 尺寸=74.6x35.0cm, 布局=横版
+[2026-08-27 13:47:41] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:47:42] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 14414 → 评分 14071 → 入围 14071
+[2026-08-27 13:47:42] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 吸水皮革-定制-定制尺寸-庄园秘境;35x75cm.jpg (得分: 120.00)
+[2026-08-27 13:47:42] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 14070 个
+[2026-08-27 13:47:42] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;36x76cm.jpg (得分: 117.00)
+[2026-08-27 13:47:42] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;35x73cm.jpg (得分: 117.00)
+[2026-08-27 13:47:42] [INFO] [gui.property_panel] [PoolMatcher]    - 吸水皮革-定制-定制尺寸-庄园秘境;36x75cm.jpg (得分: 117.00)
+[2026-08-27 13:47:42] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(1336x767)
+[2026-08-27 13:47:42] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.255, resized=1323x767 → target=1336x767, gap=(13px[1.0%], 0px[0.0%])
+[2026-08-27 13:47:42] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 16411424px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:47:42] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:47:42] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(5344x3071)
+[2026-08-27 13:47:42] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.020, resized=5299x3071 → target=5344x3071, gap=(45px[0.8%], 0px[0.0%])
+[2026-08-27 13:47:44] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 5344x3071px, 耗时 1.55s
+[2026-08-27 13:47:59] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(1336x767)
+[2026-08-27 13:47:59] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.255, resized=1323x767 → target=1336x767, gap=(13px[1.0%], 0px[0.0%])
+[2026-08-27 13:48:00] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 16411424px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:48:00] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(5197x3012); 画布横版(5344x3071)
+[2026-08-27 13:48:00] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.020, resized=5299x3071 → target=5344x3071, gap=(45px[0.8%], 0px[0.0%])
+[2026-08-27 13:48:01] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 5344x3071px, 耗时 1.50s
+[2026-08-27 13:48:37] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-27 13:48:42] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:48:54] [INFO] [core.config] [PathResolver] 系统 PATH 中找到 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 13:48:54] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 13:48:54] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 17 个矩形候选
+[2026-08-27 13:48:54] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(82, 69, 880, 527) 内框=(323, 243, 464, 235) 得分=10.87
+[2026-08-27 13:48:54] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['top', 'bottom', 'left', 'right']
+[2026-08-27 13:48:55] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:48:55] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 13:48:55] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 13:48:56] [INFO] [gui.property_panel] [PoolMatcher] 💾 加载磁盘缓存成功（208395 个条目，上次扫描 2026-08-27 13:46:56）
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser] [Step3] OCR早停：已发现11条结果，唯一值≥8
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 11 条数值候选
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(530,43,37,18) cx=548 cy=52
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=65.0 conf=96 bbox=(32,314,25,18) cx=44 cy=323
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=94 bbox=(174,358,11,18) cx=180 cy=367
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=5.0 conf=63 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=68.0 conf=96 bbox=(530,437,26,18) cx=543 cy=446
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=90 bbox=(570,155,46,21) cx=593 cy=166
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=45.0 conf=97 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(529,42,39,20) cx=548 cy=52
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=77 bbox=(343,300,30,64) cx=358 cy=332
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=85 bbox=(128,352,58,25) cx=157 cy=364
+[2026-08-27 13:48:57] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=94 bbox=(569,154,47,22) cx=592 cy=165
+[2026-08-27 13:48:58] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 左=6.0 conf=93 → margin_left
+[2026-08-27 13:48:58] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 右=41.0 conf=86 → margin_right
+[2026-08-27 13:48:59] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 上=8.0 conf=96 → margin_top
+[2026-08-27 13:48:59] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 右=41.0 conf=89 → margin_right
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher] 📂 扫描完成：共 208395 文件，208395 有效图片 （增量更新 0 个；目录 扫0/跳4） [首次/已持久化] 耗时 24.01s；变更0条（0.000%）< 阈值，延迟写
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 9ms
+[2026-08-27 13:49:19] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 13:49:19] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;67x116cm.jpg  (score=117.0, 比例差=0.038)
+[2026-08-27 13:49:19] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 13:49:19] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 17 个矩形候选
+[2026-08-27 13:49:19] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(82, 69, 880, 527) 内框=(323, 243, 464, 235) 得分=10.87
+[2026-08-27 13:49:19] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['top', 'bottom', 'left', 'right']
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 enh chi_sim+eng psm11): 右=41.0 conf=91 → margin_right
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser] [Step3] OCR早停：已发现11条结果，唯一值≥8
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 11 条数值候选
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(530,43,37,18) cx=548 cy=52
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=65.0 conf=96 bbox=(32,314,25,18) cx=44 cy=323
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=94 bbox=(174,358,11,18) cx=180 cy=367
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=5.0 conf=63 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=68.0 conf=96 bbox=(530,437,26,18) cx=543 cy=446
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=90 bbox=(570,155,46,21) cx=593 cy=166
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=45.0 conf=97 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(529,42,39,20) cx=548 cy=52
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=77 bbox=(343,300,30,64) cx=358 cy=332
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=85 bbox=(128,352,58,25) cx=157 cy=364
+[2026-08-27 13:49:20] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=94 bbox=(569,154,47,22) cx=592 cy=165
+[2026-08-27 13:49:21] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 左=6.0 conf=93 → margin_left
+[2026-08-27 13:49:21] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 右=41.0 conf=86 → margin_right
+[2026-08-27 13:49:22] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 上=8.0 conf=96 → margin_top
+[2026-08-27 13:49:22] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 右=41.0 conf=89 → margin_right
+[2026-08-27 13:49:22] [INFO] [core.pool_designer.sketch_parser] [Step4] 小数字补漏触发：缺失1个字段，6x+PSM10扫描增强图...
+[2026-08-27 13:49:27] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场触发：缺失1个字段，独立tokens匹配...
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场完成：新绑定 0 个字段
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step4] 方向标签锁定 3 个字段: ['margin_left', 'margin_right', 'margin_top']
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[outer_h] 候选数=2 top1=65.0
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_h] 候选数=4 top1=45.0
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_w] 候选数=2 top1=68.0
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step6] 权威模式: 保留 target 外框 total_w=115.0 total_h=65.0 (方向标签边距不变，缺失边距将在后续反推)
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step6] 纵向反推 margin_bottom=12.0
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step6.7穷举] 跳过(sc=1.000≥0.9且边距完整，锁定3项→主路径0额外开销)
+[2026-08-27 13:49:28] [INFO] [core.pool_designer.sketch_parser] [Step7终态] 赋值: total=115.0x65.0 inner=68.0x45.0 边距上8.0下12.0左6.0右41.0
+[2026-08-27 13:49:42] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 enh chi_sim+eng psm11): 右=41.0 conf=91 → margin_right
+[2026-08-27 13:49:45] [INFO] [core.pool_designer.sketch_parser] [Step4] 小数字补漏触发：缺失1个字段，6x+PSM10扫描增强图...
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场触发：缺失1个字段，独立tokens匹配...
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场完成：新绑定 0 个字段
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step4] 方向标签锁定 3 个字段: ['margin_left', 'margin_right', 'margin_top']
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[outer_h] 候选数=2 top1=65.0
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_h] 候选数=4 top1=45.0
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_w] 候选数=2 top1=68.0
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step6] 权威模式: 保留 target 外框 total_w=115.0 total_h=65.0 (方向标签边距不变，缺失边距将在后续反推)
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step6] 纵向反推 margin_bottom=12.0
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step6.7穷举] 跳过(sc=1.000≥0.9且边距完整，锁定3项→主路径0额外开销)
+[2026-08-27 13:49:48] [INFO] [core.pool_designer.sketch_parser] [Step7终态] 赋值: total=115.0x65.0 inner=68.0x45.0 边距上8.0下12.0左6.0右41.0
+[2026-08-27 13:49:48] [INFO] [gui.property_panel] [PoolWorker] 草图解析：success=True
+[2026-08-27 13:49:48] [INFO] [gui.property_panel] [PoolWorker]   7步法识别成功（自洽sc=1.00）
+[2026-08-27 13:49:48] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 116.0x67.0cm → 画布方向: 116.0x66.0cm
+[2026-08-27 13:49:49] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6909x4015px
+[2026-08-27 13:49:49] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:49:49] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(1712x974)
+[2026-08-27 13:49:49] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.243, resized=1676x974 → target=1712x974, gap=(36px[2.1%], 0px[0.0%])
+[2026-08-27 13:49:49] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:49:49] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:49:49] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(6850x3898)
+[2026-08-27 13:49:50] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.971, resized=6708x3898 → target=6850x3898, gap=(142px[2.1%], 0px[0.0%])
+[2026-08-27 13:49:51] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 1.91s
+[2026-08-27 13:49:57] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 6ms
+[2026-08-27 13:49:57] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;67x116cm.jpg  (score=117.0, 比例差=0.038)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 116.0x67.0cm → 画布方向: 116.0x66.0cm
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6909x4015px
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 1ms
+[2026-08-27 13:49:57] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;69.0x46.0CM剪裁有图'
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=69.0x46.0cm, 布局=横版
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;45X68CM.jpg (得分: 119.00)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;48x72cm.jpg (得分: 117.00)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;50x75cm.jpg (得分: 116.00)
+[2026-08-27 13:49:57] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;43X64CM.jpg (得分: 116.00)
+[2026-08-27 13:49:57] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(1712x974)
+[2026-08-27 13:49:57] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.243, resized=1676x974 → target=1712x974, gap=(36px[2.1%], 0px[0.0%])
+[2026-08-27 13:49:58] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:49:58] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:49:58] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(6850x3898)
+[2026-08-27 13:49:58] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.971, resized=6708x3898 → target=6850x3898, gap=(142px[2.1%], 0px[0.0%])
+[2026-08-27 13:50:00] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 2.09s
+[2026-08-27 13:50:09] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 3ms
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208395 条目，耗时 6ms
+[2026-08-27 13:50:09] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;67x116cm.jpg  (score=117.0, 比例差=0.038)
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 116.0x67.0cm → 画布方向: 116.0x66.0cm
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6909x4015px
+[2026-08-27 13:50:09] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:50:09] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(1712x974)
+[2026-08-27 13:50:09] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.243, resized=1676x974 → target=1712x974, gap=(36px[2.1%], 0px[0.0%])
+[2026-08-27 13:50:10] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:50:10] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:50:10] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(6850x3898)
+[2026-08-27 13:50:10] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.971, resized=6708x3898 → target=6850x3898, gap=(142px[2.1%], 0px[0.0%])
+[2026-08-27 13:50:12] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 1.92s
+[2026-08-27 13:50:45] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(6850x3898)
+[2026-08-27 13:50:46] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.971, resized=6708x3898 → target=6850x3898, gap=(142px[2.1%], 0px[0.0%])
+[2026-08-27 13:54:24] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 17ms
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 17ms
+[2026-08-27 13:54:24] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;67x116cm.jpg  (score=117.0, 比例差=0.038)
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 116.0x67.0cm → 画布方向: 116.0x66.0cm
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6909x4015px
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:54:24] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;69.0x46.0CM剪裁有图'
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=69.0x46.0cm, 布局=横版
+[2026-08-27 13:54:24] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:54:25] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:54:25] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;45X68CM.jpg (得分: 119.00)
+[2026-08-27 13:54:25] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:54:25] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;48x72cm.jpg (得分: 117.00)
+[2026-08-27 13:54:25] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;50x75cm.jpg (得分: 116.00)
+[2026-08-27 13:54:25] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;43X64CM.jpg (得分: 116.00)
+[2026-08-27 13:54:25] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(1712x974)
+[2026-08-27 13:54:25] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.243, resized=1676x974 → target=1712x974, gap=(36px[2.1%], 0px[0.0%])
+[2026-08-27 13:54:25] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:54:25] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:54:25] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(6850x3898)
+[2026-08-27 13:54:26] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.971, resized=6708x3898 → target=6850x3898, gap=(142px[2.1%], 0px[0.0%])
+[2026-08-27 13:54:28] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 2.30s
+[2026-08-27 13:54:31] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:54:31] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 13:54:31] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 13:54:31] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 11ms
+[2026-08-27 13:54:31] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 4ms
+[2026-08-27 13:54:31] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:54:31] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 13:54:31] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;67x116cm.jpg  (score=117.0, 比例差=0.038)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 116.0x67.0cm → 画布方向: 116.0x66.0cm
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6909x4015px
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.1h） 共 208395 条目，耗时 2ms
+[2026-08-27 13:54:32] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;69.0x46.0CM剪裁有图'
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=69.0x46.0cm, 布局=横版
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;45X68CM.jpg (得分: 119.00)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;48x72cm.jpg (得分: 117.00)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;50x75cm.jpg (得分: 116.00)
+[2026-08-27 13:54:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;43X64CM.jpg (得分: 116.00)
+[2026-08-27 13:54:32] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(1712x974)
+[2026-08-27 13:54:32] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.243, resized=1676x974 → target=1712x974, gap=(36px[2.1%], 0px[0.0%])
+[2026-08-27 13:54:33] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:54:33] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:54:33] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6909x4015); 画布横版(6850x3898)
+[2026-08-27 13:54:33] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.971, resized=6708x3898 → target=6850x3898, gap=(142px[2.1%], 0px[0.0%])
+[2026-08-27 13:54:35] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 2.25s
+[2026-08-27 13:56:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-罗马假日竖版;51x66CM'
+[2026-08-27 13:56:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花间晴;50x300CM'
+[2026-08-27 13:56:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-森氧绿语;40x150CM'
+[2026-08-27 14:00:28] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-27 14:00:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:00:45] [WARNING] [gui.property_panel] [PropertyPanel] OCR引擎未就绪，将跳过OCR层：
+[2026-08-27 14:00:45] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:00:45] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 14:00:45] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 14:00:47] [INFO] [core.config] [PathResolver] 系统 PATH 中找到 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 14:00:47] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 14:00:47] [INFO] [gui.property_panel] [PoolMatcher] 💾 加载磁盘缓存成功（208397 个条目，上次扫描 2026-08-27 13:56:31）
+[2026-08-27 14:00:48] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 17 个矩形候选
+[2026-08-27 14:00:48] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(82, 69, 880, 527) 内框=(323, 243, 464, 235) 得分=10.87
+[2026-08-27 14:00:48] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['top', 'bottom', 'left', 'right']
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser] [Step3] OCR早停：已发现11条结果，唯一值≥8
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 11 条数值候选
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(530,43,37,18) cx=548 cy=52
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=65.0 conf=96 bbox=(32,314,25,18) cx=44 cy=323
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=94 bbox=(174,358,11,18) cx=180 cy=367
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=5.0 conf=63 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=68.0 conf=96 bbox=(530,437,26,18) cx=543 cy=446
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=90 bbox=(570,155,46,21) cx=593 cy=166
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=45.0 conf=97 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(529,42,39,20) cx=548 cy=52
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=77 bbox=(343,300,30,64) cx=358 cy=332
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=85 bbox=(128,352,58,25) cx=157 cy=364
+[2026-08-27 14:00:54] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=94 bbox=(569,154,47,22) cx=592 cy=165
+[2026-08-27 14:00:55] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 左=6.0 conf=93 → margin_left
+[2026-08-27 14:00:55] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 右=41.0 conf=86 → margin_right
+[2026-08-27 14:00:56] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 上=8.0 conf=96 → margin_top
+[2026-08-27 14:00:56] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 右=41.0 conf=89 → margin_right
+[2026-08-27 14:01:18] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 enh chi_sim+eng psm11): 右=41.0 conf=91 → margin_right
+[2026-08-27 14:01:21] [INFO] [core.pool_designer.sketch_parser] [Step4] 小数字补漏触发：缺失1个字段，6x+PSM10扫描增强图...
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场触发：缺失1个字段，独立tokens匹配...
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场完成：新绑定 0 个字段
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step4] 方向标签锁定 3 个字段: ['margin_left', 'margin_right', 'margin_top']
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[outer_h] 候选数=2 top1=65.0
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_h] 候选数=4 top1=45.0
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_w] 候选数=2 top1=68.0
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step6] 权威模式: 保留 target 外框 total_w=115.0 total_h=65.0 (方向标签边距不变，缺失边距将在后续反推)
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step6] 纵向反推 margin_bottom=12.0
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step6.7穷举] 跳过(sc=1.000≥0.9且边距完整，锁定3项→主路径0额外开销)
+[2026-08-27 14:01:24] [INFO] [core.pool_designer.sketch_parser] [Step7终态] 赋值: total=115.0x65.0 inner=68.0x45.0 边距上8.0下12.0左6.0右41.0
+[2026-08-27 14:01:29] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-中古花园;40x200CM裁剪有图'
+[2026-08-27 14:01:31] [INFO] [gui.property_panel] [PoolMatcher] 📂 扫描完成：共 208411 文件，208398 有效图片 （增量更新 1 个；目录 扫1/跳3） [首次/已持久化] 耗时 46.67s；写缓存 1.26s
+[2026-08-27 14:01:31] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208398 条目，耗时 2ms
+[2026-08-27 14:01:31] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:01:31] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;67x116cm.jpg  (score=117.0, 比例差=0.038)
+[2026-08-27 14:01:32] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 缓存命中：C:/Users/Administrator/Desktop/智能裁剪设计器/测试草图文件/双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图_看图.png
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolWorker] 草图解析：success=True
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolWorker]   7步法识别成功（自洽sc=1.00）
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 116.0x67.0cm → 画布方向: 116.0x66.0cm
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6909x4015px
+[2026-08-27 14:01:32] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 14:01:32] [INFO] [core.image_ops] [adapt_pool_material] 裁剪黑色边线: 原尺寸=6909x4015, 裁剪后=6907x4013, 边距(上/下/左/右)=1/1/1/1px
+[2026-08-27 14:01:32] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6907x4013); 画布横版(1712x974)
+[2026-08-27 14:01:33] [INFO] [core.image_ops] [adapt_pool_material] 使用 cover 模式（优先避免两侧黑边）: scale=0.248, resized=1712x995 → target=1712x974, crop_per_side=(0.0%, 1.1%)
+[2026-08-27 14:01:33] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 14:01:33] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 14:01:33] [INFO] [core.image_ops] [adapt_pool_material] 裁剪黑色边线: 原尺寸=6909x4015, 裁剪后=6907x4013, 边距(上/下/左/右)=1/1/1/1px
+[2026-08-27 14:01:33] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6907x4013); 画布横版(6850x3898)
+[2026-08-27 14:01:34] [INFO] [core.image_ops] [adapt_pool_material] 使用 cover 模式（优先避免两侧黑边）: scale=0.992, resized=6850x3980 → target=6850x3898, crop_per_side=(0.0%, 1.1%)
+[2026-08-27 14:01:35] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 2.03s
+[2026-08-27 14:01:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208398 条目，耗时 5ms
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208398 条目，耗时 6ms
+[2026-08-27 14:01:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;67x116cm.jpg  (score=117.0, 比例差=0.038)
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 14:01:40] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 116.0x67.0cm → 画布方向: 116.0x66.0cm
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6909x4015px
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208398 条目，耗时 9ms
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208398 条目，耗时 2ms
+[2026-08-27 14:01:41] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;69.0x46.0CM剪裁有图'
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=69.0x46.0cm, 布局=横版
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;45X68CM.jpg (得分: 119.00)
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;48x72cm.jpg (得分: 117.00)
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;50x75cm.jpg (得分: 116.00)
+[2026-08-27 14:01:41] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;43X64CM.jpg (得分: 116.00)
+[2026-08-27 14:01:41] [INFO] [core.image_ops] [adapt_pool_material] 裁剪黑色边线: 原尺寸=6909x4015, 裁剪后=6907x4013, 边距(上/下/左/右)=1/1/1/1px
+[2026-08-27 14:01:41] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6907x4013); 画布横版(1712x974)
+[2026-08-27 14:01:41] [INFO] [core.image_ops] [adapt_pool_material] 使用 cover 模式（优先避免两侧黑边）: scale=0.248, resized=1712x995 → target=1712x974, crop_per_side=(0.0%, 1.1%)
+[2026-08-27 14:01:42] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 14:01:42] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 14:01:42] [INFO] [core.image_ops] [adapt_pool_material] 裁剪黑色边线: 原尺寸=6909x4015, 裁剪后=6907x4013, 边距(上/下/左/右)=1/1/1/1px
+[2026-08-27 14:01:42] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6907x4013); 画布横版(6850x3898)
+[2026-08-27 14:01:43] [INFO] [core.image_ops] [adapt_pool_material] 使用 cover 模式（优先避免两侧黑边）: scale=0.992, resized=6850x3980 → target=6850x3898, crop_per_side=(0.0%, 1.1%)
+[2026-08-27 14:01:44] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 2.17s
+[2026-08-27 14:01:57] [INFO] [core.image_ops] [adapt_pool_material] 裁剪黑色边线: 原尺寸=6909x4015, 裁剪后=6907x4013, 边距(上/下/左/右)=1/1/1/1px
+[2026-08-27 14:01:57] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6907x4013); 画布横版(6850x3898)
+[2026-08-27 14:01:58] [INFO] [core.image_ops] [adapt_pool_material] 使用 cover 模式（优先避免两侧黑边）: scale=0.992, resized=6850x3980 → target=6850x3898, crop_per_side=(0.0%, 1.1%)
+[2026-08-27 14:08:40] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-花满金陵;直径130CM外圈黑色边去掉做满花'
+[2026-08-27 14:09:06] [INFO] [core.image_cropper] 源图边框层检测: 2层, 缩放比例=1.000
+[2026-08-27 14:09:06] [INFO] [core.image_cropper]   第1层: 厚度=118px (2.00cm), 颜色=(0, 0, 0)
+[2026-08-27 14:09:06] [INFO] [core.image_cropper]   第2层: 厚度=14px (0.24cm), 颜色=(6, 6, 6)
+[2026-08-27 14:09:38] [INFO] [core.image_cropper] 源图边框层检测: 4层, 缩放比例=1.000
+[2026-08-27 14:09:38] [INFO] [core.image_cropper]   第1层: 厚度=12px (0.20cm), 颜色=(2, 2, 2)
+[2026-08-27 14:09:38] [INFO] [core.image_cropper]   第2层: 厚度=16px (0.27cm), 颜色=(0, 0, 0)
+[2026-08-27 14:09:38] [INFO] [core.image_cropper]   第3层: 厚度=36px (0.61cm), 颜色=(0, 0, 0)
+[2026-08-27 14:09:38] [INFO] [core.image_cropper]   第4层: 厚度=15px (0.25cm), 颜色=(0, 0, 0)
+[2026-08-27 14:10:17] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-27 14:10:48] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:10:57] [WARNING] [gui.property_panel] [PropertyPanel] OCR引擎未就绪，将跳过OCR层：
+[2026-08-27 14:10:57] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:10:57] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 14:10:57] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 14:10:59] [INFO] [gui.property_panel] [PoolMatcher] 💾 加载磁盘缓存成功（208402 个条目，上次扫描 2026-08-27 14:08:42）
+[2026-08-27 14:11:03] [INFO] [core.config] [PathResolver] 系统 PATH 中找到 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 14:11:03] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 14:11:04] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 17 个矩形候选
+[2026-08-27 14:11:04] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(82, 69, 880, 527) 内框=(323, 243, 464, 235) 得分=10.87
+[2026-08-27 14:11:04] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['top', 'bottom', 'left', 'right']
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser] [Step3] OCR早停：已发现11条结果，唯一值≥8
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 11 条数值候选
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(530,43,37,18) cx=548 cy=52
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=65.0 conf=96 bbox=(32,314,25,18) cx=44 cy=323
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=94 bbox=(174,358,11,18) cx=180 cy=367
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=5.0 conf=63 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=68.0 conf=96 bbox=(530,437,26,18) cx=543 cy=446
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=90 bbox=(570,155,46,21) cx=593 cy=166
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=45.0 conf=97 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(529,42,39,20) cx=548 cy=52
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=77 bbox=(343,300,30,64) cx=358 cy=332
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=85 bbox=(128,352,58,25) cx=157 cy=364
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=94 bbox=(569,154,47,22) cx=592 cy=165
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 左=6.0 conf=93 → margin_left
+[2026-08-27 14:11:07] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 右=41.0 conf=86 → margin_right
+[2026-08-27 14:11:08] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 上=8.0 conf=96 → margin_top
+[2026-08-27 14:11:08] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 右=41.0 conf=89 → margin_right
+[2026-08-27 14:11:29] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 enh chi_sim+eng psm11): 右=41.0 conf=91 → margin_right
+[2026-08-27 14:11:32] [INFO] [core.pool_designer.sketch_parser] [Step4] 小数字补漏触发：缺失1个字段，6x+PSM10扫描增强图...
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场触发：缺失1个字段，独立tokens匹配...
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场完成：新绑定 0 个字段
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step4] 方向标签锁定 3 个字段: ['margin_left', 'margin_right', 'margin_top']
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[outer_h] 候选数=2 top1=65.0
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_h] 候选数=4 top1=45.0
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_w] 候选数=2 top1=68.0
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step6] 权威模式: 保留 target 外框 total_w=115.0 total_h=65.0 (方向标签边距不变，缺失边距将在后续反推)
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step6] 纵向反推 margin_bottom=12.0
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step6.7穷举] 跳过(sc=1.000≥0.9且边距完整，锁定3项→主路径0额外开销)
+[2026-08-27 14:11:36] [INFO] [core.pool_designer.sketch_parser] [Step7终态] 赋值: total=115.0x65.0 inner=68.0x45.0 边距上8.0下12.0左6.0右41.0
+[2026-08-27 14:11:47] [WARNING] [core.parser.template_matcher] 磁盘缓存 pickle 写入失败 path=C:\Users\Administrator\.smartshapecrop\caches\成品图_7ad0839a16bd.cache.pickle: [Errno 13] Permission denied: 'C:\\Users\\Administrator\\.smartshapecrop\\caches\\成品图_7ad0839a16bd.cache.pickle.tmp'
+[2026-08-27 14:11:47] [INFO] [gui.property_panel] [PoolMatcher] 📂 扫描完成：共 208415 文件，208402 有效图片 （增量更新 3 个；目录 扫1/跳3） [首次/已持久化] 耗时 50.13s；写缓存 0.60s
+[2026-08-27 14:11:47] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208402 条目，耗时 112ms
+[2026-08-27 14:11:47] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:11:47] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg  (score=117.0, 比例差=0.007)
+[2026-08-27 14:11:48] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 缓存命中：C:/Users/Administrator/Desktop/智能裁剪设计器/测试草图文件/双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图_看图.png
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolWorker] 草图解析：success=True
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolWorker]   7步法识别成功（自洽sc=1.00）
+[2026-08-27 14:11:48] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 111.0x62.5cm → 画布方向: 116.0x66.0cm
+[2026-08-27 14:11:49] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6614x3750px
+[2026-08-27 14:11:49] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 14:11:49] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6614x3750); 画布横版(1712x974)
+[2026-08-27 14:11:49] [INFO] [core.image_ops] [adapt_pool_material] 使用简单拉伸(stretch)模式: 源图=6614x3750, 目标=1712x974, scale=(0.259, 0.260), AR差异=0.3%
+[2026-08-27 14:11:49] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 14:11:49] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 14:12:45] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208402 条目，耗时 13ms
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208402 条目，耗时 5ms
+[2026-08-27 14:12:45] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg  (score=117.0, 比例差=0.007)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 111.0x62.5cm → 画布方向: 116.0x66.0cm
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6614x3750px
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208402 条目，耗时 4ms
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208402 条目，耗时 3ms
+[2026-08-27 14:12:45] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;69.0x46.0CM剪裁有图'
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=69.0x46.0cm, 布局=横版
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;45X68CM.jpg (得分: 119.00)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;48x72cm.jpg (得分: 117.00)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;50x75cm.jpg (得分: 116.00)
+[2026-08-27 14:12:45] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;43X64CM.jpg (得分: 116.00)
+[2026-08-27 14:12:45] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6614x3750); 画布横版(1712x974)
+[2026-08-27 14:12:45] [INFO] [core.image_ops] [adapt_pool_material] 使用简单拉伸(stretch)模式: 源图=6614x3750, 目标=1712x974, scale=(0.259, 0.260), AR差异=0.3%
+[2026-08-27 14:12:46] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 14:12:46] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 14:13:31] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-27 14:13:35] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:13:44] [INFO] [core.config] [PathResolver] 系统 PATH 中找到 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 14:13:44] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 已配置 Tesseract: E:\Tesseract-OCR\tesseract.EXE
+[2026-08-27 14:13:45] [INFO] [core.pool_designer.sketch_parser] [Step1] 找到 17 个矩形候选
+[2026-08-27 14:13:45] [INFO] [core.pool_designer.sketch_parser] [Step1] 选定外框=(82, 69, 880, 527) 内框=(323, 243, 464, 235) 得分=10.87
+[2026-08-27 14:13:45] [INFO] [core.pool_designer.sketch_parser] [Step2] 间隙区域: ['top', 'bottom', 'left', 'right']
+[2026-08-27 14:13:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:13:46] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 14:13:46] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser] [Step3] OCR早停：已发现11条结果，唯一值≥8
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser] [Step3] 全局OCR共 11 条数值候选
+[2026-08-27 14:13:47] [INFO] [gui.property_panel] [PoolMatcher] 💾 加载磁盘缓存成功（208402 个条目，上次扫描 2026-08-27 14:08:42）
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(530,43,37,18) cx=548 cy=52
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=65.0 conf=96 bbox=(32,314,25,18) cx=44 cy=323
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=94 bbox=(174,358,11,18) cx=180 cy=367
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=5.0 conf=63 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=68.0 conf=96 bbox=(530,437,26,18) cx=543 cy=446
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=90 bbox=(570,155,46,21) cx=593 cy=166
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=45.0 conf=97 bbox=(347,341,26,18) cx=360 cy=350
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=115.0 conf=96 bbox=(529,42,39,20) cx=548 cy=52
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=4.0 conf=77 bbox=(343,300,30,64) cx=358 cy=332
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=6.0 conf=85 bbox=(128,352,58,25) cx=157 cy=364
+[2026-08-27 14:13:47] [INFO] [core.pool_designer.sketch_parser]   val=8.0 conf=94 bbox=(569,154,47,22) cx=592 cy=165
+[2026-08-27 14:13:49] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 左=6.0 conf=93 → margin_left
+[2026-08-27 14:13:49] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm6): 右=41.0 conf=86 → margin_right
+[2026-08-27 14:13:51] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 上=8.0 conf=96 → margin_top
+[2026-08-27 14:13:51] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 gray chi_sim+eng psm11): 右=41.0 conf=89 → margin_right
+[2026-08-27 14:14:10] [INFO] [core.pool_designer.sketch_parser] [Step4] 双token(方向→数值 enh chi_sim+eng psm11): 右=41.0 conf=91 → margin_right
+[2026-08-27 14:14:12] [INFO] [core.pool_designer.sketch_parser] [Step4] 小数字补漏触发：缺失1个字段，6x+PSM10扫描增强图...
+[2026-08-27 14:14:15] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场触发：缺失1个字段，独立tokens匹配...
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step4] Phase3空间距离场完成：新绑定 0 个字段
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step4] 方向标签锁定 3 个字段: ['margin_left', 'margin_right', 'margin_top']
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[outer_h] 候选数=2 top1=65.0
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_h] 候选数=4 top1=45.0
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step5] 区域[inner_w] 候选数=2 top1=68.0
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step6] 权威模式: 保留 target 外框 total_w=115.0 total_h=65.0 (方向标签边距不变，缺失边距将在后续反推)
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step6] 纵向反推 margin_bottom=12.0
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step6.7穷举] 跳过(sc=1.000≥0.9且边距完整，锁定3项→主路径0额外开销)
+[2026-08-27 14:14:16] [INFO] [core.pool_designer.sketch_parser] [Step7终态] 赋值: total=115.0x65.0 inner=68.0x45.0 边距上8.0下12.0左6.0右41.0
+[2026-08-27 14:14:30] [INFO] [gui.property_panel] [PoolMatcher] 📂 扫描完成：共 208417 文件，208404 有效图片 （增量更新 5 个；目录 扫1/跳3） [首次/已持久化] 耗时 44.83s；写缓存 1.25s
+[2026-08-27 14:14:30] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208404 条目，耗时 2ms
+[2026-08-27 14:14:30] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:14:30] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 14:14:30] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x105cm.jpg (得分: 116.00)
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg  (score=117.0, 比例差=0.007)
+[2026-08-27 14:14:31] [INFO] [core.pool_designer.sketch_parser] [sketch_parser] 缓存命中：C:/Users/Administrator/Desktop/智能裁剪设计器/测试草图文件/双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图_看图.png
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolWorker] 草图解析：success=True
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolWorker]   7步法识别成功（自洽sc=1.00）
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 111.0x62.5cm → 画布方向: 116.0x66.0cm
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6614x3750px
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 14:14:31] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6614x3750); 画布横版(1712x974)
+[2026-08-27 14:14:31] [INFO] [core.image_ops] [adapt_pool_material] 使用简单拉伸(stretch)模式: 源图=6614x3750, 目标=1712x974, scale=(0.259, 0.260), AR差异=0.3%
+[2026-08-27 14:14:31] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 14:14:31] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 14:14:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208404 条目，耗时 2ms
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208404 条目，耗时 4ms
+[2026-08-27 14:14:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x105cm.jpg (得分: 116.00)
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg  (score=117.0, 比例差=0.007)
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 111.0x62.5cm → 画布方向: 116.0x66.0cm
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6614x3750px
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208404 条目，耗时 2ms
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208404 条目，耗时 2ms
+[2026-08-27 14:14:34] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;69.0x46.0CM剪裁有图'
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=69.0x46.0cm, 布局=横版
+[2026-08-27 14:14:34] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 14:14:35] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12582 → 评分 12527 → 入围 12527
+[2026-08-27 14:14:35] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;45X68CM.jpg (得分: 119.00)
+[2026-08-27 14:14:35] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12526 个
+[2026-08-27 14:14:35] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;48x72cm.jpg (得分: 117.00)
+[2026-08-27 14:14:35] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;43X64CM.jpg (得分: 116.00)
+[2026-08-27 14:14:35] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;50x75cm.jpg (得分: 116.00)
+[2026-08-27 14:14:35] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6614x3750); 画布横版(1712x974)
+[2026-08-27 14:14:35] [INFO] [core.image_ops] [adapt_pool_material] 使用简单拉伸(stretch)模式: 源图=6614x3750, 目标=1712x974, scale=(0.259, 0.260), AR差异=0.3%
+[2026-08-27 14:14:35] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 14:14:35] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 14:15:12] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6614x3750); 画布横版(6850x3898)
+[2026-08-27 14:15:12] [INFO] [core.image_ops] [adapt_pool_material] 使用简单拉伸(stretch)模式: 源图=6614x3750, 目标=6850x3898, scale=(1.036, 1.039), AR差异=0.4%
