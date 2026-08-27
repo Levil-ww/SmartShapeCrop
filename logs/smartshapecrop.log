@@ -17207,3 +17207,67 @@ UnboundLocalError: cannot access local variable 'parse_filename' where it is not
 [2026-08-27 13:28:59] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
 [2026-08-27 13:28:59] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6555x3750); 画布横版(6850x3898)
 [2026-08-27 13:29:00] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.039, resized=6814x3898 → target=6850x3898, gap=(36px[0.5%], 0px[0.0%])
+[2026-08-27 13:29:02] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 2.27s
+[2026-08-27 13:29:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:29:21] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 13:29:21] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 13:29:21] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208357 条目，耗时 3ms
+[2026-08-27 13:29:21] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208357 条目，耗时 7ms
+[2026-08-27 13:29:21] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:29:21] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12579 → 评分 12524 → 入围 12524
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12523 个
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg  (score=117.0, 比例差=0.009)
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 110.0x62.5cm → 画布方向: 116.0x66.0cm
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6555x3750px
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:29:22] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6555x3750); 画布横版(1712x974)
+[2026-08-27 13:29:22] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.260, resized=1703x974 → target=1712x974, gap=(9px[0.5%], 0px[0.0%])
+[2026-08-27 13:29:22] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:29:22] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:29:22] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6555x3750); 画布横版(6850x3898)
+[2026-08-27 13:29:23] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.039, resized=6814x3898 → target=6850x3898, gap=(36px[0.5%], 0px[0.0%])
+[2026-08-27 13:29:24] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 1.64s
+[2026-08-27 13:29:25] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolWorker] 解析结果：产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 水池模式=True, 水池花型=克罗印花, 尺寸=115.0x65.0cm
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolWorker] 水池模式尺寸解析：文件名尺寸 115.0x65.0 → 画布 宽115.0 x 高65.0
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208357 条目，耗时 4ms
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208357 条目，耗时 10ms
+[2026-08-27 13:29:25] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;65x115CM剪裁有图'
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=115.0x65.0cm, 布局=横版
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12579 → 评分 12524 → 入围 12524
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg (得分: 117.00)
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12523 个
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;67x116cm.jpg (得分: 117.00)
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;62.5x111cm.jpg (得分: 117.00)
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;60x106cm.jpg (得分: 116.00)
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolWorker] 最佳匹配：双面格-定制-定制尺寸-克罗印花;62.5x110cm.jpg  (score=117.0, 比例差=0.009)
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolWorker] 使用界面已解析的草图结果（跳过重复解析）
+[2026-08-27 13:29:25] [INFO] [gui.property_panel] [PoolWorker] 素材设计方向尺寸(原始文件名): 110.0x62.5cm → 画布方向: 116.0x66.0cm
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolWorker] 素材预加载完成: 6555x3750px
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success=True
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208357 条目，耗时 4ms
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 快速跳过扫描（根目录未变；距上次全扫 0.0h） 共 208357 条目，耗时 2ms
+[2026-08-27 13:29:26] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-裁剪有图-克罗印花;69.0x46.0CM剪裁有图'
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标解析: 产品=双面格-定制-裁剪有图-克罗印花, 花型=克罗印花, 尺寸=69.0x46.0cm, 布局=横版
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher] 🔍 目标形状关键词: 全部={'裁剪有图'}, 形状类={'裁剪有图'}
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher] ⚡ 候选集 12579 → 评分 12524 → 入围 12524
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher] ✅ 最佳匹配: 双面格-定制-定制尺寸-克罗印花;45X68CM.jpg (得分: 119.00)
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher]    其他候选: 12523 个
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;48x72cm.jpg (得分: 117.00)
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;50x75cm.jpg (得分: 116.00)
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PoolMatcher]    - 双面格-定制-定制尺寸-克罗印花;43X64CM.jpg (得分: 116.00)
+[2026-08-27 13:29:26] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6555x3750); 画布横版(1712x974)
+[2026-08-27 13:29:26] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=0.260, resized=1703x974 → target=1712x974, gap=(9px[0.5%], 0px[0.0%])
+[2026-08-27 13:29:26] [INFO] [gui.canvas_widget] [PreviewCanvas] 启动后台全分辨率渲染: 26701300px (LOD已显示，将替换为全分辨率)
+[2026-08-27 13:29:26] [INFO] [gui.property_panel] [PropertyPanel] 预览已生成
+[2026-08-27 13:29:26] [INFO] [core.image_ops] [adapt_pool_material] 不旋转(像素方向=画布方向): 像素横版(6555x3750); 画布横版(6850x3898)
+[2026-08-27 13:29:27] [INFO] [core.image_ops] [adapt_pool_material] 使用 contain+edge-extend 模式: scale=1.039, resized=6814x3898 → target=6850x3898, gap=(36px[0.5%], 0px[0.0%])
+[2026-08-27 13:29:28] [INFO] [gui.canvas_widget] [PreviewCanvas] 全分辨率渲染完成: 6850x3898px, 耗时 1.81s

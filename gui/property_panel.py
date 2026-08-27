@@ -621,7 +621,6 @@ class PropertyPanel(QWidget):
         row_mode = QHBoxLayout()
         self._pool_hole_mode = QComboBox()
         self._pool_hole_mode.addItem("✂️ 空白(挖去不留白)", "blank")
-        self._pool_hole_mode.addItem("🎨 纯色填充（用内部背景色）", "solid")
         self._pool_hole_mode.addItem("🖼 素材填充（花型匹配填充）", "image")
         self._pool_hole_mode.currentIndexChanged.connect(self._on_pool_hole_mode_change)
         row_mode.addWidget(QLabel("挖空方式:"), 0)
@@ -1213,9 +1212,6 @@ class PropertyPanel(QWidget):
             hm = self._pool_hole_mode.currentData()
             if hm == "blank":
                 self.design.pool_hole_transparent = True
-            elif hm == "solid":
-                self.design.pool_hole_transparent = False
-                self.design.hole_bg_image = None
             elif hm == "image":
                 self.design.pool_hole_transparent = False
 
@@ -1417,8 +1413,6 @@ class PropertyPanel(QWidget):
             hm = self._pool_hole_mode.currentData()
             if hm == "blank":
                 d.pool_hole_transparent = True
-            elif hm == "solid":
-                d.pool_hole_transparent = False
             elif hm == "image":
                 d.pool_hole_transparent = False
         except Exception:
