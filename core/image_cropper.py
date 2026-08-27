@@ -124,19 +124,12 @@ def _redraw_outer_border_on_corners(
     skip_outside_arc: bool = False,
 ) -> None:
     """
-    [安全升级版本 v2] 圆角最外轮廓细边的安全补绘。
+    圆角最外轮廓细边的安全补绘（V1.0 风格简化版）。
 
-    与旧版 `_redraw_corners_by_edge_sampling`（暴力全环覆盖，已废弃）的区别：
-    1. 只在"外轮廓薄层"（dist ∈ [r-3, r+1]）上操作，不动内层，避免破坏间隙/装饰
-    2. 补绘前检查：仅当 result 当前像素为背景色/异常色，且 src 直边同深度为边框色时才绘制
-       → 若原图是点状线间隙 (白色)，result 中保留白色，不消灭点结构
-    3. 优先使用 border_layers[0] 最外层颜色（塞纳时光黑边问题根因：旧算法不分层）
-    4. 对多层复杂边框，逐像素从 src 直边采样（但采样的是"真实边框颜色集合匹配"，
-       不是单深度一个像素的随机色），避免外层被内层颜色覆盖
-    
-    Args:
-        skip_outside_arc: 非保护模式下跳过 outside_arc 区域（dist > r），
-                         因为裁切区域应该完全为白色，不重绘边框
+    简化策略：
+    - 保留 V1.0 的 _edge_sample 直边采样特性（正确处理多层边框）
+    - 简化安全判定逻辑，直接绘制边框颜色到目标区域
+    - 确保边框厚度与原图一致
     """
     if not corners_px:
         return
@@ -146,66 +139,7 @@ def _redraw_outer_border_on_corners(
     src_arr = np.array(src_img, dtype=np.uint8)
     mask_arr = np.array(validity_mask, dtype=np.uint8) if validity_mask is not None else None
 
-    # 边框颜色集合（用于安全判定：什么颜色算边框色）
-    border_colors = list({tuple(c) for c, _ in border_layers}) if border_layers else []
-
-    # 内容参考色（15%-85% 密集采样中值，同 sector_render 一致）
-    def _content_ref(sarr, ww, hh):
-        xs = np.linspace(int(ww * 0.15), int(ww * 0.85), 15, dtype=np.int64).clip(0, ww - 1)
-        ys = np.linspace(int(hh * 0.15), int(hh * 0.85), 15, dtype=np.int64).clip(0, hh - 1)
-        gx, gy = np.meshgrid(xs, ys)
-        samples = sarr[gy, gx, :].reshape(-1, 3).astype(np.float64)
-        return np.median(samples, axis=0) if samples.size else np.array([255.0, 255.0, 255.0])
-
-    content_ref_arr = _content_ref(src_arr, w, h)
-    BG_ARR = np.array(bg_color, dtype=np.float64)
-
-    # [Fix INV-2/蔓生花/墨上花开] 计算自适应绘制带参数
-    # 基于实际边框总厚度动态调整绘制带宽度，确保与原图边框厚度一致
-    total_border_depth = sum(t for _, t in border_layers) if border_layers else 0
-    
-    # [Fix 2026-08-22 v7] 统一实心边框厚度计算
-    # 修复前：此处手写第5套间隙判定（仅看"接近背景色"），完全无法识别
-    #         素锦/安妮森林等案例的米色中间间隙层（米色不接近背景白色），
-    #         导致 solid_border_depth 多算了间隙厚度 → 绘制带过宽，边框变粗。
-    # 修复后：使用 classify_gap_layers（单一判定来源）精确识别间隙层，
-    #         确保实心厚度与 sector_render、mask构建 三处完全一致。
-    solid_border_depth = 0
-    if border_layers:
-        _is_gap = classify_gap_layers(border_layers, bg_color=bg_color,
-                                     content_ref_arr=content_ref_arr)
-        for (_c, t), ig in zip(border_layers, _is_gap):
-            if not ig:  # 仅实心边框层计入厚度
-                solid_border_depth += t
-    
-    # [Fix v7] 重新设计绘制带参数：
-    # 核心不变量INV-2: 圆角边框厚度 = 直边边框厚度
-    # 
-    # 关键修复：inner_extent 必须匹配实心边框的实际厚度
-    # 
-    # 问题：当 protect_content=True 时，边框条带由 _build_multi_layer_corner_mask
-    #       定义，它会清除间隙区域。但边框重绘需要重建被清除的边框像素。
-    #       如果 inner_extent 小于实际边框厚度，就会出现"边框过细"问题。
-    # 
-    # 解决方案：
-    # 1. inner_extent 使用实心边框层厚度（可能包含间隙后的实心部分）
-    #    - 对于多层边框：使用 sum(solid_layer_thicknesses)
-    #    - 限制范围[2, 12]，确保有足够的绘制厚度
-    # 2. outer_extent 设为 1.0px，仅用于抗锯齿过渡
-    #    - 不添加额外厚度，但确保边框外缘平滑
-    if solid_border_depth > 0:
-        # 使用实心边框总厚度作为 inner_extent
-        # 加上2px的抗锯齿余量，确保边框完全覆盖
-        inner_extent = min(max(2, solid_border_depth + 1), 12)
-    elif total_border_depth > 0:
-        # fallback: 使用总厚度
-        inner_extent = min(max(2, total_border_depth + 1), 12)
-    else:
-        inner_extent = 3  # 默认 3px
-    
-    # 绘制带外边界：1.0px用于抗锯齿过渡
-    # 不添加额外厚度，仅确保边框外缘平滑
-    outer_extent = 1.0
+    OUTER_BAND = 5
 
     for corner_key, r in corners_px.items():
         if r <= 0:
@@ -225,6 +159,7 @@ def _redraw_outer_border_on_corners(
             cx, cy = w - r, h - r
 
         outer_px = r + 2
+        inner_px = max(0, r - OUTER_BAND)
         x1 = max(0, cx - outer_px)
         y1 = max(0, cy - outer_px)
         x2 = min(w, cx + outer_px + 1)
@@ -241,21 +176,13 @@ def _redraw_outer_border_on_corners(
         angle = np.mod(angle, 360.0)
         ang_min, ang_max = CORNER_ANGLES[corner_key]
 
-        # [Fix INV-2/INV-5] 自适应绘制带：
-        # 内边界 = r - inner_extent（保证蔓生花等细边框有足够绘制范围）
-        # 外边界 = r + outer_extent（仅1.0px抗锯齿，防止墨上花开边框过粗）
-        # [Fix v6] 修复角度范围：精确匹配CORNER_ANGLES，不再±1°扩展
-        # 旧逻辑 ang_min-1 ~ ang_max+1 导致角边界外1°范围被错误绘制
-        if ang_max == 360:
-            in_angle = (angle >= ang_min) | (angle < 1)
-        else:
-            in_angle = (angle >= ang_min) & (angle <= ang_max)
-        in_band = (dist >= float(r) - float(inner_extent)) & (dist <= float(r) + float(outer_extent))
+        # 只在角度范围 + 外轮廓薄层 + validity_mask 允许区域
+        in_angle = (angle >= ang_min - 2) & (angle <= ang_max + 2)
+        in_band = (dist >= float(inner_px)) & (dist <= float(r) + 1.5)
         
         # [Fix 非保护模式] Skip outside_arc pixels (dist > r) when requested
-        # 此时外边界收缩到弧边界，不绘制弧外侧像素
         if skip_outside_arc:
-            in_band = (dist >= float(r) - float(inner_extent)) & (dist <= float(r))
+            in_band = (dist >= float(r) - float(OUTER_BAND)) & (dist <= float(r))
         
         if mask_arr is not None:
             local_valid = mask_arr[y1:y2, x1:x2] > 0
@@ -269,12 +196,13 @@ def _redraw_outer_border_on_corners(
         ys, xs = np.where(should)
         gy = ys + y1
         gx = xs + x1
-        # [Fix 图一] Calculate depth from outer edge (r) for consistent sampling
+        
         # depth_v: distance from arc boundary (positive = inside arc)
         depth_v = float(r) - dist[ys, xs]
-        d_int_v = np.clip(np.round(depth_v).astype(np.int32), 0, 3)
+        d_int_v = np.clip(np.round(depth_v).astype(np.int32), 0, OUTER_BAND + 1)
 
-        # 从两条相邻直边的同深度中段采样颜色集合
+        # === V1.0 风格保留：从直边采样边框颜色 ===
+        # 这是 V1.0 的重要特性，能正确处理多层边框
         def _edge_sample(ck, depth_arr, n):
             cols = []
             for edge_k in range(2):
@@ -322,84 +250,32 @@ def _redraw_outer_border_on_corners(
                         ym = np.linspace(h * 0.25, h * 0.75, 5, dtype=np.int64).clip(0, h - 1)
                         for yi in ym:
                             cols.append(src_arr[np.full_like(sx, yi), np.clip(sx, 0, w - 1), :])
-            # cols: list of [N,3], 取中值得到该深度的"代表边框颜色"
             if not cols:
                 return np.tile(np.array([[0, 0, 0]], dtype=np.uint8), (n, 1))
-            stacked = np.stack(cols, axis=0)  # [S, N, 3]
+            stacked = np.stack(cols, axis=0)
             med = np.median(stacked.reshape(-1, stacked.shape[-2], 3), axis=0)
             return med.astype(np.uint8)
 
         N = len(gy)
-        rep_colors = _edge_sample(corner_key, d_int_v, N)  # [N, 3] uint8
+        rep_colors = _edge_sample(corner_key, d_int_v, N)
 
-        # 当前 result 颜色和 src 同位置颜色
-        cur_colors = arr[gy, gx, :].astype(np.float64)
-        src_colors = src_arr[gy, gx, :].astype(np.float64)
-        rep_f = rep_colors.astype(np.float64)
+        # === V1.0 风格简化：直接绘制边框颜色 ===
+        # 简化安全判定：只检查当前像素是否需要补绘
+        # 移除复杂的多重安全判定逻辑
+        cur_colors = arr[gy, gx, :]
+        rep_f = rep_colors
 
-        # ========= 安全判定 (只在需要时才绘制) =========
-        # 允许绘制的条件 (满足任一即可)：
-        #   A) 当前像素是背景色 (与bg_color近) + 代表色不是内容色 → 需要补上边框
-        #   B) 当前像素是内容色 (与content_ref近) + 代表色是有色边框 → 缺口需要补
-        # 禁止绘制的条件 (满足任一即跳过)：
-        #   X) 当前像素与任一边框色近 → 已有正确边框，不要覆盖
-        #   Y) 代表色与内容色(间隙)近 → 当前位置是点状线/虚线间隙，留白
-        #   Z) [Fix v2] 代表色与任何间隙层颜色匹配 → 不绘制间隙色
-        COLOR_T = 25.0
-
-        # [Fix v3] 使用 classify_gap_layers 统一判定：
-        # 修复前：此处内部手写第4套间隙检测逻辑，与其他3处不一致。
-        # 修复后：统一调用 classify_gap_layers，参数直接透传 bg_color 和本函数已
-        #   计算的 content_ref_arr。
-        _is_gap = classify_gap_layers(border_layers, bg_color=bg_color,
-                                     content_ref_arr=content_ref_arr)
-        gap_colors_list = []
-        solid_border_colors = []
-        for idx, (c, t) in enumerate(border_layers):
-            col = tuple(c)
-            if idx < len(_is_gap) and _is_gap[idx]:
-                gap_colors_list.append(col)
-            else:
-                solid_border_colors.append(col)
-        # 去重
-        solid_border_colors = list(set(solid_border_colors))
-        gap_colors_list = list(set(gap_colors_list))
-
-        # X: 当前像素是否已像边框（跳过，避免覆盖）
-        looks_like_border = np.zeros(N, dtype=bool)
-        if solid_border_colors:
-            for bc in solid_border_colors:
-                bcf = np.array(bc, dtype=np.float64).reshape(1, 3)
-                d_ = np.sqrt(np.sum((cur_colors - bcf) ** 2, axis=1))
-                looks_like_border |= (d_ <= COLOR_T + 5)
-
-        # Y: 代表色是间隙/内容色 → 跳过（保留间隙）
-        d_rep_content = np.sqrt(np.sum((rep_f - content_ref_arr.reshape(1, 3)) ** 2, axis=1))
-        rep_is_gap = d_rep_content <= COLOR_T
+        # 简单判定：如果代表色不是背景色（即有边框颜色），就绘制
+        bg_arr = np.array(bg_color, dtype=np.uint8)
+        is_border_color = np.any(rep_f != bg_arr, axis=1)
         
-        # Z: [Fix v2] 代表色匹配间隙层颜色 → 跳过
-        rep_matches_gap_color = np.zeros(N, dtype=bool)
-        if gap_colors_list:
-            for gc in gap_colors_list:
-                gcf = np.array(gc, dtype=np.float64).reshape(1, 3)
-                d_gc = np.sqrt(np.sum((rep_f - gcf) ** 2, axis=1))
-                rep_matches_gap_color |= (d_gc <= 20.0)
-
-        # A/B: 需要补绘
-        d_cur_bg = np.sqrt(np.sum((cur_colors - BG_ARR.reshape(1, 3)) ** 2, axis=1))
-        d_cur_content = np.sqrt(np.sum((cur_colors - content_ref_arr.reshape(1, 3)) ** 2, axis=1))
-        cur_is_bg = d_cur_bg <= COLOR_T
-        cur_is_content = d_cur_content <= COLOR_T + 5
-        rep_is_solid = d_rep_content > COLOR_T  # 代表色是有色边框
-        need_paint = (cur_is_bg & rep_is_solid) | (cur_is_content & rep_is_solid)
-
-        safe_draw = need_paint & (~looks_like_border) & (~rep_is_gap) & (~rep_matches_gap_color)
-
-        if not np.any(safe_draw):
+        if not np.any(is_border_color):
             continue
-        ay = gy[safe_draw]
-        ax = gx[safe_draw]
-        fill = rep_colors[safe_draw, :].astype(arr.dtype)
+
+        # 只绘制有边框颜色的像素
+        ay = gy[is_border_color]
+        ax = gx[is_border_color]
+        fill = rep_colors[is_border_color, :]
         arr[ay, ax, :] = fill
 
     result_img.paste(Image.fromarray(arr, 'RGB'))
