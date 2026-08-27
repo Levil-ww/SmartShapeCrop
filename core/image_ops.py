@@ -579,9 +579,15 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     canvas_arr = np.array(canvas, dtype=np.uint8)
 
     # 判断是否为水池模式+有素材图（用于跳过边框带渲染和L形遮罩）
-    is_pool_with_material = (design.pool_hole_transparent
-                             and design.pool_outer_material_image
-                             and (cached_img is not None or os.path.isfile(design.pool_outer_material_image)))
+    # [Fix 2026-08-27] 素材填充模式下 pool_hole_transparent=False，
+    # 但仍需跳过边框带渲染 — 条件改为"有任何水池素材(外框或内挖)"即可
+    has_outer_pool_material = (design.pool_outer_material_image
+                               and (cached_img is not None or os.path.isfile(design.pool_outer_material_image)))
+    has_inner_pool_material = bool(
+        getattr(design, 'pool_inner_material_image', None)
+        and os.path.isfile(getattr(design, 'pool_inner_material_image', ''))
+    )
+    is_pool_with_material = has_outer_pool_material or has_inner_pool_material
 
     # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
     # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color
@@ -770,11 +776,32 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
 
 
 def _render_inner_area(design: CropDesign, quality: str = 'export') -> Image.Image:
-    """渲染内部填充（纯色 或 适配素材图 或 水池挖空=纯白）"""
+    """渲染内部填充（纯色 / 素材图 / 水池挖空=纯白 / 水池内挖素材=按内挖尺寸渲染）"""
     W, H = design.canvas_w_px, design.canvas_h_px
     # 水池模式：内部挖空留白 = 纯白色（JPG 不支持透明，白色即显示为"空"）
     if design.pool_hole_transparent:
         return Image.new('RGB', (W, H), (255, 255, 255))
+
+    # —— 水池内挖素材：按内挖像素尺寸渲染，贴到画布内挖位置 ——
+    # 与外框素材（按画布尺寸渲染）不同，内挖素材应按内挖尺寸精确缩放
+    pool_inner = getattr(design, 'pool_inner_material_image', None)
+    if pool_inner and os.path.isfile(pool_inner):
+        inner_rect = design.inner_rect_px()
+        iw_px = max(1, int(round(inner_rect.w)))
+        ih_px = max(1, int(round(inner_rect.h)))
+        # 1) 将素材缩放到内挖像素尺寸
+        is_tile = _looks_like_tile(pool_inner)
+        material_img = load_and_fit(pool_inner, iw_px, ih_px,
+                                    mode='tile' if is_tile else 'cover',
+                                    quality=quality)
+        # 2) 创建全画布底色 + 将素材贴到内挖位置
+        result = Image.new('RGB', (W, H), design.hole_bg_color)
+        ox = max(0, int(round(inner_rect.x)))
+        oy = max(0, int(round(inner_rect.y)))
+        result.paste(material_img, (ox, oy))
+        return result
+
+    # 非水池内挖素材：按全画布尺寸渲染（兼容旧模式）
     if design.hole_bg_image and os.path.isfile(design.hole_bg_image):
         return load_and_fit(design.hole_bg_image, W, H,
                             mode='tile' if _looks_like_tile(design.hole_bg_image) else 'cover',

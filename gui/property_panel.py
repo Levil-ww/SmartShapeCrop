@@ -622,7 +622,7 @@ class PropertyPanel(QWidget):
         self._pool_hole_mode = QComboBox()
         self._pool_hole_mode.addItem("✂️ 空白(挖去不留白)", "blank")
         self._pool_hole_mode.addItem("🎨 纯色填充（用内部背景色）", "solid")
-        self._pool_hole_mode.addItem("🖼 素材填充（用内部背景图）", "image")
+        self._pool_hole_mode.addItem("🖼 素材填充（花型匹配填充）", "image")
         self._pool_hole_mode.currentIndexChanged.connect(self._on_pool_hole_mode_change)
         row_mode.addWidget(QLabel("挖空方式:"), 0)
         row_mode.addWidget(self._pool_hole_mode, 1)
@@ -1237,7 +1237,52 @@ class PropertyPanel(QWidget):
             if design.outer_bg_image:
                 self._ed_outer_img.setText(design.outer_bg_image)
 
-            # 3) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
+            # 3) 内挖素材自动匹配（仅当挖空方式为"素材填充"时）
+            inner_match_info = ""
+            if hm == "image":
+                try:
+                    inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
+                    inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
+                    target_name = self._pool_target.text().strip()
+                    if target_name and inner_w_cm > 0 and inner_h_cm > 0:
+                        import re
+                        # 用正则替换原目标文件名中的尺寸部分为内挖尺寸
+                        # 原格式: ...-{W}x{H}CM... → 替换为内挖尺寸
+                        dim_match = re.search(
+                            r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
+                            target_name
+                        )
+                        if dim_match:
+                            new_dim = f'{inner_w_cm:.1f}x{inner_h_cm:.1f}CM'
+                            inner_query = (target_name[:dim_match.start()]
+                                           + new_dim
+                                           + target_name[dim_match.end():])
+                        else:
+                            # 兜底：构造标准查询格式
+                            from core.parser.name_parser import parse_filename
+                            p = parse_filename(target_name)
+                            pat = p.pool_pattern_name or p.pattern_name or ""
+                            inner_query = f"{pat}-裁剪有图-{inner_w_cm:.1f}x{inner_h_cm:.1f}CM" if pat else ""
+
+                        if inner_query:
+                            self._set_pool_status(f"正在匹配内挖素材…", is_error=False)
+                            QApplication.processEvents()
+                            self._matcher.scan_library(force=False)
+                            best_inner, _ = self._matcher.find_best_match(inner_query)
+                            if best_inner is not None:
+                                self.design.pool_inner_material_image = best_inner.path
+                                self.design.hole_bg_image = best_inner.path
+                                inner_match_info = f"内挖素材：{os.path.basename(best_inner.path)} (score={best_inner.score:.1f})\n"
+                                self._ed_hole_img.setText(best_inner.path)
+                            else:
+                                inner_match_info = "内挖素材：未找到匹配（请手动选择）\n"
+                        else:
+                            inner_match_info = "内挖素材：无花型名，跳过自动匹配\n"
+                except Exception as e:
+                    logger.warning(f"[PropertyPanel] 内挖素材自动匹配失败: {e}")
+                    inner_match_info = f"内挖素材匹配异常：{e}\n"
+
+            # 4) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
             self._set_pool_status("正在生成预览图…", is_error=False)
             QApplication.processEvents()
             self._apply_quiet()
@@ -1245,17 +1290,24 @@ class PropertyPanel(QWidget):
             # 记录目标文件名到历史（保留 3 天）
             self._pool_record_target_name_history()
 
-            # 4) 结果提示（try/except 防止状态消息失败导致整个流程中断）
+            # 5) 结果提示（try/except 防止状态消息失败导致整个流程中断）
             try:
                 info = f"✅ 生成成功！\n"
-                info += f"画布：{design.canvas_w_cm:.1f} × {design.canvas_h_cm:.1f} cm\n"
-                info += (f"内挖边距：上{design.inner_margin_top_cm:.1f}/下{design.inner_margin_bottom_cm:.1f}/"
-                         f"左{design.inner_margin_left_cm:.1f}/右{design.inner_margin_right_cm:.1f} cm\n")
+                info += f"画布：{self.design.canvas_w_cm:.1f} × {self.design.canvas_h_cm:.1f} cm\n"
+                # 内挖由设计派生值：canvas - margin_left - margin_right
+                inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
+                inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
+                info += f"内挖：{inner_w_cm:.1f} × {inner_h_cm:.1f} cm\n"
+                info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
+                         f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm\n")
+                # 内挖素材匹配结果
+                if inner_match_info:
+                    info += inner_match_info
                 if sketch_result is not None and sketch_result.success:
                     sr = sketch_result
                     info += f"识别草图成功：\n"
                     info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
-                    info += f"  内挖：{sr.inner_w_cm:.1f} × {sr.inner_h_cm:.1f} cm\n"
+                    info += f"  内挖：{(sr.outer_w_cm - sr.margin_left_cm - sr.margin_right_cm):.1f} × {(sr.outer_h_cm - sr.margin_top_cm - sr.margin_bottom_cm):.1f} cm\n"
                     info += f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f} cm\n"
                     if hasattr(sr, 'debug') and sr.debug:
                         dir_vals = sr.debug.get("direction_margins", {}) if isinstance(sr.debug, dict) else {}
@@ -1273,8 +1325,8 @@ class PropertyPanel(QWidget):
                     info += f"草图未识别（请检查/手动调整边距）：{sketch_result.message}\n"
                 else:
                     info += f"草图未上传或未识别\n"
-                if design.pool_outer_material_image:
-                    info += f"匹配素材：{os.path.basename(design.pool_outer_material_image)}\n"
+                if self.design.pool_outer_material_image:
+                    info += f"匹配素材：{os.path.basename(self.design.pool_outer_material_image)}\n"
                 self._set_pool_status(info)
             except Exception as e:
                 logger.exception(f"[PropertyPanel] 状态消息构造失败: {e}")
@@ -1377,6 +1429,10 @@ class PropertyPanel(QWidget):
         if d.outer_bg_image and (d.pool_outer_material_image is None
                                  or d.pool_outer_material_image != d.outer_bg_image):
             d.pool_outer_material_image = d.outer_bg_image
+        # 内挖素材：同步 pool_inner_material_image 与 hole_bg_image
+        if d.hole_bg_image and (d.pool_inner_material_image is None
+                                or d.pool_inner_material_image != d.hole_bg_image):
+            d.pool_inner_material_image = d.hole_bg_image
 
     def _apply_quiet(self):
         """属性变动时：静默触发预览，按钮统一 apply 也会调用"""
