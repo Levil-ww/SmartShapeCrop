@@ -452,6 +452,15 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
     """
     if design.mode == 'rect_lshape':
         return compute_lshape_border_bands(design)
+    # [F9] ellipse_hole 模式不支持多层边框：若设置了 borders，此处会按
+    # rect_hole 的矩形带逻辑渲染（视觉上为“矩形洞”边框带，不符合椭圆预期）。
+    # 出于“不改变功能逻辑”的约束，不在此处改变渲染；记录 warning 提升可见性，
+    # 文档与 UI 说明明确“椭圆模式暂不支持多层边框”。
+    if design.mode == 'ellipse_hole' and design.borders:
+        logger.warning(
+            f"[geometry] 椭圆模式不支持多层边框，将按矩形边框带渲染 "
+            f"（borders={len(design.borders)} 层）；如需正确椭圆边框请移除边框设置"
+        )
     # —— 以下为 rect_hole 原有逻辑 ——
     w, h = design.canvas_w_px, design.canvas_h_px
     outer = design.outer_rect_px()

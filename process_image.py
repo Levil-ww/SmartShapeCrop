@@ -20,14 +20,32 @@ from core.log_setup import setup_logging
 setup_logging()
 
 # ============ 参数配置 ============
-src_path = r"D:\SmartShapeCrop\psd_demo\双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
-output_dir = r"D:\SmartShapeCrop\psd_demo"
-output_name = "双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角半径2cm.jpg"
+# [F12 修复] 不再硬编码本机绝对路径：
+# 默认取脚本所在目录下的 psd_demo（原机器行为不变），并支持命令行参数覆盖。
+import argparse as _argparse
 
-target_w_cm = 41.0      # 目标宽度（厘米，竖版短边）
-target_h_cm = 55.0      # 目标高度（厘米，竖版长边）
-corner_r_cm = 2.0       # 右下角圆角半径（厘米）
-dpi = 150               # DPI（与 CropConfig / CropDesign / UI 默认值一致）
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_parser = _argparse.ArgumentParser(
+    description="图片等比缩放 + 圆角处理脚本（示例/批处理）",
+)
+_parser.add_argument("--src", default=os.path.join(
+    _script_dir, "psd_demo", "双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"))
+_parser.add_argument("--out-dir", default=os.path.join(_script_dir, "psd_demo"))
+_parser.add_argument("--out-name", default="双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角半径2cm.jpg")
+_parser.add_argument("--target-w", type=float, default=41.0, help="目标宽度（厘米，竖版短边）")
+_parser.add_argument("--target-h", type=float, default=55.0, help="目标高度（厘米，竖版长边）")
+_parser.add_argument("--corner-r", type=float, default=2.0, help="圆角半径（厘米）")
+_parser.add_argument("--dpi", type=int, default=150, help="DPI")
+_args = _parser.parse_args()
+
+src_path = _args.src
+output_dir = _args.out_dir
+output_name = _args.out_name
+
+target_w_cm = _args.target_w
+target_h_cm = _args.target_h
+corner_r_cm = _args.corner_r
+dpi = _args.dpi
 
 # ============ 计算像素 ============
 target_w_px = int(round(target_w_cm * dpi / 2.54))
@@ -41,7 +59,7 @@ print(f"圆角半径: {corner_r_px} px ({corner_r_cm} cm)")
 src = load_source_image(src_path)
 print(f"源图尺寸: {src.size} px")
 
-# ============ 2. 简单缩放（不裁剪，保持图片完整性）============
+# ============ 2. 简单缩放（直接拉伸填满目标尺寸；源图比例不同时图像会变形）============
 cropped = src.resize((target_w_px, target_h_px), Image.LANCZOS)
 print(f"缩放后尺寸: {cropped.size} px")
 

@@ -75,17 +75,18 @@
   <div>
     <span class="tag">分析日期 2026-08-26</span>
     <span class="tag">代码规模 ≈ 1.4 万行（core+gui）</span>
-    <span class="tag">152 个测试用例</span>
+    <span class="tag">224 个测试用例（全绿：224 passed, 5 skipped）</span>
     <span class="tag">证据：源码精读 + crash.log 复现</span>
+    <span class="tag">F1–F19 全部已修复（2026-08-27 复核）</span>
   </div>
 </header>
 
 <!-- ===== 概览指标 ===== -->
 <h2 class="sec">一、关键指标</h2>
 <div class="grid g4">
-  <div class="card metric c-crit"><div class="num">19</div><div class="lab">风险 / 缺陷项</div></div>
+  <div class="card metric c-crit"><div class="num">19</div><div class="lab">风险 / 缺陷项（19/19 已修复）</div></div>
   <div class="card metric c-high"><div class="num">4</div><div class="lab">高危（含 1 项实测崩溃）· 全部已修复</div></div>
-  <div class="card metric c-med"><div class="num">10</div><div class="lab">中危</div></div>
+  <div class="card metric c-med"><div class="num">10</div><div class="lab">中危 · 全部已修复</div></div>
   <div class="card metric c-low"><div class="num">5</div><div class="lab">低危 · 全部已修复</div></div>
   <div class="card metric c-good"><div class="num">11</div><div class="lab">已确认优势</div></div>
   <div class="card metric"><div class="num">2</div><div class="lab">子系统（裁剪 / 设计器）</div></div>
@@ -113,9 +114,9 @@
     </svg>
     <div class="legend">
       <div><span style="background:#ef7a1a"></span>高危 / 严重（4）— 全部已修复（F1 崩溃 / F2 依赖 / F3 解炸弹 / F4 并发）</div>
-      <div><span style="background:#f2b705"></span>中危（10）— 健壮性 / 文档脱节 / 路径</div>
+      <div><span style="background:#f2b705"></span>中危（10）— 全部已修复（F5 文档 / F6 超时 / F7 死代码 / F8 inverse / F9 椭圆边框 / F10 headless / F11 spec / F12 路径 / F13 拉伸文案 / F14 静默吞错）</div>
       <div><span style="background:#4a90d9"></span>低危（5）— 全部已修复（F15 测试污染 / F16 worker 清理 / F17 告警屏蔽 / F18 文档对齐 / F19 产物治理）</div>
-      <div style="margin-top:6px;color:var(--muted);font-size:12.5px">占比：高危 21% · 中危 53% · 低危 26%</div>
+      <div style="margin-top:6px;color:var(--muted);font-size:12.5px">占比：高危 21% · 中危 53% · 低危 26%（截至 2026-08-27，19 项全部已修复，待修复 0）</div>
     </div>
   </div>
 </div>
@@ -142,7 +143,7 @@
   <div class="card good-card"><b>⑥ 资源路径抽象</b><br><span style="color:var(--muted)"><code>resource_path</code>/<code>PathResolver</code> 区分源码与 <code>sys._MEIPASS</code> 冻结模式，定位正确。</span></div>
   <div class="card good-card"><b>⑦ 异步渲染模式</b><br><span style="color:var(--muted)">render_id 版本号丢弃过期结果 + LOD 分级 + requestInterruption，避免卡顿/过期覆盖。</span></div>
   <div class="card good-card"><b>⑧ 无可变默认参数</b><br><span style="color:var(--muted)">全仓未现 <code>f(x=[])</code> 类 bug，<code>CropDesign</code> 用 <code>field(default_factory=…)</code>。</span></div>
-  <div class="card good-card"><b>⑨ 测试基数可观</b><br><span style="color:var(--muted)">152 个 <code>test_</code> 覆盖圆角/解析/裁剪/模板匹配等核心算法。</span></div>
+  <div class="card good-card"><b>⑨ 测试基数可观</b><br><span style="color:var(--muted)">224 个 <code>test_</code>（全绿：224 passed, 5 skipped）覆盖圆角/解析/裁剪/模板匹配/F1–F19 回归等核心路径。</span></div>
   <div class="card good-card"><b>⑩ 主路径解炸弹防御</b><br><span style="color:var(--muted)"><code>Image.MAX_IMAGE_PIXELS=2亿</code> 防御解压炸弹；<code>load_image_rgb</code> 处理 EXIF 方向。</span></div>
   <div class="card good-card"><b>⑪ 配置集中化</b><br><span style="color:var(--muted)"><code>core/config.py</code> 统一常量单一来源，消除散落魔法数字。</span></div>
   <div class="card good-card"><b>⑫ 打包脚本现代化</b><br><span style="color:var(--muted)"><code>packageV2.0.py</code> 改用相对路径 + collect-all + 自动 PyInstaller，比旧 .spec 完善。</span></div>
@@ -176,81 +177,81 @@
   <td><b>已修复（2026-08-26）：</b>① <code>parse_sketch</code> 入口把 <code>validate_sketch_file</code>（仅 PIL 头信息读取，含 40MP 像素上限）提前到 <code>cv2.imread</code> 全量解码之前；② 模块顶部设置 <code>Image.MAX_IMAGE_PIXELS = 200_000_000</code> 作为 PIL 全量加载路径的二级防御（与 image_ops.py 一致）。回归测试见 <code>tests/test_f2_f3_fixes.py</code>。</td>
 </tr>
 
-<tr>
+<tr style="background:#eafaef">
   <td><span class="fid">F4</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>共享 CropDesign 跨线程读写</b><br><span class="loc">property_panel.PoolRenderWorker 写 design._cached_* / canvas 主线程渲染同一对象</span></td>
   <td>同一 <code>CropDesign</code> 被子线程改写字段、主线程同时读取渲染，存在数据竞争（字段撕裂、渲染结果错乱）。<b>已修复</b>：新增 <code>CropDesign.clone()</code>（克隆标量/borders/border_text，只读共享 _cached_outer_image），canvas 后台渲染改为传 <code>clone()</code> 快照，与后续主线程改动解耦。回归测试见 <code>tests/test_f4_concurrency_clone.py</code>。</td>
   <td>worker 内深拷贝 design 或仅回传不可变结果；用信号把结果传回主线程，杜绝原地改共享对象。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F5</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F5</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>Tesseract 缺失不降级几何估算</b><br><span class="loc">sketch_parser.py:1890；packageV2.0.py:387 / README 措辞</span></td>
   <td>文档声称“未安装自动降级为几何估算”，实际 OCR 为空即返回 <code>success=False</code>，整次解析失败——功能缺失 + 文档误导。</td>
-  <td>实现真正的几何兜底分支，或更正所有文档/提示文案，明确“OCR 不可用则识别失败需安装引擎”。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>README（2 处）与 packageV2.0.py（4 处）全部改为明确“OCR 不可用则识别失败（无几何降级路径），需自装 Tesseract；圆角裁剪功能不受影响”；README 命令行章节同步 argparse 化。回归测试见 <code>tests/test_f5_f14_fixes.py::test_f5_*</code>（只查肯定式误导文案，排除“不会降级”否定式澄清）。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F6</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F6</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>_PARSE_TIMEOUT_SEC 定义但从未使用</b><br><span class="loc">sketch_parser.py:30</span></td>
   <td>无真实超时；某张触发 OCR 长时间卡死的草图会让 worker 线程永久挂起，“解析中”状态永不结束且无法取消。</td>
-  <td>worker 内加 <code>QTimer</code> 超时或在主循环累计耗时提前退出，超时返回降级结果。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>① 4 处 <code>tesseract.image_to_data()</code> 调用全部加 <code>timeout=_PARSE_TIMEOUT_SEC</code>（20s 单次硬超时，pytesseract 0.3.13 原生支持）；② <code>_7step_parse</code> 新增 <code>deadline</code>（<code>time.monotonic()</code>）总闸门，Step2→3/3→4 之间检查，超时立即返回明确失败“解析超时”；③ <code>parse_sketch</code> 入口计算 deadline 传入。回归测试见 <code>test_f6_*</code>（含向 pytesseract 注入 <code>TimeoutExpired</code> 验证吞超时路径、deadline 过期返回超时失败）。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F7</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F7</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>死代码 _fill_corner_boundary_pixels</b><br><span class="loc">algorithm.py:198（全仓无调用）</span></td>
   <td>README / ProductSummary 仍声称其“大半径额外后处理”，实际从未执行；误导维护者以为有额外 C 形缺口保护。</td>
-  <td>删除死代码，或补上调用；统一文档，避免维护误判。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>删除 <code>core/corner/algorithm.py</code> 文件末尾死代码函数 <code>_fill_corner_boundary_pixels</code>（全仓无任何调用）；README 改为“距离场算法无需额外后处理（历史遗留函数已删除）”。回归测试见 <code>test_f7_dead_function_removed</code>（允许 README 以“已删除”历史说明方式提及，禁止声称仍在运行）。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F8</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F8</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>inverse=True 分支永不触发 / 未测试</b><br><span class="loc">geometry.py:299 恒传 inverse=False</span></td>
   <td><code>carve_corner_on_mask(inverse=True)</code> 是内层精确挖空逻辑，全仓无调用、无测试；将来启用极易引入圆角挖空错误而无人察觉。</td>
-  <td>补单测覆盖 inverse 路径；若当前用不到，加注释说明其保留意图，防止误用。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>以补测试为主——新增 <code>test_f8_carve_inverse_true_and_false_behavior</code> 锁定两侧行为：inverse=False 尖角切掉(0)/圆弧保留(255)；inverse=True 尖角填回(255)/圆弧挖空(0)、矩形中心不受影响。行为未变。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F9</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F9</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>椭圆模式多层边框退化成矩形逻辑</b><br><span class="loc">geometry.py:362 仅 rect_lshape 早返，ellipse 落入 rect_hole</span></td>
   <td>椭圆挖孔若走多层边框路径，会产生“矩形洞”边框带而非椭圆边框带，视觉错误；属未覆盖边界模式。</td>
-  <td>为 ellipse_hole 显式实现椭圆边框带；或文档明确“椭圆模式不支持多层边框”并在 UI 禁用。</td>
+  <td><b>已修复（2026-08-26，行为不变）：</b>以“显式化 + 告警”方式处理——<code>compute_border_bands</code> 对 ellipse_hole + borders 组合输出 warning（“椭圆模式不支持多层边框”），渲染行为与产出完全不变（不擅自改渲染逻辑）；回归测试见 <code>test_f9_ellipse_with_borders_warns_but_keeps_behavior</code>（caplog 断言告警 + 行为保持）。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F10</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F10</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>依赖 opencv-python（完整版）而非 headless</b><br><span class="loc">requirements.txt:5</span></td>
   <td>完整版自带 Qt 插件，与 PyQt5 的 Qt 在 Windows 上可能冲突或加载异常，且膨胀包体；本项目只用 imread/cvtColor/resize。</td>
-  <td>改用 <code>opencv-python-headless</code>。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>requirements.txt 改为 <code>opencv-python-headless&gt;=4.5.0</code>，附注释说明（源码仅用 imread/cvtColor/erode/resize 等基础 API；headless 避免 Qt 插件冲突、包体更小）。回归测试见 <code>test_f10_requirements_use_headless_opencv</code>。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F11</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F11</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>陈旧 .spec 硬编码绝对路径</b><br><span class="loc">智能裁剪设计器.spec:6,17,50</span></td>
   <td>旧 spec 写死 <code>D:/SmartShapeCrop/…</code>，换机 <code>pyinstaller 智能裁剪设计器.spec</code> 必然失败；与良好的 packageV2.0.py 矛盾，易误导打包。</td>
-  <td>删除或归档旧 spec；统一使用 packageV2.0.py（已用相对路径）。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>删除 <code>智能裁剪设计器V2.0.spec</code>（确认为 packageV2.0.py 打包时自动生成/清理的可再生中间产物）；README 目录树同步更正为“packageV2.0.py 打包脚本（唯一入口，自动生成/清理临时 .spec）”。回归测试见 <code>test_f11_stale_spec_removed</code>。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F12</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F12</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>硬编码绝对路径散落</b><br><span class="loc">process_image.py:23-24；config.py:165-166</span></td>
   <td><code>process_image.py</code> 写死 <code>D:\SmartShapeCrop\psd_demo</code> 示例源/输出；config.py 含 <code>D:\Tesseract-OCR</code> 兜底路径——锁死作者机器，降低可移植性。</td>
-  <td>示例脚本改用相对路径 / 命令行参数；Tesseract 兜底仅作候选列表，不写死盘符。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>① <code>process_image.py</code> 改为 argparse 参数（<code>--src/--out-dir/--out-name/--target-w/--target-h/--corner-r/--dpi</code>），默认取脚本目录下 <code>psd_demo</code>，原机器行为不变；② <code>config.py</code> 移除 <code>D:\Tesseract-OCR</code> 盘符兜底，改注释说明用 <code>TESSERACT_PATH</code> 环境变量；③ README 命令行章节更新为参数表。回归测试见 <code>test_f12_no_hardcoded_author_paths</code>；<code>process_image.py --help</code> 已验证可用。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F13</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F13</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>simple_resize 实为“拉伸”却标注“推荐”</b><br><span class="loc">image_cropper.py:1657 src.resize((tw,th))</span></td>
   <td>默认模式直接非等比拉伸填满目标尺寸，源图宽高比 ≠ 目标时图像<b>变形</b>；但 UI 描述为“简单缩放 / 保持图片完整性（推荐）”，与用户预期冲突。</td>
-  <td>测试显式断言是否允许变形；UI 加“拉伸会变形”提示；或默认改为等比 cover/contain。</td>
+  <td><b>已修复（2026-08-26，行为不变）：</b>① UI 下拉“简单缩放（推荐）”→“简单缩放（拉伸填满）”；② <code>get_mode_description()</code> 与模块 docstring 明确“直接拉伸填满目标尺寸；源图比例与目标不同时图像会变形”，移除“推荐”标注；③ 新增行为锁定测试（2:1 源图拉伸到 5cm×5cm@150dpi=295px，PNG 无损源验证像素）。回归测试见 <code>test_f13_*</code>。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F14</span></td><td><span class="sev s-med">中</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F14</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>大量裸 except 静默吞错</b><br><span class="loc">sketch_parser.py 多处 / image_ops.py:34</span></td>
   <td>热路径中 <code>except Exception:</code> 无日志，隐藏真实异常（缓存键、进度回调、颜色增强等），生产排障困难。</td>
-  <td>至少 <code>logger.debug</code> 记录被吞异常；仅对确属“可忽略”的降级点静默。</td>
+  <td><b>已修复（2026-08-26，行为中性）：</b>① <code>sketch_parser.py</code> 47 处完全静默裸 except 全部注入 <code>logger.debug(..., exc_info=True)</code>（AST 扫描归零；第 36 行 logger 未定义处改用 <code>logging.getLogger(__name__).debug</code> 内联）；② <code>image_ops.py</code> 2 处有意降级点（字体加载失败→默认字体、旧版 PIL 无 <code>getlength</code>→<code>getsize</code>）补 debug 日志；③ EXIF except 由 <code>pass</code> 改为记录异常。回归测试见 <code>test_f14_*</code>（AST 扫描 + 正则双保险）。</td>
 </tr>
 
 <tr style="background:#eafaef">
@@ -311,35 +312,36 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
 </div>
 
 <!-- ===== 修复路线图 ===== -->
-<h2 class="sec">七、修复优先级路线图</h2>
+<h2 class="sec">七、修复进度总览（F1–F19 全部完成）</h2>
 <div class="roadmap">
   <div class="card">
-    <span class="pill p0">P0 · 立即</span>
+    <span class="pill" style="background:#e3f6ea;color:#1a9d4b">P0 · 已完成</span>
     <ul class="tight">
-      <li><b>F1</b> 预览崩溃：inner_rect 几何守卫</li>
-      <li><b>F2</b> 补 pytesseract 到 requirements</li>
-      <li><b>F3</b> sketch 校验提前 + 设 MAX_PIXELS</li>
+      <li><b>F1</b> ✅ 预览崩溃：inner_rect 几何守卫（test_f1，11 项）</li>
+      <li><b>F2</b> ✅ 补 pytesseract 到 requirements</li>
+      <li><b>F3</b> ✅ sketch 校验提前 + 设 MAX_PIXELS（test_f2_f3）</li>
     </ul>
   </div>
   <div class="card">
-    <span class="pill p1">P1 · 近期</span>
+    <span class="pill" style="background:#e3f6ea;color:#1a9d4b">P1 · 已完成</span>
     <ul class="tight">
-      <li><b>F4</b> 并发安全（深拷贝 / 信号回传）</li>
-      <li><b>F13</b> simple_resize 拉伸误导提示</li>
-      <li><b>F5/F6</b> OCR 降级真实性 + 超时</li>
-      <li><b>F11/F12</b> 清理 .spec 与硬编码路径</li>
+      <li><b>F4</b> ✅ 并发安全：CropDesign.clone() 快照（test_f4）</li>
+      <li><b>F5/F6</b> ✅ OCR 文档澄清 + 双层超时防护（test_f5_f14）</li>
+      <li><b>F13</b> ✅ simple_resize 拉伸文案修正（test_f5_f14）</li>
+      <li><b>F11/F12</b> ✅ 清理 .spec 与硬编码路径（test_f5_f14）</li>
     </ul>
   </div>
   <div class="card">
-    <span class="pill p2">P2 · 优化</span>
+    <span class="pill" style="background:#e3f6ea;color:#1a9d4b">P2 · 已完成</span>
     <ul class="tight">
-      <li><b>F7/F8/F9</b> 死代码 / 椭圆边框 / inverse</li>
-      <li><b>F10</b> opencv-headless</li>
-      <li><b>F14</b> 减少静默吞错</li>
-      <li><b>F15–F19</b> 测试污染 / 文档对齐 / 清理（已全部修复，2026-08-27）</li>
+      <li><b>F7/F8/F9</b> ✅ 死代码 / inverse 测试 / 椭圆边框告警（test_f5_f14）</li>
+      <li><b>F10</b> ✅ opencv-python-headless（test_f5_f14）</li>
+      <li><b>F14</b> ✅ 热路径静默吞错归零（47 处注入日志，test_f5_f14）</li>
+      <li><b>F15–F19</b> ✅ 测试污染 / 文档对齐 / 产物清理（test_f15_f19）</li>
     </ul>
   </div>
 </div>
+<p style="color:var(--muted);font-size:13px;margin-top:10px">全部 19 项已完成并通过回归：<code>python -m pytest tests/ -q</code> → <b>224 passed, 5 skipped</b>（2026-08-27）。</p>
 
 <!-- ===== 优化方向 ===== -->
 <h2 class="sec">八、优化方向</h2>
@@ -349,7 +351,7 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
     <ul class="tight">
       <li>为所有几何入口（圆角/矩形/椭圆）统一加“尺寸 &gt; 0 + 边界 clamp”守卫（F1 根因）。</li>
       <li>建立多线程读写规范：渲染结果经信号回传，子线程不改共享设计对象（F4）。</li>
-      <li>为 F1/F5/F9 补充回归测试，纳入 CI。</li>
+      <li>F1/F5/F9 回归测试已补齐（tests/test_f1_*、test_f5_f14_fixes.py），建议纳入 CI。</li>
     </ul>
   </div>
   <div class="card">
@@ -363,17 +365,17 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
   <div class="card">
     <b>OCR 与草图识别</b>
     <ul class="tight">
-      <li>落实 _PARSE_TIMEOUT_SEC 真实超时（F6）。</li>
-      <li>实现或明确“几何兜底”语义（F5）。</li>
-      <li>降低静默吞错，提升排障可见性（F14）。</li>
+      <li><b>已落实</b> _PARSE_TIMEOUT_SEC 真实超时（F6：20s 单次 + 总 deadline 双层防护）。</li>
+      <li><b>已明确</b>“无几何兜底”语义并更正全部文档（F5，不擅自加降级逻辑）。</li>
+      <li><b>已消除</b>热路径静默吞错（F14：sketch_parser 47 处 + image_ops 3 处均记录日志）。</li>
     </ul>
   </div>
   <div class="card">
     <b>文档与实现对齐</b>
     <ul class="tight">
-      <li>清理死代码与未启用分支，统一 C 形缺口等文档（F7/F8）。</li>
-      <li>修正 simple_resize 描述与默认行为（F13）。</li>
-      <li>README 与代码逐项对账，消除“声称已实现但无调用”的误导。</li>
+      <li><b>已完成</b> 清理死代码 <code>_fill_corner_boundary_pixels</code> 并统一文档（F7）；inverse 分支已补测试锁定（F8）。</li>
+      <li><b>已完成</b> 修正 simple_resize 描述为“拉伸填满、会变形”（F13，行为不变）。</li>
+      <li>README 与代码逐项对账，消除“声称已实现但无调用”的误导（F5/F7 已清理，可继续全量对账）。</li>
     </ul>
   </div>
   <div class="card">
@@ -395,7 +397,7 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
 </div>
 
 <div class="foot">
-  SmartShapeCrop 项目分析报告 · 基于源码精读与 crash.log 实证 · 2026-08-26<br>
+  SmartShapeCrop 项目分析报告 · 基于源码精读与 crash.log 实证 · 2026-08-26 分析，2026-08-27 复核（F5–F14 已修复，F1–F19 全部完成）<br>
   严重度判定：严重=已复现崩溃；高=功能/安全/并发硬伤；中=健壮性/文档脱节；低=质量与维护细节。
 </div>
 

@@ -31,8 +31,9 @@ def load_image_rgb(path: str) -> Image.Image:
     try:
         from PIL import ImageOps
         img = ImageOps.exif_transpose(img)
-    except Exception:
-        pass  # 旧版 PIL 或无 EXIF 时跳过
+    except Exception as e:
+        # [F14] 旧版 PIL 或无 EXIF 时跳过，但记录被吞异常以便排障
+        logger.debug(f"[image_ops] EXIF 方向处理失败，跳过（图片方向可能不正确）: {e}")
     if img.mode != 'RGB':
         img = img.convert('RGB')
     return img
@@ -793,8 +794,9 @@ def _draw_border_text(img: Image.Image, design: CropDesign) -> None:
     font_size = max(12, int(design.cm2px(0.5)))
     try:
         font = ImageFont.truetype(bt.font_name, font_size)
-    except (OSError, IOError):
+    except (OSError, IOError) as e:
         # 找不到字体时退化到默认
+        logger.debug(f"[image_ops] 字体 {bt.font_name!r} 加载失败，退化到默认字体: {e}")
         font = ImageFont.load_default()
 
     draw = ImageDraw.Draw(img)
@@ -821,7 +823,9 @@ def _repeat_text(text: str, length_px: int, font: ImageFont.ImageFont) -> str:
     """把 text 重复拼接直到 ≥ length_px 宽度（实际绘制时再裁剪）"""
     try:
         tw = font.getlength(text)
-    except AttributeError:
+    except AttributeError as e:
+        # 旧版 PIL 无 getlength()，退化到 getsize()
+        logger.debug(f"[image_ops] 当前 PIL 无 getlength()，改用 getsize(): {e}")
         tw = font.getsize(text)[0]
     if tw <= 0:
         return text

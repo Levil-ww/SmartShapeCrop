@@ -163,10 +163,8 @@ TESSERACT_SEARCH_PATH_TEMPLATES: list[str] = [
     r"C:\Program Files (x86)\Tesseract-OCR",
     # 用户目录
     "{home}/AppData/Local/Programs/Tesseract-OCR",
-    # 其他盘符
-    r"D:\Tesseract-OCR",
-    r"E:\Tesseract-OCR",
-    r"F:\Tesseract-OCR",
+    # [F12] 不再硬编码 D:/E:/F: 等作者机器盘符；非常规位置请通过
+    # 环境变量 TESSERACT_PATH 显式指定（见 {env:TESSERACT_PATH} 模板）。
     # macOS
     "/usr/local/opt/tesseract",
     "/opt/homebrew/opt/tesseract",

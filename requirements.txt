@@ -2,7 +2,9 @@ PyQt5>=5.15.0
 Pillow>=9.0.0
 numpy>=1.21.0
 psd-tools>=1.9.28
-opencv-python>=4.5.0
+# 仅使用 imread/cvtColor/erode/resize 等基础图像 API，headless 版即可，
+# 避免完整版 opencv 自带的 Qt 插件与 PyQt5 在 Windows 上冲突且膨胀包体。
+opencv-python-headless>=4.5.0
 # OCR（草图尺寸识别）—— 还需在系统中安装 Tesseract-OCR 引擎（含 chi_sim 中文语言包）。
 # 干净安装时必须包含此行，否则 sketch_parser 的 _safe_import_tesseract 会静默返回 None，OCR 失效。
 pytesseract>=0.3.10

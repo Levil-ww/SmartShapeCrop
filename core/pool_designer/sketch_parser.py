@@ -34,6 +34,7 @@ try:  # pragma: no cover - 依赖环境差异
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = 200_000_000
 except Exception:
+    logging.getLogger(__name__).debug("[module] PIL 导入失败，已降级", exc_info=True)
     Image = None  # type: ignore
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ def _get_cache_key(image_path: str, target_w: float, target_h: float) -> tuple:
     try:
         mtime = os.path.getmtime(image_path)
     except Exception:
+        logger.debug("[_get_cache_key] 忽略异常", exc_info=True)
         mtime = 0
     return (image_path, mtime, round(target_w, 1), round(target_h, 1), _ALGO_VERSION)
 
@@ -104,6 +106,7 @@ def _get_consistent_cache_key(image_path: str) -> tuple:
     try:
         mtime = os.path.getmtime(image_path)
     except Exception:
+        logger.debug("[_get_consistent_cache_key] 忽略异常", exc_info=True)
         mtime = 0
     return (image_path, mtime, _ALGO_VERSION)
 
@@ -238,12 +241,14 @@ def _safe_import_tesseract():
             pytesseract.pytesseract.tesseract_cmd = found_exe
             logger.info(f"[sketch_parser] 已配置 Tesseract: {found_exe}")
         except Exception:
+            logger.debug("[_safe_import_tesseract] 忽略异常", exc_info=True)
             pass
     
     if found_tessdata:
         try:
             os.environ['TESSDATA_PREFIX'] = found_tessdata
         except Exception:
+            logger.debug("[_safe_import_tesseract] 忽略异常", exc_info=True)
             pass
     
     try:
@@ -369,22 +374,26 @@ def _build_binary_masks(cv2, gray_img):
         _, m = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         masks.append(("otsu", cv2.morphologyEx(m, cv2.MORPH_CLOSE, ks, iterations=1)))
     except Exception:
+        logger.debug("[_build_binary_masks] 忽略异常", exc_info=True)
         pass
     try:
         e = cv2.Canny(gray_img, 15, 80)
         masks.append(("canny", cv2.morphologyEx(e, cv2.MORPH_CLOSE, ks, iterations=1)))
     except Exception:
+        logger.debug("[_build_binary_masks] 忽略异常", exc_info=True)
         pass
     try:
         m = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                    cv2.THRESH_BINARY_INV, blockSize=21, C=5)
         masks.append(("adaptive", cv2.morphologyEx(m, cv2.MORPH_CLOSE, km, iterations=1)))
     except Exception:
+        logger.debug("[_build_binary_masks] 忽略异常", exc_info=True)
         pass
     try:
         _, m = cv2.threshold(gray_img, 127, 255, cv2.THRESH_BINARY_INV)
         masks.append(("high127", cv2.morphologyEx(m, cv2.MORPH_CLOSE, ks, iterations=1)))
     except Exception:
+        logger.debug("[_build_binary_masks] 忽略异常", exc_info=True)
         pass
     return masks
 
@@ -401,6 +410,7 @@ def _find_all_rectangles(cv2, gray_img, color_img=None):
         try:
             num_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
         except Exception:
+            logger.debug("[_find_all_rectangles] 忽略异常", exc_info=True)
             continue
         for label_id in range(1, num_labels):
             area = stats[label_id, cv2.CC_STAT_AREA]
@@ -561,11 +571,13 @@ def _make_preprocess_variants(cv2, gray_img, enhanced_gray=None):
                                          cv2.THRESH_BINARY, 21, 5)
         vs.append(('bin', bin_img))
     except Exception:
+        logger.debug("[_make_preprocess_variants] 忽略异常", exc_info=True)
         pass
     try:
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         vs.append(('clahe', clahe.apply(gray_img)))
     except Exception:
+        logger.debug("[_make_preprocess_variants] 忽略异常", exc_info=True)
         pass
     # Phase1改进：颜色增强变体（仅在有效时添加，不改变原有3种）
     if enhanced_gray is not None:
@@ -592,8 +604,10 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
         for psm in psm_list:
             cfg = f'--oem 3 --psm {psm}'
             try:
-                data = tesseract.image_to_data(pil, config=cfg, output_type=tesseract.Output.DICT)
+                data = tesseract.image_to_data(pil, config=cfg, output_type=tesseract.Output.DICT,
+                                               timeout=_PARSE_TIMEOUT_SEC)
             except Exception:
+                logger.debug("[_run_one] 忽略异常", exc_info=True)
                 continue
             if not data or 'text' not in data:
                 continue
@@ -606,6 +620,7 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
                 try:
                     conf = int(data.get('conf', [0]*n)[i])
                 except Exception:
+                    logger.debug("[_run_one] 忽略异常", exc_info=True)
                     conf = 0
                 if conf < 10:  # 极低置信度直接丢
                     continue
@@ -615,6 +630,7 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
                     bw = int(data.get('width', [0]*n)[i])
                     bh = int(data.get('height', [0]*n)[i])
                 except Exception:
+                    logger.debug("[_run_one] 忽略异常", exc_info=True)
                     bx, by, bw, bh = 0, 0, 0, 0
                 if scale != 1.0:
                     bx, by, bw, bh = int(bx/scale), int(by/scale), int(bw/scale), int(bh/scale)
@@ -625,6 +641,7 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
                         if 0.1 <= val <= 500:
                             out.append((val, conf, (bx, by, bw, bh)))
                     except ValueError:
+                        logger.debug("[_run_one] 忽略异常", exc_info=True)
                         pass
         return out
 
@@ -645,8 +662,10 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
                         scaled_enhanced = cv2.resize(enhanced_gray, None, fx=scale, fy=scale,
                                                       interpolation=cv2.INTER_CUBIC)
                     except Exception:
+                        logger.debug("[_multi_scale_ocr_scan] 忽略异常", exc_info=True)
                         scaled_enhanced = None
         except Exception:
+            logger.debug("[_multi_scale_ocr_scan] 忽略异常", exc_info=True)
             continue
         for vname, vimg in _make_preprocess_variants(cv2, scaled, scaled_enhanced):
             for val, conf, bbox in _run_one(vimg, scale, psm_core):
@@ -720,6 +739,7 @@ def _merge_split_decimals(ocr_results):
                         new_ones.append((concat, max(a_conf, b_conf) * 0.85, nbb))
                         logger.info(f"[OCR小数合并] {int(a_val)}+{int(b_val)} → {concat}")
                 except ValueError:
+                    logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
             # 反向拼接：b.a（a是小数部分，a<10）
             if a_val < 10 and a_val >= 1 and small_first:
@@ -732,6 +752,7 @@ def _merge_split_decimals(ocr_results):
                         new_ones.append((concat, max(a_conf, b_conf) * 0.85, nbb))
                         logger.info(f"[OCR小数合并] {int(b_val)}+{int(a_val)} → {concat}")
                 except ValueError:
+                    logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
             # 纯整数拼接：ab（两位数拼接成三位数）
             if a_val >= 10 and b_val >= 10:
@@ -744,6 +765,7 @@ def _merge_split_decimals(ocr_results):
                         new_ones.append((concat2, max(a_conf, b_conf) * 0.8, nbb))
                         logger.info(f"[OCR整数拼接] {int(a_val)}+{int(b_val)} → {concat2}")
                 except ValueError:
+                    logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
     merged.extend(new_ones)
 
@@ -765,6 +787,7 @@ def _merge_split_decimals(ocr_results):
                         phase3.append((vv, conf * 0.75, bb))
                         logger.debug(f"[OCR小数点修复(2位)] {val} → {vv}")
                 except ValueError:
+                    logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
             else:  # 整十数：90→9.0（末尾可能是多加的0），置信度降低更多
                 try:
@@ -773,6 +796,7 @@ def _merge_split_decimals(ocr_results):
                         phase3.append((vv, conf * 0.6, bb))
                         logger.debug(f"[OCR整十去0] {val} → {vv}")
                 except ValueError:
+                    logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
         # 3位数处理
         if len(s) == 3:
@@ -784,6 +808,7 @@ def _merge_split_decimals(ocr_results):
                         phase3.append((vv1, conf * 0.7, bb))
                         logger.debug(f"[OCR小数点修复(3位后)] {val} → {vv1}")
                 except ValueError:
+                    logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
             else:  # 末位是0：120→12.0
                 try:
@@ -792,6 +817,7 @@ def _merge_split_decimals(ocr_results):
                         phase3.append((vv1b, conf * 0.55, bb))
                         logger.debug(f"[OCR整十去0(3位)] {val} → {vv1b}")
                 except ValueError:
+                    logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
             # 百位后加小数点：146 → 1.46
             try:
@@ -800,6 +826,7 @@ def _merge_split_decimals(ocr_results):
                     phase3.append((vv2, conf * 0.5, bb))
                     logger.debug(f"[OCR小数点修复(3位前)] {val} → {vv2}")
             except ValueError:
+                logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                 pass
     merged.extend(phase3)
 
@@ -820,6 +847,7 @@ def _merge_split_decimals(ocr_results):
                     phase4.append((vv, conf * 0.5, bb))
                     logger.info(f"[OCR前导1去除] {val} → {vv}")
             except ValueError:
+                logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                 pass
     merged.extend(phase4)
     return merged
@@ -845,6 +873,7 @@ def _parse_dir_num_token(text):
         try:
             return m1.group(1), float(m1.group(2))
         except ValueError:
+            logger.debug("[_parse_dir_num_token] 忽略异常", exc_info=True)
             pass
     # 规则2：数值在前（倒置）
     m2 = re.search(r'(\d+\.?\d*|\.\d+)[\s:：=\-]*([上下左右])', text)
@@ -852,6 +881,7 @@ def _parse_dir_num_token(text):
         try:
             return m2.group(2), float(m2.group(1))
         except ValueError:
+            logger.debug("[_parse_dir_num_token] 忽略异常", exc_info=True)
             pass
     return None, None
 
@@ -908,6 +938,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         scan_list.append((cv2.resize(gray_img, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC), 2.5, 'gray'))
         scan_list.append((cv2.resize(gray_img, None, fx=4.0, fy=4.0, interpolation=cv2.INTER_CUBIC), 4.0, 'gray'))
     except Exception:
+        logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
         pass
     # 颜色增强图：仅 1x 和 2.5x（避免 4x 重复开销；小数字有阶段2补漏）
     if enhanced_gray is not None:
@@ -915,6 +946,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             scan_list.append((enhanced_gray, 1.0, 'enh'))
             scan_list.append((cv2.resize(enhanced_gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC), 2.5, 'enh'))
         except Exception:
+            logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
             pass
 
     lang_options = ['chi_sim+eng', 'eng']
@@ -941,6 +973,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         try:
             pil = PILImage.fromarray(img)
         except Exception:
+            logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
             continue
         for lang in lang_options:
             for psm in psm_list:
@@ -948,8 +981,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     data = tesseract.image_to_data(
                         pil, lang=lang,
                         config=f'--oem 3 --psm {psm}',
-                        output_type=tesseract.Output.DICT)
+                        output_type=tesseract.Output.DICT,
+                        timeout=_PARSE_TIMEOUT_SEC)
                 except Exception:
+                    logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                     continue
                 if not data or 'text' not in data:
                     continue
@@ -967,6 +1002,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     try:
                         ci = max(0, int(str(confs[i])))
                     except Exception:
+                        logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                         ci = 0
                     if ci < 8:  # 略低于主OCR的阈值10，多给小标签一次机会
                         continue
@@ -998,6 +1034,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                           f"双token(方向→数值 {src_tag} {lang} psm{psm})")
                                 continue
                             except ValueError:
+                                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
                     # B2: 数值当前 → 方向字下一个（倒置）
                     m_num = re.match(r'^(\d+\.?\d*|\.\d+)$', raw)
@@ -1013,6 +1050,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 _try_bind(nxt_txt, vv, ci, bx, by, bw, bh,
                                           f"双token(数值→方向 {src_tag} {lang} psm{psm})")
                             except ValueError:
+                                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
 
     # ========== 阶段2：小数字补漏扫描（仅当缺失字段时触发，6x + PSM 10/7）==========
@@ -1030,6 +1068,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             s60 = cv2.resize(enhanced_gray, None, fx=6.0, fy=6.0, interpolation=cv2.INTER_CUBIC)
             pil_s60 = PILImage.fromarray(s60)
         except Exception:
+            logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
             pil_s60 = None
         if pil_s60 is not None:
             # PSM 10: 单字符；PSM 7: 单行文本；适合独立的"下""8"等小token
@@ -1040,8 +1079,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     data_s = tesseract.image_to_data(
                         pil_s60, lang=lang_small,
                         config=f'--oem 3 --psm {psm_s}',
-                        output_type=tesseract.Output.DICT)
+                        output_type=tesseract.Output.DICT,
+                        timeout=_PARSE_TIMEOUT_SEC)
                 except Exception:
+                    logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                     continue
                 if not data_s or 'text' not in data_s:
                     continue
@@ -1059,6 +1100,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     try:
                         ci_s = max(0, int(str(cs[i])))
                     except Exception:
+                        logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                         ci_s = 0
                     if ci_s < 8:
                         continue
@@ -1087,6 +1129,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                           f"小数字双token(方向→数值 6x psm{psm_s})")
                                 continue
                             except ValueError:
+                                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
                     # ---- 小数字模式B2：双token数值→方向 ----
                     m_ns = re.match(r'^(\d+\.?\d*|\.\d+)$', raw_s)
@@ -1102,6 +1145,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 _try_bind(nxt_s, vv_s, ci_s, bx, by, bw, bh,
                                           f"小数字双token(数值→方向 6x psm{psm_s})")
                             except ValueError:
+                                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
 
     # ========== Phase 3：各向异性空间距离场匹配（Phase 2 改进4）==========
@@ -1114,6 +1158,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             img_s3 = enhanced_gray if enhanced_gray is not None else gray_img
             pil_s3 = PILImage.fromarray(img_s3)
         except Exception:
+            logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
             pil_s3 = None
         if pil_s3 is not None:
             dir_tokens_s3 = []   # [(char, cx, cy, bbox_h)]
@@ -1122,7 +1167,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                 d3 = tesseract.image_to_data(
                     pil_s3, lang='chi_sim+eng',
                     config='--oem 3 --psm 6',
-                    output_type=tesseract.Output.DICT)
+                    output_type=tesseract.Output.DICT,
+                    timeout=_PARSE_TIMEOUT_SEC)
                 if d3 and 'text' in d3:
                     t3 = d3.get('text', [])
                     n3 = len(t3)
@@ -1138,6 +1184,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         try:
                             ci = max(0, int(str(c3[i])))
                         except Exception:
+                            logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                             ci = 0
                         if ci < 8:
                             continue
@@ -1155,8 +1202,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 if 0.3 <= vv <= 500:
                                     num_tokens_s3.append((vv, cx, cy, bh, ci))
                             except ValueError:
+                                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
             except Exception:
+                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                 pass
 
             if dir_tokens_s3 and num_tokens_s3:
@@ -1913,8 +1962,20 @@ def _build_assignment(dir_locked, buckets, target_outer_w, target_outer_h):
 # ===========================================================================
 def _7step_parse(cv2, gray_img, color_img, tesseract,
                  target_outer_w_cm=0.0, target_outer_h_cm=0.0,
-                 enhanced_gray=None):
-    """严格7步法草图解析。"""
+                 enhanced_gray=None, deadline=None):
+    """严格7步法草图解析。
+
+    [F6 修复] deadline: 可选 float 时间戳（time.monotonic），用于在 OCR 等
+    耗时步骤之间检查总耗时，超时立即返回失败，避免“解析中”状态永久挂起。
+    （单次 OCR 调用的硬超时由 image_to_data(timeout=_PARSE_TIMEOUT_SEC) 保证。）
+    """
+    import time as _time
+    def _check_deadline(phase: str):
+        if deadline is not None and _time.monotonic() > deadline:
+            return {'success': False,
+                    'message': f'解析超时（{phase}阶段超过 {_PARSE_TIMEOUT_SEC} 秒）'}
+        return None
+
     h_img, w_img = gray_img.shape[:2]
 
     # Step 1: 矩形检测
@@ -1933,6 +1994,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     logger.info(f"[Step2] 间隙区域: {list(gaps.keys())}")
 
     # Step 3: 全局OCR扫描（传入颜色增强灰度图作为附加变体）
+    if (early := _check_deadline('OCR扫描')) is not None:
+        return early
     ocr_raw = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
                                     target_w_cm=target_outer_w_cm,
                                     target_h_cm=target_outer_h_cm,
@@ -1942,6 +2005,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     ocr_raw = _merge_split_decimals(ocr_raw)
 
     # Step 4: 方向标签优先锁定（传入颜色增强灰度图 + target 用于边距合理性校验）
+    if (early := _check_deadline('方向标签识别')) is not None:
+        return early
     dir_locked = _extract_direction_label_numbers(cv2, tesseract, gray_img,
                                                    enhanced_gray=enhanced_gray,
                                                    target_outer_w_cm=target_outer_w_cm,
@@ -2041,6 +2106,7 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
                 try:
                     score, sc, asg = _try_assignment(tw_i, th_j)
                 except Exception:
+                    logger.debug("[_7step_parse] 忽略异常", exc_info=True)
                     continue
                 if score > best_total:
                     best_total = score
@@ -2245,6 +2311,7 @@ def parse_sketch(
             try:
                 progress_callback(pct, msg)
             except Exception:
+                logger.debug("[_progress] 忽略异常", exc_info=True)
                 pass
 
     result = SketchParseResult(method="7step_v7")
@@ -2288,11 +2355,17 @@ def parse_sketch(
     # 耗时 < 30ms，仅在彩色图有红笔时有效；无红字直接返回gray=无额外开销
     enhanced_gray = _enhance_colored_ink(cv2, img)
 
+    # [F6 修复] 真实超时：单次 OCR 调用由 image_to_data(timeout=...) 兜底，
+    # 此处给整个 7 步法设置总 deadline，OCR 等耗时步骤之间提前退出。
+    import time as _time
+    deadline = _time.monotonic() + _PARSE_TIMEOUT_SEC
+
     try:
         geo = _7step_parse(cv2, gray, img, tesseract,
                            target_outer_w_cm=target_outer_w_cm,
                            target_outer_h_cm=target_outer_h_cm,
-                           enhanced_gray=enhanced_gray)
+                           enhanced_gray=enhanced_gray,
+                           deadline=deadline)
     except Exception as e:
         logger.exception(f"[sketch_parser] 7步法异常: {e}")
         result.message = f"识别异常: {e}"

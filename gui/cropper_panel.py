@@ -216,7 +216,7 @@ class CropperPanel(QWidget):
         
         grid_size.addWidget(QLabel("裁剪模式:"), 1, 2)
         self._cb_mode = QComboBox()
-        self._cb_mode.addItem("简单缩放（推荐）", "simple_resize")
+        self._cb_mode.addItem("简单缩放（拉伸填满）", "simple_resize")
         self._cb_mode.addItem("轻度裁剪", "light_cover")
         self._cb_mode.addItem("智能模式", "auto")
         self._cb_mode.addItem("裁剪填满", "cover")

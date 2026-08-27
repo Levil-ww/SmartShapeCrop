@@ -36,10 +36,9 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的桌面工具，核心�
 SmartShapeCrop/
 ├── main.py                    # 应用入口（PyQt5 主窗口 + 模板预设 + 全局异常crash.log）
 ├── process_image.py           # 命令行批处理脚本（等比缩放 + 圆角）
-├── packageV2.0.py             # V2.0 PyInstaller 打包配置
-├── 智能裁剪设计器V2.0.spec     # V2.0 打包spec文件
+├── packageV2.0.py             # V2.0 PyInstaller 打包脚本（唯一入口，自动生成/清理临时 .spec）
 ├── 智能裁剪设计器V2.0使用说明.txt # V2.0 使用说明
-├── requirements.txt           # Python 依赖（PyQt5/Pillow/numpy/psd-tools/opencv-python/pytest）
+├── requirements.txt           # Python 依赖（PyQt5/Pillow/numpy/psd-tools/opencv-python-headless/pytest）
 ├── pytest.ini                 # 测试配置
 ├── run_test.bat               # 快速运行圆角测试
 │
@@ -109,7 +108,7 @@ SmartShapeCrop/
 - Python 3.10+（推荐 3.12/3.13）
 - Windows 10/11（主要目标平台，支持 PyInstaller 打包 exe）
 - **可选（水池设计器草图OCR）**：Tesseract-OCR 引擎（Windows 默认安装路径 `C:\Program Files\Tesseract-OCR`，自动检测并设置 `TESSDATA_PREFIX`）
-  - 未安装 Tesseract 时草图识别自动回退到几何比例计算，不影响圆角裁剪功能
+  - 未安装 Tesseract 时，草图尺寸识别将无法完成（7 步法依赖 OCR 数值识别，不会降级为几何估算）；圆角裁剪功能本身不依赖 OCR，可正常使用
 
 ### 安装依赖
 
@@ -145,20 +144,27 @@ python main.py
 
 ### 命令行批处理
 
-编辑 `process_image.py` 中的参数后运行：
+`process_image.py` 通过命令行参数控制（默认取脚本目录下 `psd_demo` 的示例图）：
 
 ```bash
+# 默认参数直接运行（使用脚本目录 psd_demo 内的示例图）
 python process_image.py
+
+# 指定参数
+python process_image.py --src "D:\path\to\源图.jpg" --out-dir "D:\path\to\out" \
+    --out-name "输出.jpg" --target-w 41.0 --target-h 55.0 --corner-r 2.0 --dpi 150
 ```
 
-示例配置：
-```python
-src_path = r"D:\SmartShapeCrop\psd_demo\源图.jpg"
-target_w_cm = 41.0    # 目标宽度
-target_h_cm = 55.0    # 目标高度
-corner_r_cm = 2.0     # 右下角圆角半径
-dpi = 150             # 输出 DPI
-```
+参数说明：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `--src` | 脚本目录 `psd_demo` 内示例图 | 源图路径 |
+| `--out-dir` | 脚本目录 `psd_demo` | 输出目录 |
+| `--out-name` | 示例输出名 | 输出文件名 |
+| `--target-w` / `--target-h` | 41.0 / 55.0 | 目标尺寸（厘米） |
+| `--corner-r` | 2.0 | 圆角半径（厘米） |
+| `--dpi` | 150 | 输出 DPI |
 
 ### 运行测试
 
@@ -199,7 +205,7 @@ V2.0版本包含圆角裁剪工具和新增的智能水池设计器，打包时�
 → 切掉的是 L 形（正方形减去 1/4 圆），只切尖角，保留圆弧
 ```
 
-> 注意：mask 创建统一使用 `carve_corner_on_mask`（支持fill_value和inverse参数，实现单mask两步PIL绘制）。大半径（≥9cm）场景额外调用 `_fill_corner_boundary_pixels` 对 `r±1.5px` 范围做边界像素后处理，补偿 pieslice 舍入误差。
+> 注意：mask 创建统一使用 `carve_corner_on_mask`（支持 fill_value 和 inverse 参数，单 mask 两步绘制）。其内部采用纯 numpy 距离场算法（v2，2026-08-14 重写），在 r×r 正方形内先挖掉尖角、再按距离场填回 1/4 圆弧，几何上保证过渡点无 C 形缺口、无过绘；不再依赖 PIL pieslice 栅格化，因此无需额外的边界像素后处理（历史遗留的 `_fill_corner_boundary_pixels` 已删除）。
 
 **PIL 屏幕坐标系角度映射**（y 轴向下）：
 
@@ -347,7 +353,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 #### OCR硬依赖处理
 - 自动检测Tesseract-OCR安装路径（Windows默认路径 `C:\Program Files\Tesseract-OCR`）并设置`TESSDATA_PREFIX`
 - `from PIL import Image as PILImage` 显式导入（避免NameError静默吞OCR结果）
-- 缺引擎时自动回退几何比例，不崩溃
+- 缺引擎时草图尺寸识别将无法完成（无几何降级路径），程序本身不崩溃；圆角裁剪功能不受影响
 
 ### 7. 水池模式素材图渲染（core/image_ops.py）
 

@@ -21,7 +21,7 @@ V2.0 相比 V1 的新增功能：
     python packageV2.0.py --onedir           # 目录模式（更稳定，若 onefile 有问题可用）
     python packageV2.0.py --debug            # 调试模式（显示控制台窗口，便于排查错误）
     python packageV2.0.py --clean            # 清理旧构建后打包
-    python packageV2.0.py --no-tesseract     # 不内嵌 Tesseract（默认已内嵌，OCR 不可用时降级几何回退）
+    python packageV2.0.py --no-tesseract     # 不内嵌 Tesseract（默认已内嵌；OCR 不可用时草图识别将失败，需自装 Tesseract）
 
 依赖：
     PyInstaller（脚本会自动检测并尝试安装）
@@ -270,7 +270,7 @@ def build_exe(mode: str, debug: bool, embed_tesseract: bool) -> tuple[bool, str]
     """打包 exe，返回 (是否内嵌了 Tesseract, 说明文字)。
 
     若 embed_tesseract=True 但本机未找到 Tesseract 安装目录，
-    则发出警告并继续打包（运行时 OCR 降级为几何回退）。
+    则发出警告并继续打包（运行时草图 OCR 将不可用，需用户自装 Tesseract）。
     """
     _print_step(3, 5, "开始打包（PyInstaller）...")
     py_ver = sys.version.split()[0]
@@ -287,7 +287,7 @@ def build_exe(mode: str, debug: bool, embed_tesseract: bool) -> tuple[bool, str]
     if embed_tesseract:
         tess_src_dir = _find_tesseract_install()
         if tess_src_dir is None:
-            tess_info = "本机未找到 Tesseract-OCR 安装目录，未内嵌；运行时 OCR 将降级为几何回退"
+            tess_info = "本机未找到 Tesseract-OCR 安装目录，未内嵌；运行时草图 OCR 将不可用（7 步法无几何降级路径）"
             print(f"\n      [!] {tess_info}")
             print("          可设置环境变量 TESSERACT_PATH 指向 tesseract.exe 后重试")
         else:
@@ -295,7 +295,7 @@ def build_exe(mode: str, debug: bool, embed_tesseract: bool) -> tuple[bool, str]
             tess_info = f"已内嵌 Tesseract（源 {tess_src_dir}，约 {size_mb:.1f}MB）到 exe"
             print(f"      内嵌 Tesseract: {tess_src_dir} (约 {size_mb:.1f}MB)")
     else:
-        tess_info = "未启用内嵌（用户机器如需 OCR 需自装 Tesseract，否则降级为几何回退）"
+        tess_info = "未启用内嵌（用户机器如需草图 OCR 需自装 Tesseract-OCR 引擎）"
         print(f"      内嵌 Tesseract: 否")
 
     success = _run_build(mode, debug, tess_src_dir)
@@ -387,7 +387,7 @@ def show_result(mode: str, tesseract_embedded: bool, tess_info: str) -> None:
             print("      3. [OCR 已内嵌] Tesseract 已打包进 exe 内部，单 exe 分发即可使用草图 OCR")
             print("         用户无需单独安装 Tesseract，无需附带任何外部文件夹")
         else:
-            print("      3. [OCR 未内嵌] 草图识别需 Tesseract-OCR，未内嵌时自动降级为几何估算；")
+            print("      3. [OCR 未内嵌] 草图识别需 Tesseract-OCR，未内嵌时识别将失败（无几何估算降级路径）；")
             print("         可让用户自行安装，或本机装好 Tesseract 后重新打包")
     else:
         folder = DIST_DIR / APP_NAME
