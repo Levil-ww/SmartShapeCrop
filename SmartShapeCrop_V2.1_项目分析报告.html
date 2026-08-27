@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop V2.1 项目分析报告</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#ffffff; --ink:#1f2933; --muted:#5b6b7f;
+    --line:#e2e8f2; --accent:#2f54d0; --accent2:#5b8cff;
+    --good:#16a34a; --warn:#d97706; --info:#0284c7;
+    --pink:#db2777; --purple:#7c3aed; --teal:#0d9488;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.65;}
+  .wrap{max-width:1200px;margin:0 auto;padding:26px 20px 60px;}
+  header.top{background:linear-gradient(125deg,#1e2a5a 0%,#2f54d0 55%,#5b8cff 100%);
+    color:#fff;border-radius:18px;padding:32px 36px;margin-bottom:22px;
+    box-shadow:0 10px 30px rgba(47,84,208,.28);position:relative;overflow:hidden}
+  header.top::after{content:"";position:absolute;right:-60px;top:-60px;width:240px;height:240px;
+    border-radius:50%;background:rgba(255,255,255,.07)}
+  header.top h1{margin:0 0 4px;font-size:28px;letter-spacing:.6px}
+  header.top .sub{opacity:.92;font-size:14.5px;margin:3px 0}
+  .tag{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+    border-radius:20px;padding:3px 13px;font-size:12.5px;margin:7px 6px 0 0;backdrop-filter:blur(2px)}
+  h2.sec{font-size:20px;margin:34px 0 14px;padding-left:12px;border-left:5px solid var(--accent);
+    display:flex;align-items:center;gap:10px}
+  h2.sec .no{background:var(--accent);color:#fff;font-size:13px;border-radius:8px;
+    padding:2px 9px;font-weight:700}
+  .grid{display:grid;gap:16px}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:860px){.g4,.g3,.g2{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;box-shadow:0 2px 10px rgba(20,40,90,.05)}
+  .metric{text-align:center;padding:16px 12px}
+  .metric .num{font-size:32px;font-weight:800;line-height:1.15}
+  .metric .lab{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .c-accent .num{color:var(--accent)} .c-good .num{color:var(--good)}
+  .c-warn .num{color:var(--warn)} .c-info .num{color:var(--info)}
+  .c-pink .num{color:var(--pink)} .c-purple .num{color:var(--purple)} .c-teal .num{color:var(--teal)}
+  .flex{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .legend{display:flex;flex-direction:column;gap:7px;font-size:13.5px}
+  .legend span{display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:7px;vertical-align:-2px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:#eef2fc;font-weight:700}
+  tr:nth-child(even) td{background:#fafbfe}
+  code{background:#eef1f8;padding:1px 6px;border-radius:5px;font-size:12px;
+    font-family:ui-monospace,Menlo,Consolas,monospace}
+  .pill{display:inline-block;border-radius:20px;padding:2px 11px;font-size:11.5px;font-weight:700}
+  .p-core{background:#e8edfe;color:#2f54d0} .p-gui{background:#e6f7ef;color:#0d9488}
+  .p-test{background:#fdeef4;color:#db2777} .p-script{background:#f3edfe;color:#7c3aed}
+  .p-new{background:#dcfce7;color:#15803d} .p-fix{background:#ffedd5;color:#c2410c}
+  .flow{display:flex;flex-direction:column;gap:0}
+  .fstep{display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .fstep:last-child{border-bottom:none}
+  .fidx{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;
+    font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}
+  .fbody b{display:block;font-size:14px}
+  .fbody p{margin:2px 0 0;font-size:12.8px;color:var(--muted)}
+  .timeline{position:relative;padding-left:26px}
+  .timeline::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .tl-item{position:relative;margin-bottom:16px}
+  .tl-item::before{content:"";position:absolute;left:-24px;top:6px;width:12px;height:12px;border-radius:50%;
+    background:var(--accent);border:2.5px solid #c9d6f8}
+  .tl-item .tl-date{font-size:12px;color:var(--accent);font-weight:800;letter-spacing:.4px}
+  .tl-item .tl-title{font-size:14.5px;font-weight:700;margin:1px 0}
+  .tl-item .tl-desc{font-size:12.8px;color:var(--muted)}
+  .highlight{background:linear-gradient(180deg,transparent 58%,#ffe9a8 58%);font-weight:700}
+  .foot{margin-top:38px;color:var(--muted);font-size:12.5px;text-align:center;border-top:1px solid var(--line);padding-top:16px}
+  .badge-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .bar-item{display:grid;grid-template-columns:150px 1fr 52px;gap:10px;align-items:center;margin:8px 0;font-size:12.8px}
+  .bar-item .bn{text-align:right;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-item .bt{background:#edf0f7;border-radius:7px;height:20px;overflow:hidden}
+  .bar-item .bf{height:100%;border-radius:7px}
+  .bar-item .bv{font-weight:700;font-size:12.5px}
+  .note{background:#f0f6ff;border:1px solid #d3e2fd;border-radius:10px;padding:10px 14px;font-size:13px;color:#1e3a8a;margin-top:10px}
+  .warn-note{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 14px;font-size:13px;color:#9a3412;margin-top:10px}
+  .arch{display:flex;flex-direction:column;gap:12px}
+  .arch-row{border-radius:12px;padding:12px 16px}
+  .arch-row .ar-title{font-size:13px;font-weight:800;margin-bottom:8px;letter-spacing:.5px}
+  .arch-mod{display:inline-block;background:#fff;border:1px solid var(--line);border-radius:9px;
+    padding:6px 12px;margin:3px 5px 0 0;font-size:12.5px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .arch-mod b{color:var(--accent)}
+  .arch-mod .loc{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>SmartShapeCrop — 项目分析报告（V2.1 优化版）</h1>
+  <p class="sub">智能形状裁剪设计器 · 圆角裁剪工具 + 水池设计器（手绘草图 OCR 智能识别）</p>
+  <p class="sub">面向印刷 / 定制设计行业的桌面工具 ｜ Python 3.13 + PyQt5 + Pillow / numpy / OpenCV / psd-tools</p>
+  <div>
+    <span class="tag">分析日期 2026-08-27</span>
+    <span class="tag">版本 V2.1（素材填充 + 风险修复）</span>
+    <span class="tag">代码总量 ≈ 4.1 万行</span>
+    <span class="tag">测试 224 passed / 5 skipped（全绿）</span>
+    <span class="tag">今日 13 次提交 · 近 2 日 25 次</span>
+  </div>
+</header>
+
+<!-- ===== 一、关键指标 ===== -->
+<h2 class="sec"><span class="no">01</span>关键指标总览</h2>
+<div class="grid g4">
+  <div class="card metric c-accent"><div class="num">4.1万</div><div class="lab">Python 代码总行数</div></div>
+  <div class="card metric c-info"><div class="num">14.6k</div><div class="lab">核心业务代码（core + gui）</div></div>
+  <div class="card metric c-good"><div class="num">224</div><div class="lab">测试用例通过（5 跳过）</div></div>
+  <div class="card metric c-warn"><div class="num">2</div><div class="lab">功能子系统（裁剪 / 设计器）</div></div>
+  <div class="card metric c-pink"><div class="num">13</div><div class="lab">core 子模块 / 子包</div></div>
+  <div class="card metric c-purple"><div class="num">196</div><div class="lab">Python 源文件（含 scripts）</div></div>
+  <div class="card metric c-teal"><div class="num">25</div><div class="lab">近 2 日 git 提交（8/26–8/27）</div></div>
+  <div class="card metric c-accent"><div class="num">3</div><div class="lab">设计模式（矩形/L形/椭圆）</div></div>
+</div>
+
+<div class="note" style="margin-top:14px">
+  <b>结论先行：</b>程序经 8/26–8/27 两日密集优化后已进入 <b>V2.1 稳定版</b> 状态 —— 新增「水池模式素材填充」（替代纯色填充）、内嵌 Tesseract OCR 支持离线打包分发、完成 F5–F14 共 12 项风险修复、修复素材图两侧黑框与跨线程共享读写等高位问题。全量测试 224 例通过、无崩溃复现，代码结构清晰（GUI / 核心 / 测试三层解耦），可视为<b class="highlight">可交付、可打包、可回归</b>的健康工程状态。
+</div>
+
+<!-- ===== 二、系统架构 ===== -->
+<h2 class="sec"><span class="no">02</span>系统架构（三层解耦）</h2>
+<div class="card">
+  <div class="arch">
+    <div class="arch-row" style="background:#eef2fc;border:1px solid #d3e2fd">
+      <div class="ar-title" style="color:var(--accent)">▍GUI 表现层（PyQt5 · 3,080 行）</div>
+      <div class="arch-mod"><b>canvas_widget.py</b> <span class="loc">322行</span><br>预览画布 · 全分辨率渲染 · LOD</div>
+      <div class="arch-mod"><b>cropper_panel.py</b> <span class="loc">946行</span><br>圆角裁剪面板 · QThread · 历史记录</div>
+      <div class="arch-mod"><b>property_panel.py</b> <span class="loc">1800行</span><br>水池设计器面板 · 草图异步解析</div>
+      <div class="arch-mod"><b>main.py</b> <span class="loc">411行</span><br>主窗口 · 4 组内置模板 · 菜单</div>
+    </div>
+    <div class="arch-row" style="background:#e6f7ef;border:1px solid #b7e4d4">
+      <div class="ar-title" style="color:var(--teal)">▍核心业务层（core · 11,569 行）</div>
+      <div class="arch-mod"><b>geometry.py</b> <span class="loc">751行</span><br>CropDesign 参数化设计模型</div>
+      <div class="arch-mod"><b>image_ops.py</b> <span class="loc">935行</span><br>渲染引擎 · 素材适配 · 导出</div>
+      <div class="arch-mod"><b>image_cropper.py</b> <span class="loc">1725行</span><br>裁剪服务 · 5 种模式 · 批处理</div>
+      <div class="arch-mod"><b>config.py</b> <span class="loc">331行</span><br>阈值 / 单位 / 上限单一来源</div>
+      <div class="arch-mod"><b>app_settings.py</b> <span class="loc">432行</span><br>历史记录双通道存储</div>
+      <div class="arch-mod"><b>log_setup.py</b> <span class="loc">114行</span><br>滚动日志 · crash.log</div>
+    </div>
+    <div class="arch-row" style="background:#f3edfe;border:1px solid #dccbf8">
+      <div class="ar-title" style="color:var(--purple)">▍算法子包（core/corner · parser · psd · pool_designer）</div>
+      <div class="arch-mod"><b>corner/</b> <span class="loc">2110行</span><br>圆角算法 · 边框检测 · 弧线重绘</div>
+      <div class="arch-mod"><b>parser/</b> <span class="loc">2106行</span><br>文件名解析 · 模板库匹配</div>
+      <div class="arch-mod"><b>pool_designer/</b> <span class="loc">2470行</span><br>草图 7 步 OCR 识别</div>
+      <div class="arch-mod"><b>psd/</b> <span class="loc">194行</span><br>PSD 分层读取合成</div>
+      <div class="arch-mod"><b>compat/</b> <span class="loc">16行</span><br>旧路径导入别名</div>
+    </div>
+    <div class="arch-row" style="background:#fdeef4;border:1px solid #f5c6dd">
+      <div class="ar-title" style="color:var(--pink)">▍质量保障层（tests 5,234 行 + scripts 20,017 行）</div>
+      <div class="arch-mod"><b>tests/</b> 29 文件 · 224 用例全绿</div>
+      <div class="arch-mod"><b>scripts/diagnose/</b> 缺陷诊断脚本</div>
+      <div class="arch-mod"><b>scripts/verify/</b> 修复回归验证</div>
+      <div class="arch-mod"><b>scripts/_archive/</b> 历史归档</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 三、两大子系统 ===== -->
+<h2 class="sec"><span class="no">03</span>两大功能子系统</h2>
+<div class="grid g2">
+  <div class="card" style="border-top:4px solid var(--accent)">
+    <h3 style="margin:0 0 4px;font-size:17px">✂️ 圆角裁剪工具</h3>
+    <p style="color:var(--muted);font-size:13px;margin:2px 0 10px">成品图等比缩放 + 四角独立圆角 + 多层边框自动重绘</p>
+    <table>
+      <tr><th style="width:110px">能力</th><th>说明</th></tr>
+      <tr><td>输入</td><td>JPG / PNG / PSD（分层自动合成）</td></tr>
+      <tr><td>文件名解析</td><td>6 层容错提取 产品名/尺寸/方向/圆角</td></tr>
+      <tr><td>模板匹配</td><td>形状 + 方向关键词严格匹配 + 比例分桶</td></tr>
+      <tr><td>裁剪模式</td><td><code>simple_resize</code> / <code>cover</code> / <code>contain</code> / <code>light_cover</code> / <code>auto</code></td></tr>
+      <tr><td>边框处理</td><td>颜色距离 + 亮度突变双算法，四重防误判</td></tr>
+      <tr><td>圆角算法</td><td>单步扇形切割（numpy 距离场），ROI 化 O(r²)</td></tr>
+      <tr><td>损耗补偿</td><td>尺寸 +1cm 扫描余量，圆角 +0.5cm 切割损耗</td></tr>
+    </table>
+  </div>
+  <div class="card" style="border-top:4px solid var(--teal)">
+    <h3 style="margin:0 0 4px;font-size:17px">🏊 水池设计器</h3>
+    <p style="color:var(--muted);font-size:13px;margin:2px 0 10px">参数化生成矩形嵌套 / L形挖角 / 椭圆挖孔 + 草图 OCR 识别</p>
+    <table>
+      <tr><th style="width:110px">能力</th><th>说明</th></tr>
+      <tr><td>设计模式</td><td>rect_hole 矩形嵌套 ｜ rect_lshape L形 ｜ ellipse_hole 椭圆</td></tr>
+      <tr><td>多层边框</td><td>最多 4 层 · 颜色/素材/文字环绕 · 圆角独立</td></tr>
+      <tr><td>草图识别</td><td>7 步串行流程，识别 8 项数值（外框/内挖/4 边距）</td></tr>
+      <tr><td>OCR 机制</td><td>多尺度扫描 + 稳定性投票 + 3 阶段小数修复</td></tr>
+      <tr><td>素材填充</td><td>V2.1 新增：外框/内挖素材图 contain+edge-extend 适配</td></tr>
+      <tr><td>校验体系</td><td>几何自洽 ｜ 33% 硬边带 ｜ 80% 边距门槛 ｜ 方向三重门</td></tr>
+      <tr><td>性能</td><td>EDT→圆角矩形差集 33× · ROI 圆角 · BILINEAR 预览</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ===== 四、今日优化亮点 ===== -->
+<h2 class="sec"><span class="no">04</span>V2.1 今日优化亮点（2026-08-27）</h2>
+<div class="grid g3">
+  <div class="card" style="border-left:5px solid var(--good)">
+    <div class="badge-row"><span class="pill p-new">新增</span></div>
+    <b style="font-size:14.5px">水池模式素材填充</b>
+    <p style="font-size:12.8px;color:var(--muted);margin:6px 0 0">新增 <code>pool_outer_material_image</code> / <code>pool_inner_material_image</code> 字段，素材图适配（方向校正 + contain/cover 决策 + 边缘延展），替代原纯色填充，成品观感从"色块"升级为"整幅花纹"。</p>
+  </div>
+  <div class="card" style="border-left:5px solid var(--good)">
+    <div class="badge-row"><span class="pill p-new">新增</span></div>
+    <b style="font-size:14.5px">素材图两侧黑框修复</b>
+    <p style="font-size:12.8px;color:var(--muted);margin:6px 0 0"><code>_estimate_outer_border</code> 抗锯齿检测实心外框 + <code>_edge_extend_fill</code> 大延展时改取内容区中心单点色平铺，消除 65x115 素材两侧数百像素黑带（回归脚本验证左侧黑占比 100% → 0%）。</p>
+  </div>
+  <div class="card" style="border-left:5px solid var(--good)">
+    <div class="badge-row"><span class="pill p-fix">修复</span></div>
+    <b style="font-size:14.5px">F5–F14 十二项风险修复</b>
+    <p style="font-size:12.8px;color:var(--muted);margin:6px 0 0">并发、解析、渲染、OCR 校验等风险批量修复，配套 <code>test_f5_f14_fixes.py</code>（273 行）回归用例，今日新增测试代码 600+ 行。</p>
+  </div>
+  <div class="card" style="border-left:5px solid var(--good)">
+    <div class="badge-row"><span class="pill p-new">打包</span></div>
+    <b style="font-size:14.5px">内嵌 Tesseract OCR</b>
+    <p style="font-size:12.8px;color:var(--muted);margin:6px 0 0">OCR 引擎与 tessdata（chi_sim/eng）随 exe 分发，目标机器免装 Tesseract 即可使用草图识别；<code>TESSERACT_PORTABLE_FILES</code> 配置驱动。</p>
+  </div>
+  <div class="card" style="border-left:5px solid var(--good)">
+    <div class="badge-row"><span class="pill p-fix">修复</span></div>
+    <b style="font-size:14.5px">跨线程共享读写修复（F4 类）</b>
+    <p style="font-size:12.8px;color:var(--muted);margin:6px 0 0"><code>CropDesign.clone()</code> 对可变容器（borders / border_text）深拷贝，素材图共享只读引用，后台 QThread 渲染与主线程编辑互不干扰，配套 168 行并发测试。</p>
+  </div>
+  <div class="card" style="border-left:5px solid var(--good)">
+    <div class="badge-row"><span class="pill p-fix">修复</span></div>
+    <b style="font-size:14.5px">V2.1 边距保持实际数据</b>
+    <p style="font-size:12.8px;color:var(--muted);margin:6px 0 0">画布识别尺寸信任机制修复 + 渲染回显与真实边距数据一致，避免边距值被四舍五入/覆盖导致成品与设计稿偏差。</p>
+  </div>
+</div>
+
+<!-- ===== 五、代码规模分布 ===== -->
+<h2 class="sec"><span class="no">05</span>代码规模分布</h2>
+<div class="grid g2">
+  <div class="card">
+    <b style="font-size:14.5px">分层占比（共 41,097 行）</b>
+    <div style="margin-top:8px">
+      <div class="bar-item"><div class="bn">scripts 诊断/验证</div><div class="bt"><div class="bf" style="width:48.7%;background:linear-gradient(90deg,#7c3aed,#a78bfa)"></div></div><div class="bv">20,017</div></div>
+      <div class="bar-item"><div class="bn">core 核心逻辑</div><div class="bt"><div class="bf" style="width:28.2%;background:linear-gradient(90deg,#2f54d0,#5b8cff)"></div></div><div class="bv">11,569</div></div>
+      <div class="bar-item"><div class="bn">tests 测试</div><div class="bt"><div class="bf" style="width:12.7%;background:linear-gradient(90deg,#db2777,#f472b6)"></div></div><div class="bv">5,234</div></div>
+      <div class="bar-item"><div class="bn">gui 界面</div><div class="bt"><div class="bf" style="width:7.5%;background:linear-gradient(90deg,#0d9488,#2dd4bf)"></div></div><div class="bv">3,080</div></div>
+      <div class="bar-item"><div class="bn">根目录入口</div><div class="bt"><div class="bf" style="width:2.9%;background:linear-gradient(90deg,#d97706,#fbbf24)"></div></div><div class="bv">1,197</div></div>
+    </div>
+    <div class="legend" style="margin-top:12px">
+      <div><span style="background:#7c3aed"></span>scripts —— 诊断 / 回归 / 归档（开发资产）</div>
+      <div><span style="background:#2f54d0"></span>core —— 业务与算法（可交付核心）</div>
+      <div><span style="background:#db2777"></span>tests —— 测试用例（保障）</div>
+      <div><span style="background:#0d9488"></span>gui —— PyQt5 界面</div>
+    </div>
+  </div>
+  <div class="card">
+    <b style="font-size:14.5px">Top 8 核心模块（按行数）</b>
+    <div style="margin-top:8px">
+      <div class="bar-item"><div class="bn">sketch_parser</div><div class="bt"><div class="bf" style="width:100%;background:linear-gradient(90deg,#7c3aed,#a78bfa)"></div></div><div class="bv">2,470</div></div>
+      <div class="bar-item"><div class="bn">property_panel</div><div class="bt"><div class="bf" style="width:72.9%;background:linear-gradient(90deg,#0d9488,#2dd4bf)"></div></div><div class="bv">1,800</div></div>
+      <div class="bar-item"><div class="bn">image_cropper</div><div class="bt"><div class="bf" style="width:69.8%;background:linear-gradient(90deg,#2f54d0,#5b8cff)"></div></div><div class="bv">1,725</div></div>
+      <div class="bar-item"><div class="bn">template_matcher</div><div class="bt"><div class="bf" style="width:52.3%;background:linear-gradient(90deg,#0284c7,#38bdf8)"></div></div><div class="bv">1,293</div></div>
+      <div class="bar-item"><div class="bn">sector_render</div><div class="bt"><div class="bf" style="width:42.0%;background:linear-gradient(90deg,#db2777,#f472b6)"></div></div><div class="bv">1,038</div></div>
+      <div class="bar-item"><div class="bn">cropper_panel</div><div class="bt"><div class="bf" style="width:38.3%;background:linear-gradient(90deg,#0d9488,#2dd4bf)"></div></div><div class="bv">946</div></div>
+      <div class="bar-item"><div class="bn">image_ops</div><div class="bt"><div class="bf" style="width:37.9%;background:linear-gradient(90deg,#2f54d0,#5b8cff)"></div></div><div class="bv">935</div></div>
+      <div class="bar-item"><div class="bn">detection</div><div class="bt"><div class="bf" style="width:35.5%;background:linear-gradient(90deg,#0284c7,#38bdf8)"></div></div><div class="bv">877</div></div>
+    </div>
+    <div class="note" style="font-size:12.5px">最大模块 <code>sketch_parser.py</code>（2,470 行）承载草图识别全流程；GUI 面板合计 3,068 行，逻辑与界面分层清晰。</div>
+  </div>
+</div>
+
+<!-- ===== 六、测试与质量 ===== -->
+<h2 class="sec"><span class="no">06</span>测试与质量保障</h2>
+<div class="grid g4">
+  <div class="card metric c-good"><div class="num">224</div><div class="lab">通过（全绿）</div></div>
+  <div class="card metric c-warn"><div class="num">5</div><div class="lab">跳过（GUI 环境依赖）</div></div>
+  <div class="card metric c-info"><div class="num">29</div><div class="lab">测试文件</div></div>
+  <div class="card metric c-accent"><div class="num">36.6s</div><div class="lab">全量测试耗时</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <b style="font-size:14.5px">测试重点覆盖</b>
+  <div class="badge-row">
+    <span class="pill p-core">圆角算法几何等价</span>
+    <span class="pill p-core">多层边框检测</span>
+    <span class="pill p-core">间隙修复回归</span>
+    <span class="pill p-core">文件名解析</span>
+    <span class="pill p-core">模板匹配</span>
+    <span class="pill p-core">草图 7 步识别</span>
+    <span class="pill p-core">OCR 校验</span>
+    <span class="pill p-core">L形渲染</span>
+    <span class="pill p-test">F5–F14 风险回归</span>
+    <span class="pill p-test">并发线程安全</span>
+    <span class="pill p-test">GUI 模拟</span>
+    <span class="pill p-gui">素材黑框回归</span>
+  </div>
+  <p style="font-size:13px;margin:10px 0 0">测试体系随每次修复同步补用例：今日新增 <code>test_f5_f14_fixes.py</code>（273 行）、<code>test_f15_f19_fixes.py</code>（232 行）、<code>test_f4_concurrency_clone.py</code>（168 行）及 <code>regress_edge_extend.py</code>（149 行）等回归资产，覆盖"修复 → 验证 → 固化"闭环。</p>
+</div>
+
+<!-- ===== 七、核心算法亮点 ===== -->
+<h2 class="sec"><span class="no">07</span>核心算法与技术亮点</h2>
+<div class="grid g2">
+  <div class="card">
+    <b style="font-size:14.5px">🔲 圆角裁剪：单步扇形切割算法</b>
+    <p style="font-size:13px;color:var(--muted);margin:6px 0 8px">拒绝"先挖方再填色"两步法（会重复着色中心区域），单 mask 两步绘制：</p>
+    <div class="flow">
+      <div class="fstep"><div class="fidx">1</div><div class="fbody"><b>切掉尖角</b><p>角落 r×r 区域置 0，切除的是"正方形 − 1/4 圆"的 L 形</p></div></div>
+      <div class="fstep"><div class="fidx">2</div><div class="fbody"><b>填回圆弧</b><p>numpy 距离场重写（v2，2026-08-14），几何上保证过渡点无 C 形缺口、无过绘</p></div></div>
+      <div class="fstep"><div class="fidx">3</div><div class="fbody"><b>ROI 化</b><p>仅处理 4 角 r×r 区域，内存/计算从 O(W×H) 降至 O(r²)，支撑 1–2 亿像素印刷级大图</p></div></div>
+    </div>
+    <p style="font-size:12.8px;margin-top:8px">四个入口（<code>geometry</code> / <code>image_cropper</code> / <code>process_image</code> / GUI）统一委托 <code>carve_corner_on_mask</code>，单一来源保证一致性。</p>
+  </div>
+  <div class="card">
+    <b style="font-size:14.5px">🔳 多层边框检测：双算法 + 四重防误判</b>
+    <table style="margin-top:6px">
+      <tr><th>算法</th><th>原理</th><th>阈值</th></tr>
+      <tr><td>颜色距离</td><td>RGB 欧氏距离 > 15</td><td>逐层颜色识别</td></tr>
+      <tr><td>亮度突变</td><td>R+G+B 一阶差分 > 25</td><td>嵌套矩形边界扫描</td></tr>
+    </table>
+    <div class="badge-row" style="margin-top:10px">
+      <span class="pill p-gui">厚度硬上限 ≤2cm/层、≤3cm/总</span>
+      <span class="pill p-gui">最大 4 层</span>
+      <span class="pill p-gui">薄边框 3× 跃变丢弃</span>
+      <span class="pill p-gui">花纹周期截断</span>
+      <span class="pill p-core">深色外层永不判为间隙</span>
+      <span class="pill p-core">白色扇形伪影检测</span>
+    </div>
+    <p style="font-size:12.8px;color:var(--muted);margin:8px 0 0">间隙层判定统一 <code>classify_gap_layers</code> 单一来源，消除 5 处独立逻辑矛盾；弧线重绘采用"仅最外层"策略 + 三层清理遍历。</p>
+  </div>
+  <div class="card" style="grid-column:1/-1">
+    <b style="font-size:14.5px">🧠 草图 OCR 识别：7 步串行流程（代码从 7,717 行重构至 2,470 行）</b>
+    <div class="flow" style="margin-top:8px">
+      <div class="fstep"><div class="fidx">1</div><div class="fbody"><b>矩形检测</b><p>嵌套对选择 + 面积 3–97% 过滤 + 边界伪矩形剔除</p></div></div>
+      <div class="fstep"><div class="fidx">2</div><div class="fbody"><b>区域划分</b><p>8-zone 几何分区，角点间隙按宽度归属</p></div></div>
+      <div class="fstep"><div class="fidx">3</div><div class="fbody"><b>多尺度 OCR</b><p>多尺度 / PSM / 预处理组合扫描 + 相邻数字 Token 合并</p></div></div>
+      <div class="fstep"><div class="fidx">4</div><div class="fbody"><b>小数修复</b><p>3 阶段：丢失小数点修复 + 拆分小数点修复 + 严格去重</p></div></div>
+      <div class="fstep"><div class="fidx">5</div><div class="fbody"><b>方向标签锁定</b><p>2 scales × 2 languages × 2 PSM 独立扫描 + 33% 硬边带约束</p></div></div>
+      <div class="fstep"><div class="fidx">6</div><div class="fbody"><b>空间映射</b><p>物理位置映射 + 100/50/25 倍数 10% 范围过滤</p></div></div>
+      <div class="fstep"><div class="fidx">7</div><div class="fbody"><b>几何校验</b><p>inner = outer − margin_sum，5% 偏差强制修正 + 自洽评分选优</p></div></div>
+    </div>
+    <div class="badge-row" style="margin-top:10px">
+      <span class="pill p-test">OCR 稳定性投票（位置聚类 + 众数）</span>
+      <span class="pill p-test">边距 ≤ 短边 × 80% 硬门槛</span>
+      <span class="pill p-test">方向标签三重门</span>
+      <span class="pill p-test">OCR 数值 0.3–500cm 严格校验</span>
+      <span class="pill p-gui">Tesseract 便携分发</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 八、性能与安全 ===== -->
+<h2 class="sec"><span class="no">08</span>性能优化与安全机制</h2>
+<div class="grid g2">
+  <div class="card">
+    <b style="font-size:14.5px">⚡ 性能优化记录（2026-08-21 P0/P1/P2）</b>
+    <table style="margin-top:8px">
+      <tr><th>级别</th><th>优化项</th><th>效果</th></tr>
+      <tr><td class="fid" style="color:var(--warn);font-weight:800">P0</td><td>OCR 合并统一全图扫描</td><td>Tesseract 调用 51 → ~10 次</td></tr>
+      <tr><td class="fid" style="color:var(--warn);font-weight:800">P0</td><td>EDT → cv2.erode 椭圆核</td><td>80–90% 性能提升</td></tr>
+      <tr><td>P1</td><td>外框枚举剪枝</td><td>64 → ≤15 次组合</td></tr>
+      <tr><td>P1</td><td>圆角 ROI 化</td><td>O(W×H) → O(r²)</td></tr>
+      <tr><td>P2</td><td>矩形检测早停</td><td>Step1 节省 50%+</td></tr>
+      <tr><td>P2</td><td>mask 增量复用</td><td>构建节省 40–50%</td></tr>
+      <tr><td>—</td><td>EDT → 圆角矩形差集</td><td>33× 加速（数学等价）</td></tr>
+      <tr><td>—</td><td>BILINEAR 预览 / LANCZOS 导出</td><td>预览快 3–5×，导出保质量</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <b style="font-size:14.5px">🛡 安全与防御机制</b>
+    <table style="margin-top:8px">
+      <tr><th>机制</th><th>说明</th></tr>
+      <tr><td>解压缩炸弹防御</td><td><code>MAX_IMAGE_PIXELS = 2亿</code></td></tr>
+      <tr><td>圆角防过绘</td><td>半径 clamp 至 min(w,h)/2</td></tr>
+      <tr><td>边框误判防御</td><td>厚度/层数/跃变/周期四重过滤</td></tr>
+      <tr><td>渲染挂起防御</td><td>极端参数保护 + QThread 后台 + LOD</td></tr>
+      <tr><td>崩溃可追溯</td><td>全局 excepthook → crash.log</td></tr>
+      <tr><td>OCR 异常值防御</td><td>0.3–500cm 范围 + 全局唯一性检查</td></tr>
+      <tr><td>依赖升级兼容</td><td>Python 3.13 兼容，弃用告警放行</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ===== 九、演进时间线 ===== -->
+<h2 class="sec"><span class="no">09</span>项目演进时间线（8/13 → 8/27）</h2>
+<div class="card">
+  <div class="timeline">
+    <div class="tl-item"><div class="tl-date">08-13</div><div class="tl-title">V2.0 立项 · 圆角裁剪工具落地</div><div class="tl-desc">核心裁剪链路、文件名解析、PSD 支持、PyInstaller 打包脚本</div></div>
+    <div class="tl-item"><div class="tl-date">08-14 ~ 08-15</div><div class="tl-title">水池设计器核心功能 + OCR 起步</div><div class="tl-desc">矩形检测 / 内孔圆角 / 尺寸解析 / 三层识别 / 方向矫正 / 黄金通道</div></div>
+    <div class="tl-item"><div class="tl-date">08-17 ~ 08-19</div><div class="tl-title">OCR 性能与稳定性 · GUI 交互成型</div><div class="tl-desc">OCR 三层性能 / 数值校验 / 全局 OCR / 边距自洽 / 方向标签 / 流程简化重构</div></div>
+    <div class="tl-item"><div class="tl-date">08-20</div><div class="tl-title">识别错误率修复 · 7 步流程重构</div><div class="tl-desc">错误率修复 / 小数点合并 / 稳定性投票 / 7 步串行流程（7,717 → 1,340 行）/ 椭圆厘米化</div></div>
+    <div class="tl-item"><div class="tl-date">08-21</div><div class="tl-title">性能大优化 + 六案例边框修复</div><div class="tl-desc">P0/P1/P2 六项优化 / 深色外层保护 / 白色扇形伪影 / L形架构 / 历史记录 / 预览优化</div></div>
+    <div class="tl-item"><div class="tl-date">08-26</div><div class="tl-title">F1–F19 全面审计与修复</div><div class="tl-desc">几何崩溃 / 依赖缺失 / 跨线程共享读写 / 渲染回显 / 尺寸信任机制等 19 项风险闭环</div></div>
+    <div class="tl-item"><div class="tl-date">08-27（今日）</div><div class="tl-title">V2.1 发布：素材填充 + 打包分发</div><div class="tl-desc">素材填充替代纯色 / 两侧黑框修复 / F5–F14 回归 / 内嵌 Tesseract 便携分发 / 边距保持实际数据 —— 224 测试全绿</div></div>
+  </div>
+</div>
+
+<!-- ===== 十、结论与建议 ===== -->
+<h2 class="sec"><span class="no">10</span>结论与建议</h2>
+<div class="grid g2">
+  <div class="card" style="border-left:5px solid var(--good)">
+    <b style="font-size:15px">✅ 当前状态：可交付的健康工程</b>
+    <ul class="tight" style="margin:8px 0 0;padding-left:20px">
+      <li><b>功能完备</b>：两大子系统 + 3 种设计模式 + 草图 OCR 全流程可用</li>
+      <li><b>质量达标</b>：224 测试全绿，无本地崩溃复现，修复均有回归用例固化</li>
+      <li><b>架构清晰</b>：GUI / core / 算法子包 / 测试四层解耦，compat 保证向后兼容</li>
+      <li><b>性能达标</b>：印刷级大图（1–2 亿像素）ROI 化处理 + 后台线程不阻塞 UI</li>
+      <li><b>可分发</b>：内嵌 OCR 的 exe 打包方案就绪，目标机免装环境</li>
+    </ul>
+  </div>
+  <div class="card" style="border-left:5px solid var(--warn)">
+    <b style="font-size:15px">💡 后续建议</b>
+    <ul class="tight" style="margin:8px 0 0;padding-left:20px">
+      <li><b>沉淀 docs</b>：scripts 中 139 个诊断脚本是宝贵资产，可精选关键诊断固化为文档化流程</li>
+      <li><b>降低 scripts 负担</b>：20,017 行开发脚本可迁移至独立仓库，主仓库更聚焦交付</li>
+      <li><b>OCR 降级路径</b>：无 Tesseract 时草图识别不可用，可评估几何估算降级方案提升鲁棒性</li>
+      <li><b>多 DPI 适配</b>：当前以 150 DPI 为主，可扩展 300 DPI 印刷输出参数化</li>
+      <li><b>持续回归</b>：保持"每修复必补测试"惯例，保障 V2.2+ 迭代不回退</li>
+    </ul>
+  </div>
+</div>
+
+<div class="foot">
+  SmartShapeCrop V2.1 项目分析报告 ｜ 生成于 2026-08-27 ｜ 基于源码精读 + 全量测试 224 passed + git 历史分析
+</div>
+</div>
+</body>
+</html>
