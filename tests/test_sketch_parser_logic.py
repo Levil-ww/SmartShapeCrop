@@ -204,6 +204,103 @@ class TestValidateAndFixMargins:
         assert out['total_w'][0] == pytest.approx(100.0, abs=0.01)
         assert out['total_h'][0] == pytest.approx(60.0, abs=0.01)
 
+    def test_authoritative_target_preserves_outer_and_computes_missing(self):
+        """[2026-08-26 v2 回归] 当 target 为权威外框时，绝不允许方向标签覆盖外框。
+        真实场景：文件名 65x115CM 对应 115x65 画布，OCR 正确识别到：
+          - 外框: 115×65 (与 target 匹配)
+          - 内框: 68×45 (草图片段)
+          - 方向标签边距: left=6, top=8
+        正确的反推：
+          - margin_right = 115 - 68 - 6 = 41 (非对称边框，正确值)
+          - margin_bottom = 65 - 45 - 8 = 12
+
+        旧逻辑错误：用 inner+margin 反推外框 (74×53)，覆盖正确的 target (115×65)。
+        新逻辑：target 为权威外框，缺失边距通过 target-inner-known_margins 反推。
+        """
+        r = _asg(tw=115.0, th=65.0, iw=68.0, ih=45.0, mt=8.0, mb=0.0, ml=6.0, mr=0.0)
+        out = _validate_and_fix_margins(
+            r, target_outer_w=115.0, target_outer_h=65.0,
+            dir_locked_fields={'margin_left', 'margin_top'}
+        )
+        # 核心不变量：total_w/total_h 必须等于 target（权威）
+        assert out['total_w'][0] == pytest.approx(115.0, abs=0.01), (
+            f"total_w 必须等于 target=115，实际={out['total_w'][0]}"
+        )
+        assert out['total_h'][0] == pytest.approx(65.0, abs=0.01), (
+            f"total_h 必须等于 target=65，实际={out['total_h'][0]}"
+        )
+        # inner 保持 OCR 识别值（不缩放）
+        assert out['inner_w'][0] == pytest.approx(68.0, abs=0.01), (
+            f"inner_w 应保持 OCR 值=68，实际={out['inner_w'][0]}"
+        )
+        assert out['inner_h'][0] == pytest.approx(45.0, abs=0.01), (
+            f"inner_h 应保持 OCR 值=45，实际={out['inner_h'][0]}"
+        )
+        # 方向标签边距保持不变
+        assert out['margin_left'][0] == pytest.approx(6.0, abs=0.01)
+        assert out['margin_top'][0] == pytest.approx(8.0, abs=0.01)
+        # 缺失边距通过 target-inner-known 反推
+        assert out['margin_right'][0] == pytest.approx(41.0, abs=0.01), (
+            f"margin_right 应为 115-68-6=41，实际={out['margin_right'][0]}"
+        )
+        assert out['margin_bottom'][0] == pytest.approx(12.0, abs=0.01), (
+            f"margin_bottom 应为 65-45-8=12，实际={out['margin_bottom'][0]}"
+        )
+        # 几何守恒：outer = inner + Σmargins
+        assert out['inner_w'][0] + out['margin_left'][0] + out['margin_right'][0] == pytest.approx(115.0, abs=0.01)
+        assert out['inner_h'][0] + out['margin_top'][0] + out['margin_bottom'][0] == pytest.approx(65.0, abs=0.01)
+
+    def test_authoritative_target_with_both_dir_locked_margins(self):
+        """当 target 为权威且所有方向标签边距都可用时，也应保持 target 不被覆盖。"""
+        r = _asg(tw=100.0, th=60.0, iw=80.0, ih=40.0, mt=10.0, mb=10.0, ml=10.0, mr=10.0)
+        out = _validate_and_fix_margins(
+            r, target_outer_w=100.0, target_outer_h=60.0,
+            dir_locked_fields={'margin_top', 'margin_bottom', 'margin_left', 'margin_right'}
+        )
+        # target 保持权威
+        assert out['total_w'][0] == pytest.approx(100.0, abs=0.01)
+        assert out['total_h'][0] == pytest.approx(60.0, abs=0.01)
+        # 方向标签边距保持
+        assert out['margin_left'][0] == pytest.approx(10.0, abs=0.01)
+        assert out['margin_right'][0] == pytest.approx(10.0, abs=0.01)
+        assert out['margin_top'][0] == pytest.approx(10.0, abs=0.01)
+        assert out['margin_bottom'][0] == pytest.approx(10.0, abs=0.01)
+        # inner 保持
+        assert out['inner_w'][0] == pytest.approx(80.0, abs=0.01)
+        assert out['inner_h'][0] == pytest.approx(40.0, abs=0.01)
+
+    def test_no_target_still_derives_from_direction_margins(self):
+        """无 target 时，方向标签边距仍可参与外框反推（原有逻辑保持）。"""
+        # 反推: new_tw = 80 + 10 + 5 = 95, target_outer_w = 0 (无 target)
+        r = _asg(tw=0.0, th=0.0, iw=80.0, ih=40.0, mt=10.0, mb=10.0, ml=10.0, mr=5.0)
+        out = _validate_and_fix_margins(
+            r, target_outer_w=0.0, target_outer_h=0.0,
+            dir_locked_fields={'margin_left', 'margin_top'}
+        )
+        # 无 target 时，按原逻辑反推：total_w = 80 + 10 + 5 = 95
+        assert out['total_w'][0] == pytest.approx(95.0, abs=0.01), (
+            f"total_w 应按原逻辑反推为95，实际={out['total_w'][0]}"
+        )
+
+    def test_target_close_to_derived_still_preserves_target(self):
+        """当 target 为权威且反推值与 target 偏差较小(<=30%)时，仍保持 target 不被覆盖。
+        权威模式下 target 总是优先，缺失边距通过 target-inner-known 反推。"""
+        # mr=0 确保触发缺失边距反推路径
+        r = _asg(tw=100.0, th=60.0, iw=80.0, ih=40.0, mt=10.0, mb=10.0, ml=10.0, mr=0.0)
+        out = _validate_and_fix_margins(
+            r, target_outer_w=100.0, target_outer_h=60.0,
+            dir_locked_fields={'margin_left', 'margin_top'}
+        )
+        # target 保持权威
+        assert out['total_w'][0] == pytest.approx(100.0, abs=0.01), (
+            f"total_w 应保持 target=100（权威模式），实际={out['total_w'][0]}"
+        )
+        assert out['total_h'][0] == pytest.approx(60.0, abs=0.01)
+        # 缺失边距反推: width: mr = 100 - 80 - 10 = 10
+        assert out['margin_right'][0] == pytest.approx(10.0, abs=0.01), (
+            f"margin_right 应为 100-80-10=10，实际={out['margin_right'][0]}"
+        )
+
 
 # ===========================================================================
 # 4. _validate_geometric_constraints

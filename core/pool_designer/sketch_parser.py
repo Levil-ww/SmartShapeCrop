@@ -25,6 +25,17 @@ from typing import Optional
 
 import numpy as np
 
+# [F3 修复] 解炸弹二级防御：尽量为 PIL 设置像素上限，防止恶意/超大图在
+# 全量解码时 OOM。主闸门是 parse_sketch 入口的 validate_sketch_file（40MP
+# 头信息校验，见 _SKETCH_MAX_PIXELS），此处作为任何 PIL 全量加载路径的兜底网；
+# 上限与 core/image_ops.py 保持一致（2 亿像素 ≈ 14142×14142）。
+# 用 try 包裹：本模块主解码走 cv2，PIL 不可用时跳过也不影响导入。
+try:  # pragma: no cover - 依赖环境差异
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = 200_000_000
+except Exception:
+    Image = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 _PARSE_TIMEOUT_SEC = 20
@@ -859,8 +870,21 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     # ---- [防OCR噪声] 预计算边距合理性上限 ----
     # 边距通常是外框短边的 2%~25%，或绝对不超过 25cm
     # 此阈值用于剔除 OCR 把装饰文字/尺寸标注误识别为"边距"的情况
-    _ref_side = max(target_outer_w_cm, target_outer_h_cm, 0.0)
-    _margin_hard_cap = min(_ref_side * 0.30, 25.0) if _ref_side > 0 else 25.0
+    _target_is_authoritative = (target_outer_w_cm > 0 and target_outer_h_cm > 0)
+    _ref_long = max(target_outer_w_cm, target_outer_h_cm, 0.0)
+    _ref_short = min(target_outer_w_cm, target_outer_h_cm, 0.0)
+    if _target_is_authoritative:
+        # [权威模式] 当 target 外框完整可用时，大幅放宽边距噪声上限
+        # 因为非对称边框的某一边可能很大（例如内框偏一侧，mr=target-iw-ml 可能 =41cm）
+        # 这种情况是数学上正确的，不应被当作 OCR 噪声拒绝
+        # 只做极端过滤：边距 >= 短边的 95%（不可能的极端值）才拒绝
+        _margin_hard_cap = _ref_short * 0.95 if _ref_short > 0 else 500.0
+        _absolute_cap = _ref_long * 0.95  # 也不能超过长边的95%
+        if _absolute_cap > 0 and _margin_hard_cap > _absolute_cap:
+            _margin_hard_cap = _absolute_cap
+    else:
+        # 无 target 模式：保持原有严格上限
+        _margin_hard_cap = min(_ref_long * 0.30, 25.0) if _ref_long > 0 else 25.0
 
     def _is_reasonable_margin(v):
         """判断边距值是否合理（避免把外框尺寸/装饰文字误识别为边距）。"""
@@ -872,8 +896,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         # 过大：若有 target 且超过 cap 则不合理
         if _margin_hard_cap > 0 and v > _margin_hard_cap:
             return False
-        # 绝对上限：边距不超过 30cm（水池边框极少超过此值）
-        if v > 30.0:
+        # 非权威模式下的额外保护：边距合理上限 50cm（水池边框极少超过）
+        if not _target_is_authoritative and v > 50.0:
             return False
         return True
 
@@ -1418,7 +1442,15 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
     tw = tw0
     th = th0
 
-    # 如果有方向标签锁定的边距，用它们反推外框尺寸
+    # ---- [核心不变量] 当 target 尺寸可用时，target 为权威外框尺寸 ----
+    # 不变量：total_w/total_h 必须等于 target_outer_w/target_outer_h（若两者都可用）
+    # 方向标签边距用于：
+    #   a) 反推缺失的非方向边距（通过 target - inner - known_margins）
+    #   b) 当无 target 时，反推外框尺寸
+    # 绝不允许：方向标签边距覆盖 target 外框尺寸
+    target_is_authoritative = (target_outer_w > 0 and target_outer_h > 0)
+
+    # 如果有方向标签锁定的边距，用它们反推外框尺寸（仅当无 target 时）
     dir_margin_fields_h = [f for f in ('margin_left', 'margin_right') if f in dir_locked_fields]
     dir_margin_fields_v = [f for f in ('margin_top', 'margin_bottom') if f in dir_locked_fields]
 
@@ -1432,12 +1464,15 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
         mb = get('margin_bottom')
 
         # ---- [防OCR噪声] 边距合理性预过滤 ----
-        # 边距通常是外框宽度的 2%~25%（花纹/边框厚度），超出这个范围视为 OCR 把
-        # 装饰文字/尺寸标注误识别为边距，需要剔除，避免用错误边距放大外框。
-        # 阈值：相对 target 短边 30% 或绝对 30cm，取较小者。
+        # 当 target 为权威时，放宽边距 cap（因为非方向边距由 target-inner-known_margins 反推，
+        # 可能大于比例上限，这是正确的非对称边框，不是噪声）
         ref_long = max(target_outer_w, target_outer_h, tw, th)
-        sanity_cap = min(ref_long * 0.30, 30.0) if ref_long > 0 else 30.0
-        sanity_min = 0.3  # 边距下限
+        if target_is_authoritative:
+            # 权威模式下，边距仅作极端噪声过滤：>=0.3cm 且 < 外框的90%
+            sanity_cap_for_filter = tw * 0.90 if tw > 0 else 30.0
+        else:
+            sanity_cap_for_filter = min(ref_long * 0.30, 30.0) if ref_long > 0 else 30.0
+        sanity_min = 0.3
 
         def _sanitize_margin(v, axis):
             """边距值合理性检查：返回 (清洗后值, 是否被清洗)。"""
@@ -1445,9 +1480,9 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
                 return v, False
             if v < sanity_min:
                 return 0.0, True
-            if v > sanity_cap:
+            if v > sanity_cap_for_filter:
                 logger.info(
-                    f"[Step6] OCR噪声边距剔除: {axis}={v:.1f}cm > cap={sanity_cap:.1f}cm "
+                    f"[Step6] OCR噪声边距剔除: {axis}={v:.1f}cm > cap={sanity_cap_for_filter:.1f}cm "
                     f"(判定为装饰文字/尺寸误识别，归零)"
                 )
                 return 0.0, True
@@ -1458,34 +1493,50 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
         mt_s, _ = _sanitize_margin(mt, 'margin_top')
         mb_s, _ = _sanitize_margin(mb, 'margin_bottom')
 
-        # 横向：如果有方向标签边距，用它们和 inner_w 计算 total_w
-        h_sum = sum(v for v in (ml_s, mr_s) if v > 0)
-        if h_sum > 0 and iw > 0:
-            new_tw = iw + h_sum
-            # [防OCR噪声] 若 target 已知且反推值严重偏离 target，保留 target 不覆盖
-            if target_outer_w > 0 and abs(new_tw - target_outer_w) / target_outer_w > 0.40:
-                logger.info(
-                    f"[Step6] 横向方向标签反推偏离 target={target_outer_w:.1f} → 反推={new_tw:.1f} "
-                    f"(偏离>{40}%)，保留 target 不覆盖"
-                )
-            elif new_tw > 0:
-                tw = new_tw
-                put('total_w', tw, 0.90)
-                logger.info(f"[Step6] 横向外框修正(方向标签): total_w={tw:.1f} (inner={iw:.1f} left={ml_s:.1f} right={mr_s:.1f})")
+        if target_is_authoritative:
+            # ---- 权威模式：target 为外框，不允许方向标签覆盖外框 ----
+            # 方向标签边距已正确识别，保持原值即可
+            # 非方向边距/缺失边距将在后续 Step6 的横向/纵向修正中自动计算
+            # （公式: missing = target - inner - known_margins）
+            logger.info(
+                f"[Step6] 权威模式: 保留 target 外框 "
+                f"total_w={target_outer_w:.1f} total_h={target_outer_h:.1f} "
+                f"(方向标签边距不变，缺失边距将在后续反推)"
+            )
+            tw = target_outer_w
+            th = target_outer_h
+            put('total_w', tw, 0.99)
+            put('total_h', th, 0.99)
+        else:
+            # ---- 无 target 模式：用方向标签边距 + inner 反推外框 ----
+            # 横向
+            h_sum = sum(v for v in (ml_s, mr_s) if v > 0)
+            if h_sum > 0 and iw > 0:
+                new_tw = iw + h_sum
+                # [防OCR噪声] 若反推值明显偏离合理范围，拒绝覆盖
+                if target_outer_w > 0 and abs(new_tw - target_outer_w) / target_outer_w > 0.40:
+                    logger.info(
+                        f"[Step6] 横向方向标签反推={new_tw:.1f} 偏离 target={target_outer_w:.1f} "
+                        f"(偏离>40%)，保留 target 不覆盖"
+                    )
+                elif new_tw > 0:
+                    tw = new_tw
+                    put('total_w', tw, 0.90)
+                    logger.info(f"[Step6] 横向外框修正(方向标签): total_w={tw:.1f} (inner={iw:.1f} left={ml_s:.1f} right={mr_s:.1f})")
 
-        # 纵向：同理
-        v_sum = sum(v for v in (mt_s, mb_s) if v > 0)
-        if v_sum > 0 and ih > 0:
-            new_th = ih + v_sum
-            if target_outer_h > 0 and abs(new_th - target_outer_h) / target_outer_h > 0.40:
-                logger.info(
-                    f"[Step6] 纵向方向标签反推偏离 target={target_outer_h:.1f} → 反推={new_th:.1f} "
-                    f"(偏离>{40}%)，保留 target 不覆盖"
-                )
-            elif new_th > 0:
-                th = new_th
-                put('total_h', th, 0.90)
-                logger.info(f"[Step6] 纵向外框修正(方向标签): total_h={th:.1f} (inner={ih:.1f} top={mt_s:.1f} bottom={mb_s:.1f})")
+            # 纵向
+            v_sum = sum(v for v in (mt_s, mb_s) if v > 0)
+            if v_sum > 0 and ih > 0:
+                new_th = ih + v_sum
+                if target_outer_h > 0 and abs(new_th - target_outer_h) / target_outer_h > 0.40:
+                    logger.info(
+                        f"[Step6] 纵向方向标签反推={new_th:.1f} 偏离 target={target_outer_h:.1f} "
+                        f"(偏离>40%)，保留 target 不覆盖"
+                    )
+                elif new_th > 0:
+                    th = new_th
+                    put('total_h', th, 0.90)
+                    logger.info(f"[Step6] 纵向外框修正(方向标签): total_h={th:.1f} (inner={ih:.1f} top={mt_s:.1f} bottom={mb_s:.1f})")
     else:
         if tw > 0:
             put('total_w', tw, 0.95 if target_outer_w > 0 else 0.6)
@@ -2197,7 +2248,17 @@ def parse_sketch(
                 pass
 
     result = SketchParseResult(method="7step_v7")
-    _progress(5, "加载图片...")
+
+    # [F3 修复] 校验提前：在调用 cv2 全量解码之前，先做头信息校验
+    # （存在性/格式/文件大小/像素上限）。超大或坏图在解码前即被拦截，
+    # 避免 cv2.imread 一次性把整张图读进内存造成 OOM/卡死。
+    _progress(5, "校验文件...")
+    ok, reason = validate_sketch_file(image_path)
+    if not ok:
+        result.message = reason
+        return result
+
+    _progress(10, "加载图片...")
     cv2 = _safe_import_cv2()
     if cv2 is None:
         result.message = "未安装 OpenCV"
@@ -2218,11 +2279,8 @@ def parse_sketch(
             _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent)
             return consistent
 
-    ok, reason = validate_sketch_file(image_path)
-    if not ok:
-        result.message = reason
-        return result
-
+    # 注：文件合法性已在函数开头（解码前）通过 validate_sketch_file 校验，
+    # 此处不再重复校验，避免对超大/坏图做无意义的解码。
     _progress(15, "7步法识别中...")
     tesseract = _safe_import_tesseract()
 
