@@ -86,7 +86,7 @@
   <div class="card metric c-crit"><div class="num">19</div><div class="lab">风险 / 缺陷项</div></div>
   <div class="card metric c-high"><div class="num">4</div><div class="lab">高危（含 1 项实测崩溃）· 全部已修复</div></div>
   <div class="card metric c-med"><div class="num">10</div><div class="lab">中危</div></div>
-  <div class="card metric c-low"><div class="num">5</div><div class="lab">低危</div></div>
+  <div class="card metric c-low"><div class="num">5</div><div class="lab">低危 · 全部已修复</div></div>
   <div class="card metric c-good"><div class="num">11</div><div class="lab">已确认优势</div></div>
   <div class="card metric"><div class="num">2</div><div class="lab">子系统（裁剪 / 设计器）</div></div>
   <div class="card metric"><div class="num">8</div><div class="lab">core 子模块</div></div>
@@ -114,7 +114,7 @@
     <div class="legend">
       <div><span style="background:#ef7a1a"></span>高危 / 严重（4）— 全部已修复（F1 崩溃 / F2 依赖 / F3 解炸弹 / F4 并发）</div>
       <div><span style="background:#f2b705"></span>中危（10）— 健壮性 / 文档脱节 / 路径</div>
-      <div><span style="background:#4a90d9"></span>低危（5）— 质量 / 文档细节 / 维护</div>
+      <div><span style="background:#4a90d9"></span>低危（5）— 全部已修复（F15 测试污染 / F16 worker 清理 / F17 告警屏蔽 / F18 文档对齐 / F19 产物治理）</div>
       <div style="margin-top:6px;color:var(--muted);font-size:12.5px">占比：高危 21% · 中危 53% · 低危 26%</div>
     </div>
   </div>
@@ -253,39 +253,39 @@
   <td>至少 <code>logger.debug</code> 记录被吞异常；仅对确属“可忽略”的降级点静默。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F15</span></td><td><span class="sev s-low">低</span></td>
-  <td><b>调试脚本混入 tests/</b><br><span class="loc">tests/ 下 9 个文件 0 个 test_ 函数</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F15</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>调试脚本混入 tests/（已修复）</b><br><span class="loc">tests/ 下 6 个文件 0 个 test_ 函数</span></td>
   <td>test_corner_analysis_simple / test_diagnose / test_gui_sim / test_sketch_fix 等调试脚本污染 <code>pytest</code> 收集与 CI 判定。</td>
-  <td>移入 scripts/ 或加 <code>pytestmark = pytest.mark.skip</code>；tests/ 仅保留真实回归用例。</td>
+  <td><b>已修复（2026-08-27）：</b>① 新增 <code>tests/conftest.py</code> 的 <code>collect_ignore</code>，把全部 6 个零测试脚本排除出收集（仍可 <code>python tests/xxx.py</code> 直接运行）；② <code>test_diagnose.py</code> 可执行体已加 <code>__main__</code> 守卫，修复其导入即崩溃的 TypeError；③ 回归测试 <code>test_f15_f19_fixes.py</code> 自动校验"新增零测试脚本必须进 ignore 名单"，防止回潮。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F16</span></td><td><span class="sev s-low">低</span></td>
-  <td><b>PreviewRenderWorker 未正确清理</b><br><span class="loc">canvas_widget.py:112-142</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F16</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>PreviewRenderWorker 未正确清理（已修复）</b><br><span class="loc">canvas_widget.py _render_async / _retire_worker / shutdown</span></td>
   <td>旧 worker 仅 <code>requestInterruption()</code> 即被替换引用，可能触发“QThread destroyed while running”警告，无 finished 清理。</td>
-  <td>等待 <code>finished</code> 或 <code>deleteLater()</code> 后再释放；统一 worker 生命周期管理。</td>
+  <td><b>已修复（2026-08-27）：</b>① 新增 <code>_retire_worker()</code>：清空引用后，运行中的线程请求中断并注册 <code>finished → deleteLater</code>，由事件循环在线程真正结束后再释放对象；已结束的直接 <code>deleteLater()</code>；② 新增公开 <code>shutdown(timeout_ms)</code>，退出前等待线程收敛；③ <code>main.py</code> 接入 <code>app.aboutToQuit.connect(w.canvas.shutdown)</code>。回归测试见 <code>tests/test_f15_f19_fixes.py</code>（含"中断请求 + 干净退出"验证）。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F17</span></td><td><span class="sev s-low">低</span></td>
-  <td><b>pytest.ini 忽略 DeprecationWarning</b><br><span class="loc">pytest.ini:7-8</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F17</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>pytest.ini 忽略 DeprecationWarning（已修复）</b><br><span class="loc">pytest.ini filterwarnings</span></td>
   <td>掩盖 Pillow/numpy 即将移除 API 的信号，增加升级（如 Python 3.13 兼容）风险。</td>
-  <td>移除 ignore，或将告警转为显式技术债跟踪。</td>
+  <td><b>已修复（2026-08-27）：</b>移除全局 <code>ignore::DeprecationWarning</code>（已验证当前套件零弃用告警，移除无副作用），弃用告警重新在 pytest 摘要中可见；回归测试用 configparser 解析 ini，防止屏蔽被悄悄加回。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F18</span></td><td><span class="sev s-low">低</span></td>
-  <td><b>文档与实现不符（日志级别）</b><br><span class="loc">log_setup.py docstring vs :64</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F18</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>文档与实现不符（日志级别，已修复）</b><br><span class="loc">log_setup.py docstring vs :64</span></td>
   <td>docstring/注释称默认 WARNING，代码实为 <code>LOG_LEVEL</code> 默认 INFO，开发者调试预期偏差。</td>
-  <td>统一文档与代码表述。</td>
+  <td><b>已修复（2026-08-27）：</b>以代码为准对齐文档——模块与 <code>setup_logging</code> docstring 明确"默认 INFO，生产需要安静可设 LOG_LEVEL=WARNING；非法值回退 WARNING"，并说明排障路径。回归测试同时断言文档措辞与 <code>os.environ.get('LOG_LEVEL', 'INFO')</code> 代码事实一致。</td>
 </tr>
 
-<tr>
-  <td><span class="fid">F19</span></td><td><span class="sev s-low">低</span></td>
-  <td><b>运行产物缺乏自动清理</b><br><span class="loc">logs/(125) / debug_output/(76) / ProductSummary/</span></td>
+<tr style="background:#eafaef">
+  <td><span class="fid">F19</span></td><td><span class="sev s-fixed">已修复</span></td>
+  <td><b>运行产物缺乏自动清理（已修复）</b><br><span class="loc">logs/(125) / debug_output/(76) / 新增 core/artifact_cleanup.py</span></td>
   <td>草图诊断截图、调试中间图、日志持续累积，无滚动/清理策略，长期占用且混杂交付物。</td>
-  <td>增加产物上限/自动归档；区分“交付物”与“调试产物”目录。</td>
+  <td><b>已修复（2026-08-27）：</b>新增 <code>core/artifact_cleanup.py</code>：仅治理白名单调试目录（logs/、debug_output/，交付物目录绝不进入），双保险策略=30 天保留期+单目录 200 个数量上限（超限删最旧）；保护 <code>smartshapecrop.log*</code>（滚动日志自管理）与 <code>crash.log</code>；main.py 启动时自动执行（失败不阻断启动），另提供 CLI（<code>python core/artifact_cleanup.py --dry-run</code> 预览）。回归测试 6 项覆盖过期/上限/保护名单/dry-run/白名单边界。</td>
 </tr>
 
 </tbody>
@@ -336,7 +336,7 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
       <li><b>F7/F8/F9</b> 死代码 / 椭圆边框 / inverse</li>
       <li><b>F10</b> opencv-headless</li>
       <li><b>F14</b> 减少静默吞错</li>
-      <li><b>F15–F19</b> 测试污染 / 文档对齐 / 清理</li>
+      <li><b>F15–F19</b> 测试污染 / 文档对齐 / 清理（已全部修复，2026-08-27）</li>
     </ul>
   </div>
 </div>
@@ -387,9 +387,9 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
   <div class="card">
     <b>质量工程</b>
     <ul class="tight">
-      <li>分离 tests/ 与调试脚本（F15）。</li>
-      <li>CI 跑 pytest + 覆盖率；关掉 DeprecationWarning 忽略（F17）。</li>
-      <li>产物目录治理与自动清理（F19）。</li>
+      <li>分离 tests/ 与调试脚本（F15，已修复：conftest collect_ignore）。</li>
+      <li>CI 跑 pytest + 覆盖率；关掉 DeprecationWarning 忽略（F17，已修复）。</li>
+      <li>产物目录治理与自动清理（F19，已修复：core/artifact_cleanup.py）。</li>
     </ul>
   </div>
 </div>

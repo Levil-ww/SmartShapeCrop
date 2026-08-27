@@ -108,9 +108,11 @@ class PreviewCanvas(QWidget):
 
         total_pixels = self._design.canvas_w_px * self._design.canvas_h_px
 
-        # 取消之前未完成的后台渲染
-        if self._render_worker is not None and self._render_worker.isRunning():
-            self._render_worker.requestInterruption()
+        # 取消并清理之前未完成的后台渲染
+        # [F16 修复] 不再只 requestInterruption() 就丢弃引用——旧 worker 注册
+        # finished → deleteLater，由 Qt 事件循环在线程真正结束后再释放对象，
+        # 避免出现 "QThread: Destroyed while thread is still running"。
+        self._retire_worker()
 
         render_id = self._last_render_id + 1
         self._last_render_id = render_id
@@ -168,6 +170,41 @@ class PreviewCanvas(QWidget):
         """后台渲染异常"""
         self._is_rendering = False
         logger.error(f"[PreviewCanvas] 后台渲染失败: {err_msg}")
+
+    # ---- [F16] worker 生命周期管理 ----
+    def _retire_worker(self) -> None:
+        """
+        退役当前后台渲染 worker：
+        - 清空 self._render_worker 引用（新 worker 可以立即启动）；
+        - 若线程仍在运行：requestInterruption() 并连接 finished → deleteLater，
+          保证线程结束后对象才被释放，绝不在运行中析构 QThread；
+        - 若已结束：直接 deleteLater()。
+        过期结果由 _on_full_render_done 的 render_id 校验自然丢弃，无需额外断连。
+        """
+        old = self._render_worker
+        self._render_worker = None
+        if old is None:
+            return
+        if old.isRunning():
+            old.requestInterruption()
+            try:
+                old.finished.connect(old.deleteLater)
+            except TypeError:
+                # 理论上不会发生；防御重复连接时直接释放
+                old.deleteLater()
+        else:
+            old.deleteLater()
+
+    def shutdown(self, timeout_ms: int = 3000) -> None:
+        """
+        应用退出前调用：中断后台渲染并等待线程真正结束。
+        避免父窗口析构时销毁仍在运行的渲染线程（崩溃/警告根源）。
+        """
+        worker = self._render_worker
+        self._retire_worker()
+        if worker is not None and worker.isRunning():
+            if not worker.wait(timeout_ms):
+                logger.warning("[PreviewCanvas] 后台渲染线程未在超时内结束，放弃等待")
 
     # ---- 同步渲染（用于小图或保存） ----
     def _render_full_sync(self) -> None:

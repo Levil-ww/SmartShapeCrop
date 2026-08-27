@@ -5,6 +5,7 @@ main.py
 from __future__ import annotations
 import sys
 import os
+import logging
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
@@ -386,12 +387,23 @@ def main():
     # 调试时设置环境变量 LOG_LEVEL=DEBUG 即可输出详细日志
     setup_logging()
 
+    # [F19 修复] 启动时自动清理调试产物（logs/ 与 debug_output/ 中的过期截图
+    # 与中间图，保留滚动日志与 crash.log；交付物目录不受影响）。失败不阻断启动。
+    try:
+        from core.artifact_cleanup import cleanup_debug_artifacts
+        cleanup_debug_artifacts()
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            f'[main] 调试产物自动清理失败（不影响启动）: {e}')
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     # [图标] 设置全局窗口图标，所有顶级窗口(QMainWindow/QDialog)自动继承
     set_app_icon(app)
     w = MainWindow()
     w.show()
+    # [F16 修复] 退出前等待后台渲染线程结束，避免 "QThread destroyed while running"
+    app.aboutToQuit.connect(w.canvas.shutdown)
     sys.exit(app.exec_())
 
 

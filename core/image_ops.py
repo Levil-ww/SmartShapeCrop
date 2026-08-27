@@ -536,6 +536,9 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     #     08-26 当前方案：方向校正+contain等比+边缘延展 → 图案完整不变形，边缘无白边
     cached_img = getattr(design, '_cached_outer_image', None)
     is_pool = bool(design.pool_outer_material_image and (cached_img is not None or os.path.isfile(design.pool_outer_material_image)))
+    # [Fix 2026-08-26] L 形 + 外背景图特性：边框带应显示外背景图，
+    # 挖角(cut)区域应显示 outer_bg_color。此标志控制跳过"边框带着色"与"cut 区填白"。
+    has_outer_img = bool(design.outer_bg_image and os.path.isfile(design.outer_bg_image))
 
     if cached_img is not None and design.pool_outer_material_image:
         is_tile = _looks_like_tile(design.pool_outer_material_image)
@@ -601,7 +604,8 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                 canvas_arr[non_lshape_mask] = outer_bg_arr[non_lshape_mask]
 
     # 2. 渲染边框 band（水池模式且有素材图时跳过——素材本身就是外框）
-    if not is_pool_with_material:
+    # [Fix 2026-08-26] L 形 + 外背景图：边框带应保持外背景图，故跳过着色。
+    if not is_pool_with_material and not (design.mode == 'rect_lshape' and has_outer_img):
         bands = compute_border_bands(design)
         for band_mask, layer in bands:
             # 该层的填充颜色/图像
@@ -644,7 +648,9 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             inner_corners, fill_value=255)
         full_inner_mask = np.array(full_inner_img, dtype=bool)
         cut_area_mask = full_inner_mask & ~inner_mask
-        if cut_area_mask.any():
+        # [Fix 2026-08-26] L 形 + 外背景图：cut 区域已由 step 1.1 填为 outer_bg_color，
+        # 此处不再用 inner_fill（白色）覆盖，保持挖角显示外背景色。
+        if cut_area_mask.any() and not (design.mode == 'rect_lshape' and has_outer_img):
             canvas_arr[cut_area_mask] = inner_fill_arr[cut_area_mask]
 
     # 3.5 在挖空区域边缘绘制统一的黑色边框线
