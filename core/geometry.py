@@ -4,7 +4,7 @@ core/geometry.py
 单位：像素（渲染时用）；UI 输入单位：厘米（通过 DPI 转换）
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 import logging
 import numpy as np
@@ -190,6 +190,28 @@ class CropDesign:
     @property
     def canvas_h_px(self) -> int:
         return int(round(self.cm2px(self.canvas_h_cm)))
+
+    # ---------- 线程安全快照 ----------
+    def clone(self) -> "CropDesign":
+        """返回一份独立的快照，供后台渲染线程安全使用。
+
+        后台 ``PreviewRenderWorker`` 会持有该快照执行 ``render_design``，而在此期间
+        主线程仍可能原地修改 ``self.design``（用户改边距、增删 ``borders`` 等）。
+        为避免跨线程读写竞争（字段撕裂、``borders`` 列表迭代中变更、渲染结果错乱），
+        这里对**可变字段**做深拷贝：
+
+        * 标量 / 字符串 / 元组：本身不可变，按引用复制即可；
+        * ``borders`` 列表：逐层复制为新的 ``BorderLayer``；
+        * ``border_text``：复制为新的 ``BorderText``；
+        * ``_cached_outer_image``：**共享只读引用**——渲染期间不会被原地修改，
+          共享可避免每次后台渲染都复制上百 MB 的素材图（F4 修复）。
+        """
+        new = replace(self)  # 浅拷贝所有字段（列表/嵌套对象仍是同一引用）
+        # 断开可变容器的共享，使后台渲染与主线程互不干扰
+        new.borders = [replace(b) for b in self.borders]
+        if self.border_text is not None:
+            new.border_text = replace(self.border_text)
+        return new
 
     # 像素级坐标计算
     def outer_rect_px(self) -> RectShape:

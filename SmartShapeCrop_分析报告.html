@@ -84,7 +84,7 @@
 <h2 class="sec">一、关键指标</h2>
 <div class="grid g4">
   <div class="card metric c-crit"><div class="num">19</div><div class="lab">风险 / 缺陷项</div></div>
-  <div class="card metric c-high"><div class="num">4</div><div class="lab">高危（含 1 项实测崩溃）</div></div>
+  <div class="card metric c-high"><div class="num">4</div><div class="lab">高危（含 1 项实测崩溃）· 全部已修复</div></div>
   <div class="card metric c-med"><div class="num">10</div><div class="lab">中危</div></div>
   <div class="card metric c-low"><div class="num">5</div><div class="lab">低危</div></div>
   <div class="card metric c-good"><div class="num">11</div><div class="lab">已确认优势</div></div>
@@ -112,7 +112,7 @@
       <text x="100" y="113" text-anchor="middle" font-size="12" fill="#647084">发现项</text>
     </svg>
     <div class="legend">
-      <div><span style="background:#ef7a1a"></span>高危 / 严重（4）— 含 1 项已复现崩溃</div>
+      <div><span style="background:#ef7a1a"></span>高危 / 严重（4）— 全部已修复（F1 崩溃 / F2 依赖 / F3 解炸弹 / F4 并发）</div>
       <div><span style="background:#f2b705"></span>中危（10）— 健壮性 / 文档脱节 / 路径</div>
       <div><span style="background:#4a90d9"></span>低危（5）— 质量 / 文档细节 / 维护</div>
       <div style="margin-top:6px;color:var(--muted);font-size:12.5px">占比：高危 21% · 中危 53% · 低危 26%</div>
@@ -177,9 +177,9 @@
 </tr>
 
 <tr>
-  <td><span class="fid">F4</span></td><td><span class="sev s-high">高</span></td>
+  <td><span class="fid">F4</span></td><td><span class="sev s-fixed">已修复</span></td>
   <td><b>共享 CropDesign 跨线程读写</b><br><span class="loc">property_panel.PoolRenderWorker 写 design._cached_* / canvas 主线程渲染同一对象</span></td>
-  <td>同一 <code>CropDesign</code> 被子线程改写字段、主线程同时读取渲染，存在数据竞争（字段撕裂、渲染结果错乱）。</td>
+  <td>同一 <code>CropDesign</code> 被子线程改写字段、主线程同时读取渲染，存在数据竞争（字段撕裂、渲染结果错乱）。<b>已修复</b>：新增 <code>CropDesign.clone()</code>（克隆标量/borders/border_text，只读共享 _cached_outer_image），canvas 后台渲染改为传 <code>clone()</code> 快照，与后续主线程改动解耦。回归测试见 <code>tests/test_f4_concurrency_clone.py</code>。</td>
   <td>worker 内深拷贝 design 或仅回传不可变结果；用信号把结果传回主线程，杜绝原地改共享对象。</td>
 </tr>
 

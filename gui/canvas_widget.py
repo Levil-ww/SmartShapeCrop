@@ -133,7 +133,10 @@ class PreviewCanvas(QWidget):
                 f"[PreviewCanvas] 启动后台全分辨率渲染: "
                 f"{total_pixels}px (LOD已显示，将替换为全分辨率)"
             )
-            worker = PreviewRenderWorker(self._design, self)
+            # [F4 修复] 把独立快照交给后台线程：clone() 复制可变字段（borders / border_text /
+            # 标量），并共享只读的 _cached_outer_image。此后主线程原地修改 self.design
+            # 不会再影响正在后台运行的渲染，消除跨线程读写竞争。
+            worker = PreviewRenderWorker(self._design.clone(), self)
             worker.finished_ok.connect(
                 lambda img, t, rid=render_id: self._on_full_render_done(img, t, rid)
             )
