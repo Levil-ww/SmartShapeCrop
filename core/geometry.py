@@ -155,6 +155,7 @@ class CropDesign:
     # —— 水池设计器新增字段（默认值保持旧行为）——
     pool_hole_transparent: bool = False           # True=内部挖空留白（纯白色 JPG 背景）
     pool_outer_material_image: str | None = None  # 水池外框素材图：匹配到的花纹图，整幅铺满再挖中间
+    pool_inner_material_image: str | None = None  # 水池内挖素材图：空白模式下为None，素材填充模式下为匹配路径
 
     # [Fix 2026-08-26] 水池素材原始设计方向尺寸（文件名解析的 w×h，未经 oriented 交换）
     # 用于渲染时判断素材图是否需要旋转90度后再等比缩放（避免 cover 过度裁剪 / stretch 变形）

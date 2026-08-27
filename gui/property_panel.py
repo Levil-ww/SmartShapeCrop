@@ -666,6 +666,14 @@ class PropertyPanel(QWidget):
         mode = self._pool_hole_mode.currentData()
         # 只改 design.pool_hole_transparent 默认值；后续真正 apply 时 _collect 里再同步
         self._set_pool_status(f"挖空方式切换为：{self._pool_hole_mode.currentText()}")
+        # 切换到空白模式：清理内挖素材路径，避免之前素材填充模式的残留值造成渲染混淆
+        if mode == "blank":
+            d = self.design
+            if getattr(d, 'pool_inner_material_image', None) is not None:
+                d.pool_inner_material_image = None
+            if d.hole_bg_image is not None:
+                d.hole_bg_image = None
+                self._ed_hole_img.setText("")
 
     def _on_pool_target_changed(self, text: str):
         """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高；3) 若有草图则自动识别边距"""
@@ -1212,6 +1220,12 @@ class PropertyPanel(QWidget):
             hm = self._pool_hole_mode.currentData()
             if hm == "blank":
                 self.design.pool_hole_transparent = True
+                # 空白模式：清理内挖素材字段，防御 sketch 解析流程中可能的残留值
+                if getattr(self.design, 'pool_inner_material_image', None) is not None:
+                    self.design.pool_inner_material_image = None
+                if self.design.hole_bg_image is not None:
+                    self.design.hole_bg_image = None
+                self._ed_hole_img.setText("")
             elif hm == "image":
                 self.design.pool_hole_transparent = False
 
@@ -1413,6 +1427,11 @@ class PropertyPanel(QWidget):
             hm = self._pool_hole_mode.currentData()
             if hm == "blank":
                 d.pool_hole_transparent = True
+                # 空白模式：清空内挖素材相关字段（与 _on_pool_hole_mode_change 保持一致）
+                if getattr(d, 'pool_inner_material_image', None) is not None:
+                    d.pool_inner_material_image = None
+                if d.hole_bg_image is not None:
+                    d.hole_bg_image = None
             elif hm == "image":
                 d.pool_hole_transparent = False
         except Exception:
@@ -1423,10 +1442,13 @@ class PropertyPanel(QWidget):
         if d.outer_bg_image and (d.pool_outer_material_image is None
                                  or d.pool_outer_material_image != d.outer_bg_image):
             d.pool_outer_material_image = d.outer_bg_image
-        # 内挖素材：同步 pool_inner_material_image 与 hole_bg_image
-        if d.hole_bg_image and (d.pool_inner_material_image is None
-                                or d.pool_inner_material_image != d.hole_bg_image):
-            d.pool_inner_material_image = d.hole_bg_image
+        # 内挖素材：同步 pool_inner_material_image 与 hole_bg_image（仅素材填充模式）
+        hm_now = self._pool_hole_mode.currentData() if hasattr(self, '_pool_hole_mode') else None
+        if hm_now == "image":
+            # 防御性 getattr：兼容旧 CropDesign 实例（未声明 pool_inner_material_image 字段）
+            cur_inner = getattr(d, 'pool_inner_material_image', None)
+            if d.hole_bg_image and (cur_inner is None or cur_inner != d.hole_bg_image):
+                d.pool_inner_material_image = d.hole_bg_image
 
     def _apply_quiet(self):
         """属性变动时：静默触发预览，按钮统一 apply 也会调用"""
