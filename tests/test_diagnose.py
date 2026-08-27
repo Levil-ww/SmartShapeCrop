@@ -122,62 +122,52 @@ def diagnose_sketch(sketch_path, target_w, target_h, expected, label):
     
     return all_ok
 
-# 测试草图1
-expected1 = {
-    'outer_w': 120.0, 'outer_h': 58.0,
-    'inner_w': 57.0, 'inner_h': 42.0,
-    'top': 6.0, 'bottom': 10.0, 'left': 10.0, 'right': 53.0
-}
+if __name__ == "__main__":
+    # 测试草图1
+    expected1 = {
+        'outer_w': 120.0, 'outer_h': 58.0,
+        'inner_w': 57.0, 'inner_h': 42.0,
+        'top': 6.0, 'bottom': 10.0, 'left': 10.0, 'right': 53.0
+    }
 
-ok1 = diagnose_sketch(
-    'scripts/diagnose/_test_sketch1.png',
-    120.0, 58.0,
-    expected1,
-    "草图1"
-)
+    ok1 = diagnose_sketch(
+        'scripts/diagnose/_test_sketch1.png',
+        120.0, 58.0,
+        expected1,
+        "草图1"
+    )
 
-# 测试草图2
-expected2 = {
-    'outer_w': 234.0, 'outer_h': 60.0,
-    'inner_w': 86.0, 'inner_h': 45.0,
-    'top': 6.0, 'bottom': 9.0, 'left': 36.0, 'right': 112.0
-}
+    # 测试草图2
+    expected2 = {
+        'outer_w': 234.0, 'outer_h': 60.0,
+        'inner_w': 86.0, 'inner_h': 45.0,
+        'top': 6.0, 'bottom': 9.0, 'left': 36.0, 'right': 112.0
+    }
 
-ok2 = diagnose_sketch(
-    'scripts/diagnose/_test_sketch2.png',
-    234.0, 60.0,
-    expected2,
-    "草图2"
-)
+    ok2 = diagnose_sketch(
+        'scripts/diagnose/_test_sketch2.png',
+        234.0, 60.0,
+        expected2,
+        "草图2"
+    )
 
+    # 测试草图3-真实草图（按需取消注释并填入本地草图路径与期望值）
+    # expected_real = {
+    #     'outer_w': 133.0, 'outer_h': 60.5,
+    #     'inner_w': 76.0, 'inner_h': 44.5,
+    #     'top': 6.0, 'bottom': 10.0, 'left': 14.6, 'right': 42.4
+    # }
+    # ok_real = diagnose_sketch(
+    #     r'C:\Users\Administrator\Desktop\1.png',
+    #     133.0, 60.5,
+    #     expected_real,
+    #     "真实草图"
+    # )
 
-# 测试草图3-真实草图
-expected_real = {
-    'outer_w': 133.0, 'outer_h': 60.5,
-    'inner_w': 76.0, 'inner_h': 44.5,
-    'top': 6.0, 'bottom': 10.0, 'left': 14.6, 'right': 42.4
-}
-
-ok_real = diagnose_sketch(
-    'C:/Users/Administrator/Desktop/1.png',
-    133.0, 60.5,
-    expected_real,
-    "真实草图"
-)
-
-# 总结
-print("\n" + "=" * 80)
-print("📋 测试总结")
-print("=" * 80)
-print(f"  草图1: {'✅ 通过' if ok1 else '❌ 失败'}")
-print(f"  草图2: {'✅ 通过' if ok2 else '❌ 失败'}")
-print(f"\n  总体: {'✅ 所有草图通过' if (ok1 and ok2) else '❌ 部分草图失败'}")
-
-# 如果用户有真实草图，可以在这里添加
-expected_real = {...}
-ok_real = diagnose_sketch(
-    r'C:\Users\Administrator\Desktop\1.png',
-    133.0, 60.5,
-    expected_real,
-    "真实草图"
-)
+    # 总结
+    print("\n" + "=" * 80)
+    print("📋 测试总结")
+    print("=" * 80)
+    print(f"  草图1: {'✅ 通过' if ok1 else '❌ 失败'}")
+    print(f"  草图2: {'✅ 通过' if ok2 else '❌ 失败'}")
+    print(f"\n  总体: {'✅ 所有草图通过' if (ok1 and ok2) else '❌ 部分草图失败'}")

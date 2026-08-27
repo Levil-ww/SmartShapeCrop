@@ -247,10 +247,19 @@ def test_lshape_with_outer_image():
             cut_w_px = design.cm2px(design.l_cut_w_cm)
             cut_h_px = design.cm2px(design.l_cut_h_cm)
             
-            # 1. Check border band region shows outer_bg_image color
-            # Use a point in the border area (outer_rect near top, outside inner_rect)
-            border_x = int(outer.x + 20)
-            border_y = int(outer.y + 20)
+            # 1. Check border band region shows outer_bg_image color.
+            # [Fix 2026-08-26] 采样点必须落在"挖角(cut)之外的真实边框带"内。
+            # 对角的 cut 会占据 outer 的某一角，因此改在 cut 的对角边框带采样，
+            # 该区域对所有四种 corner 都稳定落在边框带（显示外背景图）。
+            opp = {'tl': 'br', 'tr': 'bl', 'bl': 'tr', 'br': 'tl'}[ck]
+            if opp == 'br':
+                border_x, border_y = int(outer.right - 20), int(outer.bottom - 20)
+            elif opp == 'tl':
+                border_x, border_y = int(outer.x + 20), int(outer.y + 20)
+            elif opp == 'tr':
+                border_x, border_y = int(outer.right - 20), int(outer.y + 20)
+            else:  # bl
+                border_x, border_y = int(outer.x + 20), int(outer.bottom - 20)
             border_region = arr[border_y-10:border_y+10, border_x-10:border_x+10]
             border_color = border_region.mean(axis=(0, 1))
             assert abs(border_color[0] - 200) < 40, \
