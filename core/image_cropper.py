@@ -648,7 +648,12 @@ def _build_multi_layer_corner_mask(
         base_cut = (angle >= ang_min) & (angle <= ang_max) & (dist > r)
 
         if corner_protect and raw_depth > 0:
-            # 保护模式：只在边框条带内裁切
+            # 保护模式：只在边框条带内裁切，但弧线外侧（dist > r）必须无条件裁切。
+            # [Fix 2026-08-27] 旧逻辑把弧线外侧也限制在 border_zone 内，
+            # 导致非边框条带区的弧线外侧保留了原图背景色，形成背景色弧形缺口
+            # （中古雨林黑色弧线、塞纳时光米色弧线）。
+            # 修正后：弧线外侧无条件裁切；弧线内侧只在 border_zone 内裁切，
+            # 确保内容区（花纹/图案）保持直角。
             T_plus = raw_depth + 2
             if corner_key == 'tl':
                 border_zone = (xx <= T_plus) | (yy <= T_plus)
@@ -658,7 +663,8 @@ def _build_multi_layer_corner_mask(
                 border_zone = (xx <= T_plus) | (((h - 1) - yy) <= T_plus)
             else:
                 border_zone = (((w - 1) - xx) <= T_plus) | (((h - 1) - yy) <= T_plus)
-            outer_cut = base_cut & border_zone
+            inner_cut = (dist <= r) & border_zone
+            outer_cut = base_cut | inner_cut
         else:
             outer_cut = base_cut
 
@@ -927,6 +933,116 @@ def _analyze_corner_sector_content(
         return True
 
     return False
+
+
+def _estimate_outer_background(img: Image.Image, ring_px: int = 5) -> tuple[int, int, int]:
+    """
+    估算图像最外层背景色。
+
+    从四边最外 ring_px 像素采样并取中位数，得到图像实际的外围背景色。
+    该颜色用于区分"产品外背景"与"真正的边框层"，避免把外背景误判为
+    需要保留/重绘的边框。
+    """
+    arr = np.array(img, dtype=np.float64)
+    h, w = arr.shape[:2]
+    ring = max(1, min(ring_px, min(w, h) // 20))
+
+    top = arr[:ring, :, :]
+    bottom = arr[-ring:, :, :]
+    left = arr[ring:-ring, :ring, :]
+    right = arr[ring:-ring, -ring:, :]
+
+    samples = np.concatenate([
+        top.reshape(-1, 3),
+        bottom.reshape(-1, 3),
+        left.reshape(-1, 3),
+        right.reshape(-1, 3),
+    ], axis=0)
+    if samples.shape[0] == 0:
+        return (255, 255, 255)
+    return tuple(int(round(v)) for v in np.median(samples, axis=0))
+
+
+def _corner_sector_has_content(
+    img: Image.Image,
+    corner_key: str,
+    r_px: int,
+    border_depth_px: int,
+) -> bool:
+    """
+    判断某个圆角对应的外侧扇形区域（排除边框条带后）是否包含需要保护的内容。
+
+    与旧的 _analyze_corner_sector_content 不同：
+      - 使用图像真实外背景色作为参考，而不是输出背景色
+      - 只采样"边框条带之外"的像素，避免把边框本身误判为内容
+      - 当外侧区域与外背景一致（无内容）时返回 False，允许完整裁切扇形
+
+    返回 True 表示该区域有图案/花纹，需要启用保护模式（只裁边框条带）。
+    """
+    w, h = img.size
+    r = min(r_px, max(1, min(w, h) // 2))
+    if r <= 0:
+        return False
+
+    outer_bg = np.array(_estimate_outer_background(img), dtype=np.float64)
+
+    if corner_key == 'tl':
+        cx, cy = r, r
+        x0, y0, x1, y1 = 0, 0, r, r
+    elif corner_key == 'tr':
+        cx, cy = w - r, r
+        x0, y0, x1, y1 = w - r, 0, w, r
+    elif corner_key == 'bl':
+        cx, cy = r, h - r
+        x0, y0, x1, y1 = 0, h - r, r, h
+    else:  # br
+        cx, cy = w - r, h - r
+        x0, y0, x1, y1 = w - r, h - r, w, h
+
+    step = max(2, r // 30)
+    # 只采样弧线外侧紧邻区域（窄带），避免深入内容区导致误判
+    band = max(12, min(r // 4, 40))
+    outer_r = r + band
+    tol = max(4, border_depth_px + 4)
+    samples: list[tuple[int, int, int]] = []
+
+    for y in range(y0, min(y1 + band, h), step):
+        for x in range(x0, min(x1 + band, w), step):
+            dx = x - cx
+            dy = y - cy
+            dist_sq = dx * dx + dy * dy
+            # 仅保留弧线外侧紧邻窄带内的像素
+            if dist_sq <= r * r or dist_sq > outer_r * outer_r:
+                continue
+            if corner_key == 'tl':
+                d_edge = min(x - x0, y - y0)
+            elif corner_key == 'tr':
+                d_edge = min((x1 - 1) - x, y - y0)
+            elif corner_key == 'bl':
+                d_edge = min(x - x0, (y1 - 1) - y)
+            else:
+                d_edge = min((x1 - 1) - x, (y1 - 1) - y)
+            if d_edge <= tol:
+                continue
+            samples.append(img.getpixel((x, y)))
+
+    if len(samples) < 12:
+        return False
+
+    samples_arr = np.array(samples, dtype=np.float64)
+    dist_to_bg = np.sqrt(np.sum((samples_arr - outer_bg) ** 2, axis=1))
+    non_bg_ratio = float(np.mean(dist_to_bg > 25.0))
+    # 提高阈值：窄带内少量噪点不应触发保护模式
+    if non_bg_ratio < 0.20:
+        return False
+
+    quantized = (samples_arr // 18).astype(np.int32)
+    unique_colors = len(set(map(tuple, quantized)))
+    if unique_colors >= 6:
+        return True
+
+    variance = float(np.mean(np.var(samples_arr, axis=0)))
+    return variance > 700
 
 
 def _build_border_paint_mask(
@@ -1370,6 +1486,42 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     else:
         border_layers = _get_border_layers_robust(img, bg_color)
 
+    # [Fix 2026-08-27] 过滤最外层外背景伪边框
+    # _get_border_layers_robust 从图像边缘向内扫描，经常把大面积外背景误判为
+    # 最外层边框层（如中古雨林黑色背景73px、塞纳时光米色背景41px、
+    # 青芜漫野绿色背景118px）。该层不是真实边框，会导致：
+    #   1. 保护模式下 border_zone 过宽，弧线外侧保留背景色形成弧形缺口
+    #   2. 圆角处重绘过粗的伪边框线
+    #   3. 真实边框层被吞没在"背景层"内无法识别
+    # 修复：用 _estimate_outer_background 估算真实外背景色，若最外层颜色
+    # 与外背景接近且厚度过大，则移除最外层。
+    if border_layers:
+        outer_bg = _estimate_outer_background(img)
+        first_color, first_t = border_layers[0]
+        color_dist_to_outer_bg = float(
+            np.linalg.norm(np.array(first_color, dtype=np.float64) - np.array(outer_bg, dtype=np.float64))
+        )
+        # 颜色接近外背景，且厚度明显超出普通边框（>2cm 或 >30px）
+        outer_bg_thickness_threshold = max(30, int(min(img.size) * 0.03))
+        # [Fix 2026-08-27] 先将 remaining 初始化为 None，避免未绑定局部变量
+        # 当外背景剔除条件不成立时，remaining 不会被赋值，
+        # 原代码直接引用 remaining 触发 UnboundLocalError。
+        remaining = None
+        if color_dist_to_outer_bg < 25.0 and first_t > outer_bg_thickness_threshold:
+            remaining = border_layers[1:]
+        if remaining:
+            border_layers = remaining
+            print("[FILTER] removed outer-bg layer, remaining:", border_layers)
+        elif remaining is None:
+            # 外背景剔除条件未触发 → 保留原 border_layers，不做变更。
+            pass
+        else:
+            # 若移除后为空，说明整张图只有外背景一层，按空列表处理。
+            # 后续逻辑会仅做简单圆角裁切，不会重绘任何边框，从而消除
+            # 外背景被误判为边框导致的背景色弧形缺口。
+            border_layers = []
+            print("[FILTER] removed only outer-bg layer, empty result")
+
     # ===== [新增] 检测嵌套矩形层（用于逐层有效半径递减 + 内层直角保护）=====
     try:
         nested_rects = detect_nested_rect_layers(img, border_layers=border_layers)
@@ -1409,33 +1561,33 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             content_ref_arr = np.median(samples, axis=0)
 
     # 智能判断每个角是否需要保护内容区
-    # [Fix v7 2026-08-27] 始终启用保护模式
+    # [Fix v8 2026-08-27] 基于真实外背景色判断是否启用保护模式
     #
     # 根因分析：
-    #   旧逻辑：仅当 r <= 2*raw_depth 时启用保护模式
+    #   旧逻辑 v6：仅当 r <= 2*raw_depth 时启用保护模式
     #   问题：当圆角半径较大（如 r=25px, raw_depth=5px）时，r > 2*raw_depth，
     #         导致 protect=False，整个内容区被圆角化（庄园秘境/塞纳时光问题）
     #
-    # 新策略：始终启用 protect_content=True
-    #   - 只在边框条带内裁切，内容区（花纹、图案）保持直角
-    #   - 边框条带定义为两个边框条的并集：
-    #     tl: 顶边框条(y<=T) ∪ 左边框条(x<=T)
-    #     tr: 顶边框条(y<=T) ∪ 右边框条(x>=W-1-T)
-    #     bl: 底边框条(y>=H-1-T) ∪ 左边框条(x<=T)
-    #     br: 底边框条(y>=H-1-T) ∪ 右边框条(x>=W-1-T)
-    #   - 其中 T = raw_depth + 4px 容差
-    #   - 这样可以确保：
-    #     ✅ 庄园秘境：米色内容区保持直角，只对黑色边框应用圆角
-    #     ✅ 塞纳时光：米色内容区保持直角，只对黑色边框应用圆角
-    #     ✅ 青芜漫野：内部花纹保持直角，只对绿色边框应用圆角
+    #   旧逻辑 v7：始终启用保护模式
+    #   问题：当圆角外侧实际上只是纯色外背景（无花纹/图案）时，强行启用保护
+    #         会把大面积外背景保留在圆角弧线外侧，形成背景色弧形缺口
+    #         （中古雨林黑色弧线、塞纳时光米色弧线、青芜漫野圆角范围异常）。
+    #
+    # 新策略：基于 _corner_sector_has_content 自动判断
+    #   - 外侧扇形区域含有真实内容（花纹/图案）→ 启用保护，只裁边框条带
+    #   - 外侧扇形区域与外背景一致（纯色背景）→ 不保护，完整裁切扇形
+    #   - 只在边框条带内裁切，内容区保持直角
+    #   - 边框条带定义为两个边框条的并集（T = raw_depth + 4px 容差）
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
     corner_protect_map: dict[str, bool] = {}
     for corner_key, r_px in corners_px.items():
         if r_px <= 0:
             corner_protect_map[corner_key] = False
             continue
-        # [Fix v7] 始终启用保护模式：只对边框区域应用圆角
-        corner_protect_map[corner_key] = True
+        # [Fix v8] 按真实外背景判断是否需要保护内容区
+        corner_protect_map[corner_key] = _corner_sector_has_content(
+            img, corner_key, r_px, raw_depth
+        )
 
     # 生成裁切 mask（per-corner protect_content）
     # [Fix INV-1] 传递实际 bg_color 和 content_ref_arr，确保 classify_gap_layers 判定一致
@@ -1499,7 +1651,10 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             )
 
     # Step B: 安全补绘外轮廓
-    if corners_px:
+    # [Fix 2026-08-27] 仅当检测到真实边框层时才补绘。
+    # 若边框层为空（如外背景被过滤后无剩余层），此时补绘会从原图边缘
+    # 采样外背景色并误绘到弧线区域，形成背景色弧形缺口（中古雨林黑弧）。
+    if corners_px and border_layers:
         _redraw_outer_border_on_corners(
             result, img, corners_px, border_layers, validity_mask, bg_color,
             skip_outside_arc=True,  # 非保护模式：裁切区域不应重绘边框
