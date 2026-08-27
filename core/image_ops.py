@@ -90,11 +90,65 @@ def _tile_fill(src_img: Image.Image, tw: int, th: int) -> Image.Image:
     return out
 
 
+def _estimate_outer_border(img: Image.Image, max_frac: float = 0.25,
+                           tol: int = 20, uniform_tol: int = 25) -> tuple:
+    """估算源图四边外侧近似纯色边框的厚度(像素)，返回 (top, bottom, left, right)。
+
+    判定规则（抗 AA 边缘 + 仅识别"实心纯色框"）：
+      1. 从边缘逐行/列扫描，若该行/列 ≥90% 像素与角点同色(容差 tol)则计入边框；
+      2. 扫描得到的边框带必须满足"整条带近似同色"(各通道 std ≤ uniform_tol)，
+         否则视为渐变/图案而非实心框，返回 0（不跳过）。
+    用于 _edge_extend_fill 在延展时跳过实心纯色外框，避免黑/纯色边框被拉伸成宽色带。
+    """
+    arr = np.array(img.convert('RGB'), dtype=np.int16)
+    h, w = arr.shape[:2]
+    if h == 0 or w == 0:
+        return 0, 0, 0, 0
+    corner = arr[0, 0]
+    max_t = max(1, int(h * max_frac))
+    max_l = max(1, int(w * max_frac))
+
+    def band(get_line, length, max_len):
+        t = 0
+        for i in range(length):
+            if i >= max_len:
+                break
+            line = get_line(i).astype(np.int16)
+            near = (np.abs(line - corner).max(axis=-1) <= tol)
+            if near.mean() < 0.9:
+                break
+            t += 1
+        return t
+
+    def is_solid(get_region, t):
+        if t < 1:
+            return False
+        region = get_region(t).reshape(-1, 3)
+        if region.size == 0:
+            return False
+        return region.std(axis=0).max() <= uniform_tol
+
+    top = band(lambda i: arr[i, :, :], h, max_t)
+    bottom = band(lambda i: arr[h - 1 - i, :, :], h, max_t)
+    left = band(lambda i: arr[:, i, :], w, max_l)
+    right = band(lambda i: arr[:, w - 1 - i, :], w, max_l)
+
+    top = top if is_solid(lambda t: arr[:t, :, :], top) else 0
+    bottom = bottom if is_solid(lambda t: arr[h - t:, :, :], bottom) else 0
+    left = left if is_solid(lambda t: arr[:, :t, :], left) else 0
+    right = right if is_solid(lambda t: arr[:, w - t:, :], right) else 0
+    return top, bottom, left, right
+
+
 def _edge_extend_fill(centered_img: Image.Image, tw: int, th: int) -> Image.Image:
     """把等比缩放后居中的素材图，用边缘像素延展填满目标画布（不留白、边框不糊）。
 
     适用于水池模式：画布AR与素材AR略有差异时，不希望出现白边。
-    算法：把 centered_img 贴到中央，四周空白区域用最外1px 边缘向外平铺延展（对称镜像-填充方式保证边缘颜色连续）。
+    算法：把 centered_img 贴到中央，四周空白区域用最外缘像素向外平铺延展。
+
+    [Fix 2026-08-26] 修复"两侧黑色背景框"：当某侧延展量较大(>5% 画布边长)且源图该侧带
+    近似纯色外框(如克罗印花设计稿的黑色边框)时，改为从框内侧采样边缘像素，
+    避免纯色外框被拉伸放大成宽色带。其余情况下行为与旧版完全一致。
     """
     sw, sh = centered_img.size
     canvas = Image.new('RGB', (tw, th), (255, 255, 255))
@@ -105,25 +159,52 @@ def _edge_extend_fill(centered_img: Image.Image, tw: int, th: int) -> Image.Imag
     if sw >= tw and sh >= th:
         return canvas  # 已完全填满
 
+    # 估算四边实心纯色外框厚度（仅在延展量较大时用于跳过外框）
+    top_b, bot_b, left_b, right_b = _estimate_outer_border(centered_img)
+    EXTEND_TRIGGER = 0.05  # 单侧延展超过画布该边 5% 才视为需要跳过外框
+    # 内侧内容区的中心像素（同时跳过上下/左右外框），用单点颜色填充延展区，
+    # 彻底避开外框及抗锯齿接缝，且不会因"整列穿过上下边框"而残留黑带。
+    content_cx = left_b + (sw - left_b - right_b) // 2
+    content_cy = top_b + (sh - top_b - bot_b) // 2
+
     arr = np.array(canvas, dtype=np.uint8)
-    # 延展顶部空白（0..cy-1）：取 cy 行横向复制
+    fill_px = arr[cy + content_cy, cx + content_cx]  # 内容区内部单点颜色
+
+    def _fill_band(mask_shape):
+        return np.broadcast_to(fill_px.reshape(1, 1, 3), mask_shape).copy()
+
+    # 延展顶部空白（0..cy-1）
     if cy > 0:
-        top_row = arr[cy:cy + 1, :, :]
-        arr[:cy, :, :] = np.broadcast_to(top_row, (cy, tw, 3)).copy()
+        if top_b > 0 and cy > th * EXTEND_TRIGGER:
+            arr[:cy, :, :] = _fill_band((cy, tw, 3))
+        else:
+            top_row = arr[cy:cy + 1, :, :]
+            arr[:cy, :, :] = np.broadcast_to(top_row, (cy, tw, 3)).copy()
     # 延展底部空白（cy+sh..th-1）
     if cy + sh < th:
-        bot_row = arr[cy + sh - 1:cy + sh, :, :]
-        remain = th - (cy + sh)
-        arr[cy + sh:, :, :] = np.broadcast_to(bot_row, (remain, tw, 3)).copy()
-    # 延展左侧空白（0..cx-1）：取 cx 列纵向复制
+        if bot_b > 0 and (th - (cy + sh)) > th * EXTEND_TRIGGER:
+            remain = th - (cy + sh)
+            arr[cy + sh:, :, :] = _fill_band((remain, tw, 3))
+        else:
+            bot_row = arr[cy + sh - 1:cy + sh, :, :]
+            remain = th - (cy + sh)
+            arr[cy + sh:, :, :] = np.broadcast_to(bot_row, (remain, tw, 3)).copy()
+    # 延展左侧空白（0..cx-1）
     if cx > 0:
-        left_col = arr[:, cx:cx + 1, :]
-        arr[:, :cx, :] = np.broadcast_to(left_col, (th, cx, 3)).copy()
+        if left_b > 0 and cx > tw * EXTEND_TRIGGER:
+            arr[:, :cx, :] = _fill_band((th, cx, 3))
+        else:
+            left_col = arr[:, cx:cx + 1, :]
+            arr[:, :cx, :] = np.broadcast_to(left_col, (th, cx, 3)).copy()
     # 延展右侧空白（cx+sw..tw-1）
     if cx + sw < tw:
-        right_col = arr[:, cx + sw - 1:cx + sw, :]
-        remain = tw - (cx + sw)
-        arr[:, cx + sw:, :] = np.broadcast_to(right_col, (th, remain, 3)).copy()
+        if right_b > 0 and (tw - (cx + sw)) > tw * EXTEND_TRIGGER:
+            remain = tw - (cx + sw)
+            arr[:, cx + sw:, :] = _fill_band((th, remain, 3))
+        else:
+            right_col = arr[:, cx + sw - 1:cx + sw, :]
+            remain = tw - (cx + sw)
+            arr[:, cx + sw:, :] = np.broadcast_to(right_col, (th, remain, 3)).copy()
 
     return Image.fromarray(arr, mode='RGB')
 
