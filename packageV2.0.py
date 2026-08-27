@@ -8,6 +8,7 @@ SmartShapeCrop V2.0 打包脚本（Python 版）
       - exe 文件名：智能裁剪设计器V2.0
       - exe 文件图标：images/SmartShapeCrop.ico
       - 运行时窗口图标：images/logo.png（由 main.py 的 set_app_icon 加载）
+      - 默认内嵌本机 Tesseract-OCR 到 exe 内部（用户免安装即可使用草图 OCR）
 
 V2.0 相比 V1 的新增功能：
       - 水池设计器草图识别（OCR + 方向标签 + 几何自洽）
@@ -20,10 +21,11 @@ V2.0 相比 V1 的新增功能：
     python packageV2.0.py --onedir           # 目录模式（更稳定，若 onefile 有问题可用）
     python packageV2.0.py --debug            # 调试模式（显示控制台窗口，便于排查错误）
     python packageV2.0.py --clean            # 清理旧构建后打包
-    python packageV2.0.py --with-tesseract   # 自动把本机 Tesseract-OCR 复制到 dist（用户免安装）
+    python packageV2.0.py --no-tesseract     # 不内嵌 Tesseract（默认已内嵌，OCR 不可用时降级几何回退）
 
 依赖：
     PyInstaller（脚本会自动检测并尝试安装）
+    本机已安装 Tesseract-OCR（默认嵌入 exe，用户机器无需另装）
 """
 from __future__ import annotations
 
@@ -109,10 +111,10 @@ def _fail(msg: str) -> None:
 
 def parse_args() -> dict:
     args = {
-        "mode": "onefile",   # onefile | onedir（默认单文件）
+        "mode": "onefile",          # onefile | onedir（默认单文件）
         "debug": False,
         "clean": False,
-        "with_tesseract": False,  # V2.0：打包后自动把本机 Tesseract 便携版复制到 dist 目录
+        "embed_tesseract": True,    # 默认内嵌 Tesseract 到 exe，用户机器免安装即可用 OCR
     }
     for arg in sys.argv[1:]:
         if arg == "--onefile":
@@ -123,8 +125,11 @@ def parse_args() -> dict:
             args["debug"] = True
         elif arg == "--clean":
             args["clean"] = True
+        elif arg == "--no-tesseract":
+            args["embed_tesseract"] = False
         elif arg == "--with-tesseract":
-            args["with_tesseract"] = True
+            # 兼容旧参数：默认已内嵌，此参数仅作为旧用法兼容，无实际效果
+            print("      [提示] --with-tesseract 已弃用（默认即内嵌 Tesseract），可忽略")
         elif arg in ("-h", "--help"):
             print(__doc__)
             sys.exit(0)
@@ -199,8 +204,13 @@ def clean_build() -> None:
         v2_spec.unlink(missing_ok=True)
 
 
-def _build_cmd(mode: str, debug: bool) -> list[str]:
-    """构建 PyInstaller 命令行参数"""
+def _build_cmd(mode: str, debug: bool, tesseract_src_dir: Path | None = None) -> list[str]:
+    """构建 PyInstaller 命令行参数
+
+    Args:
+        tesseract_src_dir: 本机 Tesseract 安装目录；非空则通过 --add-data 内嵌到 exe，
+            运行时由 PathResolver 在 _MEIPASS/tesseract 下自动定位。
+    """
     cmd: list[str] = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
@@ -209,6 +219,11 @@ def _build_cmd(mode: str, debug: bool) -> list[str]:
         "--icon", str(ICON_FILE),
         "--add-data", f"{str(LOGO_FILE)};images",
     ]
+
+    # 内嵌 Tesseract（onefile 运行时解压到 _MEIPASS/tesseract，由 PathResolver 自动发现）
+    if tesseract_src_dir is not None:
+        sep = ";" if os.name == "nt" else ":"
+        cmd.extend(["--add-data", f"{str(tesseract_src_dir)}{sep}tesseract"])
 
     # collect-all：收集包的全部子模块、二进制和数据文件
     for pkg in COLLECT_ALL_PACKAGES:
@@ -233,7 +248,7 @@ def _build_cmd(mode: str, debug: bool) -> list[str]:
 
     if mode == "onefile":
         # onefile 模式：运行时自动解压到系统临时目录 %TEMP%\_MEIxxxxxx\
-        # 不需要额外参数，PyInstaller 始终如此行为
+        # 内嵌的 Tesseract 同样会解压到 _MEIPASS/tesseract，由 PathResolver 自动定位
         cmd.append("--onefile")
     else:
         cmd.append("--onedir")
@@ -242,8 +257,8 @@ def _build_cmd(mode: str, debug: bool) -> list[str]:
     return cmd
 
 
-def _run_build(mode: str, debug: bool) -> bool:
-    cmd = _build_cmd(mode, debug)
+def _run_build(mode: str, debug: bool, tesseract_src_dir: Path | None = None) -> bool:
+    cmd = _build_cmd(mode, debug, tesseract_src_dir)
     print(f"      命令: {' '.join(cmd)}")
     print("      注意：首次打包较慢（约 2-5 分钟），请耐心等待...\n")
 
@@ -251,7 +266,12 @@ def _run_build(mode: str, debug: bool) -> bool:
     return result.returncode == 0
 
 
-def build_exe(mode: str, debug: bool) -> None:
+def build_exe(mode: str, debug: bool, embed_tesseract: bool) -> tuple[bool, str]:
+    """打包 exe，返回 (是否内嵌了 Tesseract, 说明文字)。
+
+    若 embed_tesseract=True 但本机未找到 Tesseract 安装目录，
+    则发出警告并继续打包（运行时 OCR 降级为几何回退）。
+    """
     _print_step(3, 5, "开始打包（PyInstaller）...")
     py_ver = sys.version.split()[0]
     pyinst_ver = _get_pyinstaller_version()
@@ -262,14 +282,44 @@ def build_exe(mode: str, debug: bool) -> None:
     print(f"      打包模式: {'单文件 (onefile, 默认)' if mode == 'onefile' else '目录 (onedir)'}")
     print(f"      调试模式: {'是（显示控制台）' if debug else '否（无控制台）'}")
 
-    success = _run_build(mode, debug)
+    tess_src_dir: Path | None = None
+    tess_info: str = ""
+    if embed_tesseract:
+        tess_src_dir = _find_tesseract_install()
+        if tess_src_dir is None:
+            tess_info = "本机未找到 Tesseract-OCR 安装目录，未内嵌；运行时 OCR 将降级为几何回退"
+            print(f"\n      [!] {tess_info}")
+            print("          可设置环境变量 TESSERACT_PATH 指向 tesseract.exe 后重试")
+        else:
+            size_mb = _dir_size_mb(tess_src_dir)
+            tess_info = f"已内嵌 Tesseract（源 {tess_src_dir}，约 {size_mb:.1f}MB）到 exe"
+            print(f"      内嵌 Tesseract: {tess_src_dir} (约 {size_mb:.1f}MB)")
+    else:
+        tess_info = "未启用内嵌（用户机器如需 OCR 需自装 Tesseract，否则降级为几何回退）"
+        print(f"      内嵌 Tesseract: 否")
+
+    success = _run_build(mode, debug, tess_src_dir)
     if not success and mode == "onefile":
         print("\n      [!] onefile 打包失败，自动回退到 onedir 模式...")
-        success = _run_build("onedir", debug)
+        success = _run_build("onedir", debug, tess_src_dir)
         if success:
             print("\n      [√] onedir 模式打包成功！")
     if not success:
         _fail("打包失败，请检查上方错误信息")
+
+    return (tess_src_dir is not None, tess_info)
+
+
+def _dir_size_mb(path: Path) -> float:
+    """估算目录总大小（MB），仅用于打包日志显示。"""
+    total = 0
+    try:
+        for p in path.rglob("*"):
+            if p.is_file():
+                total += p.stat().st_size
+    except Exception:
+        pass
+    return total / (1024 * 1024)
 
 
 def _find_tesseract_install() -> Path | None:
@@ -277,20 +327,19 @@ def _find_tesseract_install() -> Path | None:
     # 使用 PathResolver 跨平台查找
     try:
         from core.config import PathResolver
+        PathResolver.clear_cache()
         exe_path, tessdata_path = PathResolver.find_tesseract()
-        if exe_path and tessdata_path and tessdata_path != 'system':
-            return Path(os.path.dirname(exe_path))
-        elif exe_path:
+        if exe_path:
             return Path(os.path.dirname(exe_path))
     except Exception:
         pass
-    
+
     # Fallback：保留原有搜索逻辑作为兜底
     candidates = [
         r"C:\Program Files\Tesseract-OCR",
         r"C:\Program Files (x86)\Tesseract-OCR",
         os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR"),
-        r"D:\Tesseract-OCR", r"E:\Tesseract-OCR",
+        r"D:\Tesseract-OCR", r"E:\Tesseract-OCR", r"F:\Tesseract-OCR",
         # macOS
         "/usr/local/opt/tesseract",
         "/opt/homebrew/opt/tesseract",
@@ -304,72 +353,26 @@ def _find_tesseract_install() -> Path | None:
             return p
         if (p / "tesseract").is_file() and (p / "tessdata").is_dir():
             return p
+    # 环境变量覆盖
+    env_path = os.environ.get('TESSERACT_PATH', '')
+    if env_path and os.path.isfile(env_path):
+        return Path(os.path.dirname(env_path))
     return None
 
 
-def _copy_tesseract_portable(mode: str) -> tuple[bool, str]:
-    """V2.0：将本机已安装的 Tesseract-OCR 复制为 dist 内的便携版。
-    放置位置：
-      - onefile：与 exe 同级的 tesseract/ 子目录（sketch_parser.py 会自动检测）
-      - onedir：APP_NAME 目录下的 tesseract/ 子目录
-    返回 (成功, 说明)
-    """
-    src_dir = _find_tesseract_install()
-    if src_dir is None:
-        return False, "本机未找到已安装的 Tesseract-OCR，请先安装后重试，或设置环境变量 TESSERACT_PATH"
-
-    if mode == "onefile":
-        dst_dir = DIST_DIR / "tesseract"
-    else:
-        dst_dir = DIST_DIR / APP_NAME / "tesseract"
-
-    try:
-        if dst_dir.exists():
-            shutil.rmtree(dst_dir, ignore_errors=True)
-        # 仅拷核心文件：tesseract.exe + 必要 DLL + tessdata（chi_sim.traineddata + eng.traineddata 必保）
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        total_size = 0
-        for item in src_dir.iterdir():
-            if item.is_file():
-                ext = item.suffix.lower()
-                if ext in {".exe", ".dll", ".txt"}:
-                    shutil.copy2(item, dst_dir / item.name)
-                    total_size += item.stat().st_size
-            elif item.name.lower() == "tessdata":
-                dst_td = dst_dir / "tessdata"
-                dst_td.mkdir(parents=True, exist_ok=True)
-                for td in item.iterdir():
-                    if td.is_file() and td.suffix.lower() == ".traineddata":
-                        shutil.copy2(td, dst_td / td.name)
-                        total_size += td.stat().st_size
-        size_mb = total_size / (1024 * 1024)
-        return True, f"已复制 Tesseract 便携版到 {dst_dir}（约 {size_mb:.1f}MB）"
-    except Exception as e:
-        return False, f"复制 Tesseract 失败: {e}"
-
-
-def show_result(mode: str, with_tesseract: bool = False) -> None:
+def show_result(mode: str, tesseract_embedded: bool, tess_info: str) -> None:
     _print_step(5, 5, "打包完成")
     if mode == "onefile":
         exe_path = DIST_DIR / f"{APP_NAME}.exe"
     else:
         exe_path = DIST_DIR / APP_NAME / f"{APP_NAME}.exe"
 
-    tesseract_info = ""
-    if with_tesseract:
-        ok, msg = _copy_tesseract_portable(mode)
-        if ok:
-            tesseract_info = f"\n  [OCR] {msg}"
-        else:
-            tesseract_info = f"\n  [OCR] ⚠️ {msg}"
-
     print("\n" + "=" * 60)
     print("  打包成功！")
     print("=" * 60)
     print(f"  输出目录 : {DIST_DIR}")
     print(f"  可执行文件: {exe_path}")
-    if tesseract_info:
-        print(tesseract_info)
+    print(f"  OCR 状态: {'已内嵌 Tesseract，用户免安装即可使用草图 OCR' if tesseract_embedded else tess_info}")
     print("=" * 60)
 
     if mode == "onefile":
@@ -380,20 +383,20 @@ def show_result(mode: str, with_tesseract: bool = False) -> None:
         print("    重要提示：")
         print("      1. 拷贝到其他机器之前，先在本机双击测试能否正常运行")
         print("      2. 若仍打不开，在 exe 同目录会生成 crash.log，把该日志发给开发者")
-        if with_tesseract:
-            print("      3. [已启用OCR便携版] 已把 Tesseract 放到 exe 同目录 tesseract 子文件夹，")
-            print("         用户无需单独安装，完整文件夹一起分发即可")
+        if tesseract_embedded:
+            print("      3. [OCR 已内嵌] Tesseract 已打包进 exe 内部，单 exe 分发即可使用草图 OCR")
+            print("         用户无需单独安装 Tesseract，无需附带任何外部文件夹")
         else:
-            print("      3. [可选] 草图OCR识别需 Tesseract-OCR 引擎，未安装时自动降级为几何估算，")
-            print("         可让用户自行安装，或重新打包时加 --with-tesseract 参数（用户免安装）")
+            print("      3. [OCR 未内嵌] 草图识别需 Tesseract-OCR，未内嵌时自动降级为几何估算；")
+            print("         可让用户自行安装，或本机装好 Tesseract 后重新打包")
     else:
         folder = DIST_DIR / APP_NAME
         print(f"\n  使用说明（目录模式）:")
         print(f"    1. 保持整个文件夹 ({folder.name}) 完整，不要单独移动 exe")
         print(f"    2. 双击文件夹内的 {APP_NAME}.exe 即可运行")
         print(f"    3. 如需分发：右键整个文件夹 → 发送到 → 压缩(zipped)文件夹")
-        if with_tesseract:
-            print("      4. [已启用OCR便携版] 文件夹内已包含 tesseract 子目录，用户无需单独安装")
+        if tesseract_embedded:
+            print("      4. [OCR 已内嵌] Tesseract 已打包进 exe 内部，文件夹分发即可使用草图 OCR")
     print()
 
 
@@ -404,7 +407,7 @@ def main() -> None:
     print(f"  exe 名称: {APP_NAME}")
     print(f"  exe 图标: {ICON_FILE.name}")
     print(f"  Python:   {sys.version.split()[0]}")
-    print(f"  含Tesseract: {'是（用户免安装OCR）' if args['with_tesseract'] else '否（用户机器需自装或降级）'}")
+    print(f"  内嵌Tesseract: {'是（用户免安装 OCR）' if args['embed_tesseract'] else '否（用户机器需自装或降级）'}")
     print("=" * 60)
 
     check_resources()
@@ -414,8 +417,8 @@ def main() -> None:
         _print_step(3, 5, "清理旧构建产物...")
         clean_build()
 
-    build_exe(args["mode"], args["debug"])
-    show_result(args["mode"], args["with_tesseract"])
+    embedded, tess_info = build_exe(args["mode"], args["debug"], args["embed_tesseract"])
+    show_result(args["mode"], embedded, tess_info)
 
 
 if __name__ == "__main__":

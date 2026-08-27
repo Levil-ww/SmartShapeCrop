@@ -16204,3 +16204,4 @@ UnboundLocalError: cannot access local variable 'parse_filename' where it is not
 [2026-08-27 09:45:37] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-蔓生花;12x92CM'
 [2026-08-27 09:45:37] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-白色大理石7号;30x40cm'
 [2026-08-27 09:45:37] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-欧克;11x63CM'
+[2026-08-27 09:58:01] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log

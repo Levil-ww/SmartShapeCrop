@@ -10,8 +10,9 @@ V2.0 相比 V1 新增「智能水池设计器」，支持草图识别（OCR + �
 圆角 1:1 映射、内孔 10px 黑色边框线绘制。
 
 【启动方式】
-双击 智能裁剪设计器V2.0.exe 即可运行（无需安装 Python 环境）。
-首次启动需解压临时文件，约 5-15 秒，属正常现象。
+双击 智能裁剪设计器V2.0.exe 即可运行（无需安装 Python 环境，也无需单独安装 Tesseract-OCR）。
+首次启动需解压临时文件（含内嵌的 Tesseract OCR 引擎），约 5-15 秒，属正常现象。
+单 exe 文件即可分发，无需附带任何外部文件夹或依赖。
 
 【界面布局】
 主窗口左侧为预览画布，右侧为标签页，包含两个功能模块：
@@ -286,15 +287,32 @@ PSD 文件处理：
 
 水池设计器的草图识别依赖 Tesseract-OCR 引擎：
 
-【自动检测】
-  程序启动时自动检测 Tesseract-OCR 安装路径：
-  - Windows 默认路径：C:\Program Files\Tesseract-OCR
-  - 自动设置 TESSDATA_PREFIX 环境变量
-  - 未安装时程序自动降级：仅跳过 OCR，不影响其他功能
-    （圆角裁剪、几何回退、手动输入边距均可正常使用）
+【单 exe 已内嵌（默认）】
+  V2.0 打包脚本（packageV2.0.py）默认把本机 Tesseract-OCR 完整内嵌
+  到 exe 内部（通过 PyInstaller --add-data）。运行时自动解压到系统
+  临时目录 _MEIPASS/tesseract/，程序通过 PathResolver 自动定位：
+  - 用户机器无需单独安装 Tesseract-OCR
+  - 无需附带任何外部文件夹或依赖
+  - 单 exe 文件即可使用全部草图 OCR 功能
 
-【手动安装】
-  如需启用完整草图识别功能，请安装 Tesseract-OCR：
+【自动检测顺序】
+  PathResolver 按以下顺序查找 Tesseract（找到即停）：
+  1. 内嵌版：_MEIPASS/tesseract（onefile 单 exe 模式，优先）
+  2. 同级便携版：exe 同目录 tesseract 子目录
+  3. Windows 安装路径：C:\Program Files\Tesseract-OCR 等
+  4. 用户目录：~/AppData/Local/Programs/Tesseract-OCR
+  5. 其他盘符：D:\Tesseract-OCR / E:\ / F:\
+  6. 系统 PATH：shutil.which('tesseract')
+  7. 环境变量：TESSERACT_PATH 指向 tesseract.exe
+  自动设置 TESSDATA_PREFIX 环境变量。
+
+【未内嵌时的降级】
+  若打包时未内嵌（加 --no-tesseract 参数）且用户机器也未安装：
+  - 程序自动降级，仅跳过 OCR，不影响其他功能
+  - 圆角裁剪、几何回退、手动输入边距均可正常使用
+
+【手动安装（仅未内嵌时需要）】
+  若收到的是未内嵌 Tesseract 的版本，又想启用 OCR：
   1. 下载地址：https://github.com/UB-Mannheim/tesseract/wiki
   2. 安装时勾选「Chinese (Simplified)」语言包
   3. 默认安装到 C:\Program Files\Tesseract-OCR

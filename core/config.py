@@ -151,9 +151,11 @@ def px_to_cm(px: int, dpi: int = DEFAULT_DPI) -> float:
 # ============================================================================
 
 # Tesseract-OCR 搜索路径模板（跨平台）
-# 支持占位符: {exe_dir}, {home}, {env:TESSERACT_PATH}
+# 支持占位符: {resource_dir}, {exe_dir}, {home}, {env:TESSERACT_PATH}
 TESSERACT_SEARCH_PATH_TEMPLATES: list[str] = [
-    # 便携版优先（打包后）
+    # 单 exe 内嵌优先（onefile 模式运行时解压到 _MEIPASS）
+    "{resource_dir}/tesseract",
+    # 便携版优先（与 exe 同目录的 tesseract 子目录）
     "{exe_dir}/tesseract",
     "{exe_dir}/_internal/tesseract",
     # Windows 安装路径
@@ -245,13 +247,14 @@ class PathResolver:
     def _expand_template(cls, template: str) -> str:
         """展开路径模板占位符"""
         result = template
+        result = result.replace('{resource_dir}', cls.get_resource_dir())
         result = result.replace('{exe_dir}', cls.get_exe_dir())
         result = result.replace('{home}', cls.get_home_dir())
-        
+
         # 环境变量
         for key, val in os.environ.items():
             result = result.replace(f'{{env:{key}}}', val)
-        
+
         return result
     
     @classmethod
