@@ -16205,3 +16205,9 @@ UnboundLocalError: cannot access local variable 'parse_filename' where it is not
 [2026-08-27 09:45:37] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-白色大理石7号;30x40cm'
 [2026-08-27 09:45:37] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-欧克;11x63CM'
 [2026-08-27 09:58:01] [INFO] [root] [log_setup] 日志系统已配置：级别=INFO，控制台=True，文件=D:\SmartShapeCrop\logs\smartshapecrop.log
+[2026-08-27 09:58:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '吸水皮革-定制-定制尺寸-闲叙·素年;60x160cm'
+[2026-08-27 09:58:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-蔓生花;80x140CM椭圆'
+[2026-08-27 09:58:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-克罗印花52x120CM'
+[2026-08-27 09:58:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-夏日古巴;34.8x176CM'
+[2026-08-27 09:58:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石8;37.5x153.5CM'
+[2026-08-27 09:58:46] [WARNING] [core.parser.name_parser] [name_parser] no corners parsed from: '双面格-定制-定制尺寸-白色大理石7;37x165.5CM'

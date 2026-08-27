@@ -4,7 +4,8 @@ core/log_setup.py
 
 设计目标：
   - 集中配置根 logger，避免每个模块各自 setup_logging 造成重复 handler
-  - 默认级别 WARNING（生产安静），可通过环境变量 LOG_LEVEL 动态调整
+  - 默认级别 INFO（控制台安静、日志文件保留运行轨迹），可通过环境变量
+    LOG_LEVEL 动态调整（生产需要安静可设 LOG_LEVEL=WARNING）
   - 输出到控制台 + 滚动日志文件（logs/smartshapecrop.log）
   - 格式统一：[时间] [级别] [模块] 消息
 
@@ -48,7 +49,8 @@ def setup_logging(level: str | int | None = None, log_file: str | Path | None = 
 
     Args:
         level: 日志级别（'DEBUG'/'INFO'/'WARNING'/'ERROR' 或 logging.DEBUG 等整数）。
-               None 时按优先级取：环境变量 LOG_LEVEL > 默认 WARNING。
+               None 时按优先级取：环境变量 LOG_LEVEL > 默认 INFO；
+               环境变量值非法时回退 WARNING。
         log_file: 日志文件路径。None 时使用默认 logs/smartshapecrop.log。
         console: 是否输出到控制台（stderr）。默认 True。
         file_mode: 文件打开模式，默认 'a'（追加）。

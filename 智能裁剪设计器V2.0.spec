@@ -1,0 +1,56 @@
+# -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import copy_metadata
+
+datas = [('D:/SmartShapeCrop/images/logo.png', 'images'), ('E:/Tesseract-OCR', 'tesseract')]
+binaries = []
+hiddenimports = ['PyQt5.sip', 'PyQt5.QtCore', 'PyQt5.QtGui', 'PyQt5.QtWidgets', 'PyQt5.QtPrintSupport', 'PIL', 'PIL.Image', 'PIL.ImageTk', 'numpy', 'cv2', 'pytesseract', 'psd_tools', 'psd_tools.api', 'psd_tools.constants', 'core', 'core.pool_designer', 'core.pool_designer.sketch_parser', 'core.corner', 'core.corner.sector_render', 'core.corner.detection', 'core.corner.algorithm', 'core.parser', 'core.parser.name_parser', 'core.parser.template_matcher', 'core.psd', 'core.psd.loader', 'gui', 'gui.canvas_widget', 'gui.property_panel', 'gui.cropper_panel']
+datas += copy_metadata('Pillow')
+datas += copy_metadata('numpy')
+datas += copy_metadata('pytesseract')
+datas += copy_metadata('psd-tools')
+hiddenimports += collect_submodules('PyQt5')
+hiddenimports += collect_submodules('psd_tools')
+tmp_ret = collect_all('PyQt5.Qt5')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('pytesseract')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+
+a = Analysis(
+    ['D:/SmartShapeCrop/main.py'],
+    pathex=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='智能裁剪设计器V2.0',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=['D:/SmartShapeCrop/images/SmartShapeCrop.ico'],
+)
