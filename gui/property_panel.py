@@ -196,14 +196,16 @@ class PoolRenderWorker(QThread):
             design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
 
             # 边距优先用草图，否则用默认等比例值（10% 短边）
-            # [尺寸偏移修正 2026-08-15] 画布已 +TRIM_CM(1cm)，4 个边距也需各 +1cm，
-            # 内挖由 inner = canvas - sum(margins) 自动推导出为 inner_sketch - 1cm（双向各减 0.5 总合为 -1）。
-            # 几何不变量：(outer+1) = (ml+1) + (iw-1) + (mr+1)；(outer+1)_v = (mt+1) + (ih-1) + (mb+1)
+            # [契约变更 2026-08-27] 画布已 +TRIM_CM(1cm) 作为裁剪损耗，
+            # 草图识别到的 4 个边距视为设计真值，不再追加 +TRIM_CM 偏移。
+            # 内挖由 inner = canvas - sum(margins) 自动推导，因此 inner 相对
+            # sketch 原始内框自动 +1cm（损耗分摊到内挖区域，不挤占边距）。
+            # 新不变量：(outer+1) = ml + inner_w + mr；(outer+1)_v = mt + inner_h + mb
             if sketch_result and sketch_result.success:
-                design.inner_margin_top_cm = sketch_result.margin_top_cm + TRIM_CM
-                design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm + TRIM_CM
-                design.inner_margin_left_cm = sketch_result.margin_left_cm + TRIM_CM
-                design.inner_margin_right_cm = sketch_result.margin_right_cm + TRIM_CM
+                design.inner_margin_top_cm = sketch_result.margin_top_cm
+                design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm
+                design.inner_margin_left_cm = sketch_result.margin_left_cm
+                design.inner_margin_right_cm = sketch_result.margin_right_cm
             else:
                 default_m = min(canvas_w_cm, canvas_h_cm) * 0.10
                 design.inner_margin_top_cm = default_m
@@ -1013,12 +1015,14 @@ class PropertyPanel(QWidget):
             self._sketch_parse_result = result
             if result.success:
                 # —— 回填 4 个边距（核心需求）——
+                # [契约变更 2026-08-27] 水池模式下 UI 直接显示草图识别到的边距值，
+                # 不再追加 +1cm 偏移（画布已含 1cm 损耗）。
+                # 内挖矩形由 canvas - sum(margins) 自动推导。
                 is_pool = getattr(self, '_pool_mode', False)
-                TRIM_UI = 1.0 if is_pool else 0.0
-                mt_ui = max(0.0, result.margin_top_cm + TRIM_UI)
-                mb_ui = max(0.0, result.margin_bottom_cm + TRIM_UI)
-                ml_ui = max(0.0, result.margin_left_cm + TRIM_UI)
-                mr_ui = max(0.0, result.margin_right_cm + TRIM_UI)
+                mt_ui = max(0.0, result.margin_top_cm)
+                mb_ui = max(0.0, result.margin_bottom_cm)
+                ml_ui = max(0.0, result.margin_left_cm)
+                mr_ui = max(0.0, result.margin_right_cm)
                 self._sp_mt.blockSignals(True)
                 self._sp_mb.blockSignals(True)
                 self._sp_ml.blockSignals(True)
@@ -1057,18 +1061,18 @@ class PropertyPanel(QWidget):
                     self._set_pool_status(
                         f"✅ 识别草图成功：\n"
                         f"  外框：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm\n"
-                        f"  内挖：{result.inner_w_cm:.1f} × {result.inner_h_cm:.1f} cm\n"
+                        f"  内挖（按画布+边距派生）：{(result.outer_w_cm - result.margin_left_cm - result.margin_right_cm):.1f} × {(result.outer_h_cm - result.margin_top_cm - result.margin_bottom_cm):.1f} cm\n"
                         f"  边距：上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f} cm"
                         f"{dir_info}"
-                        f"\n（已自动填入【内挖边距】栏，可微调）"
+                        f"\n（已按识别值填入【内挖边距】栏，画布已含 1cm 裁剪损耗，内挖会自动外扩 1cm）"
                     )
                 except Exception as e:
                     logger.exception(f"[PropertyPanel] 草图状态消息构造失败: {e}")
                     self._set_pool_status(
-                        f"✅ 识别草图成功：外框 {result.outer_w_cm:.1f}×{result.outer_h_cm:.1f}，"
-                        f"内挖 {result.inner_w_cm:.1f}×{result.inner_h_cm:.1f}，"
-                        f"边距 上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f}"
-                    )
+                    f"✅ 识别草图成功：外框 {result.outer_w_cm:.1f}×{result.outer_h_cm:.1f}，"
+                    f"内挖 {(result.outer_w_cm - result.margin_left_cm - result.margin_right_cm):.1f}×{(result.outer_h_cm - result.margin_top_cm - result.margin_bottom_cm):.1f}，"
+                    f"边距 上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f}"
+                )
             else:
                 # V2.0 修复：解析失败时区分"OCR引擎根本没装"和"OCR识别了但没匹配上"两类，
                 # 避免用户看到笼统的"草图未识别"而不知道需要安装Tesseract
