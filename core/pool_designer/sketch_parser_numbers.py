@@ -524,6 +524,42 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                 del _recovered_meta[field]
             logger.info(f"[Step4] {tag}: {dir_char}={val} conf={conf} → {field}")
 
+    # ===== [相邻性保护] 双token(方向↔数值) 物理距离合法性检查 =====
+    # 克罗印花 67×53 场景：OCR 多列阅读时，左列尾的 "38" 与 右列头的 "右" 在 token 索引上相邻，
+    # 但物理坐标跨整张图（cx≈50 vs cx≈650）。旧代码只看 i 与 i+1 索引相邻，导致 margin_right=38 错误绑定。
+    # 状态不变量：方向字 + 数值 token 必须在"同一行"且"字间距合理"才能配对。
+    def _tokens_on_same_line_adjacent(l1, t1, w1, h1, l2, t2, w2, h2):
+        """判断两个 OCR token bbox 是否在视觉上是同一行内的紧邻文字（参数均为当前 scan 下的像素原始坐标）。"""
+        # 1) 同一行：垂直方向重叠 ≥ 较小字高的 45%（红笔手写线条略斜，阈值不宜过严）
+        y_overlap_top = max(t1, t2)
+        y_overlap_bot = min(t1 + h1, t2 + h2)
+        y_overlap = max(0, y_overlap_bot - y_overlap_top)
+        min_h = max(1, min(h1, h2))
+        if y_overlap < 0.45 * min_h:
+            return False
+        # 2) X 间距：两框之间的空白间距不能大于 3 × 最小字宽，并且绝对间距 < 160px
+        #    (3字宽是中文"上5.5 / 右 11"等排版的正常邻近距离；160px 是 1x 图上的安全上限)
+        #    A 在 B 左边：A.right = l1+w1 → 距离 B.left = l2 的 gap
+        #    B 在 A 左边：同理反向
+        box1_right = l1 + w1
+        box2_right = l2 + w2
+        gap_x = 0
+        if box1_right <= l2:
+            gap_x = l2 - box1_right
+        elif box2_right <= l1:
+            gap_x = l1 - box2_right
+        else:
+            # 两框有 X 重叠 → 视为"紧邻/同一块文本"
+            gap_x = 0
+        max_gap_by_char = 3 * max(1, min(w1, w2))
+        if gap_x > max_gap_by_char:
+            return False
+        # 绝对上限：1x 图上 350px 足以覆盖跨大半个外框的"不可能邻近距离"；
+        # 2.5x/4x/6x 放大图上字距本身会成比例变大，所以 350 不会成为限制性条件（3×min_width 会更早触发）
+        if gap_x > 350:
+            return False
+        return True
+
     for img, scale, src_tag in scan_list:
         try:
             pil = PILImage.fromarray(img)
@@ -580,14 +616,20 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         nm = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt)
                         if nm:
                             try:
-                                vv = float(nm.group(1))
-                                bx = int(lefts[i]) / scale
-                                by = int(tops[i]) / scale
-                                bw = (int(lefts[i + 1]) + int(widths[i + 1]) - int(lefts[i])) / scale
-                                bh = max(int(heights[i]), int(heights[i + 1])) / scale
-                                _try_bind(raw, vv, ci, bx, by, bw, bh,
-                                          f"双token(方向→数值 {src_tag} {lang} psm{psm})")
-                                continue
+                                # [Fix] 物理相邻性前置检查：方向字 token(i) 与 数值 token(i+1) 必须在同一行+紧邻
+                                l_i, t_i, w_i, h_i = int(lefts[i]), int(tops[i]), int(widths[i]), int(heights[i])
+                                l_j, t_j, w_j, h_j = int(lefts[i+1]), int(tops[i+1]), int(widths[i+1]), int(heights[i+1])
+                                if not _tokens_on_same_line_adjacent(l_i, t_i, w_i, h_i, l_j, t_j, w_j, h_j):
+                                    pass  # 索引相邻但物理跨图 → 忽略（交给Phase3空间距离场/单token）
+                                else:
+                                    vv = float(nm.group(1))
+                                    bx = l_i / scale
+                                    by = t_i / scale
+                                    bw = (l_j + w_j - l_i) / scale
+                                    bh = max(h_i, h_j) / scale
+                                    _try_bind(raw, vv, ci, bx, by, bw, bh,
+                                              f"双token(方向→数值 {src_tag} {lang} psm{psm})")
+                                    continue
                             except ValueError:
                                 logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
@@ -597,13 +639,19 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         nxt_txt = _normalize_ocr_text(str(texts[i + 1]))
                         if nxt_txt in _DIR_CHAR_MAP:
                             try:
-                                vv = float(m_num.group(1))
-                                bx = int(lefts[i]) / scale
-                                by = int(tops[i]) / scale
-                                bw = (int(lefts[i + 1]) + int(widths[i + 1]) - int(lefts[i])) / scale
-                                bh = max(int(heights[i]), int(heights[i + 1])) / scale
-                                _try_bind(nxt_txt, vv, ci, bx, by, bw, bh,
-                                          f"双token(数值→方向 {src_tag} {lang} psm{psm})")
+                                # [Fix] 物理相邻性前置检查（同上）
+                                l_i, t_i, w_i, h_i = int(lefts[i]), int(tops[i]), int(widths[i]), int(heights[i])
+                                l_j, t_j, w_j, h_j = int(lefts[i+1]), int(tops[i+1]), int(widths[i+1]), int(heights[i+1])
+                                if not _tokens_on_same_line_adjacent(l_i, t_i, w_i, h_i, l_j, t_j, w_j, h_j):
+                                    pass
+                                else:
+                                    vv = float(m_num.group(1))
+                                    bx = l_i / scale
+                                    by = t_i / scale
+                                    bw = (l_j + w_j - l_i) / scale
+                                    bh = max(h_i, h_j) / scale
+                                    _try_bind(nxt_txt, vv, ci, bx, by, bw, bh,
+                                              f"双token(数值→方向 {src_tag} {lang} psm{psm})")
                             except ValueError:
                                 logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
@@ -675,14 +723,20 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         nm_s = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt_s)
                         if nm_s:
                             try:
-                                vv_s = float(nm_s.group(1))
-                                bx = int(ls[i]) / 6.0
-                                by = int(ts_top[i]) / 6.0
-                                bw = (int(ls[i + 1]) + int(ws[i + 1]) - int(ls[i])) / 6.0
-                                bh = max(int(hs[i]), int(hs[i + 1])) / 6.0
-                                _try_bind(raw_s, vv_s, ci_s, bx, by, bw, bh,
-                                          f"小数字双token(方向→数值 6x psm{psm_s})")
-                                continue
+                                # [Fix] 物理相邻性前置检查（参数为6x放大图的原始像素；helper不关心scale）
+                                sli, sti, swi, shi = int(ls[i]), int(ts_top[i]), int(ws[i]), int(hs[i])
+                                slj, stj, swj, shj = int(ls[i+1]), int(ts_top[i+1]), int(ws[i+1]), int(hs[i+1])
+                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj):
+                                    pass
+                                else:
+                                    vv_s = float(nm_s.group(1))
+                                    bx = sli / 6.0
+                                    by = sti / 6.0
+                                    bw = (slj + swj - sli) / 6.0
+                                    bh = max(shi, shj) / 6.0
+                                    _try_bind(raw_s, vv_s, ci_s, bx, by, bw, bh,
+                                              f"小数字双token(方向→数值 6x psm{psm_s})")
+                                    continue
                             except ValueError:
                                 logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
@@ -692,13 +746,19 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         nxt_s = _normalize_ocr_text(str(ts[i + 1]))
                         if nxt_s in _DIR_CHAR_MAP:
                             try:
-                                vv_s = float(m_ns.group(1))
-                                bx = int(ls[i]) / 6.0
-                                by = int(ts_top[i]) / 6.0
-                                bw = (int(ls[i + 1]) + int(ws[i + 1]) - int(ls[i])) / 6.0
-                                bh = max(int(hs[i]), int(hs[i + 1])) / 6.0
-                                _try_bind(nxt_s, vv_s, ci_s, bx, by, bw, bh,
-                                          f"小数字双token(数值→方向 6x psm{psm_s})")
+                                # [Fix] 物理相邻性前置检查
+                                sli, sti, swi, shi = int(ls[i]), int(ts_top[i]), int(ws[i]), int(hs[i])
+                                slj, stj, swj, shj = int(ls[i+1]), int(ts_top[i+1]), int(ws[i+1]), int(hs[i+1])
+                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj):
+                                    pass
+                                else:
+                                    vv_s = float(m_ns.group(1))
+                                    bx = sli / 6.0
+                                    by = sti / 6.0
+                                    bw = (slj + swj - sli) / 6.0
+                                    bh = max(shi, shj) / 6.0
+                                    _try_bind(nxt_s, vv_s, ci_s, bx, by, bw, bh,
+                                              f"小数字双token(数值→方向 6x psm{psm_s})")
                             except ValueError:
                                 logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass

@@ -333,7 +333,35 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             lhs = iw + ml + mr
             gap = tw - iw  # 预期边距总和
             margin_sum = ml + mr
-            # 比例缩放：当边距和与预期差距 >2x 时按比例缩放两侧
+            # --- [不变量 S6/S7 守护] 内框候选异常时，优先用边距推导内框，而非按异常内框缩放边距 ---
+            # 触发条件：
+            #   (a) iw < max(ml, mr)                  ← 几何不可能：内宽比边距还小
+            #   (b) 两侧边距都被方向标签锁定            ← 两侧方向锁都在，outer-margins 更可信
+            #   (c) gap/margin_sum >2 或 <0.5          ← 马上会触发比例缩放(说明当前iw极不兼容)
+            # 命中任意一条 + 推导 iw=tw-ml-mr 在合理范围内 → 直接重写 iw，避免后续病态比例放大
+            _ml_lock = 'margin_left' in dir_locked_fields
+            _mr_lock = 'margin_right' in dir_locked_fields
+            _derived_iw = tw - ml - mr
+            _trigger = (
+                (iw < max(ml, mr, 0.01))
+                or (_ml_lock and _mr_lock)
+                or (gap > 0 and margin_sum > 0 and (gap / margin_sum > 2.0 or gap / margin_sum < 0.5))
+            )
+            if _trigger and 0 < _derived_iw < tw * 0.95:
+                _tag_bits = (
+                    ('IW<' if iw < max(ml, mr, 0.01) else '')
+                    + ('L+R_dir_locked' if (_ml_lock and _mr_lock) else '')
+                    + ('ratio_abnormal' if (gap > 0 and margin_sum > 0 and (gap / margin_sum > 2.0 or gap / margin_sum < 0.5)) else '')
+                )
+                logger.info(
+                    f"[Step6] 横向inner异常用outer-margins重写: inner_w {iw:.1f}→{_derived_iw:.1f} "
+                    f"(原因={_tag_bits}; outer={tw:.1f}  lhs_old={lhs:.1f})"
+                )
+                put('inner_w', _derived_iw, 0.5)
+                iw = _derived_iw
+                lhs = iw + ml + mr
+                gap = tw - iw
+            # --- 比例缩放：当边距和与预期差距 >2x 时按比例缩放两侧（经过上面inner修正后，正常场景通常不再触发）---
             if gap > 0 and margin_sum > 0:
                 ratio = gap / margin_sum
                 if ratio > 2.0 or ratio < 0.5:
@@ -347,11 +375,19 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
                     if new_mr > cap:
                         new_mr = cap
                     if new_ml > 0 and new_mr > 0:
-                        put('margin_left', new_ml, 0.5)
-                        put('margin_right', new_mr, 0.5)
-                        logger.info(f"[Step6] 横向比例缩放: ml {ml:.1f}→{new_ml:.1f} mr {mr:.1f}→{new_mr:.1f} (ratio={ratio:.2f})")
-                        ml, mr = new_ml, new_mr
-                        lhs = iw + ml + mr
+                        # [不变量S8] 方向锁的边距不能被比例缩放覆盖！只缩放非锁侧
+                        side_changed = False
+                        if not _ml_lock:
+                            put('margin_left', new_ml, 0.5)
+                            side_changed = True
+                        if not _mr_lock:
+                            put('margin_right', new_mr, 0.5)
+                            side_changed = True
+                        if side_changed:
+                            ml = get('margin_left')
+                            mr = get('margin_right')
+                            logger.info(f"[Step6] 横向比例缩放: ml {ml:.1f}(锁{'是' if _ml_lock else '否'}) mr {mr:.1f}(锁{'是' if _mr_lock else '否'}) (ratio={ratio:.2f})")
+                            lhs = iw + ml + mr
             if abs(lhs - tw) / max(tw, 1) > 0.05:
                 # 裁剪超大边距：上限 = min(outer*0.6, gap*0.9)
                 cap = min(tw * 0.6, gap * 0.9) if gap > 0 else tw * 0.8
@@ -429,6 +465,29 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             lhs = mt + ih + mb
             gap = th - ih
             margin_sum = mt + mb
+            # --- [不变量 S6/S7 守护] 内框候选异常时，优先用边距推导内框（花漾之约 ih=7→35.5 修复关键）---
+            _mt_lock = 'margin_top' in dir_locked_fields
+            _mb_lock = 'margin_bottom' in dir_locked_fields
+            _derived_ih = th - mt - mb
+            _trigger_v = (
+                (ih < max(mt, mb, 0.01))
+                or (_mt_lock and _mb_lock)
+                or (gap > 0 and margin_sum > 0 and (gap / margin_sum > 2.0 or gap / margin_sum < 0.5))
+            )
+            if _trigger_v and 0 < _derived_ih < th * 0.95:
+                _tag_v = (
+                    ('IH<' if ih < max(mt, mb, 0.01) else '')
+                    + ('T+B_dir_locked' if (_mt_lock and _mb_lock) else '')
+                    + ('ratio_abnormal' if (gap > 0 and margin_sum > 0 and (gap / margin_sum > 2.0 or gap / margin_sum < 0.5)) else '')
+                )
+                logger.info(
+                    f"[Step6] 纵向inner异常用outer-margins重写: inner_h {ih:.1f}→{_derived_ih:.1f} "
+                    f"(原因={_tag_v}; outer={th:.1f}  lhs_old={lhs:.1f})"
+                )
+                put('inner_h', _derived_ih, 0.5)
+                ih = _derived_ih
+                lhs = mt + ih + mb
+                gap = th - ih
             # 比例缩放：当边距和与预期差距 >2x 时按比例缩放两侧
             if gap > 0 and margin_sum > 0:
                 ratio = gap / margin_sum
@@ -441,11 +500,22 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
                     if new_mb > cap:
                         new_mb = cap
                     if new_mt > 0 and new_mb > 0:
-                        put('margin_top', new_mt, 0.5)
-                        put('margin_bottom', new_mb, 0.5)
-                        logger.info(f"[Step6] 纵向比例缩放: mt {mt:.1f}→{new_mt:.1f} mb {mb:.1f}→{new_mb:.1f} (ratio={ratio:.2f})")
-                        mt, mb = new_mt, new_mb
-                        lhs = mt + ih + mb
+                        # [不变量S8] 方向锁的边距不被比例缩放覆盖 → 只缩放非锁侧
+                        changed = False
+                        if not _mt_lock:
+                            put('margin_top', new_mt, 0.5)
+                            changed = True
+                        if not _mb_lock:
+                            put('margin_bottom', new_mb, 0.5)
+                            changed = True
+                        if changed:
+                            mt = get('margin_top')
+                            mb = get('margin_bottom')
+                            logger.info(
+                                f"[Step6] 纵向比例缩放: mt {mt:.1f}(锁{'是' if _mt_lock else '否'}) "
+                                f"mb {mb:.1f}(锁{'是' if _mb_lock else '否'}) (ratio={ratio:.2f})"
+                            )
+                            lhs = mt + ih + mb
             if abs(lhs - th) / max(th, 1) > 0.05:
                 # 裁剪超大边距：上限 = min(outer*0.6, gap*0.9)
                 cap = min(th * 0.6, gap * 0.9) if gap > 0 else th * 0.8

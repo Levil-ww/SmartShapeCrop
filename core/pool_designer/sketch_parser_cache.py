@@ -27,7 +27,7 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
-_ALGO_VERSION = 9  # 2026-08-28: _can_overwrite直接值覆盖需+5~+8conf安全阈值；_try_bind入口拒绝权威外框尺寸值(中古雨林60=outer_h误成margin_right)
+_ALGO_VERSION = 11  # 2026-08-28: Step6横纵len==3分支不变量守护: inner异常(比边距小/方向锁两侧/ratio>2x)时先用outer-margins推导inner，再走后续流程；方向锁边距禁止比例缩放覆盖(花漾之约ih=7→35.5+margin_top=26.6回归修复)
 
 
 
