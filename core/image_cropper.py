@@ -954,12 +954,13 @@ def _build_border_paint_mask(
         if r <= 0:
             continue
 
-        # [Fix 图三] validity_mask 始终使用完整边框厚度
-        # 间隙层需要被背景色填充，必须覆盖到间隙层所在深度
+        # [Fix 边框线自动匹配] validity_mask 使用精确边框厚度 + 少量抗锯齿容差
+        # 原 +8px 容差导致 validity_mask 延伸至内容区，可能引发过绘
+        # 修复：仅保留 2px 抗锯齿容差，确保边框区与内容区精确分界
         effective_depth = border_depth
 
-        # 计算边框重绘的有效深度（边框厚度，但不超过圆角半径）
-        paint_depth = min(effective_depth + 8, r)  # +8px 抗锯齿容差
+        # 计算边框重绘的有效深度（精确边框厚度 + 2px 抗锯齿容差）
+        paint_depth = min(effective_depth + 2, r)
 
         if corner_key == 'tl':
             cx, cy = r, r

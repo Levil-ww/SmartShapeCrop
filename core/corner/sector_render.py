@@ -311,10 +311,49 @@ def _redraw_border_on_corner(
     if validity_arr is not None:
         valid_region = valid_region & validity_arr
 
+    # === [Fix 边框线自动匹配 2026-08-27] ===
+    # 识别并保护"内部内容像素"（花纹/图案）不被边框重绘覆盖，
+    # 同时确保边框区内的像素（含抗锯齿边缘）始终被正确重绘。
+    #
+    # 根因1（内容被覆盖）：V1.0 简化版把 d_region 内所有像素
+    #   直接绘制为边框色，导致内部花纹被覆盖。
+    # 根因2（边框线过细）：content_protect_mask 错误保护了边框区内的
+    #   抗锯齿过渡像素，使其不被重绘，导致边框在转角处比直边细。
+    #
+    # 修复：三区域渐进判定（确保边框精确匹配原图厚度）
+    #   1. 核心边框区 (depth < CORE_BORDER_DEPTH)：始终绘制边框色
+    #      — 抗锯齿过渡像素在此区域内，必须被正确重绘
+    #   2. 内侧过渡区 (CORE_BORDER_DEPTH <= depth < total_border_depth)：
+    #      保护内容像素（如果颜色不匹配任何边框色且不匹配背景）
+    #   3. 边框外区域 (depth >= total_border_depth)：保护所有内容像素
+    BORDER_SIGMA = 6.0
+    bg_arr_detect = np.array(bg_color, dtype=np.float64)
+    color_dist_to_border_min = np.full((roi_h, roi_w), np.inf, dtype=np.float64)
+    for bc, _ in border_layers:
+        bc_arr = np.array(bc, dtype=np.float64)
+        d = np.sqrt(np.sum((src_arr.astype(np.float64) - bc_arr) ** 2, axis=2))
+        color_dist_to_border_min = np.minimum(color_dist_to_border_min, d)
+    dist_to_bg = np.sqrt(np.sum((src_arr.astype(np.float64) - bg_arr_detect) ** 2, axis=2))
+    is_content_pixel = (color_dist_to_border_min > BORDER_SIGMA) & (dist_to_bg > BORDER_SIGMA)
+
+    # 计算最小边框层厚度，用于确定核心边框深度
+    min_layer_thickness = min((t for _, t in border_layers), default=total_border_depth)
+    # 核心边框区：去掉内层 30% 容差（用于抗锯齿过渡）
+    CORE_MARGIN = max(3, int(min_layer_thickness * 0.5))
+    CORE_BORDER_DEPTH = max(0, total_border_depth - CORE_MARGIN)
+
+    # 区域1: 核心边框区 (depth < CORE_BORDER_DEPTH) — 不保护
+    # 区域2: 过渡区 (CORE_BORDER_DEPTH <= depth < total_border_depth) — 保护内容像素
+    # 区域3: 边框外 (depth >= total_border_depth) — 保护内容像素
+    in_transition_zone = (depth >= float(CORE_BORDER_DEPTH)) & (depth < float(total_border_depth))
+    outside_border_zone = (depth >= float(total_border_depth))
+    # 仅在过渡区和边框外区域保护内容像素
+    content_protect_mask = is_content_pixel & (in_transition_zone | outside_border_zone)
+
     # === [Fix INV-1/INV-3/INV-5] 处理弧线外侧区域 ===
     # 必须在 d loop 之前运行，确保所有弧外侧像素（dist > R_total）
     # 都被填充为背景色，无论首层是否为间隙层。
-    # 
+    #
     # [Fix 花漾之约] 扩大 beyond_arc 范围：
     #   原缺陷：dist <= R_total + 5.0 限制了仅填充弧外侧 5px 范围，
     #   当 arc 半径较大时，远端像素未被填充 → 白色扇形角。
@@ -340,7 +379,6 @@ def _redraw_border_on_corner(
             continue
 
         target_color = border_layers[color_idx][0] if color_idx < len(border_layers) else (255, 255, 255)
-        target_color_arr = np.array(target_color, dtype=np.float64)
 
         local_coords = np.where(d_region)
         if len(local_coords[0]) == 0:
@@ -353,11 +391,27 @@ def _redraw_border_on_corner(
             result_arr[local_coords[0], local_coords[1], :] = bg_arr
             continue
         else:
-            # === V1.0 风格简化：实心边框直接绘制 ===
-            # 直接将边框色绘制到该层的整个深度带区域
-            # 不再进行复杂的间隙过滤和颜色匹配
-            color_fill = np.array(target_color, dtype=result_arr.dtype)
-            result_arr[local_coords[0], local_coords[1], :] = color_fill.reshape(1, 3)
+            # === [Fix 玛利亚玫瑰/复古花丛 2026-08-27] ===
+            # 在 V1.0 边框绘制基础上，跳过内容像素：
+            #   只在 d_region 中"非内容像素"的位置绘制边框色，
+            #   内容像素（花纹/图案）保持原图颜色，避免被边框色覆盖。
+            # 弧外侧背景像素（dist > R_total）由 beyond_arc 直接清空，不走这里。
+            #
+            # 对间隙层：始终清空（不受内容保护限制）——间隙层是边框系统的一部分，
+            # 应被正确清空为背景色。
+            protect_here = content_protect_mask[local_coords[0], local_coords[1]]
+            if np.any(protect_here):
+                paint_mask = ~protect_here
+                if not np.any(paint_mask):
+                    continue
+                py = local_coords[0][paint_mask]
+                px = local_coords[1][paint_mask]
+                color_fill = np.array(target_color, dtype=result_arr.dtype)
+                result_arr[py, px, :] = color_fill.reshape(1, 3)
+            else:
+                # 无内容像素：直接整体绘制
+                color_fill = np.array(target_color, dtype=result_arr.dtype)
+                result_arr[local_coords[0], local_coords[1], :] = color_fill.reshape(1, 3)
             continue
 
     # === V1.0 风格简化：确保弧外侧区域为背景色 ===
