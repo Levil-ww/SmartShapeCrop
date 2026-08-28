@@ -89,7 +89,9 @@
   &nbsp;&nbsp;• <b>9 个为 F1 退化参数防御真实回归</b>：RectShape 归一化 / inner-outer_rect_px clamp / fill_rect·fill_ellipse_mask 崩溃守卫在当前代码中已缺失，PIL 渲染报 ValueError → 已恢复；<br>
   &nbsp;&nbsp;• <b>6 个为 F4 并发克隆真实回归</b>：CropDesign.clone() 在当前代码中已不存在（AttributeError）→ 已重新实现，canvas_widget.py 按快照传参；<br>
   &nbsp;&nbsp;• <b>1 个为 F9 椭圆边框告警缺失</b> → 已在 compute_border_bands 注入 warning；另有 F14 裸 except 3 处注入 logger.debug、F5 过期参数更新。<br>
-  ③ 结论：回归护栏已恢复全绿（228/0/5），F1 / F4 / F9 修复已完整回到 V2.1 代码。
+  ③ 结论：回归护栏已恢复全绿（228/0/5），F1 / F4 / F9 修复已完整回到 V2.1 代码。<br>
+  ④ <b>目录膨胀已治理（同日）</b>：项目工作区 1,029MB → 794MB（不含 .venv 547 → 312MB）、.git 277MB → 40MB。清理 build/ 270MB（PyInstaller 中间产物）、.git/My Pictures 237MB（误放个人数据，移出项目待用户处置）、logs/ 39MB + debug_output/ 11MB + scripts/logs/ 4MB（删除并移除 git 跟踪）、__pycache__ 全部清除；git 索引移除 233 个文件跟踪，.gitignore 追加 logs/、debug_output/、scripts/logs/、/crash.log 防复发；保留 dist/ exe、smartshapecrop.log*、crash.log（F19 保护名单）。全量测试 228/0/5 验证无副作用。<br>
+  ⑤ <b>巨型模块风险已治理（同日）</b>：三个 1,700+ 行单体按 <b>facade 薄壳模式</b>拆分（对外 API 与文件路径不变、逻辑纯搬移不改行为）——sketch_parser.py 2,692 → 572 行 facade + 5 子模块（base/cache/vision/numbers/margins）；image_cropper.py 1,757 → 429 行 facade + 2 子模块（mask/border）；property_panel.py 1,822 → 360 行 facade + 6 子模块（widgets/workers/dialogs + 主类 47 方法拆为 _PoolBoxMixin/_GenerateMixin/_LayersMixin 三阶段 mixin）。全程 233 用例回归护栏，最终实测仍为 <b>228 通过 / 0 失败 / 5 跳过</b>，行为零变化；当前最大单体模块已降至 1,293 行（template_matcher），子模块依赖方向 DAG 无环。
 </div>
 
 <!-- ===== 概览指标 ===== -->
@@ -409,7 +411,7 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
 
 <div class="foot">
   SmartShapeCrop 项目分析报告 · 基于源码精读与 crash.log 实证 · 2026-08-26 分析，2026-08-27 复核（F5–F14 已修复，F1–F19 全部完成）<br>
-  <b style="color:#166534">2026-08-28 复核 + 修复：requirements.txt 确认在根目录且内容完整；26 个失败已全部修复，实测 228 通过 / 0 失败 / 5 跳过（10 个测试路径 Bug + F1×9 / F4×6 / F9×1 回归恢复 + F5 过期参数 + F14 裸 except，详见页首更新说明）。</b><br>
+  <b style="color:#166534">2026-08-28 复核 + 修复：requirements.txt 确认在根目录且内容完整；26 个失败已全部修复，实测 228 通过 / 0 失败 / 5 跳过（10 个测试路径 Bug + F1×9 / F4×6 / F9×1 回归恢复 + F5 过期参数 + F14 裸 except，详见页首更新说明）；同日完成目录膨胀治理（项目 1,029→794MB、.git 277→40MB、git 索引移除 233 文件跟踪）与巨型模块 facade 拆分（sketch_parser 2692→572、image_cropper 1757→429、property_panel 1822→360 + 14 个子模块，228/0/5 回归全绿）。</b><br>
   严重度判定：严重=已复现崩溃；高=功能/安全/并发硬伤；中=健壮性/文档脱节；低=质量与维护细节。
 </div>
 

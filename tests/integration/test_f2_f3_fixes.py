@@ -48,8 +48,10 @@ def test_image_max_pixels_set():
 def test_validate_rejects_oversized_image(monkeypatch):
     """validate_sketch_file 在解码前就按像素上限拒绝超大图（解炸弹主闸门）。"""
     from core.pool_designer import sketch_parser as sp
+    from core.pool_designer import sketch_parser_base as sp_base
     # 把阈值临时调小，便于构造一张“超限但可廉价生成”的图
-    monkeypatch.setattr(sp, '_SKETCH_MAX_PIXELS', 1_000_000)
+    # （拆分后常量实现在 sketch_parser_base，monkeypatch 需指向该子模块）
+    monkeypatch.setattr(sp_base, '_SKETCH_MAX_PIXELS', 1_000_000)
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, 'big.png')
         # 1500x1500 = 2.25M 像素 > 1M 上限，但生成成本很低
@@ -66,6 +68,7 @@ def test_parse_sketch_validates_before_decode(monkeypatch):
     校验失败返回，而不是先 cv2.imread 全量解码导致 OOM/卡死。
     """
     from core.pool_designer import sketch_parser as sp
+    from core.pool_designer import sketch_parser_base as sp_base
 
     calls = {'decode': 0}
 
@@ -77,7 +80,8 @@ def test_parse_sketch_validates_before_decode(monkeypatch):
         return orig_load(path)
 
     monkeypatch.setattr(sp, '_load_image', spy_load)
-    monkeypatch.setattr(sp, '_SKETCH_MAX_PIXELS', 1_000_000)
+    # 拆分后常量实现在 sketch_parser_base，monkeypatch 需指向该子模块
+    monkeypatch.setattr(sp_base, '_SKETCH_MAX_PIXELS', 1_000_000)
 
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, 'big.png')

@@ -30,3 +30,5 @@ logs/
 debug_output/
 scripts/logs/
 /crash.log
+/simple_corner_test.png
+/test_corner_result.png

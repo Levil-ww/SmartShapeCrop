@@ -260,17 +260,18 @@
     <h2><span class="bar"></span>三、代码规模与分布</h2>
     <div class="two-col">
       <div>
-        <div class="chart-title">各模块代码行数（Top 10）</div>
-        <div class="bar-row"><div class="bar-name">pool_designer/sketch_parser</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#7c3aed">2667</div></div></div>
-        <div class="bar-row"><div class="bar-name">gui/property_panel</div><div class="bar-track"><div class="bar-fill" style="width:68%;background:#0d9488">1822</div></div></div>
-        <div class="bar-row"><div class="bar-name">core/image_cropper</div><div class="bar-track"><div class="bar-fill" style="width:66%;background:#2f6fed">1757</div></div></div>
-        <div class="bar-row"><div class="bar-name">core/parser/template_matcher</div><div class="bar-track"><div class="bar-fill" style="width:48%;background:#2f6fed">1293</div></div></div>
-        <div class="bar-row"><div class="bar-name">core/image_ops</div><div class="bar-track"><div class="bar-fill" style="width:35%;background:#2f6fed">939</div></div></div>
-        <div class="bar-row"><div class="bar-name">gui/cropper_panel</div><div class="bar-track"><div class="bar-fill" style="width:35%;background:#0d9488">946</div></div></div>
-        <div class="bar-row"><div class="bar-name">core/corner/detection</div><div class="bar-track"><div class="bar-fill" style="width:33%;background:#2f6fed">877</div></div></div>
-        <div class="bar-row"><div class="bar-name">core/parser/name_parser</div><div class="bar-track"><div class="bar-fill" style="width:30%;background:#2f6fed">813</div></div></div>
-        <div class="bar-row"><div class="bar-name">core/geometry</div><div class="bar-track"><div class="bar-fill" style="width:24%;background:#2f6fed">650</div></div></div>
-        <div class="bar-row"><div class="bar-name">main.py</div><div class="bar-track"><div class="bar-fill" style="width:15%;background:#d97706">411</div></div></div>
+        <div class="chart-title">各模块代码行数（Top 10，巨型模块已拆分）</div>
+        <div class="bar-row"><div class="bar-name">core/parser/template_matcher</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#2f6fed">1293</div></div></div>
+        <div class="bar-row"><div class="bar-name">gui/cropper_panel</div><div class="bar-track"><div class="bar-fill" style="width:73%;background:#0d9488">946</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/image_ops</div><div class="bar-track"><div class="bar-fill" style="width:73%;background:#2f6fed">939</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/corner/detection</div><div class="bar-track"><div class="bar-fill" style="width:68%;background:#2f6fed">877</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/parser/name_parser</div><div class="bar-track"><div class="bar-fill" style="width:63%;background:#2f6fed">813</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/pool_designer/sketch_parser (facade)</div><div class="bar-track"><div class="bar-fill" style="width:44%;background:#7c3aed">572</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/image_cropper (facade)</div><div class="bar-track"><div class="bar-fill" style="width:33%;background:#2f6fed">429</div></div></div>
+        <div class="bar-row"><div class="bar-name">main.py</div><div class="bar-track"><div class="bar-fill" style="width:32%;background:#d97706">411</div></div></div>
+        <div class="bar-row"><div class="bar-name">gui/property_panel (facade)</div><div class="bar-track"><div class="bar-fill" style="width:28%;background:#0d9488">360</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/geometry</div><div class="bar-track"><div class="bar-fill" style="width:50%;background:#2f6fed">650</div></div></div>
+        <div style="font-size:11.5px;color:#667085;margin-top:6px">* 巨型模块已按 facade 薄壳模式拆分（2026-08-28）：原 sketch_parser 2692 / property_panel 1822 / image_cropper 1757 行 → 三入口 facade 共 1,361 行 + 14 个子模块（含 sketch_parser_numbers 810、image_cropper_mask 1016 等），合计 6,829 行。</div>
       </div>
       <div>
         <div class="chart-title">按层分布（共 14,616 行）</div>
@@ -380,17 +381,25 @@
   <!-- ================= 风险与建议 ================= -->
   <div class="section">
     <h2><span class="bar"></span>七、风险识别与改进建议</h2>
-    <div class="risk-item">
-      <b>🔴 巨型模块风险</b> — sketch_parser.py（2667 行）、property_panel.py（1822 行）、image_cropper.py（1757 行）
-      <p>三个文件承载了过多职责，改动牵一发动全身。建议按「Step1–7 各自拆分为独立模块」「GUI 面板拆分为子组件」的方式继续重构（项目已有从 7717→1340 行的成功先例，可复制该方法）。</p>
+    <div class="risk-item" style="border-left-color:var(--green);background:#f3fbf6">
+      <b>✅ 巨型模块风险已治理（2026-08-28，三个模块全部 facade 化拆分）</b>
+      <p>原 sketch_parser.py（2,692 行）、property_panel.py（1,822 行）、image_cropper.py（1,757 行）已按<b>facade 薄壳模式</b>拆分（对外 API 与文件路径不变，逻辑纯搬移不改行为）：<br>
+      · <b>sketch_parser</b> → 572 行 facade + 5 子模块（base / cache / vision / numbers / margins）；<br>
+      · <b>image_cropper</b> → 429 行 facade + 2 子模块（mask / border）；<br>
+      · <b>property_panel</b> → 360 行 facade + 6 子模块（widgets / workers / dialogs + 主类 47 方法拆为 _PoolBoxMixin / _GenerateMixin / _LayersMixin 三阶段 mixin）。<br>
+      拆分全程以 233 个测试用例为回归护栏，最终全量实测 <b>228 通过 / 0 失败 / 5 跳过</b>，行为零变化。当前最大单体模块已降至 1,293 行（template_matcher），模块职责单一、依赖方向 DAG 无环。</p>
     </div>
     <div class="risk-item warn">
       <b>🟡 OCR 硬依赖</b> — 草图识别强依赖系统安装 Tesseract-OCR，且无几何降级路径
       <p>未安装引擎时草图识别完全不可用。建议：① 启动时检测并在 GUI 明确提示安装引导；② 评估 PaddleOCR 等替代方案以摆脱外部引擎依赖、提升中文数字识别率。</p>
     </div>
-    <div class="risk-item warn">
-      <b>🟡 目录膨胀</b> — scripts/ 含 157 个诊断脚本、logs/ 与 debug_output/ 大量中间图像
-      <p>虽有 artifact_cleanup.py 自动清理和 _archive 归档，建议进一步合并同类诊断脚本为统一 CLI（如 <code>python -m scripts.diagnose --case xxx</code>），减少维护面。</p>
+    <div class="risk-item" style="border-left-color:var(--green);background:#f3fbf6">
+      <b>✅ 目录膨胀已治理（2026-08-28，项目 1,029MB → 794MB，.git 277MB → 40MB）</b>
+      <p>清理明细：<b>build/ PyInstaller 中间产物 270MB</b>（删除，可随时重建）；<b>.git/My Pictures 误放文件夹 237MB</b>（微信图片+安装包，已移出项目待用户处置，未删除）；logs/ 调试截图 39MB、debug_output/ 11MB、scripts/logs/ 4MB（删除 + 从 git 移除跟踪）；项目内 __pycache__/.pyc 全部清除。<br>
+      <b>版本库瘦身</b>：git 索引移除 233 个文件跟踪，.gitignore 追加 logs/、debug_output/、scripts/logs/、/crash.log 防止再次混入。<br>
+      <b>保留</b>：dist/ 发布 exe、logs/smartshapecrop.log* 与 crash.log（F19 保护名单）、scripts 源码与 .venv。<br>
+      <b>验证</b>：全量测试 228 passed / 5 skipped，与清理前一致，无副作用。<br>
+      剩余建议：scripts/ 仍有 157 个诊断脚本，可继续合并为统一 CLI（如 <code>python -m scripts.diagnose --case xxx</code>）减少维护面（低优先级）。</p>
     </div>
     <div class="risk-item warn">
       <b>🟡 技术栈老化</b> — PyQt5 已停止活跃维护
@@ -413,12 +422,14 @@
       SmartShapeCrop 是一个<b>工程成熟度较高的垂直行业工具</b>：核心算法（单步扇形切割、多层边框检测、7 步 OCR 流水线）设计精细且有充分的安全护栏；
       1.46 万行核心代码配套 233 个测试用例和系统的缺陷回归沉淀，性能优化有量化数据支撑。
       全量测试实测通过率 97.9%（228/233，0 失败）：原 26 个失败已全部修复——10 个为测试路径 Bug（非代码缺陷），16 个为 V2.1 重构丢失的 F1 崩溃守卫 / F4 clone / F9 告警（已恢复），1 个为 F5 过期参数。
-      主要短板集中在<b>少数巨型模块的可维护性、OCR 外部依赖、PyQt5 技术栈老化</b>，均属于可通过渐进重构解决的问题。
+      目录膨胀已完成治理（2026-08-28）：项目 1,029MB → 794MB、.git 277MB → 40MB，git 索引移除 233 个文件跟踪并固化 .gitignore 防复发。
+      巨型模块风险已完成治理（2026-08-28）：三个 1,700+ 行单体按 facade 薄壳模式拆为「入口 facade + 14 个职责单一子模块」，对外 API 不变、233 用例回归全绿。
+      当前剩余短板集中在<b>OCR 外部依赖、PyQt5 技术栈老化</b>，均属于可通过渐进重构解决的问题。
       整体判断：<b>架构健康、质量意识强、适合继续迭代</b>。
     </p>
   </div>
 
-  <div class="footer">SmartShapeCrop 项目分析报告 V2.1 · 生成于 2026-08-28（V2.1.2 修订：26 个失败全部修复） · 基于代码库静态分析 + 全量测试实测（pytest：228 通过 / 0 失败 / 5 跳过）</div>
+  <div class="footer">SmartShapeCrop 项目分析报告 V2.1 · 生成于 2026-08-28（V2.1.4 修订：26 个失败修复 + 目录膨胀治理 + 巨型模块 facade 拆分） · 基于代码库静态分析 + 全量测试实测（pytest：228 通过 / 0 失败 / 5 跳过）</div>
 </div>
 </body>
 </html>

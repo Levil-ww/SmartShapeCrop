@@ -5,6 +5,8 @@ import numpy as np
 import math
 from PIL import Image
 import sys
+import os
+import tempfile
 sys.path.insert(0, '.')
 
 from core.image_cropper import apply_rounded_corners
@@ -83,6 +85,7 @@ if outer_pixels:
     print(f"  白色像素: {white_count} ({white_count/total*100:.1f}%)")
     print(f"  黑色像素: {black_count} ({black_count/total*100:.1f}%)")
 
-# 保存结果
-result.save('simple_corner_test.png')
-print("\n结果已保存至: simple_corner_test.png")
+# 保存结果（写入系统临时目录，避免在项目根目录产生调试产物）
+_out_path = os.path.join(tempfile.gettempdir(), 'simple_corner_test.png')
+result.save(_out_path)
+print(f"\n结果已保存至: {_out_path}")

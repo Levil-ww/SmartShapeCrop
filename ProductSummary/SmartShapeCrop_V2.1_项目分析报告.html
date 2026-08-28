@@ -110,7 +110,9 @@
   ② 全量测试最新实测已<b>恢复全绿：228 通过 / 0 失败 / 5 跳过（97.9%）</b>。原 26 个失败（不再为"224 全绿"）已全部修复：<br>
   &nbsp;&nbsp;• <b>10 个为测试自身路径 Bug</b>：V2.1 提交将测试从 tests/ 移入 tests/integration/（git 纯重命名）后，PROJECT_ROOT 解析未同步，仍去 tests/ 下查找根目录文件（F2-3、F5×2、F6、F7、F10、F12、F13、F14×2）→ 已修正 3 个测试文件的路径上溯；<br>
   &nbsp;&nbsp;• <b>16 个为真实回归</b>：F1 退化参数防御丢失 9 个（PIL 渲染 ValueError）、F4 CropDesign.clone() 被移除 6 个（AttributeError）、F9 椭圆边框告警缺失 1 个 → 已在 core/geometry.py 恢复（to_int_tuple 归一化 / px clamp / mask 退化守卫 / clone() / compute_border_bands 告警），F14 裸 except 3 处注入 logger.debug，F5 过期参数更新为 packageV2.1.py。<br>
-  ③ 生产代码 gui/canvas_widget.py 已按 clone 快照传参，F4 并发防护完整落地。
+  ③ 生产代码 gui/canvas_widget.py 已按 clone 快照传参，F4 并发防护完整落地。<br>
+  ④ <b>目录膨胀已治理（同日）</b>：项目 1,029MB → 794MB（不含 .venv 547 → 312MB）、.git 277MB → 40MB。清理 build/ 270MB（PyInstaller 中间产物）、.git/My Pictures 237MB（误放个人数据，已移出项目待用户处置）、logs/ 39MB + debug_output/ 11MB + scripts/logs/ 4MB（删除并从 git 移除跟踪）、__pycache__ 全部清除；git 索引移除 233 个文件跟踪，.gitignore 追加 logs/、debug_output/、scripts/logs/、/crash.log；保留 dist/ exe 与 smartshapecrop.log* / crash.log（F19 保护名单）。全量测试 228/0/5 验证无副作用。<br>
+  ⑤ <b>巨型模块风险已治理（同日）</b>：三个 1,700+ 行单体按 <b>facade 薄壳模式</b>拆分（对外 API 与文件路径不变、逻辑纯搬移不改行为）——sketch_parser.py 2,692 → 572 行 facade + 5 子模块（base/cache/vision/numbers/margins）；image_cropper.py 1,757 → 429 行 facade + 2 子模块（mask/border）；property_panel.py 1,822 → 360 行 facade + 6 子模块（widgets/workers/dialogs + 主类 47 方法拆为 _PoolBoxMixin/_GenerateMixin/_LayersMixin 三阶段 mixin）。全程 233 用例回归护栏，最终实测仍为 <b>228 通过 / 0 失败 / 5 跳过</b>，行为零变化；当前最大单体模块已降至 1,293 行（template_matcher），子模块依赖方向 DAG 无环。
 </div>
 
 <!-- ===== 一、关键指标 ===== -->
@@ -422,7 +424,7 @@
 
 <div class="foot">
   SmartShapeCrop V2.1 项目分析报告 ｜ 生成于 2026-08-27 ｜ 基于源码精读 + 全量测试 224 passed + git 历史分析<br>
-  <b style="color:#166534">2026-08-28 复核 + 修复：requirements.txt 确认在根目录且内容完整；26 个失败已全部修复，实测 228 通过 / 0 失败 / 5 跳过（10 个测试路径 Bug + F1×9 / F4×6 / F9×1 回归恢复 + F5 过期参数 + F14 裸 except），详见页首更新说明。</b>
+  <b style="color:#166534">2026-08-28 复核 + 修复：requirements.txt 确认在根目录且内容完整；26 个失败已全部修复，实测 228 通过 / 0 失败 / 5 跳过（10 个测试路径 Bug + F1×9 / F4×6 / F9×1 回归恢复 + F5 过期参数 + F14 裸 except）；同日完成目录膨胀治理（项目 1,029→794MB、.git 277→40MB、git 索引移除 233 文件跟踪）与巨型模块 facade 拆分（sketch_parser 2692→572、image_cropper 1757→429、property_panel 1822→360 + 14 个子模块，228/0/5 回归全绿），详见页首更新说明。</b>
 </div>
 </div>
 </body>

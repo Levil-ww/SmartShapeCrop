@@ -11,6 +11,7 @@ import pytest
 from PIL import Image
 
 import core.pool_designer.sketch_parser as sp
+import core.pool_designer.sketch_parser_base as sp_base
 from core.pool_designer.sketch_parser import validate_sketch_file
 
 
@@ -79,7 +80,7 @@ class TestRejectedSketch:
         """文件超过大小上限被拒（monkeypatch 降低阈值）。"""
         p = tmp_path / "big.png"
         _make_png(str(p))
-        monkeypatch.setattr(sp, "_SKETCH_MAX_FILE_MB", 0)  # 上限 0 字节
+        monkeypatch.setattr(sp_base, "_SKETCH_MAX_FILE_MB", 0)  # 上限 0 字节（常量定义于 base 子模块）
         ok, reason = validate_sketch_file(str(p))
         assert ok is False
         assert "过大" in reason
@@ -88,7 +89,7 @@ class TestRejectedSketch:
         """像素数超上限被拒（monkeypatch 降低阈值）。"""
         p = tmp_path / "huge.png"
         _make_png(str(p), w=2, h=2)  # 4 像素
-        monkeypatch.setattr(sp, "_SKETCH_MAX_PIXELS", 3)  # 上限 3 像素
+        monkeypatch.setattr(sp_base, "_SKETCH_MAX_PIXELS", 3)  # 上限 3 像素（常量定义于 base 子模块）
         ok, reason = validate_sketch_file(str(p))
         assert ok is False
         assert "像素" in reason

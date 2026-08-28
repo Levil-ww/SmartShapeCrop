@@ -5,6 +5,8 @@ import numpy as np
 import math
 from PIL import Image
 import sys
+import os
+import tempfile
 sys.path.insert(0, '.')
 
 from core.image_cropper import apply_rounded_corners, _get_border_layers_robust
@@ -120,6 +122,7 @@ if black_in_gap:
 else:
     print("  ✅ 间隙区域无黑色像素，修复成功！")
 
-# 保存结果图像供检查
-result.save('test_corner_result.png')
-print("\n结果图像已保存至: test_corner_result.png")
+# 保存结果图像供检查（写入系统临时目录，避免在项目根目录产生调试产物）
+_out_path = os.path.join(tempfile.gettempdir(), 'test_corner_result.png')
+result.save(_out_path)
+print(f"\n结果图像已保存至: {_out_path}")

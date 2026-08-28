@@ -59,7 +59,10 @@ def test_f5_no_misleading_geometry_fallback_docs(rel):
 # ---------------------------------------------------------------------------
 def test_f6_all_ocr_calls_pass_timeout():
     """4 个 image_to_data 调用点都必须带 timeout=_PARSE_TIMEOUT_SEC。"""
-    src = _read('core/pool_designer/sketch_parser.py')
+    # OCR 实现位于 vision / numbers 子模块（facade 拆分后），facade 仅 re-export
+    src = (_read('core/pool_designer/sketch_parser_vision.py')
+           + _read('core/pool_designer/sketch_parser_numbers.py')
+           + _read('core/pool_designer/sketch_parser.py'))
     # 统计真正调用点（tesseract.image_to_data( 开头），不含 docstring
     call_sites = [m.start() for m in re.finditer(r'tesseract\.image_to_data\(', src)]
     assert len(call_sites) >= 4, f'OCR 调用点异常: {len(call_sites)}'
