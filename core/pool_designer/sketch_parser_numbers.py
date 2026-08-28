@@ -71,11 +71,18 @@ def _merge_split_decimals(ocr_results):
             overlap_y = max(0, min(a_bb[1]+a_bb[3], b_bb[1]+b_bb[3]) - max(a_bb[1], b_bb[1]))
             overlap_area = overlap_x * overlap_y
             min_area = min(a_bb[2]*a_bb[3], b_bb[2]*b_bb[3])
-            if overlap_area > min_area * 0.5:
+            is_high_overlap = overlap_area > min_area * 0.5
+            if is_high_overlap:
                 # 高重叠：如果两个值相同（重复检测）则跳过；如果值不同则继续尝试小数合并
                 if abs(a_val - b_val) < 0.01:
                     continue  # 同一数字的重复检测，跳过
-                # 值不同 → 可能是小数被拆成两个数字，继续尝试合并
+                # 值不同 → 可能是小数被拆成两个数字
+                # [Fix] 但如果是 两位数+个位数（a>=10, b<10）的高重叠，说明a本身就是完整独立值，b是别处碎片
+                # 如 74 和 4：74是"右=74cm"，4是别处"6.5"被误读成的碎片。小数拆分为 7+4，此时 a=7<10
+                if a_val >= 10 and b_val < 10:
+                    continue
+                if b_val >= 10 and a_val < 10:
+                    continue
             # b值应为1-9的小数部分（或a为1-9，b为整数）
             small_first = a_val < 10 and a_val >= 1
             small_second = b_val < 10 and b_val >= 1
@@ -85,8 +92,20 @@ def _merge_split_decimals(ocr_results):
             if b_val < 10 and b_val >= 1 and small_second:
                 try:
                     concat = float(f"{int(a_val)}.{int(b_val)}")
+                    # [Fix] 合并后的值必须 > 小数前整数部分，但同时不能超出合理范围：
+                    # 如果是高重叠的拆分合并（a<10, b<10）：结果<=99.9即可
+                    # 如果是相邻的非高重叠（如43+5=43.5）：结果需<=999且 > 前整数
+                    if a_val >= 10 and is_high_overlap:
+                        pass  # 已在前面排除，这里不执行
                     if 0.5 <= concat <= 500 and concat > a_val:
-                        forward_concat = concat
+                        # [防误合并] 两位数或更大整数 + 个位数 的拼接：
+                        # 非高重叠（相邻排列）场景下，74+4=74.4 > 50，基本不可能是边距小数，只允许当 合并值 <= 99.9 且 合并后的值 看起来像"内框尺寸"才允许
+                        # 更简单：若 a >= 10 且 拼接后的整数部分(a_val) >= 10 且 结果值 > 50 → 跳过
+                        # （边距一般 < 50；内框尺寸 > 50 不需要这种小数合并）
+                        if a_val >= 10 and concat > 50.0:
+                            pass  # 不允许 74+4→74.4 这类误合并
+                        else:
+                            forward_concat = concat
                 except ValueError:
                     logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
@@ -95,7 +114,11 @@ def _merge_split_decimals(ocr_results):
                 try:
                     concat = float(f"{int(b_val)}.{int(a_val)}")
                     if 0.5 <= concat <= 500 and concat > b_val:
-                        reverse_concat = concat
+                        # [防误合并] 两位数或更大整数 + 个位数 的反向拼接 >50 跳过
+                        if b_val >= 10 and concat > 50.0:
+                            pass
+                        else:
+                            reverse_concat = concat
                 except ValueError:
                     logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
@@ -270,32 +293,54 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     _ref_long = max(target_outer_w_cm, target_outer_h_cm, 0.0)
     _ref_short = min(target_outer_w_cm, target_outer_h_cm) if (target_outer_w_cm > 0 and target_outer_h_cm > 0) else max(target_outer_w_cm, target_outer_h_cm, 0.0)
     if _target_is_authoritative:
-        # [权威模式] 当 target 外框完整可用时，大幅放宽边距噪声上限
-        # 因为非对称边框的某一边可能很大（例如内框偏一侧，mr=target-iw-ml 可能 =41cm）
+        # [权威模式] 当 target 外框完整可用时，按**轴向**分别设置边距上限（而非统一用短边）
+        # 因为非对称边框的某一边可能非常大（例如内框偏左侧：mr=target_w-iw-ml 可能=74cm > 短边60cm）
         # 这种情况是数学上正确的，不应被当作 OCR 噪声拒绝
-        # 只做极端过滤：边距 >= 短边的 95%（不可能的极端值）才拒绝
-        _margin_hard_cap = _ref_short * 0.95 if _ref_short > 0 else 500.0
-        _absolute_cap = _ref_long * 0.95  # 也不能超过长边的95%
-        if _absolute_cap > 0 and _margin_hard_cap > _absolute_cap:
-            _margin_hard_cap = _absolute_cap
+        # 规则：
+        #   - margin_left / margin_right：上限 = outer_w * 0.9（预留10%给内框），或统一 upper cap
+        #   - margin_top / margin_bottom：上限 = outer_h * 0.9
+        #   - 全局统一 fallback cap（用于 _is_reasonable_margin 无字段上下文时）：max(轴向上限)
+        _cap_horizontal = target_outer_w_cm * 0.90  # 横向边距上限 (left/right)
+        _cap_vertical = target_outer_h_cm * 0.90     # 纵向边距上限 (top/bottom)
+        _margin_hard_cap = max(_cap_horizontal, _cap_vertical)   # 无字段上下文的 fallback（保守上限取最大）
+        # 轴向合理判断：需要知道是哪个字段 → 提供专用函数
+        def _is_reasonable_margin_for_field(v, field_hint=None):
+            """判断边距值是否合理（按轴向区分上限）。
+            field_hint: 'margin_left'/'margin_right'（横向）'margin_top'/'margin_bottom'（纵向）或 None（fallback）
+            """
+            if v is None or v <= 0:
+                return False
+            if v < 0.3:
+                return False
+            if field_hint in ('margin_left', 'margin_right'):
+                if v > _cap_horizontal:
+                    return False
+            elif field_hint in ('margin_top', 'margin_bottom'):
+                if v > _cap_vertical:
+                    return False
+            else:
+                # 不知道字段：使用全局上限（更宽松以防误伤）
+                if _margin_hard_cap > 0 and v > _margin_hard_cap:
+                    return False
+            return True
     else:
         # 无 target 模式：保持原有严格上限
         _margin_hard_cap = min(_ref_long * 0.30, 25.0) if _ref_long > 0 else 25.0
+        def _is_reasonable_margin_for_field(v, field_hint=None):
+            """判断边距值是否合理（避免把外框尺寸/装饰文字误识别为边距）。"""
+            if v is None or v <= 0:
+                return False
+            if v < 0.3:
+                return False
+            if _margin_hard_cap > 0 and v > _margin_hard_cap:
+                return False
+            if v > 50.0:
+                return False
+            return True
 
+    # 保留向后兼容的 _is_reasonable_margin 别名
     def _is_reasonable_margin(v):
-        """判断边距值是否合理（避免把外框尺寸/装饰文字误识别为边距）。"""
-        if v is None or v <= 0:
-            return False
-        # 过小（<0.3cm）也不合理
-        if v < 0.3:
-            return False
-        # 过大：若有 target 且超过 cap 则不合理
-        if _margin_hard_cap > 0 and v > _margin_hard_cap:
-            return False
-        # 非权威模式下的额外保护：边距合理上限 50cm（水池边框极少超过）
-        if not _target_is_authoritative and v > 50.0:
-            return False
-        return True
+        return _is_reasonable_margin_for_field(v, None)
 
     # ========== 阶段1：标准尺度扫描（gray 1x/2.5x/4x + enhanced 1x/2.5x）==========
     # 原有3种尺度保留；enhanced只到2.5x节省时间（小数字由阶段2专门处理）
@@ -356,7 +401,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     return new_conf > old_conf
 
         # [防OCR噪声] 边距值合理性检查：拒绝明显是外框尺寸/装饰文字的超大值
-        if not _is_reasonable_margin(val):
+        # [Bug5 Fix] 使用已知字段的轴向合理性 cap（margin_left/right 按 outer_w*0.9；top/bottom 按 outer_h*0.9）
+        if not _is_reasonable_margin_for_field(val, field_hint=field):
             # ----- 小数点恢复尝试：OCR把"7.4"读成"74"的补漏 -----
             # 仅对整数值尝试（非整数已经是正确的小数格式）
             if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
@@ -382,7 +428,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
                 # 尝试每个小数候选
                 for dec_val in candidates:
-                    if 0.3 <= dec_val <= 50.0 and _is_reasonable_margin(dec_val):
+                    if 0.3 <= dec_val <= 50.0 and _is_reasonable_margin_for_field(dec_val, field_hint=field):
                         # [同源检测1] 从_recovered_meta检查（当前仍为恢复值）
                         for other_field, (o_src_int, o_dec_val, _) in _recovered_meta.items():
                             if other_field != field and o_src_int == src_int:
@@ -678,15 +724,22 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                             dir_tokens_s3.append((txt, cx, cy, bh))
                             continue
                         # 独立数值（精确匹配浮点/整数，不能含方向字）
-                        m_pure = re.match(r'^(\d+\.?\d*|\.\d+)$', txt)
+                        # [Fix] 接受带"厘米"/"cm"等单位后缀的 token：OCR常读成 "74cm"/"46厘米"（一个token）
+                        # 如果没有方向字字符，且开头能提取出数值，则接受
+                        m_pure = re.match(r'^(\d+\.?\d*|\.\d+)', txt)  # 前缀匹配，允许后缀
                         if m_pure:
-                            try:
-                                vv = float(m_pure.group(1))
-                                if 0.3 <= vv <= 500:
-                                    num_tokens_s3.append((vv, cx, cy, bh, ci))
-                            except ValueError:
-                                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
-                                pass
+                            # 检查不能包含方向字汉字（防止 '上46' 这种被当作数值token）
+                            has_dir = any(dc in txt for dc in _DIR_CHAR_MAP)
+                            if has_dir:
+                                pass  # 含方向字，交给 _parse_dir_num_token 的单token/双token逻辑处理
+                            else:
+                                try:
+                                    vv = float(m_pure.group(1))
+                                    if 0.3 <= vv <= 500:
+                                        num_tokens_s3.append((vv, cx, cy, bh, ci))
+                                except ValueError:
+                                    logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
+                                    pass
             except Exception:
                 logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                 pass
@@ -720,10 +773,48 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         by0 = min(dcy - dh//2, num_tokens_s3[best_i][2] - num_tokens_s3[best_i][3]//2)
                         bw0 = max(20, abs(dcx - num_tokens_s3[best_i][1]) + 30)
                         bh0 = max(20, dh + num_tokens_s3[best_i][3])
-                        result[dfield] = (nv, nconf, (bx0, by0, bw0, bh0))
-                        bind_count += 1
-                        logger.info(f"[Step4] Phase3空间绑定({dchar}↔{nv}): dist={best_dist:.0f}px "
-                                    f"(Rmax={R_MAX:.0f}) conf={nconf} → {dfield}")
+                        # [Fix] 必须走 _try_bind 执行合理性校验+覆盖保护，不能直接赋值
+                        # 直接赋值曾导致 7.4（合成小数）被无保护地写入 margin_right，覆盖正确的 74
+                        _before_has = dfield in result
+                        _before_val = result[dfield][0] if _before_has else None
+                        _try_bind(dchar, nv, nconf, bx0, by0, bw0, bh0,
+                                  "Phase3空间距离场(enh)")
+                        # 只有真的绑定成功才记一次计数
+                        if (not _before_has and dfield in result) or (_before_has and result[dfield][0] != _before_val):
+                            bind_count += 1
+                            logger.info(f"[Step4] Phase3空间绑定({dchar}↔{nv}): dist={best_dist:.0f}px "
+                                        f"(Rmax={R_MAX:.0f}) conf={nconf} → {dfield}")
+                        elif dfield not in result:
+                            # _try_bind 拒绝了此值（不合理或被保护）
+                            # 尝试次近距离的备选数值，直到耗尽或成功
+                            # 这里实现简单版：找下一个距离最近的备选
+                            for retry in range(3):
+                                next_i = -1
+                                next_d = float('inf')
+                                for j, (nv2, ncx2, ncy2, nh2, nconf2) in enumerate(num_tokens_s3):
+                                    if j in used_num_idx or j == best_i:
+                                        continue
+                                    dx2 = dcx - ncx2
+                                    dy2 = dcy - ncy2
+                                    d2 = _math_s3.sqrt(dx2*dx2 + dy2*dy2)
+                                    if d2 <= R_MAX and d2 < next_d:
+                                        next_d = d2
+                                        next_i = j
+                                if next_i < 0:
+                                    break
+                                nv2, _, _, _, nconf2 = num_tokens_s3[next_i]
+                                used_num_idx.add(next_i)
+                                bx2 = min(dcx - 10, num_tokens_s3[next_i][1] - 10)
+                                by2 = min(dcy - dh//2, num_tokens_s3[next_i][2] - num_tokens_s3[next_i][3]//2)
+                                bw2 = max(20, abs(dcx - num_tokens_s3[next_i][1]) + 30)
+                                bh2 = max(20, dh + num_tokens_s3[next_i][3])
+                                _try_bind(dchar, nv2, nconf2, bx2, by2, bw2, bh2,
+                                          f"Phase3空间距离场(备选{retry+1})")
+                                if dfield in result:
+                                    bind_count += 1
+                                    logger.info(f"[Step4] Phase3空间绑定(备选)({dchar}↔{nv2}): dist={next_d:.0f}px "
+                                                f"(Rmax={R_MAX:.0f}) conf={nconf2} → {dfield}")
+                                    break
                 logger.info(f"[Step4] Phase3空间距离场完成：新绑定 {bind_count} 个字段")
 
     # ========== Phase 4：小数点恢复（OCR把"7.4"读成"74"的补漏）==========
@@ -745,24 +836,20 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     dec_val = float(f"{s[0]}.{s[1]}")
                     if 0.3 <= dec_val <= 50.0:
                         # 只有当原整数不合理或小数更合理时才替换
-                        orig_ok = _is_reasonable_margin(val)
-                        dec_ok = _is_reasonable_margin(dec_val)
+                        # [Bug5 Fix] 使用已知字段轴向合理性 cap
+                        orig_ok = _is_reasonable_margin_for_field(val, field_hint=field_name)
+                        dec_ok = _is_reasonable_margin_for_field(dec_val, field_hint=field_name)
                         if dec_ok and not orig_ok:
                             recovered_fields[field_name] = (dec_val, conf * 0.8, bbox, src_int)
                             logger.info(
                                 f"[Step4] 小数点恢复: {field_name} {val:.0f}→{dec_val:.1f} "
                                 f"(原整数超出边距上限，小数解释合理)"
                             )
-                        elif dec_ok and orig_ok and dec_val < val:
-                            # 两者都合理时，若小数解释明显更像边距值则替换
-                            # （边距通常 < 外框短边的25%，而原整数可能是其数倍）
-                            short_cap = _ref_short * 0.5 if _ref_short > 0 else 25.0
-                            if dec_val <= short_cap and val > short_cap:
-                                recovered_fields[field_name] = (dec_val, conf * 0.85, bbox, src_int)
-                                logger.info(
-                                    f"[Step4] 小数点恢复: {field_name} {val:.0f}→{dec_val:.1f} "
-                                    f"(小数解释更符合边距范围 ≤{short_cap:.1f}cm)"
-                                )
+                        # [Bug Fix] 移除旧的 short_cap=min(w,h)*0.5 硬阈值强制改写分支：
+                        # 当 orig_ok（经轴向cap判断，如 74 ≤ 172*0.9=154.8）且 dec_ok 同时合理时，
+                        # 不能再用 30cm=60*0.5 这种固定短边阈值去强行把 74→7.4。
+                        # 庄园秘境等需要小数恢复的场景本来就是 "74/85" 作为整数值不合理
+                        # （短边 44.5 或 57.8 → cap≈21 或 26，74/85 都超）→ 走 dec_ok and not orig_ok 分支。
                 except ValueError:
                     logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                     pass

@@ -120,6 +120,21 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
                                                    target_outer_h_cm=target_outer_h_cm)
     excluded_fields = set(dir_locked.keys())
     excluded_values = [v[0] for v in dir_locked.values()]
+    # [Fix Bug2] 将权威外框尺寸和目标尺寸加入 value 排除，防止 total_w/total_h 被误分配给 inner_* 或 margin_* 桶
+    # 例如：172（外框宽）不应出现在 inner_h、margin_left 等候选中；60（外框高）同理
+    target_w = round(float(target_outer_w_cm or 0), 1)
+    target_h = round(float(target_outer_h_cm or 0), 1)
+    if target_w > 0:
+        excluded_values.append(target_w)
+        # 同时添加近似整数值（如 172.0 被识别为 172、或 171.5）
+        for dv in [target_w + 0.5, target_w - 0.5, target_w + 1.0, target_w - 1.0]:
+            if dv > 0:
+                excluded_values.append(dv)
+    if target_h > 0:
+        excluded_values.append(target_h)
+        for dv in [target_h + 0.5, target_h - 0.5, target_h + 1.0, target_h - 1.0]:
+            if dv > 0:
+                excluded_values.append(dv)
     logger.info(f"[Step4] 方向标签锁定 {len(dir_locked)} 个字段: {list(dir_locked.keys())}")
 
     # Step 5: 空间位置映射

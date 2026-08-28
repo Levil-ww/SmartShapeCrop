@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, datetime, timedelta
-from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize, QTimer
 from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
