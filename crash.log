@@ -1,0 +1,694 @@
+============================================================
+崩溃时间: 2026-08-28 08:56:13
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:56:23
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:56:33
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:57:12
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 306, in _on_sketch_loaded
+    self.canvas.set_design(self.panel.design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:57:52
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:58:36
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:58:40
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:59:01
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:59:05
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:59:22
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:59:33
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:59:37
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 08:59:41
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 306, in _on_sketch_loaded
+    self.canvas.set_design(self.panel.design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:02:41
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 306, in _on_sketch_loaded
+    self.canvas.set_design(self.panel.design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:03:18
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:03:57
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 306, in _on_sketch_loaded
+    self.canvas.set_design(self.panel.design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:05:54
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:06:22
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:06:29
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:06:36
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:06:39
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:06:41
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:06:48
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:07:50
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 286, in paintEvent
+    def paintEvent(self, event):
+    
+KeyboardInterrupt
+
+============================================================
+崩溃时间: 2026-08-28 09:16:24
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:18:20
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 306, in _on_sketch_loaded
+    self.canvas.set_design(self.panel.design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:19:11
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:19:37
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:19:43
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:19:47
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:19:53
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:22:11
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:28:52
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:28:59
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:30:13
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 306, in _on_sketch_loaded
+    self.canvas.set_design(self.panel.design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:31:02
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 123, in _render_async
+    self._render_lod()
+    ~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 227, in _render_lod
+    self._full_image = render_design_lod(self._design, scale=LOD_SCALE_FACTOR)
+                       ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\image_ops.py", line 457, in render_design_lod
+    lod_result = render_design(lod_design, quality='preview', pixel_scale=scale)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 635, in render_design
+    inner_mask = _get_inner_pixel_mask(design)
+  File "D:\SmartShapeCrop\core\image_ops.py", line 764, in _get_inner_pixel_mask
+    fill_rect_mask(m, inner_rect, 255)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\core\geometry.py", line 238, in fill_rect_mask
+    d.rectangle(rect.to_int_tuple(), fill=value)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\SmartShapeCrop\.venv\Lib\site-packages\PIL\ImageDraw.py", line 386, in rectangle
+    self.draw.draw_rectangle(xy, fill_ink, 1)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+ValueError: x1 must be greater than or equal to x0
+
+============================================================
+崩溃时间: 2026-08-28 09:31:39
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+
+============================================================
+崩溃时间: 2026-08-28 09:32:02
+sys.frozen: False
+sys.executable: D:\SmartShapeCrop\.venv\Scripts\python.exe
+sys.path[:3]: ['D:\\SmartShapeCrop', 'D:\\SmartShapeCrop', 'C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip']
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\SmartShapeCrop\main.py", line 289, in _on_design_changed
+    self.canvas.set_design(design)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 80, in set_design
+    self._render_async()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "D:\SmartShapeCrop\gui\canvas_widget.py", line 141, in _render_async
+    worker = PreviewRenderWorker(self._design.clone(), self)
+                                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'CropDesign' object has no attribute 'clone'
+

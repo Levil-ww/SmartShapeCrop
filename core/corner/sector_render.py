@@ -303,63 +303,43 @@ def _redraw_border_on_corner(
         valid_angle = (angle >= ang_min) | (angle < 1)
     else:
         valid_angle = (angle >= ang_min) & (angle <= ang_max)
-    # [Fix 边框线粗细] valid_region 包含所有 inside_arc 像素 (dist <= R_total)
-    # 这样可以确保边框线的完整厚度被保留
-    # dist == R_total 的边界像素在 d_region 中被 & (dist < R_total) 排除
-    valid_region = valid_angle & (dist <= R_total)
+    # [Fix v8 四缺陷合并修复]
+    #   1. valid_region 采用 R+2 容差（V1.0 行为），避免 婉卉 弧-直交界留
+    #      下 1-2px 白色间隙。
+    #   2. 删除 CORE_BORDER_DEPTH "核心区无条件绘制" 逻辑，改用 V1.0
+    #      风格的「源感知选择性重绘」(match_filter)：
+    #        只绘制源像素颜色匹配相邻边框色的像素 (adjacent dist <=
+    #        TRANSITION_THRESH)，或靠近角度边界的像素。
+    #      这样：
+    #        - 中古花园 的文字+花纹不被实心色块覆盖（颜色不匹配任一边框层）
+    #        - 闲叙青釉 的人字纹装饰保持原样（不被涂成实心米色弧）
+    #      同时保留 outermost 层始终绘制的安全锚（保证最外边完整）。
+    valid_region = valid_angle & (dist <= float(R_total) + 2.0)
 
     if validity_arr is not None:
         valid_region = valid_region & validity_arr
 
-    # === [Fix 边框线自动匹配 2026-08-27] ===
-    # 识别并保护"内部内容像素"（花纹/图案）不被边框重绘覆盖，
-    # 同时确保边框区内的像素（含抗锯齿边缘）始终被正确重绘。
-    #
-    # 根因1（内容被覆盖）：V1.0 简化版把 d_region 内所有像素
-    #   直接绘制为边框色，导致内部花纹被覆盖。
-    # 根因2（边框线过细）：content_protect_mask 错误保护了边框区内的
-    #   抗锯齿过渡像素，使其不被重绘，导致边框在转角处比直边细。
-    #
-    # 修复：三区域渐进判定（确保边框精确匹配原图厚度）
-    #   1. 核心边框区 (depth < CORE_BORDER_DEPTH)：始终绘制边框色
-    #      — 抗锯齿过渡像素在此区域内，必须被正确重绘
-    #   2. 内侧过渡区 (CORE_BORDER_DEPTH <= depth < total_border_depth)：
-    #      保护内容像素（如果颜色不匹配任何边框色且不匹配背景）
-    #   3. 边框外区域 (depth >= total_border_depth)：保护所有内容像素
-    BORDER_SIGMA = 6.0
-    bg_arr_detect = np.array(bg_color, dtype=np.float64)
-    color_dist_to_border_min = np.full((roi_h, roi_w), np.inf, dtype=np.float64)
-    for bc, _ in border_layers:
-        bc_arr = np.array(bc, dtype=np.float64)
-        d = np.sqrt(np.sum((src_arr.astype(np.float64) - bc_arr) ** 2, axis=2))
-        color_dist_to_border_min = np.minimum(color_dist_to_border_min, d)
-    dist_to_bg = np.sqrt(np.sum((src_arr.astype(np.float64) - bg_arr_detect) ** 2, axis=2))
-    is_content_pixel = (color_dist_to_border_min > BORDER_SIGMA) & (dist_to_bg > BORDER_SIGMA)
+    # --- 预计算 V1.0 风格的阈值常量（与 V1.0 对齐） ---
+    COLOR_DIST_THRESHOLD = 15.0
+    TRANSITION_THRESHOLD = 25.0
 
-    # 计算最小边框层厚度，用于确定核心边框深度
-    min_layer_thickness = min((t for _, t in border_layers), default=total_border_depth)
-    # 核心边框区：去掉内层 30% 容差（用于抗锯齿过渡）
-    CORE_MARGIN = max(3, int(min_layer_thickness * 0.5))
-    CORE_BORDER_DEPTH = max(0, total_border_depth - CORE_MARGIN)
-
-    # 区域1: 核心边框区 (depth < CORE_BORDER_DEPTH) — 不保护
-    # 区域2: 过渡区 (CORE_BORDER_DEPTH <= depth < total_border_depth) — 保护内容像素
-    # 区域3: 边框外 (depth >= total_border_depth) — 保护内容像素
-    in_transition_zone = (depth >= float(CORE_BORDER_DEPTH)) & (depth < float(total_border_depth))
-    outside_border_zone = (depth >= float(total_border_depth))
-    # 仅在过渡区和边框外区域保护内容像素
-    content_protect_mask = is_content_pixel & (in_transition_zone | outside_border_zone)
-
-    # === [Fix INV-1/INV-3/INV-5] 处理弧线外侧区域 ===
-    # 必须在 d loop 之前运行，确保所有弧外侧像素（dist > R_total）
-    # 都被填充为背景色，无论首层是否为间隙层。
+    # === [Fix INV-1/INV-3/INV-5 + 玛利亚玫瑰] 处理弧线外侧区域 ===
     #
     # [Fix 花漾之约] 扩大 beyond_arc 范围：
-    #   原缺陷：dist <= R_total + 5.0 限制了仅填充弧外侧 5px 范围，
-    #   当 arc 半径较大时，远端像素未被填充 → 白色扇形角。
-    #   修复：填充所有 dist > R_total 的像素（ROI 范围内），确保弧外侧干净。
+    #   填充所有 dist > R_total 的像素（ROI 范围内），确保弧外侧干净。
+    #
+    # [Fix 玛利亚玫瑰 v8] 临界像素容差：
+    #   dist > R_total 的严格比较会漏掉距离刚好为 R（浮点误差）的 1px 边
+    #   界环，导致内容残留在扇形角。使用 R - 0.5 作为阈值，把边界上的像素
+    #   也一起清为底色（边界像素稍后会在绘制循环里作为边框重新上色，不会造成
+    #   副作用）。
     bg_arr_uint8 = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
-    beyond_arc = valid_angle & (dist > R_total)
+    beyond_arc = valid_angle & (dist > float(R_total) - 0.5)
+    # [Fix v9 越界清底] 只清理被 mask 真正裁掉的像素（validity=False），禁止误伤
+    # 角附近的直边边框像素。否则会在角外直边"咬出缺口"并导致弧端点异常对接，
+    # 看起来像额外线头/扇形角。
+    if validity_arr is not None:
+        beyond_arc = beyond_arc & (~validity_arr)
     if np.any(beyond_arc):
         beyond_coords = np.where(beyond_arc)
         result_arr[beyond_coords[0], beyond_coords[1], :] = bg_arr_uint8
@@ -367,8 +347,11 @@ def _redraw_border_on_corner(
     for d in range(total_border_depth):
         # [Fix INV-2/INV-5] Include pixels at dist == R_total in d_region
         # These pixels are at the arc boundary and must be painted with border color
-        # to prevent 1px white gap (white sector / thin border artifacts)
-        d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist <= R_total)
+        # to prevent 1px white gap (white sector / thin border artifacts).
+        # [v8] valid_region 已经用 R+2 容差包含边界外 2px（用于直弧衔接处），
+        # 这里 dist <= R_total 仍保留以避免在弧外画边框色；真正的弧外清理由
+        # beyond_arc 负责。
+        d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist <= float(R_total) + 0.5)
         if not np.any(d_region):
             continue
 
@@ -386,39 +369,50 @@ def _redraw_border_on_corner(
 
         # === V1.0 风格简化处理：间隙层清除为背景色 ===
         if is_gap:
-            # 间隙层：直接清除为背景色
+            # [Fix v9.1 婉卉白色弧形]
+            # 合法间隙（露底/透明）：间隙层颜色（直边中位色）≈ bg_color，
+            #   角落统一清 bg 是正确的。
+            # 误判间隙（实际是过渡色/装饰色带，如婉卉棕-黑之间的深棕抗锯齿像素）：
+            #   层中位色与 bg_color 色差大（>30），若强制填纯白 bg 会在
+            #   黑色内圈内侧形成与内容色不一致的"白色弧形线"。
+            #   → 跳过涂 bg，保留源图 mask 自然裁圆的像素。
+            GAP_BG_MISMATCH_THRESH = 30.0
+            gap_color_arr = np.array(target_color, dtype=np.float64)
+            bg_arr_f64 = np.array(bg_color, dtype=np.float64)
+            gap_bg_dist = float(np.sqrt(np.sum((gap_color_arr - bg_arr_f64) ** 2)))
+            if gap_bg_dist > GAP_BG_MISMATCH_THRESH:
+                # 间隙色 ≠ bg：误判为间隙的过渡/装饰色带，不涂 bg
+                continue
+            # 合法间隙：清为背景色
             bg_arr = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
             result_arr[local_coords[0], local_coords[1], :] = bg_arr
             continue
-        else:
-            # === [Fix 玛利亚玫瑰/复古花丛 2026-08-27] ===
-            # 在 V1.0 边框绘制基础上，跳过内容像素：
-            #   只在 d_region 中"非内容像素"的位置绘制边框色，
-            #   内容像素（花纹/图案）保持原图颜色，避免被边框色覆盖。
-            # 弧外侧背景像素（dist > R_total）由 beyond_arc 直接清空，不走这里。
-            #
-            # 对间隙层：始终清空（不受内容保护限制）——间隙层是边框系统的一部分，
-            # 应被正确清空为背景色。
-            protect_here = content_protect_mask[local_coords[0], local_coords[1]]
-            if np.any(protect_here):
-                paint_mask = ~protect_here
-                if not np.any(paint_mask):
-                    continue
-                py = local_coords[0][paint_mask]
-                px = local_coords[1][paint_mask]
-                color_fill = np.array(target_color, dtype=result_arr.dtype)
-                result_arr[py, px, :] = color_fill.reshape(1, 3)
-            else:
-                # 无内容像素：直接整体绘制
-                color_fill = np.array(target_color, dtype=result_arr.dtype)
-                result_arr[local_coords[0], local_coords[1], :] = color_fill.reshape(1, 3)
-            continue
 
-    # === V1.0 风格简化：确保弧外侧区域为背景色 ===
+        # ================================================================
+        # [v9 Fix 用户指令：只修改最外层圆弧角]
+        # 仅 outermost (color_idx == 0) 完整重绘为实心圆弧（保证外轮廓干净）。
+        # 内层实心边框/装饰层 (color_idx >= 1) 完全不重绘：
+        #   内层内容由 mask 自然裁圆（dist<=R 内像素保留源值），不需要主动
+        #   涂实心色 —— 否则会把闲叙青釉的人字纹、玛利亚玫瑰的圆点边带、
+        #   中古花园的文字花纹涂成过粗的实心弧/破坏图案。
+        # 间隙层 (is_gap) 已在上一段处理并 continue。
+        # ================================================================
+        if color_idx == 0:
+            color_fill = np.array(target_color, dtype=result_arr.dtype)
+            result_arr[local_coords[0], local_coords[1], :] = color_fill.reshape(1, 3)
+        # non-outermost non-gap：跳过，保持源图自然裁圆结果
+        continue
+
+    # === V1.0 风格简化：二次确保弧外侧 + 边界像素为背景色 ===
+    # [v8] 使用与第一次 beyond_arc 相同的 R - 0.5 容差，保证角尖临界像素
+    # 都被清理（防止 玛利亚玫瑰 等的扇形角漏底）。
     bg_uint8 = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
-    
-    # 确保 outside_arc 区域完全为背景色
-    final_beyond = valid_angle & (dist > float(R_total))
+
+    final_beyond = valid_angle & (dist > float(R_total) - 0.5)
+    # [Fix v9 越界清底] 同第一次 beyond_arc：只清理已被 mask 裁掉的像素，
+    # 避免"咬直边"造成弧端点对接异常。
+    if validity_arr is not None:
+        final_beyond = final_beyond & (~validity_arr)
     if np.any(final_beyond):
         final_coords = np.where(final_beyond)
         result_arr[final_coords[0], final_coords[1], :] = bg_uint8
