@@ -25,3 +25,8 @@ ENV/
 # 系统文件
 .DS_Store
 Thumbs.db
+# 调试产物（F19 治理：仅本地保留，不进入版本库）
+logs/
+debug_output/
+scripts/logs/
+/crash.log
