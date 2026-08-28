@@ -47,13 +47,22 @@ class PoolRenderWorker(QThread):
                  target_filename: str,
                  sketch_path: str = "",
                  pre_parsed_result=None,
+                 user_margins: dict = None,
                  parent=None):
+        """
+        user_margins: 可选 dict，包含用户手动修改的边距值。
+            键: 'top', 'bottom', 'left', 'right'
+            值: float (cm)
+        当 user_margins 提供时，会覆盖 pre_parsed_result 中的对应边距值，
+        确保素材匹配使用用户修正后的内挖尺寸。
+        """
         super().__init__(parent)
         self._matcher = matcher
         self._template_dir = template_dir
         self._target = target_filename
         self._sketch = sketch_path
         self._pre_parsed = pre_parsed_result  # 预解析结果（来自 PropertyPanel 自动解析）
+        self._user_margins = user_margins  # 用户手动修改的边距（覆盖 pre_parsed）
         self._log_lines: list[str] = []
 
     def _log(self, msg: str):
@@ -138,6 +147,30 @@ class PoolRenderWorker(QThread):
                     canvas_w_cm = sketch_result.outer_w_cm
                 if sketch_result and sketch_result.success and sketch_result.outer_h_cm > 0:
                     canvas_h_cm = sketch_result.outer_h_cm
+
+            # [Fix 2026-08-28] 用户手动修改的边距优先于草图识别结果
+            # 当用户在 UI 上手动调整了边距值（SpinBox），这些值通过 user_margins
+            # 传入 Worker，在此覆盖 sketch_result 中的对应字段，确保：
+            # 1) CropDesign 使用用户修正后的边距
+            # 2) 内挖尺寸（canvas - margins）正确
+            # 3) 后续素材匹配（内挖素材）基于正确的内挖尺寸
+            if self._user_margins and sketch_result and sketch_result.success:
+                um = self._user_margins
+                changed = []
+                if 'top' in um and um['top'] is not None:
+                    sketch_result.margin_top_cm = float(um['top'])
+                    changed.append(f"上:{um['top']:.1f}")
+                if 'bottom' in um and um['bottom'] is not None:
+                    sketch_result.margin_bottom_cm = float(um['bottom'])
+                    changed.append(f"下:{um['bottom']:.1f}")
+                if 'left' in um and um['left'] is not None:
+                    sketch_result.margin_left_cm = float(um['left'])
+                    changed.append(f"左:{um['left']:.1f}")
+                if 'right' in um and um['right'] is not None:
+                    sketch_result.margin_right_cm = float(um['right'])
+                    changed.append(f"右:{um['right']:.1f}")
+                if changed:
+                    self._log(f"应用用户手动修改的边距：{', '.join(changed)}")
 
             # 4) 构建 CropDesign
             #    画布尺寸 = 目标尺寸 + 1cm 损耗（裁剪余料用）

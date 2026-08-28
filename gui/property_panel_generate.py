@@ -63,12 +63,19 @@ class _GenerateMixin:
             self._set_pool_status("请先选择正确的模板库目录", is_error=True)
             return
 
+        # [Fix 2026-08-28] 检测用户手动修改的边距值
+        # 当用户在 UI 上修改了边距 SpinBox 值（与草图识别结果不同），
+        # 将修改后的值传递给 Worker，确保 CropDesign 和素材匹配都使用
+        # 用户修正后的内挖尺寸。
+        user_margins = self._detect_user_margin_edits()
+
         # 启动 Worker
         self._pool_btn_generate.setEnabled(False)
         self._pool_btn_generate.setText("处理中…请稍候")
         worker = PoolRenderWorker(
             self._matcher, tpl_dir, target_name, self._sketch_path,
             pre_parsed_result=self._sketch_parse_result,
+            user_margins=user_margins,
             parent=self)
         worker.progress.connect(self._on_pool_progress)
         worker.finished_ok.connect(self._on_pool_finished_ok)
@@ -229,4 +236,38 @@ class _GenerateMixin:
                 self._apply_quiet()
             except Exception:
                 pass
+
+    def _detect_user_margin_edits(self) -> dict:
+        """检测用户是否手动修改了边距 SpinBox 值（相对于草图识别结果）。
+
+        当草图识别成功后，用户可能在 UI 上手动修正边距值。此方法
+        对比当前 SpinBox 值与 _sketch_parse_result 中的值，若不同则
+        返回包含用户修正值的 dict，供 PoolRenderWorker 使用。
+
+        Returns:
+            dict: {'top': float, 'bottom': float, 'left': float, 'right': float}
+                  若没有用户修改，返回空 dict。
+        """
+        result = {}
+        sr = self._sketch_parse_result
+        if sr is None or not getattr(sr, 'success', False):
+            return result
+
+        # 对比容差：0.01cm 以内视为相同（避免浮点精度问题）
+        TOL = 0.01
+
+        pairs = [
+            ('top', self._sp_mt.value(), getattr(sr, 'margin_top_cm', 0)),
+            ('bottom', self._sp_mb.value(), getattr(sr, 'margin_bottom_cm', 0)),
+            ('left', self._sp_ml.value(), getattr(sr, 'margin_left_cm', 0)),
+            ('right', self._sp_mr.value(), getattr(sr, 'margin_right_cm', 0)),
+        ]
+
+        for key, current_val, sr_val in pairs:
+            if abs(current_val - sr_val) > TOL:
+                result[key] = current_val
+                logger.info(f"[PropertyPanel] 检测到用户修改边距 {key}: "
+                            f"{sr_val:.2f} → {current_val:.2f}")
+
+        return result
 
