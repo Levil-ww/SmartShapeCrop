@@ -721,23 +721,27 @@ def _merge_split_decimals(ocr_results):
             if dist > threshold:
                 continue
             # 排除重叠过大的bbox（可能是同一数字的多次检测）
+            # 但如果两个bbox高度重叠且值不同，说明是OCR把小数拆成两个数字（如"7.4"→"7"+"4"），需要尝试合并
             overlap_x = max(0, min(a_bb[0]+a_bb[2], b_bb[0]+b_bb[2]) - max(a_bb[0], b_bb[0]))
             overlap_y = max(0, min(a_bb[1]+a_bb[3], b_bb[1]+b_bb[3]) - max(a_bb[1], b_bb[1]))
-            if overlap_x * overlap_y > min(a_bb[2]*a_bb[3], b_bb[2]*b_bb[3]) * 0.5:
-                continue  # 重叠太大，不合并
+            overlap_area = overlap_x * overlap_y
+            min_area = min(a_bb[2]*a_bb[3], b_bb[2]*b_bb[3])
+            if overlap_area > min_area * 0.5:
+                # 高重叠：如果两个值相同（重复检测）则跳过；如果值不同则继续尝试小数合并
+                if abs(a_val - b_val) < 0.01:
+                    continue  # 同一数字的重复检测，跳过
+                # 值不同 → 可能是小数被拆成两个数字，继续尝试合并
             # b值应为1-9的小数部分（或a为1-9，b为整数）
             small_first = a_val < 10 and a_val >= 1
             small_second = b_val < 10 and b_val >= 1
             # 拼接尝试：a.b（要求b是小数部分，即b<10）
+            forward_concat = None
+            reverse_concat = None
             if b_val < 10 and b_val >= 1 and small_second:
                 try:
                     concat = float(f"{int(a_val)}.{int(b_val)}")
                     if 0.5 <= concat <= 500 and concat > a_val:
-                        nbb = (min(a_bb[0], b_bb[0]), min(a_bb[1], b_bb[1]),
-                               max(a_bb[0]+a_bb[2], b_bb[0]+b_bb[2]) - min(a_bb[0], b_bb[0]),
-                               max(a_bb[1]+a_bb[3], b_bb[1]+b_bb[3]) - min(a_bb[1], b_bb[1]))
-                        new_ones.append((concat, max(a_conf, b_conf) * 0.85, nbb))
-                        logger.info(f"[OCR小数合并] {int(a_val)}+{int(b_val)} → {concat}")
+                        forward_concat = concat
                 except ValueError:
                     logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
@@ -746,14 +750,31 @@ def _merge_split_decimals(ocr_results):
                 try:
                     concat = float(f"{int(b_val)}.{int(a_val)}")
                     if 0.5 <= concat <= 500 and concat > b_val:
-                        nbb = (min(a_bb[0], b_bb[0]), min(a_bb[1], b_bb[1]),
-                               max(a_bb[0]+a_bb[2], b_bb[0]+b_bb[2]) - min(a_bb[0], b_bb[0]),
-                               max(a_bb[1]+a_bb[3], b_bb[1]+b_bb[3]) - min(a_bb[1], b_bb[1]))
-                        new_ones.append((concat, max(a_conf, b_conf) * 0.85, nbb))
-                        logger.info(f"[OCR小数合并] {int(b_val)}+{int(a_val)} → {concat}")
+                        reverse_concat = concat
                 except ValueError:
                     logger.debug("[_merge_split_decimals] 忽略异常", exc_info=True)
                     pass
+            # 消歧：当正反拼接都有效时，选整数部分较大的（更自然的小数写法）
+            # 例如 7+4: 7.4(整数7) vs 4.7(整数4) → 选 7.4
+            if forward_concat is not None and reverse_concat is not None:
+                f_int = int(forward_concat)
+                r_int = int(reverse_concat)
+                if f_int >= r_int:
+                    reverse_concat = None
+                else:
+                    forward_concat = None
+            # 应用选择结果
+            for concat, label in [(forward_concat, 'forward'), (reverse_concat, 'reverse')]:
+                if concat is None:
+                    continue
+                nbb = (min(a_bb[0], b_bb[0]), min(a_bb[1], b_bb[1]),
+                       max(a_bb[0]+a_bb[2], b_bb[0]+b_bb[2]) - min(a_bb[0], b_bb[0]),
+                       max(a_bb[1]+a_bb[3], b_bb[1]+b_bb[3]) - min(a_bb[1], b_bb[1]))
+                new_ones.append((concat, max(a_conf, b_conf) * 0.85, nbb))
+                if label == 'forward':
+                    logger.info(f"[OCR小数合并] {int(a_val)}+{int(b_val)} → {concat}")
+                else:
+                    logger.info(f"[OCR小数合并] {int(b_val)}+{int(a_val)} → {concat}")
             # 纯整数拼接：ab（两位数拼接成三位数）
             if a_val >= 10 and b_val >= 10:
                 try:
@@ -894,6 +915,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     """
     from PIL import Image as PILImage
     result = {}
+    # [智能覆盖保护] 追踪恢复值的元数据：防止后续OCR误读覆盖已正确恢复的值
+    _recovered_meta = {}  # field → (source_integer, recovered_value, raw_conf)
+    # [全局源整数追踪] 即使恢复元数据被清除（被直接OCR覆盖），仍记录已使用的源整数
+    _used_source_ints = {}  # source_integer → (field, recovered_value)
     if tesseract is None:
         return result
 
@@ -902,7 +927,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     # 此阈值用于剔除 OCR 把装饰文字/尺寸标注误识别为"边距"的情况
     _target_is_authoritative = (target_outer_w_cm > 0 and target_outer_h_cm > 0)
     _ref_long = max(target_outer_w_cm, target_outer_h_cm, 0.0)
-    _ref_short = min(target_outer_w_cm, target_outer_h_cm, 0.0)
+    _ref_short = min(target_outer_w_cm, target_outer_h_cm) if (target_outer_w_cm > 0 and target_outer_h_cm > 0) else max(target_outer_w_cm, target_outer_h_cm, 0.0)
     if _target_is_authoritative:
         # [权威模式] 当 target 外框完整可用时，大幅放宽边距噪声上限
         # 因为非对称边框的某一边可能很大（例如内框偏一侧，mr=target-iw-ml 可能 =41cm）
@@ -958,15 +983,132 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         if val is None or not (0.3 <= val <= 500):
             return
         field = _DIR_CHAR_MAP[dir_char]
+
+        # ---- [智能覆盖保护] 判断是否允许覆盖已有值 ----
+        def _can_overwrite(existing_field, new_conf, is_recovered=False):
+            """判断新值是否允许覆盖已有值。
+            规则：
+            1. 空字段 → 允许
+            2. 新值是直接OCR（非恢复）→ 用原始conf比较存储conf
+            3. 新值是恢复值 → 仅当原始conf比已有值的原始conf高10%以上才允许
+            4. 同源于检测：恢复值的源整数若已被其他字段使用 → 拒绝
+            """
+            if existing_field not in result:
+                return True
+            old_val, old_conf, _ = result[existing_field]
+            # 已有值也是恢复值：比较原始conf
+            if existing_field in _recovered_meta:
+                _, _, old_raw_conf = _recovered_meta[existing_field]
+                if is_recovered:
+                    # 新值也是恢复值：需要比已有恢复值高10%以上的原始conf
+                    return new_conf > old_raw_conf * 1.10
+                else:
+                    # 新值是直接值：直接值可以覆盖恢复值（直接OCR更可信）
+                    return conf > old_conf
+            else:
+                # 已有值是直接OCR值
+                if is_recovered:
+                    # 恢复值不能轻易覆盖直接值
+                    return new_conf > old_conf * 1.15
+                else:
+                    # 都是直接值：标准比较
+                    return new_conf > old_conf
+
         # [防OCR噪声] 边距值合理性检查：拒绝明显是外框尺寸/装饰文字的超大值
         if not _is_reasonable_margin(val):
+            # ----- 小数点恢复尝试：OCR把"7.4"读成"74"的补漏 -----
+            # 仅对整数值尝试（非整数已经是正确的小数格式）
+            if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
+                s = str(int(val))
+                src_int = int(val)  # 记录源整数用于同源检测
+                candidates = []
+                # 2位数: 74 → 7.4
+                if len(s) == 2 and s[1] != '0':
+                    try:
+                        candidates.append(float(f"{s[0]}.{s[1]}"))
+                    except ValueError:
+                        pass
+                # 3位数: 736 → 73.6（十位后加小数点）或 7.36（百位后）
+                if len(s) == 3:
+                    if s[2] != '0':
+                        try:
+                            candidates.append(float(f"{s[:2]}.{s[2]}"))
+                        except ValueError:
+                            pass
+                    try:
+                        candidates.append(float(f"{s[0]}.{s[1:]}"))
+                    except ValueError:
+                        pass
+                # 尝试每个小数候选
+                for dec_val in candidates:
+                    if 0.3 <= dec_val <= 50.0 and _is_reasonable_margin(dec_val):
+                        # [同源检测1] 从_recovered_meta检查（当前仍为恢复值）
+                        for other_field, (o_src_int, o_dec_val, _) in _recovered_meta.items():
+                            if other_field != field and o_src_int == src_int:
+                                logger.info(
+                                    f"[Step4] 同源冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                    f"(源整数{src_int}已被字段{other_field}恢复为{o_dec_val:.1f}，拒绝重复绑定)"
+                                )
+                                return
+                        # [同源检测2] 从全局追踪检查（即使恢复元数据被清除，仍记录源整数使用历史）
+                        if src_int in _used_source_ints:
+                            prev_field, prev_val = _used_source_ints[src_int]
+                            if prev_field != field:
+                                logger.info(
+                                    f"[Step4] 同源冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                    f"(源整数{src_int}历史上已被字段{prev_field}使用为{prev_val:.1f}，全局拒绝重复绑定)"
+                                )
+                                return
+                        # [同值检测] 恢复值与已有其他字段值相同 → 拒绝（左右/上下重复识别）
+                        for other_field, (o_val, _, _) in result.items():
+                            if other_field != field and abs(o_val - dec_val) < 0.01:
+                                if other_field in _recovered_meta:
+                                    logger.info(
+                                        f"[Step4] 同值冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                        f"(值{dec_val:.1f}已被字段{other_field}恢复锁定，拒绝重复绑定)"
+                                    )
+                                    return
+                        # [几何一致性] 若已有对侧字段且新值与对侧值过于接近 → 检查是否合理
+                        opp_field_map = {'margin_left': 'margin_right', 'margin_right': 'margin_left',
+                                         'margin_top': 'margin_bottom', 'margin_bottom': 'margin_top'}
+                        opp_field = opp_field_map.get(field)
+                        if opp_field and opp_field in result and field not in _recovered_meta:
+                            opp_val = result[opp_field][0]
+                            if abs(dec_val - opp_val) < 0.5 and conf < 85:
+                                # 与对侧值非常接近且置信度不高 → 可能是OCR误读
+                                logger.info(
+                                    f"[Step4] 几何冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                    f"(与对侧{opp_field}={opp_val:.1f}过于接近，可能为OCR复制，拒绝)"
+                                )
+                                return
+                        logger.info(
+                            f"[Step4] 小数点恢复: {dir_char}={val:.0f}→{dec_val:.1f}cm → {field} "
+                            f"(原整数超出上限，小数解释通过)"
+                        )
+                        # [智能覆盖] 使用保护逻辑判断是否允许覆盖
+                        if _can_overwrite(field, conf, is_recovered=True):
+                            result[field] = (dec_val, conf * 0.85, (bx, by, bw, bh))
+                            _recovered_meta[field] = (src_int, dec_val, conf)
+                            _used_source_ints[src_int] = (field, dec_val)  # 全局追踪
+                            logger.info(f"[Step4] {tag}: {dir_char}={dec_val:.1f}(恢复) conf={conf*0.85:.0f} → {field}")
+                        else:
+                            logger.info(
+                                f"[Step4] 覆盖保护: {dir_char}={dec_val:.1f}(恢复) conf={conf} → {field} "
+                                f"(被已有值保护，拒绝覆盖)"
+                            )
+                        return  # 恢复成功，不再继续
+            # 所有恢复尝试均失败，维持原拒绝逻辑
             logger.info(
                 f"[Step4] OCR噪声拒绝: {dir_char}={val}cm → {field} "
                 f"(超过边距合理上限 cap={_margin_hard_cap:.1f}cm，可能是装饰文字/尺寸标注)"
             )
             return
-        if field not in result or conf > result[field][1]:
+        # [直接OCR值] 使用智能覆盖逻辑
+        if _can_overwrite(field, conf, is_recovered=False):
             result[field] = (val, conf, (bx, by, bw, bh))
+            # 直接OCR值清除恢复元数据（不再是恢复值）
+            if field in _recovered_meta:
+                del _recovered_meta[field]
             logger.info(f"[Step4] {tag}: {dir_char}={val} conf={conf} → {field}")
 
     for img, scale, src_tag in scan_list:
@@ -1242,6 +1384,86 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         logger.info(f"[Step4] Phase3空间绑定({dchar}↔{nv}): dist={best_dist:.0f}px "
                                     f"(Rmax={R_MAX:.0f}) conf={nconf} → {dfield}")
                 logger.info(f"[Step4] Phase3空间距离场完成：新绑定 {bind_count} 个字段")
+
+    # ========== Phase 4：小数点恢复（OCR把"7.4"读成"74"的补漏）==========
+    # 原理：Tesseract 有时丢失小数点，将 "7.4" 识别为 "74"。
+    # 对每个方向标签值尝试小数恢复：2位整数ab → a.b
+    # 仅当小数解释通过合理性校验且原整数不通过时才替换
+    # [智能保护] Phase4 只在字段当前是整数值且未被恢复锁定时才操作
+    recovered_fields = {}
+    for field_name, (val, conf, bbox) in result.items():
+        # 跳过已经是恢复值的字段（由_try_bind锁定，不重复处理）
+        if field_name in _recovered_meta:
+            continue
+        if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
+            s = str(int(val))
+            src_int = int(val)
+            # 2位数恢复：74 → 7.4，85 → 8.5
+            if len(s) == 2 and s[1] != '0':
+                try:
+                    dec_val = float(f"{s[0]}.{s[1]}")
+                    if 0.3 <= dec_val <= 50.0:
+                        # 只有当原整数不合理或小数更合理时才替换
+                        orig_ok = _is_reasonable_margin(val)
+                        dec_ok = _is_reasonable_margin(dec_val)
+                        if dec_ok and not orig_ok:
+                            recovered_fields[field_name] = (dec_val, conf * 0.8, bbox, src_int)
+                            logger.info(
+                                f"[Step4] 小数点恢复: {field_name} {val:.0f}→{dec_val:.1f} "
+                                f"(原整数超出边距上限，小数解释合理)"
+                            )
+                        elif dec_ok and orig_ok and dec_val < val:
+                            # 两者都合理时，若小数解释明显更像边距值则替换
+                            # （边距通常 < 外框短边的25%，而原整数可能是其数倍）
+                            short_cap = _ref_short * 0.5 if _ref_short > 0 else 25.0
+                            if dec_val <= short_cap and val > short_cap:
+                                recovered_fields[field_name] = (dec_val, conf * 0.85, bbox, src_int)
+                                logger.info(
+                                    f"[Step4] 小数点恢复: {field_name} {val:.0f}→{dec_val:.1f} "
+                                    f"(小数解释更符合边距范围 ≤{short_cap:.1f}cm)"
+                                )
+                except ValueError:
+                    logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
+                    pass
+    # [智能保护] Phase4 应用恢复时使用与_try_bind一致的保护逻辑
+    for fn, item in recovered_fields.items():
+        rv, rc, rb, src_int = item
+        # 同源检测1：从_recovered_meta检查
+        skip = False
+        for other_field, (o_src_int, o_dec_val, _) in _recovered_meta.items():
+            if other_field != fn and o_src_int == src_int:
+                logger.info(
+                    f"[Step4] Phase4同源冲突拒绝: {fn}={src_int}→{rv:.1f} "
+                    f"(源整数{src_int}已被字段{other_field}恢复为{o_dec_val:.1f})"
+                )
+                skip = True
+                break
+        if skip:
+            continue
+        # 同源检测2：从全局追踪检查
+        if src_int in _used_source_ints:
+            prev_field, prev_val = _used_source_ints[src_int]
+            if prev_field != fn:
+                logger.info(
+                    f"[Step4] Phase4同源冲突拒绝: {fn}={src_int}→{rv:.1f} "
+                    f"(源整数{src_int}历史上已被字段{prev_field}使用为{prev_val:.1f}，全局拒绝)"
+                )
+                continue
+        # 同值检测
+        for other_field, (o_val, _, _) in result.items():
+            if other_field != fn and abs(o_val - rv) < 0.01:
+                if other_field in _recovered_meta:
+                    logger.info(
+                        f"[Step4] Phase4同值冲突拒绝: {fn}={src_int}→{rv:.1f} "
+                        f"(值{rv:.1f}已被字段{other_field}恢复锁定)"
+                    )
+                    skip = True
+                    break
+        if skip:
+            continue
+        result[fn] = (rv, rc, rb)
+        _recovered_meta[fn] = (src_int, rv, max(rc / 0.85, rc / 0.8))
+        _used_source_ints[src_int] = (fn, rv)  # 全局追踪
 
     return result
 
