@@ -27,7 +27,7 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
-_ALGO_VERSION = 8  # 2026-08-28: Phase3 num_tokens放宽单位后缀+Phase3绑定走_try_bind+Phase4移除短边*0.5硬阈值小数改写(中古雨林74→7.4)
+_ALGO_VERSION = 9  # 2026-08-28: _can_overwrite直接值覆盖需+5~+8conf安全阈值；_try_bind入口拒绝权威外框尺寸值(中古雨林60=outer_h误成margin_right)
 
 
 

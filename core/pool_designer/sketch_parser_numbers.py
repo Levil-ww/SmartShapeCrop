@@ -370,6 +370,25 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             return
         field = _DIR_CHAR_MAP[dir_char]
 
+        # ---- [权威外框值排除] Step5 exclude_values 的 Step4 镜像实现 ----
+        # 外框尺寸 (w/h) 从几何上不可能等于边距：边距 < 外框。
+        # 若数值恰好是 target_outer_w / target_outer_h 及其 ±1.0 近似值 → 肯定是外框标注，而非边距
+        # 本场景受害者：中古雨林 outer_h=60，被 OCR 相邻匹配到"右"字 → margin_right=60 覆盖了正确的 21.5
+        if _target_is_authoritative:
+            _exclude_candidates = (
+                target_outer_w_cm, target_outer_h_cm,
+                target_outer_w_cm - 0.5, target_outer_w_cm + 0.5,
+                target_outer_h_cm - 0.5, target_outer_h_cm + 0.5,
+                target_outer_w_cm - 1.0, target_outer_w_cm + 1.0,
+                target_outer_h_cm - 1.0, target_outer_h_cm + 1.0,
+            )
+            for _xv in _exclude_candidates:
+                if _xv > 0 and abs(val - _xv) < 0.15:
+                    logger.info(
+                        f"[Step4] 权威外框值拒绝: {dir_char}={val} conf={conf} → {field} "
+                        f"(与target外框值 {_xv:.1f} 相同/接近，应为外框标注而非边距)"
+                    )
+                    return
         # ---- [智能覆盖保护] 判断是否允许覆盖已有值 ----
         def _can_overwrite(existing_field, new_conf, is_recovered=False):
             """判断新值是否允许覆盖已有值。
@@ -397,8 +416,15 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     # 恢复值不能轻易覆盖直接值
                     return new_conf > old_conf * 1.15
                 else:
-                    # 都是直接值：标准比较
-                    return new_conf > old_conf
+                    # 都是直接值：不能用 +1 conf 这种噪声级差异覆盖（旧规则 new_conf > old_conf 会让 92>91 → 覆盖）
+                    # 方向标签的OCR置信度通常在高区间(80-98)，相邻扫描配置的conf抖动很常见
+                    # 状态不变量：覆盖需要至少 +5 conf 点或 +5% 的显著提升，否则保留先到的绑定值
+                    if new_conf >= 90 and old_conf >= 90:
+                        # 双方都是高置信度：需要更大差距 (庄园秘境/中古雨林都≥90)
+                        return new_conf >= old_conf + 8
+                    else:
+                        # 一方或双方中等置信度：仍需 +5 的安全裕度
+                        return new_conf >= old_conf + 5
 
         # [防OCR噪声] 边距值合理性检查：拒绝明显是外框尺寸/装饰文字的超大值
         # [Bug5 Fix] 使用已知字段的轴向合理性 cap（margin_left/right 按 outer_w*0.9；top/bottom 按 outer_h*0.9）
