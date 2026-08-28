@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop 项目分析报告</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --border: #e4e9f0;
+    --text: #24292f;
+    --sub: #57606a;
+    --blue: #2f6fed;
+    --blue-light: #eaf1fe;
+    --teal: #0d9488;
+    --teal-light: #e6f7f5;
+    --orange: #d97706;
+    --orange-light: #fdf3e3;
+    --purple: #7c3aed;
+    --purple-light: #f1eafd;
+    --red: #dc2626;
+    --red-light: #fdeaea;
+    --green: #16a34a;
+    --green-light: #e8f7ee;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 32px 24px 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  /* ===== Header ===== */
+  .header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 55%, #0d9488 100%);
+    border-radius: 16px;
+    padding: 40px 44px;
+    color: #fff;
+    margin-bottom: 28px;
+  }
+  .header h1 { font-size: 28px; font-weight: 700; letter-spacing: 1px; }
+  .header .subtitle { font-size: 15px; opacity: .92; margin-top: 8px; }
+  .header .tags { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .header .tag {
+    background: rgba(255,255,255,.16);
+    border: 1px solid rgba(255,255,255,.35);
+    padding: 4px 14px; border-radius: 999px; font-size: 13px;
+  }
+
+  /* ===== Metric cards ===== */
+  .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 28px; }
+  .metric {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 18px; text-align: center;
+  }
+  .metric .num { font-size: 30px; font-weight: 800; color: var(--blue); }
+  .metric:nth-child(2) .num { color: var(--teal); }
+  .metric:nth-child(3) .num { color: var(--purple); }
+  .metric:nth-child(4) .num { color: var(--orange); }
+  .metric:nth-child(5) .num { color: var(--green); }
+  .metric .label { font-size: 13px; color: var(--sub); margin-top: 4px; }
+
+  /* ===== Section ===== */
+  .section {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px 32px; margin-bottom: 24px;
+  }
+  .section h2 {
+    font-size: 19px; font-weight: 700; margin-bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section h2 .bar { width: 5px; height: 20px; border-radius: 3px; background: var(--blue); }
+  .section h3 { font-size: 15px; font-weight: 600; margin: 18px 0 10px; color: #1f2937; }
+  .section p, .section li { font-size: 14px; color: var(--text); }
+  .section p.sub { color: var(--sub); font-size: 13.5px; }
+
+  /* ===== Two features ===== */
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .feature {
+    border-radius: 12px; padding: 20px 22px; border: 1px solid var(--border);
+  }
+  .feature.f1 { background: var(--blue-light); border-color: #c7dbfd; }
+  .feature.f2 { background: var(--teal-light); border-color: #bfe8e3; }
+  .feature h3 { margin-top: 0 !important; font-size: 16px; }
+  .feature ul { padding-left: 18px; }
+  .feature li { font-size: 13.5px; margin: 5px 0; }
+
+  /* ===== Architecture ===== */
+  .arch { display: flex; flex-direction: column; gap: 12px; }
+  .arch-row { display: flex; gap: 12px; align-items: stretch; }
+  .arch-label {
+    writing-mode: vertical-lr; text-orientation: mixed;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; color: #fff;
+    border-radius: 8px; padding: 6px; min-width: 34px; letter-spacing: 2px;
+  }
+  .arch-cells { display: flex; flex-wrap: wrap; gap: 10px; flex: 1; }
+  .arch-cell {
+    background: #f8fafc; border: 1px solid var(--border); border-radius: 9px;
+    padding: 10px 14px; flex: 1; min-width: 150px;
+  }
+  .arch-cell b { font-size: 13.5px; display: block; }
+  .arch-cell span { font-size: 12px; color: var(--sub); }
+
+  /* ===== Charts ===== */
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--sub); margin-bottom: 10px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin: 7px 0; }
+  .bar-name { width: 190px; font-size: 12.5px; text-align: right; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { flex: 1; background: #eef1f5; border-radius: 5px; height: 22px; position: relative; }
+  .bar-fill { height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; font-size: 11.5px; color: #fff; font-weight: 600; min-width: 44px; }
+  .two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 32px; align-items: start; }
+
+  /* ===== Donut ===== */
+  .donut-legend { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .donut-legend .item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+  /* ===== Pipeline ===== */
+  .pipeline { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; padding: 10px 0 4px; }
+  .step {
+    flex: 1; min-width: 118px; background: var(--purple-light);
+    border: 1px solid #d9c9f7; border-radius: 10px; padding: 12px 10px; text-align: center;
+  }
+  .step .n { font-size: 11px; font-weight: 700; color: var(--purple); letter-spacing: 1px; }
+  .step b { display: block; font-size: 13px; margin: 4px 0; }
+  .step span { font-size: 11px; color: var(--sub); display: block; line-height: 1.5; }
+  .arrow { display: flex; align-items: center; padding: 0 5px; color: #b6bec9; font-size: 18px; font-weight: 700; }
+
+  /* ===== Tables ===== */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { background: #f1f4f8; text-align: left; padding: 9px 12px; font-weight: 600; border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.p0 { background: var(--red-light); color: var(--red); }
+  .pill.p1 { background: var(--orange-light); color: var(--orange); }
+  .pill.p2 { background: var(--green-light); color: var(--green); }
+  .pill.ok { background: var(--green-light); color: var(--green); }
+  .pill.warn { background: var(--orange-light); color: var(--orange); }
+  .pill.risk { background: var(--red-light); color: var(--red); }
+  .pill.info { background: var(--blue-light); color: var(--blue); }
+
+  /* ===== Risk ===== */
+  .risk-item { border-left: 4px solid var(--red); background: #fffafa; border-radius: 0 8px 8px 0; padding: 12px 16px; margin-bottom: 10px; }
+  .risk-item.warn { border-left-color: var(--orange); background: #fffdf7; }
+  .risk-item b { font-size: 14px; }
+  .risk-item p { font-size: 13px; color: var(--sub); margin-top: 3px; }
+
+  .footer { text-align: center; color: #9aa4b0; font-size: 12px; margin-top: 32px; }
+
+  @media (max-width: 900px) {
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .feature-grid, .two-col { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= HEADER ================= -->
+  <div class="header">
+    <h1>SmartShapeCrop · 项目分析报告 <span style="font-size:16px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);padding:3px 12px;border-radius:999px;vertical-align:middle;margin-left:10px">V2.1</span></h1>
+    <div class="subtitle">智能形状裁剪设计器 —— 面向印刷行业的「圆角裁剪工具 + 水池设计器」桌面应用（Python / PyQt5）</div>
+    <div class="tags">
+      <span class="tag">Python 3.10+</span>
+      <span class="tag">PyQt5 桌面 GUI</span>
+      <span class="tag">Pillow / numpy / OpenCV</span>
+      <span class="tag">Tesseract OCR</span>
+      <span class="tag">PyInstaller 打包 exe</span>
+      <span class="tag">pytest · 233 个用例</span>
+    </div>
+  </div>
+
+  <!-- ================= METRICS ================= -->
+  <div class="metrics">
+    <div class="metric"><div class="num">14.6k</div><div class="label">核心代码行数</div></div>
+    <div class="metric"><div class="num">202<span style="font-size:15px;color:#9aa4b0">/233</span></div><div class="label">测试通过（实测 86.7%）</div></div>
+    <div class="metric"><div class="num">12</div><div class="label">核心功能模块</div></div>
+    <div class="metric"><div class="num">157</div><div class="label">诊断/调试脚本</div></div>
+    <div class="metric"><div class="num">56</div><div class="label">工作总结文档</div></div>
+  </div>
+
+  <!-- ================= 项目定位 ================= -->
+  <div class="section">
+    <h2><span class="bar"></span>一、项目定位与核心能力</h2>
+    <p class="sub">SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具，围绕「定制尺寸成品图」解决两大业务痛点：</p>
+    <div class="feature-grid" style="margin-top:14px">
+      <div class="feature f1">
+        <h3>🔵 圆角裁剪工具</h3>
+        <ul>
+          <li>将已有成品图（JPG / PSD）按目标尺寸<b>厘米级等比缩放</b></li>
+          <li><b>四角独立圆角</b>（单角 / 双角 / 四角组合，0 = 直角）</li>
+          <li><b>多层边框自动检测</b>：颜色距离 + 亮度突变双算法，圆角处弧线自动重绘</li>
+          <li><b>中文文件名智能解析</b>：自动提取产品名、尺寸、横竖版、圆角参数（6 层容错）</li>
+          <li>模板库匹配源图 + 印刷损耗补偿（尺寸 +1cm、圆角 +0.5cm）</li>
+        </ul>
+      </div>
+      <div class="feature f2">
+        <h3>🟢 水池设计器</h3>
+        <ul>
+          <li>参数化生成<b>矩形嵌套 / L 形挖角 / 椭圆挖孔</b>设计稿</li>
+          <li><b>手绘草图 OCR 智能识别</b>：7 步串行流程自动回填 8 项尺寸字段</li>
+          <li>多层边框（颜色 / 厚度 / 素材填充）+ 边框文字环绕</li>
+          <li>OCR 稳定性投票机制：位置聚类 + 众数投票消除偶发误识别</li>
+          <li>导出印刷级 JPG（LANCZOS 重采样，支持 1–2 亿像素大图）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 架构 ================= -->
+  <div class="section">
+    <h2><span class="bar"></span>二、系统架构</h2>
+    <p class="sub">分层清晰：GUI 层只做交互与后台线程调度，业务逻辑全部下沉 core/，配置、日志、算法单一来源。</p>
+    <div class="arch" style="margin-top:14px">
+      <div class="arch-row">
+        <div class="arch-label" style="background:#2f6fed">入口层</div>
+        <div class="arch-cells">
+          <div class="arch-cell"><b>main.py</b><span>PyQt5 主窗口 · 模板预设 · crash.log 全局异常钩子</span></div>
+          <div class="arch-cell"><b>process_image.py</b><span>命令行批处理（缩放 + 圆角）</span></div>
+          <div class="arch-cell"><b>packageV2.0.py</b><span>PyInstaller 打包脚本（生成 exe）</span></div>
+        </div>
+      </div>
+      <div class="arch-row">
+        <div class="arch-label" style="background:#0d9488">GUI 层</div>
+        <div class="arch-cells">
+          <div class="arch-cell"><b>canvas_widget.py</b><span>预览画布 · 全分辨率渲染 + LOD 缩放显示</span></div>
+          <div class="arch-cell"><b>cropper_panel.py</b><span>圆角裁剪面板 · QThread 后台导出</span></div>
+          <div class="arch-cell"><b>property_panel.py</b><span>水池设计器属性面板 · 草图异步解析</span></div>
+        </div>
+      </div>
+      <div class="arch-row">
+        <div class="arch-label" style="background:#7c3aed">业务核心层</div>
+        <div class="arch-cells">
+          <div class="arch-cell"><b>corner/</b><span>单步扇形切割算法 · 边框层检测 · 弧线重绘</span></div>
+          <div class="arch-cell"><b>parser/</b><span>文件名解析 · 模板库匹配引擎</span></div>
+          <div class="arch-cell"><b>pool_designer/</b><span>草图识别 7 步流程（OCR 核心）</span></div>
+          <div class="arch-cell"><b>psd/</b><span>PSD 分层读取 / 裁边 / 合成</span></div>
+          <div class="arch-cell"><b>image_ops / image_cropper / geometry</b><span>渲染 · 裁剪服务 · 参数化形状</span></div>
+        </div>
+      </div>
+      <div class="arch-row">
+        <div class="arch-label" style="background:#d97706">基础支撑层</div>
+        <div class="arch-cells">
+          <div class="arch-cell"><b>config.py</b><span>阈值 / 单位换算 / 硬上限统一配置</span></div>
+          <div class="arch-cell"><b>log_setup.py</b><span>控制台 + 滚动文件日志</span></div>
+          <div class="arch-cell"><b>app_settings.py</b><span>历史记录（QSettings/JSON 双通道）</span></div>
+          <div class="arch-cell"><b>artifact_cleanup.py</b><span>调试产物自动清理</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 代码分布 ================= -->
+  <div class="section">
+    <h2><span class="bar"></span>三、代码规模与分布</h2>
+    <div class="two-col">
+      <div>
+        <div class="chart-title">各模块代码行数（Top 10）</div>
+        <div class="bar-row"><div class="bar-name">pool_designer/sketch_parser</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#7c3aed">2667</div></div></div>
+        <div class="bar-row"><div class="bar-name">gui/property_panel</div><div class="bar-track"><div class="bar-fill" style="width:68%;background:#0d9488">1822</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/image_cropper</div><div class="bar-track"><div class="bar-fill" style="width:66%;background:#2f6fed">1757</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/parser/template_matcher</div><div class="bar-track"><div class="bar-fill" style="width:48%;background:#2f6fed">1293</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/image_ops</div><div class="bar-track"><div class="bar-fill" style="width:35%;background:#2f6fed">939</div></div></div>
+        <div class="bar-row"><div class="bar-name">gui/cropper_panel</div><div class="bar-track"><div class="bar-fill" style="width:35%;background:#0d9488">946</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/corner/detection</div><div class="bar-track"><div class="bar-fill" style="width:33%;background:#2f6fed">877</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/parser/name_parser</div><div class="bar-track"><div class="bar-fill" style="width:30%;background:#2f6fed">813</div></div></div>
+        <div class="bar-row"><div class="bar-name">core/geometry</div><div class="bar-track"><div class="bar-fill" style="width:24%;background:#2f6fed">650</div></div></div>
+        <div class="bar-row"><div class="bar-name">main.py</div><div class="bar-track"><div class="bar-fill" style="width:15%;background:#d97706">411</div></div></div>
+      </div>
+      <div>
+        <div class="chart-title">按层分布（共 14,616 行）</div>
+        <svg viewBox="0 0 200 200" width="210" height="210">
+          <circle cx="100" cy="100" r="70" fill="none" stroke="#eef1f5" stroke-width="30"/>
+          <!-- core 10771 (73.7%), gui 3102 (21.2%), 入口/其他 743 (5.1%) -->
+          <circle cx="100" cy="100" r="70" fill="none" stroke="#2f6fed" stroke-width="30"
+                  stroke-dasharray="324.2 115.6" stroke-dashoffset="0" transform="rotate(-90 100 100)"/>
+          <circle cx="100" cy="100" r="70" fill="none" stroke="#0d9488" stroke-width="30"
+                  stroke-dasharray="93.3 346.5" stroke-dashoffset="-324.2" transform="rotate(-90 100 100)"/>
+          <circle cx="100" cy="100" r="70" fill="none" stroke="#d97706" stroke-width="30"
+                  stroke-dasharray="22.5 417.3" stroke-dashoffset="-417.5" transform="rotate(-90 100 100)"/>
+          <text x="100" y="95" text-anchor="middle" font-size="22" font-weight="700" fill="#24292f">14.6k</text>
+          <text x="100" y="115" text-anchor="middle" font-size="11" fill="#57606a">总行数</text>
+        </svg>
+        <div class="donut-legend">
+          <div class="item"><span class="dot" style="background:#2f6fed"></span>core 业务核心层 — 10,771 行（73.7%）</div>
+          <div class="item"><span class="dot" style="background:#0d9488"></span>gui 界面层 — 3,102 行（21.2%）</div>
+          <div class="item"><span class="dot" style="background:#d97706"></span>入口/其他 — 743 行（5.1%）</div>
+        </div>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:12px">另有 26 个测试文件（233 个用例）、157 个诊断脚本、56 份按日期组织的工作总结文档（ProductSummary/），体现高强度迭代开发与问题回归沉淀。</p>
+  </div>
+
+  <!-- ================= 草图识别流水线 ================= -->
+  <div class="section">
+    <h2><span class="bar"></span>四、核心亮点：草图 OCR 识别流水线（7 步串行）</h2>
+    <p class="sub">从手绘草图自动识别外框 / 内孔 / 上下左右边距共 8 项数值。代码从 7717 行精简至 1340 行核心 + 辅助，6 张测试草图几何通过率 100%，自洽得分全部 1.00。</p>
+    <div class="pipeline" style="margin-top:14px">
+      <div class="step"><div class="n">STEP 1</div><b>矩形检测</b><span>嵌套对选择<br>面积 3–97% 过滤<br>暗色区域回退</span></div>
+      <div class="arrow">›</div>
+      <div class="step"><div class="n">STEP 2</div><b>区域划分</b><span>8-zone 几何分区<br>角点间隙归属判定</span></div>
+      <div class="arrow">›</div>
+      <div class="step"><div class="n">STEP 3</div><b>多尺度 OCR</b><span>多尺度 / PSM / 预处理<br>相邻数字 Token 合并</span></div>
+      <div class="arrow">›</div>
+      <div class="step"><div class="n">STEP 4</div><b>小数修复</b><span>丢失/拆分小数点修复<br>自适应阈值去重</span></div>
+      <div class="arrow">›</div>
+      <div class="step"><div class="n">STEP 5</div><b>方向标签锁定</b><span>8 次独立扫描<br>33% 硬边带约束</span></div>
+      <div class="arrow">›</div>
+      <div class="step"><div class="n">STEP 6</div><b>空间映射</b><span>物理位置映射<br>圆数过滤（100/50/25）</span></div>
+      <div class="arrow">›</div>
+      <div class="step"><div class="n">STEP 7</div><b>几何校验</b><span>inner = outer − margin<br>5% 偏差强制修正</span></div>
+    </div>
+    <h3>多重安全机制（防误识别）</h3>
+    <table>
+      <tr><th>机制</th><th>作用</th></tr>
+      <tr><td>33% 硬边带约束</td><td>上/下/左/右边距数值必须出现在画布对应 1/3 区域，杜绝位置错乱</td></tr>
+      <tr><td>稳定性投票</td><td>对同一 ROI 多次识别取众数，票数相同时按置信度总和决胜</td></tr>
+      <tr><td>几何值 50% 上限 + 边距 80% 门槛</td><td>明显不合理的几何反推值直接拒绝</td></tr>
+      <tr><td>内框可靠性评级</td><td>面积 &lt;5% 或纵横比 &gt;15 时放弃几何反推，改用 OCR 边距反推</td></tr>
+      <tr><td>方向标签三重门</td><td>百位数检查 + 数量级差异 + 偏差 &gt;50% 放弃标签</td></tr>
+    </table>
+  </div>
+
+  <!-- ================= 性能优化 ================= -->
+  <div class="section">
+    <h2><span class="bar"></span>五、性能优化成果（2026-08-21 六大热点）</h2>
+    <table>
+      <tr><th>优先级</th><th>优化项</th><th>效果</th></tr>
+      <tr><td><span class="pill p0">P0</span></td><td>OCR 合并（统一全图扫描）</td><td>Tesseract 调用从 51 次 → 约 10 次</td></tr>
+      <tr><td><span class="pill p0">P0</span></td><td>EDT → cv2.erode 替换（21×21 椭圆核）</td><td>性能提升 80–90%，带回退机制</td></tr>
+      <tr><td><span class="pill p1">P1</span></td><td>外框枚举剪枝（去重 + 方向预过滤 + 早停）</td><td>组合数从 64 → ≤15</td></tr>
+      <tr><td><span class="pill p1">P1</span></td><td>圆角 ROI 化（隔离 4 角区域）</td><td>内存/计算从 O(W×H) → O(r²)</td></tr>
+      <tr><td><span class="pill p2">P2</span></td><td>矩形检测早停（串行二值掩码）</td><td>节省 50% 以上 Step1 时间</td></tr>
+      <tr><td><span class="pill p2">P2</span></td><td>边框带 mask 增量复用</td><td>节省 40–50% mask 构建</td></tr>
+      <tr><td><span class="pill p0">专项</span></td><td>EDT 距离变换 → 圆角矩形差集</td><td>数学等价，<b>33× 加速</b></td></tr>
+      <tr><td><span class="pill p0">专项</span></td><td>预览 BILINEAR / 导出 LANCZOS 分级</td><td>预览快 3–5×，导出质量不降</td></tr>
+    </table>
+    <p class="sub" style="margin-top:10px">所有优化均通过像素级一致性验证保证几何等价，识别逻辑与功能保持不变。</p>
+  </div>
+
+  <!-- ================= 工程质量 ================= -->
+  <div class="section">
+    <h2><span class="bar"></span>六、工程质量评估</h2>
+    <div class="two-col">
+      <div>
+        <h3 style="margin-top:0">✅ 做得好的地方</h3>
+        <ul style="padding-left:18px; font-size:13.5px">
+          <li><b>单一来源原则</b>：圆角逻辑统一委托 <code>carve_corner_on_mask</code>，间隙判定统一 <code>classify_gap_layers</code>，配置集中 <code>config.py</code></li>
+          <li><b>测试体系完整</b>：233 个用例覆盖 border / core / gui / integration / sketch 五大类，含用户实际案例回归（8.21 六案例）</li>
+          <li><b>性能意识强</b>：ROI 化、向量化、双质量分级渲染、QThread 后台线程防 GUI 冻结</li>
+          <li><b>可观测性好</b>：滚动日志 + crash.log 全局异常钩子（解决 PyInstaller 无控制台排障难题）+ OCR 诊断截图</li>
+          <li><b>防御性编程</b>：2 亿像素上限防解压炸弹、边框层数/厚度硬上限、极端参数防御</li>
+          <li><b>文档沉淀</b>：README 极详尽 + 56 份按日期归档的工作总结，可追溯性强</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="margin-top:0">📐 测试分布与实测结果（26 文件 / 233 用例）</h3>
+        <div style="display:flex;height:26px;border-radius:6px;overflow:hidden;margin-bottom:10px;font-size:12px;color:#fff;font-weight:600;text-align:center;line-height:26px">
+          <div style="width:86.7%;background:#16a34a" title="通过">通过 202（86.7%）</div>
+          <div style="width:11.2%;background:#dc2626" title="失败">失败 26</div>
+          <div style="width:2.1%;background:#9aa4b0" title="跳过">5</div>
+        </div>
+        <div class="bar-row"><div class="bar-name">integration 集成</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#2f6fed">9 文件</div></div></div>
+        <div class="bar-row"><div class="bar-name">sketch 草图识别</div><div class="bar-track"><div class="bar-fill" style="width:67%;background:#7c3aed">6 文件</div></div></div>
+        <div class="bar-row"><div class="bar-name">core 核心逻辑</div><div class="bar-track"><div class="bar-fill" style="width:56%;background:#0d9488">5 文件</div></div></div>
+        <div class="bar-row"><div class="bar-name">border 边框</div><div class="bar-track"><div class="bar-fill" style="width:56%;background:#d97706">5 文件</div></div></div>
+        <div class="bar-row"><div class="bar-name">gui 界面</div><div class="bar-track"><div class="bar-fill" style="width:11%;background:#9aa4b0">1 文件</div></div></div>
+        <p class="sub" style="margin-top:10px"><b>26 个失败全部集中在 integration 回归护栏测试</b>（F1 退化参数防御、F4 并发克隆、F5–F14 修复验证），其中多个直接指向真实问题：requirements.txt 为空（F10/F2-3）、OCR 调用缺 timeout（F6）、热路径裸 except（F14）等；部分则疑似重构后 API 变化导致的测试过期（如 CropDesign.clone 相关）。core / border / sketch / gui 分类测试全部通过。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 风险与建议 ================= -->
+  <div class="section">
+    <h2><span class="bar"></span>七、风险识别与改进建议</h2>
+    <div class="risk-item">
+      <b>🔴 巨型模块风险</b> — sketch_parser.py（2667 行）、property_panel.py（1822 行）、image_cropper.py（1757 行）
+      <p>三个文件承载了过多职责，改动牵一发动全身。建议按「Step1–7 各自拆分为独立模块」「GUI 面板拆分为子组件」的方式继续重构（项目已有从 7717→1340 行的成功先例，可复制该方法）。</p>
+    </div>
+    <div class="risk-item warn">
+      <b>🟡 OCR 硬依赖</b> — 草图识别强依赖系统安装 Tesseract-OCR，且无几何降级路径
+      <p>未安装引擎时草图识别完全不可用。建议：① 启动时检测并在 GUI 明确提示安装引导；② 评估 PaddleOCR 等替代方案以摆脱外部引擎依赖、提升中文数字识别率。</p>
+    </div>
+    <div class="risk-item warn">
+      <b>🟡 目录膨胀</b> — scripts/ 含 157 个诊断脚本、logs/ 与 debug_output/ 大量中间图像
+      <p>虽有 artifact_cleanup.py 自动清理和 _archive 归档，建议进一步合并同类诊断脚本为统一 CLI（如 <code>python -m scripts.diagnose --case xxx</code>），减少维护面。</p>
+    </div>
+    <div class="risk-item warn">
+      <b>🟡 技术栈老化</b> — PyQt5 已停止活跃维护
+      <p>若无迁移压力可维持现状；若计划长期演进，建议评估 PySide6（API 高度兼容，LGPL 授权更友好）。Pillow/opencv 依赖健康，无需调整。</p>
+    </div>
+    <div class="risk-item">
+      <b>🔴 回归护栏测试大面积失败（26/233）</b>
+      <p>26 个失败用例全部位于 integration/ 目录：其中 requirements.txt 为空导致 F10/F2-3 等 3 个用例失败（真实缺陷）；F6（OCR 缺 timeout）、F14（裸 except）等指向未完成的修复项；F4（clone 相关）、F1（退化参数防御）疑似后续重构使接口变化、测试未同步更新。建议先补齐 requirements.txt，再逐一甄别「真实回归」与「过期测试」。</p>
+    </div>
+    <div class="risk-item">
+      <b>🔴 requirements.txt 缺失/为空</b>
+      <p>README 引用了 requirements.txt，但当前文件内容为空，新环境无法一键复现依赖。建议补齐：PyQt5、Pillow、numpy、psd-tools、opencv-python-headless、pytesseract、pytest。</p>
+    </div>
+  </div>
+
+  <!-- ================= 总结 ================= -->
+  <div class="section" style="background:linear-gradient(135deg,#eaf1fe,#e6f7f5);border-color:#c7dbfd">
+    <h2><span class="bar" style="background:var(--teal)"></span>八、总体结论</h2>
+    <p style="font-size:14.5px">
+      SmartShapeCrop 是一个<b>工程成熟度较高的垂直行业工具</b>：核心算法（单步扇形切割、多层边框检测、7 步 OCR 流水线）设计精细且有充分的安全护栏；
+      1.46 万行核心代码配套 233 个测试用例和系统的缺陷回归沉淀，性能优化有量化数据支撑。
+      全量测试实测通过率 86.7%，失败项集中且可归因（依赖清单为空 + 部分回归测试过期）。
+      主要短板集中在<b>少数巨型模块的可维护性、OCR 外部依赖、依赖清单缺失和回归护栏失守</b>，均属于可通过渐进重构解决的问题。
+      整体判断：<b>架构健康、质量意识强、适合继续迭代</b>。
+    </p>
+  </div>
+
+  <div class="footer">SmartShapeCrop 项目分析报告 V2.1 · 生成于 2026-08-28 · 基于代码库静态分析 + 全量测试实测（pytest：202 通过 / 26 失败 / 5 跳过）</div>
+</div>
+</body>
+</html>
