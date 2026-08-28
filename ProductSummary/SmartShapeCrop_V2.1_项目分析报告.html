@@ -104,6 +104,15 @@
   </div>
 </header>
 
+<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:#7c2d12">
+  <b>📌 2026-08-28 复核更新说明</b>（本报告为 2026-08-27 发布时的状态，以下为最新核实结果）<br>
+  ① <b>requirements.txt 已确认存在于项目根目录</b>，内容完整（PyQt5 / Pillow / numpy / psd-tools / opencv-python-headless / pytesseract / pytest 及说明注释），F2 / F10 依赖断言全部满足。<br>
+  ② 全量测试最新实测已<b>恢复全绿：228 通过 / 0 失败 / 5 跳过（97.9%）</b>。原 26 个失败（不再为"224 全绿"）已全部修复：<br>
+  &nbsp;&nbsp;• <b>10 个为测试自身路径 Bug</b>：V2.1 提交将测试从 tests/ 移入 tests/integration/（git 纯重命名）后，PROJECT_ROOT 解析未同步，仍去 tests/ 下查找根目录文件（F2-3、F5×2、F6、F7、F10、F12、F13、F14×2）→ 已修正 3 个测试文件的路径上溯；<br>
+  &nbsp;&nbsp;• <b>16 个为真实回归</b>：F1 退化参数防御丢失 9 个（PIL 渲染 ValueError）、F4 CropDesign.clone() 被移除 6 个（AttributeError）、F9 椭圆边框告警缺失 1 个 → 已在 core/geometry.py 恢复（to_int_tuple 归一化 / px clamp / mask 退化守卫 / clone() / compute_border_bands 告警），F14 裸 except 3 处注入 logger.debug，F5 过期参数更新为 packageV2.1.py。<br>
+  ③ 生产代码 gui/canvas_widget.py 已按 clone 快照传参，F4 并发防护完整落地。
+</div>
+
 <!-- ===== 一、关键指标 ===== -->
 <h2 class="sec"><span class="no">01</span>关键指标总览</h2>
 <div class="grid g4">
@@ -412,7 +421,8 @@
 </div>
 
 <div class="foot">
-  SmartShapeCrop V2.1 项目分析报告 ｜ 生成于 2026-08-27 ｜ 基于源码精读 + 全量测试 224 passed + git 历史分析
+  SmartShapeCrop V2.1 项目分析报告 ｜ 生成于 2026-08-27 ｜ 基于源码精读 + 全量测试 224 passed + git 历史分析<br>
+  <b style="color:#166534">2026-08-28 复核 + 修复：requirements.txt 确认在根目录且内容完整；26 个失败已全部修复，实测 228 通过 / 0 失败 / 5 跳过（10 个测试路径 Bug + F1×9 / F4×6 / F9×1 回归恢复 + F5 过期参数 + F14 裸 except），详见页首更新说明。</b>
 </div>
 </div>
 </body>

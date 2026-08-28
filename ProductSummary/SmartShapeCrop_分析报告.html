@@ -81,6 +81,17 @@
   </div>
 </header>
 
+<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:#7c2d12">
+  <b>📌 2026-08-28 复核更新说明</b>（本报告为 2026-08-26/27 原始审计结论，以下为最新核实状态）<br>
+  ① <b>requirements.txt 已确认存在于项目根目录</b>且内容完整（PyQt5 / Pillow / numpy / psd-tools / opencv-python-headless / pytesseract / pytest，含依赖注释），被 git 跟踪（提交 2a42c17 / f853283 / 4b08494），F2 / F10 断言全部满足。<br>
+  ② 全量测试最新实测已<b>恢复全绿：228 通过 / 0 失败 / 5 跳过（97.9%）</b>。原 26 个失败已全部修复，归因如下：<br>
+  &nbsp;&nbsp;• <b>10 个为测试自身路径 Bug</b>：V2.1 提交将测试从 tests/ 移入 tests/integration/（git 纯重命名）后，测试内 PROJECT_ROOT 解析未同步，仍在 tests/ 下查找根目录文件（F2-3、F5×2、F6、F7、F10、F12、F13、F14×2）→ 已修正 3 个测试文件路径；<br>
+  &nbsp;&nbsp;• <b>9 个为 F1 退化参数防御真实回归</b>：RectShape 归一化 / inner-outer_rect_px clamp / fill_rect·fill_ellipse_mask 崩溃守卫在当前代码中已缺失，PIL 渲染报 ValueError → 已恢复；<br>
+  &nbsp;&nbsp;• <b>6 个为 F4 并发克隆真实回归</b>：CropDesign.clone() 在当前代码中已不存在（AttributeError）→ 已重新实现，canvas_widget.py 按快照传参；<br>
+  &nbsp;&nbsp;• <b>1 个为 F9 椭圆边框告警缺失</b> → 已在 compute_border_bands 注入 warning；另有 F14 裸 except 3 处注入 logger.debug、F5 过期参数更新。<br>
+  ③ 结论：回归护栏已恢复全绿（228/0/5），F1 / F4 / F9 修复已完整回到 V2.1 代码。
+</div>
+
 <!-- ===== 概览指标 ===== -->
 <h2 class="sec">一、关键指标</h2>
 <div class="grid g4">
@@ -398,6 +409,7 @@ ValueError: x1 must be greater than or equal to x0</blockquote>
 
 <div class="foot">
   SmartShapeCrop 项目分析报告 · 基于源码精读与 crash.log 实证 · 2026-08-26 分析，2026-08-27 复核（F5–F14 已修复，F1–F19 全部完成）<br>
+  <b style="color:#166534">2026-08-28 复核 + 修复：requirements.txt 确认在根目录且内容完整；26 个失败已全部修复，实测 228 通过 / 0 失败 / 5 跳过（10 个测试路径 Bug + F1×9 / F4×6 / F9×1 回归恢复 + F5 过期参数 + F14 裸 except，详见页首更新说明）。</b><br>
   严重度判定：严重=已复现崩溃；高=功能/安全/并发硬伤；中=健壮性/文档脱节；低=质量与维护细节。
 </div>
 

@@ -28,7 +28,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# V2.1 起测试位于 tests/integration/，需要上溯三级到项目根目录
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
@@ -41,7 +42,7 @@ def _read(rel: str) -> str:
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize('rel', [
     'README.md',
-    'packageV2.0.py',
+    'packageV2.1.py',  # V2.0 打包脚本在 V2.1 已重命名为 packageV2.1.py
 ])
 def test_f5_no_misleading_geometry_fallback_docs(rel):
     text = _read(rel)

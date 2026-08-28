@@ -19,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# V2.1 起测试位于 tests/integration/，需要上溯三级到项目根目录
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # QApplication 供 QWidget 相关测试使用（整个会话只建一次）

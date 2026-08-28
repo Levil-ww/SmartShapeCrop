@@ -1026,19 +1026,19 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                 if len(s) == 2 and s[1] != '0':
                     try:
                         candidates.append(float(f"{s[0]}.{s[1]}"))
-                    except ValueError:
-                        pass
+                    except ValueError as e:
+                        logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
                 # 3位数: 736 → 73.6（十位后加小数点）或 7.36（百位后）
                 if len(s) == 3:
                     if s[2] != '0':
                         try:
                             candidates.append(float(f"{s[:2]}.{s[2]}"))
-                        except ValueError:
-                            pass
+                        except ValueError as e:
+                            logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
                     try:
                         candidates.append(float(f"{s[0]}.{s[1:]}"))
-                    except ValueError:
-                        pass
+                    except ValueError as e:
+                        logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
                 # 尝试每个小数候选
                 for dec_val in candidates:
                     if 0.3 <= dec_val <= 50.0 and _is_reasonable_margin(dec_val):

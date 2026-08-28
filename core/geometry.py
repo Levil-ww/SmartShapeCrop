@@ -6,8 +6,12 @@ core/geometry.py
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
+import copy
+import logging
 import numpy as np
 from PIL import Image, ImageDraw
+
+logger = logging.getLogger(__name__)
 
 
 # ---------- 基础形状 ----------
@@ -30,8 +34,15 @@ class RectShape:
         return self.y + self.h
 
     def to_int_tuple(self) -> tuple[int, int, int, int]:
-        return (int(round(self.x)), int(round(self.y)),
-                int(round(self.right)), int(round(self.bottom)))
+        # F1 守卫：负宽/负高矩形折叠为零面积退化矩形（x1/y1 归一到 x0/y0），
+        # 不再产生 x1<x0 的反转 box，避免 PIL ImageDraw 抛 ValueError
+        x0, y0 = int(round(self.x)), int(round(self.y))
+        x1, y1 = int(round(self.right)), int(round(self.bottom))
+        if x1 < x0:
+            x1 = x0
+        if y1 < y0:
+            y1 = y0
+        return (x0, y0, x1, y1)
 
 
 @dataclass
@@ -182,9 +193,10 @@ class CropDesign:
     # 像素级坐标计算
     def outer_rect_px(self) -> RectShape:
         m = self.cm2px(self.outer_margin_cm)
+        # F1 守卫：外边距爆炸时 clamp 宽高到非负，避免产生负宽/负高矩形
         return RectShape(m, m,
-                         self.canvas_w_px - 2 * m,
-                         self.canvas_h_px - 2 * m)
+                         max(0.0, self.canvas_w_px - 2 * m),
+                         max(0.0, self.canvas_h_px - 2 * m))
 
     def inner_rect_px(self) -> RectShape:
         outer = self.outer_rect_px()
@@ -192,9 +204,10 @@ class CropDesign:
         mb = self.cm2px(self.inner_margin_bottom_cm)
         ml = self.cm2px(self.inner_margin_left_cm)
         mr = self.cm2px(self.inner_margin_right_cm)
+        # F1 守卫：内边距之和超过外框可用空间时 clamp 宽高到非负
         return RectShape(outer.x + ml, outer.y + mt,
-                         outer.w - ml - mr,
-                         outer.h - mt - mb)
+                         max(0.0, outer.w - ml - mr),
+                         max(0.0, outer.h - mt - mb))
 
     def ellipse_px(self) -> EllipseShape:
         cw, ch = self.canvas_w_px, self.canvas_h_px
@@ -220,6 +233,18 @@ class CropDesign:
             'br': self.cm2px(self.corner_br_cm),
         }
 
+    def clone(self) -> 'CropDesign':
+        """深拷贝独立快照，供后台渲染线程使用（F4 并发防护）。
+
+        - 标量字段：值拷贝（天然独立）
+        - borders / border_text 等可变字段：深拷贝，互不影响
+        - _cached_outer_image：共享只读引用（避免每次渲染复制大图）
+        """
+        c = copy.deepcopy(self)
+        # 大图模板缓存只读共享，不复制像素数据
+        c._cached_outer_image = self._cached_outer_image
+        return c
+
 
 # ---------- 掩膜（mask）生成 ----------
 
@@ -230,6 +255,9 @@ def make_mask(size: tuple[int, int]) -> Image.Image:
 
 def fill_rect_mask(mask: Image.Image, rect: RectShape, value: int = 255) -> None:
     """在 mask 上填充一个矩形区域为 value"""
+    # F1 守卫：退化矩形（负宽/负高/零面积）跳过，避免 PIL ValueError 崩溃
+    if rect.w <= 0 or rect.h <= 0:
+        return
     d = ImageDraw.Draw(mask)
     if rect.corner_r > 0:
         d.rounded_rectangle(rect.to_int_tuple(),
@@ -239,6 +267,9 @@ def fill_rect_mask(mask: Image.Image, rect: RectShape, value: int = 255) -> None
 
 
 def fill_ellipse_mask(mask: Image.Image, e: EllipseShape, value: int = 255) -> None:
+    # F1 守卫：负/零半径跳过（PIL ellipse 对反转 box 会抛 ValueError）
+    if e.rx <= 0 or e.ry <= 0:
+        return
     d = ImageDraw.Draw(mask)
     box = (int(e.cx - e.rx), int(e.cy - e.ry),
            int(e.cx + e.rx), int(e.cy + e.ry))
@@ -291,6 +322,9 @@ def apply_rounded_corners_to_mask(mask_img: Image.Image, inner_rect: RectShape,
     bottom_i = int(round(inner_rect.bottom))
     w_i = right_i - x_i
     h_i = bottom_i - y_i
+    # F1 守卫：退化矩形（负宽/负高）跳过，避免 PIL ValueError
+    if w_i <= 0 or h_i <= 0:
+        return
     _carve_corner_on_mask(
         mask_img,
         (x_i, y_i, w_i, h_i),
@@ -360,6 +394,9 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
 
       使用双 mask 独立绘制差集，避免单 mask inverse 模式在角落产生像素异常。
     """
+    if design.mode == 'ellipse_hole' and design.borders:
+        # F9：椭圆模式不支持多层边框 —— 渲染层告警，行为保持不变
+        logger.warning('[geometry] 椭圆模式不支持多层边框，仅按现有逻辑产出边框带（行为不变）')
     if design.mode == 'rect_lshape':
         return compute_lshape_border_bands(design)
     # —— 以下为 rect_hole 原有逻辑 ——

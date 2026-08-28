@@ -21,7 +21,8 @@ from PIL import Image
 # ---------------------------------------------------------------------------
 
 def test_requirements_lists_pytesseract():
-    req_path = os.path.join(os.path.dirname(__file__), '..', 'requirements.txt')
+    # V2.1 起测试位于 tests/integration/，需上溯两级到项目根目录
+    req_path = os.path.join(os.path.dirname(__file__), '..', '..', 'requirements.txt')
     req_path = os.path.abspath(req_path)
     assert os.path.isfile(req_path), f"requirements.txt 不存在: {req_path}"
     content = open(req_path, encoding='utf-8').read().lower()
