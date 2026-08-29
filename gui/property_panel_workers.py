@@ -268,10 +268,16 @@ class PoolRenderWorker(QThread):
                     # 不再从 per-hole HoleInfo 取 min。根因：per-hole margin_left_0
                     # 在 decimal 移位后变成 3.6（应为 36.0），min(36.0, 3.6) = 3.6 → GUI 左边距显示 3.6。
                     # 全局值 sketch_result.margin_left 已被方向/箭头锁定为正确的 36.0，直接使用。
-                    _sr_ml = getattr(sketch_result, 'margin_left', 0) or 0
-                    _sr_mr = getattr(sketch_result, 'margin_right', 0) or 0
-                    _sr_mt = getattr(sketch_result, 'margin_top', 0) or 0
-                    _sr_mb = getattr(sketch_result, 'margin_bottom', 0) or 0
+                    # SketchParseResult 属性名是 margin_left_cm / margin_right_cm / ...
+                    # （不是 margin_left）。另外兼容 MultiHoleParseResult 的 margin_left。
+                    _sr_ml = (getattr(sketch_result, 'margin_left_cm', 0)
+                              or getattr(sketch_result, 'margin_left', 0) or 0)
+                    _sr_mr = (getattr(sketch_result, 'margin_right_cm', 0)
+                              or getattr(sketch_result, 'margin_right', 0) or 0)
+                    _sr_mt = (getattr(sketch_result, 'margin_top_cm', 0)
+                              or getattr(sketch_result, 'margin_top', 0) or 0)
+                    _sr_mb = (getattr(sketch_result, 'margin_bottom_cm', 0)
+                              or getattr(sketch_result, 'margin_bottom', 0) or 0)
                     # Per-hole fallback（仅当全局值为 0 时兜底）
                     _all_mt = [getattr(h, 'margin_top_cm', 0) for h in holes if getattr(h, 'margin_top_cm', 0) > 0]
                     _all_mb = [getattr(h, 'margin_bottom_cm', 0) for h in holes if getattr(h, 'margin_bottom_cm', 0) > 0]

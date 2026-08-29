@@ -1548,11 +1548,32 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
     holes = []
     for idx in range(n_holes):
         # ===== [MULTI-HOLE PER-HOLE Add-On 2026-08-29] per-hole mt/mb/ml/mr =====
-        # 优先取 per-hole 桶；fallback 全局桶 mt/mb/ml/mr（保证同边距场景零回归）
-        mt_i = assignment.get(f'margin_top_{idx}', (mt, 0))[0]
-        mb_i = assignment.get(f'margin_bottom_{idx}', (mb, 0))[0]
-        ml_i = assignment.get(f'margin_left_{idx}', (ml, 0))[0]
-        mr_i = assignment.get(f'margin_right_{idx}', (mr, 0))[0]
+        # Bug fix (2026-08-29): 全局方向锁定值（如 margin_left=36.0）是权威来源。
+        # 优先使用全局值，per-hole 桶**仅当存在且与全局值方向一致**（即不是移位/duplicate 噪声）时才覆盖。
+        # 根因：之前 assignment.get(f'margin_left_{idx}', (ml, 0))[0] 取到错误的 3.6（decimal 移位），
+        # 而 fallback 才是正确的 36.0——逻辑完全反了！
+        def _per_hole_margin(field_idx, global_val, global_val_is_dir_locked):
+            """Per-hole margin：全局优先，per-hole 仅当合理时覆盖。"""
+            key = f'{field_idx}_{idx}'
+            # 先尝试方向锁定桶（Step5 把方向值写进了 direction_labels，
+            # 但 assignment 里全局 margin_{side} 已经是方向锁定值）
+            ph_val, ph_conf = assignment.get(key, (0.0, 0))
+            if ph_val <= 0:
+                return global_val  # per-hole 桶不存在 → 全局兜底
+            # 全局是方向锁定值且 per-hole 值相差很大 → 丢弃 per-hole（它是移位/重复识别噪声）
+            if global_val_is_dir_locked and abs(ph_val - global_val) > 5.0:
+                return global_val
+            # 其他情况：per-hole 值更精细（如同一边距不同洞有微调场景），保留
+            return ph_val
+
+        # 方向锁定字段判断：该 side 是否在 dir_locked 里有值
+        def _is_dir_locked(field_side):
+            return field_side in dir_locked
+
+        mt_i = _per_hole_margin('margin_top', mt, _is_dir_locked('margin_top'))
+        mb_i = _per_hole_margin('margin_bottom', mb, _is_dir_locked('margin_bottom'))
+        ml_i = _per_hole_margin('margin_left', ml, _is_dir_locked('margin_left'))
+        mr_i = _per_hole_margin('margin_right', mr, _is_dir_locked('margin_right'))
         hi = HoleInfo(
             index=idx,
             rect_px=inners[idx],
