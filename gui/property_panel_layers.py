@@ -169,38 +169,109 @@ class _LayersMixin:
                     for i in range(n_gaps):
                         new_gaps.append(max(0.0, self._mh_sp_gaps[i].value()))
                     # 按 layout 重算绝对坐标（画布相对 cm）
+                    # ===== [PER-HOLE Add-On 2026-08-29] 每洞独立 mt/ml 坐标 =====
+                    # Staff Engineer Mode：不改变外层 if-elif-else 分支结构，只在各分支
+                    # 内部把「共享全局 mt/ml」改为「每洞独立 mt_i/ml_i」。
+                    # 来源优先级：原 pool_holes_cm[i].mt_cm > 设计文件 hole[i].margin_top_cm
+                    # > 全局 inner_margin_top_cm（保证用户手动微调 SpinBox 时不会崩）。
+                    old_holes = getattr(d, 'pool_holes_cm', []) or []
+
+                    def _mt_i(i, default_mt):
+                        if 0 <= i < len(old_holes):
+                            v = old_holes[i].get('mt_cm', 0.0)
+                            if v and v > 0:
+                                return v
+                        # 若原 pool_holes_cm 没存：尝试从 sketch hole attr 再 fallback
+                        h_attr = getattr(d, '_mh_hole_margins', None)
+                        if isinstance(h_attr, list) and 0 <= i < len(h_attr):
+                            v = h_attr[i].get('mt_cm', 0.0)
+                            if v and v > 0:
+                                return v
+                        return default_mt
+
+                    def _mb_i(i, default_mb):
+                        if 0 <= i < len(old_holes):
+                            v = old_holes[i].get('mb_cm', 0.0)
+                            if v and v > 0:
+                                return v
+                        return default_mb
+
+                    def _ml_i(i, default_ml):
+                        if 0 <= i < len(old_holes):
+                            v = old_holes[i].get('ml_cm', 0.0)
+                            if v and v > 0:
+                                return v
+                        # 洞0 特殊：左距就是全局 ml；其他洞 ml_i=0（由中距保证位置）
+                        if i == 0:
+                            return default_ml
+                        return 0.0
+
+                    def _mr_i(i, default_mr):
+                        if 0 <= i < len(old_holes):
+                            v = old_holes[i].get('mr_cm', 0.0)
+                            if v and v > 0:
+                                return v
+                        # 最后一洞特殊：右距就是全局 mr
+                        if i == n_holes - 1:
+                            return default_mr
+                        return 0.0
+
                     new_holes_cm = []
                     if layout == 'horizontal':
-                        y_cm = oy_cm + d.inner_margin_top_cm
-                        cursor_x = ox_cm + d.inner_margin_left_cm
+                        shared_ml = d.inner_margin_left_cm
+                        shared_mt = d.inner_margin_top_cm
+                        cursor_x = ox_cm + _ml_i(0, shared_ml)
                         for i, (wv, hv) in enumerate(new_wh):
                             if i > 0 and i - 1 < len(new_gaps):
                                 cursor_x += new_gaps[i - 1]
+                            hmt = _mt_i(i, shared_mt)
+                            hmb = _mb_i(i, d.inner_margin_bottom_cm)
+                            hml = _ml_i(i, shared_ml)
+                            hmr = _mr_i(i, d.inner_margin_right_cm)
                             new_holes_cm.append({
-                                'x_cm': cursor_x, 'y_cm': y_cm,
+                                'x_cm': cursor_x,
+                                'y_cm': oy_cm + hmt,   # 每洞独立 mt_i！
                                 'w_cm': wv, 'h_cm': hv,
+                                'mt_cm': hmt, 'mb_cm': hmb,
+                                'ml_cm': hml, 'mr_cm': hmr,
                             })
                             cursor_x += wv
                     elif layout == 'vertical':
-                        x_cm = ox_cm + d.inner_margin_left_cm
-                        cursor_y = oy_cm + d.inner_margin_top_cm
+                        shared_ml = d.inner_margin_left_cm
+                        shared_mt = d.inner_margin_top_cm
+                        cursor_y = oy_cm + _mt_i(0, shared_mt)
                         for i, (wv, hv) in enumerate(new_wh):
                             if i > 0 and i - 1 < len(new_gaps):
                                 cursor_y += new_gaps[i - 1]
+                            hmt = _mt_i(i, shared_mt)
+                            hmb = _mb_i(i, d.inner_margin_bottom_cm)
+                            hml = _ml_i(i, shared_ml)
+                            hmr = _mr_i(i, d.inner_margin_right_cm)
                             new_holes_cm.append({
-                                'x_cm': x_cm, 'y_cm': cursor_y,
+                                'x_cm': ox_cm + hml,  # 每洞独立 ml_i！
+                                'y_cm': cursor_y,
                                 'w_cm': wv, 'h_cm': hv,
+                                'mt_cm': hmt, 'mb_cm': hmb,
+                                'ml_cm': hml, 'mr_cm': hmr,
                             })
                             cursor_y += hv
                     else:  # mixed：退化横排
-                        y_cm = oy_cm + d.inner_margin_top_cm
-                        cursor_x = ox_cm + d.inner_margin_left_cm
+                        shared_ml = d.inner_margin_left_cm
+                        shared_mt = d.inner_margin_top_cm
+                        cursor_x = ox_cm + _ml_i(0, shared_ml)
                         for i, (wv, hv) in enumerate(new_wh):
                             if i > 0 and i - 1 < len(new_gaps):
                                 cursor_x += new_gaps[i - 1]
+                            hmt = _mt_i(i, shared_mt)
+                            hmb = _mb_i(i, d.inner_margin_bottom_cm)
+                            hml = _ml_i(i, shared_ml)
+                            hmr = _mr_i(i, d.inner_margin_right_cm)
                             new_holes_cm.append({
-                                'x_cm': cursor_x, 'y_cm': y_cm,
+                                'x_cm': cursor_x,
+                                'y_cm': oy_cm + hmt,
                                 'w_cm': wv, 'h_cm': hv,
+                                'mt_cm': hmt, 'mb_cm': hmb,
+                                'ml_cm': hml, 'mr_cm': hmr,
                             })
                             cursor_x += wv
                     # 写回 design：pool_holes_cm 长度严格 == n_holes，不会含 0 值洞
