@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
     QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
     QToolButton, QMenu, QAction, QDialog, QApplication,
+    QTableWidget, QHeaderView, QAbstractItemView, QDialogButtonBox, QFormLayout,
 )
 from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from PIL import Image
@@ -188,6 +189,98 @@ class _SketchViewerDialog(QDialog):
                 self._scale_factor = fit_factor
                 self._apply_scale()
 
+
+
+class _LShapeConfirmDialog(QDialog):
+    """L 形挖角识别结果确认框：外框尺寸只读展示 + 挖角位置/宽度/高度可编辑。
+
+    返回（确认后）：
+        values() -> (corner, cut_w_cm, cut_h_cm)
+    """
+
+    def __init__(self, result, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("识别到 L 形挖角 — 请确认参数")
+        self.resize(480, 400)
+        self._result = result
+        self.corner = (result.corner or 'tr')
+        self.cut_w_cm = max(0.0, float(result.cut_w_cm or 0))
+        self.cut_h_cm = max(0.0, float(result.cut_h_cm or 0))
+
+        v = QVBoxLayout(self)
+        v.setSpacing(8)
+
+        # 1) 解析摘要
+        info = QLabel(self._summary_text())
+        info.setWordWrap(True)
+        info.setStyleSheet("background:#EFF6FF;color:#1a3d6d;padding:10px;border-radius:6px;")
+        v.addWidget(info)
+
+        # 2) 外框尺寸（只读）
+        gb_outer = QGroupBox("外框尺寸（来自文件名/草图，只读）")
+        fo = QFormLayout(gb_outer)
+        self._lbl_outer = QLabel(f"{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm")
+        self._lbl_outer.setStyleSheet("font-weight:bold;font-size:14px;")
+        fo.addRow("宽 × 高:", self._lbl_outer)
+        v.addWidget(gb_outer)
+
+        # 3) 挖角参数（可编辑）
+        gb_cut = QGroupBox("挖角参数（可在生成前修改）")
+        fc = QFormLayout(gb_cut)
+        self._cb_corner = QComboBox()
+        self._cb_corner.addItem("左上角", "tl")
+        self._cb_corner.addItem("右上角", "tr")
+        self._cb_corner.addItem("左下角", "bl")
+        self._cb_corner.addItem("右下角", "br")
+        idx = self._cb_corner.findData(self.corner)
+        self._cb_corner.setCurrentIndex(max(0, idx))
+        self._sp_cw = QDoubleSpinBox()
+        self._sp_cw.setRange(0.0, 450.0)
+        self._sp_cw.setDecimals(1)
+        self._sp_cw.setSuffix(" cm")
+        self._sp_cw.setValue(self.cut_w_cm)
+        self._sp_ch = QDoubleSpinBox()
+        self._sp_ch.setRange(0.0, 450.0)
+        self._sp_ch.setDecimals(1)
+        self._sp_ch.setSuffix(" cm")
+        self._sp_ch.setValue(self.cut_h_cm)
+        fc.addRow("挖角位置:", self._cb_corner)
+        fc.addRow("挖角宽度(沿边):", self._sp_cw)
+        fc.addRow("挖角高度(垂直):", self._sp_ch)
+        v.addWidget(gb_cut)
+
+        # 4) 按钮
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("确认并生成")
+        bb.button(QDialogButtonBox.Cancel).setText("取消（回退矩形解析）")
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+
+    def _summary_text(self) -> str:
+        r = self._result
+        lines = ["✅ 已识别到 L 形挖角草图："]
+        lines.append(f"　挖角位置：{r.corner or '未知'}")
+        lines.append(f"　挖角宽度：{r.cut_w_cm:.1f} cm　挖角高度：{r.cut_h_cm:.1f} cm")
+        if getattr(r, 'self_consistency', 0) > 0:
+            lines.append(f"　结构自洽度：{r.self_consistency * 100:.0f}%")
+        if getattr(r, 'message', ''):
+            lines.append(r.message)
+        return "\n".join(lines)
+
+    def _on_accept(self):
+        cw = self._sp_cw.value()
+        ch = self._sp_ch.value()
+        if cw <= 0 or ch <= 0:
+            QMessageBox.warning(self, "参数不完整", "挖角宽度/高度必须大于 0。\n若不需要 L 形挖角，请点「取消」。")
+            return
+        self.corner = self._cb_corner.currentData()
+        self.cut_w_cm = cw
+        self.cut_h_cm = ch
+        self.accept()
+
+    def values(self):
+        return (self.corner, self.cut_w_cm, self.cut_h_cm)
 
 
 class _LayersDialog(QDialog):

@@ -48,6 +48,7 @@ class PoolRenderWorker(QThread):
                  sketch_path: str = "",
                  pre_parsed_result=None,
                  user_margins: dict = None,
+                 lshape_params: dict = None,
                  parent=None):
         """
         user_margins: 可选 dict，包含用户手动修改的边距值。
@@ -55,6 +56,11 @@ class PoolRenderWorker(QThread):
             值: float (cm)
         当 user_margins 提供时，会覆盖 pre_parsed_result 中的对应边距值，
         确保素材匹配使用用户修正后的内挖尺寸。
+
+        lshape_params: 可选 dict，L 形挖角模式参数。
+            键: 'corner' (tl/tr/bl/br), 'cut_w_cm', 'cut_h_cm', 'outer_w_cm', 'outer_h_cm'
+            提供时进入 L 形挖角模式：mode='rect_lshape'，margins 全 0，
+            L 形区域保留外框素材、挖掉的角显示洞色（裁剪有图语义）。
         """
         super().__init__(parent)
         self._matcher = matcher
@@ -63,6 +69,7 @@ class PoolRenderWorker(QThread):
         self._sketch = sketch_path
         self._pre_parsed = pre_parsed_result  # 预解析结果（来自 PropertyPanel 自动解析）
         self._user_margins = user_margins  # 用户手动修改的边距（覆盖 pre_parsed）
+        self._lshape_params = lshape_params or None  # L 形挖角参数（None = 矩形/普通水池模式）
         self._log_lines: list[str] = []
 
     def _log(self, msg: str):
@@ -118,10 +125,13 @@ class PoolRenderWorker(QThread):
             )
 
             # 3) 解析草图（如果提供了）
+            #    L 形模式：草图已在 UI 层由 _LShapeParseWorker 解析并经用户确认，
+            #    参数已传入 lshape_params，此处不再跑矩形草图解析。
+            is_lshape = self._lshape_params is not None
             sketch_result = None
             canvas_w_cm = file_w   # 原始文件名外框宽（横边）
             canvas_h_cm = file_h   # 原始文件名外框高（竖边）
-            if self._sketch and os.path.isfile(self._sketch):
+            if self._sketch and os.path.isfile(self._sketch) and not is_lshape:
                 # 优先使用 PropertyPanel 预解析结果（避免重复解析、保留用户调整）
                 if self._pre_parsed is not None and self._pre_parsed.success:
                     sketch_result = self._pre_parsed
@@ -154,7 +164,8 @@ class PoolRenderWorker(QThread):
             # 1) CropDesign 使用用户修正后的边距
             # 2) 内挖尺寸（canvas - margins）正确
             # 3) 后续素材匹配（内挖素材）基于正确的内挖尺寸
-            if self._user_margins and sketch_result and sketch_result.success:
+            # L 形模式：margins 恒为 0（L 形 = 画布挖角），跳过该覆盖逻辑。
+            if self._user_margins and sketch_result and sketch_result.success and not is_lshape:
                 um = self._user_margins
                 changed = []
                 if 'top' in um and um['top'] is not None:
@@ -180,32 +191,64 @@ class PoolRenderWorker(QThread):
             design.canvas_w_cm = canvas_w_cm + TRIM_CM
             design.canvas_h_cm = canvas_h_cm + TRIM_CM
             design.dpi = 150
-            design.mode = 'rect_hole'
             design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
 
-            # 边距优先用草图，否则用默认等比例值（10% 短边）
-            # [契约变更 2026-08-27] 画布已 +TRIM_CM(1cm) 作为裁剪损耗，
-            # 草图识别到的 4 个边距视为设计真值，不再追加 +TRIM_CM 偏移。
-            # 内挖由 inner = canvas - sum(margins) 自动推导，因此 inner 相对
-            # sketch 原始内框自动 +1cm（损耗分摊到内挖区域，不挤占边距）。
-            # 新不变量：(outer+1) = ml + inner_w + mr；(outer+1)_v = mt + inner_h + mb
-            if sketch_result and sketch_result.success:
-                design.inner_margin_top_cm = sketch_result.margin_top_cm
-                design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm
-                design.inner_margin_left_cm = sketch_result.margin_left_cm
-                design.inner_margin_right_cm = sketch_result.margin_right_cm
+            if is_lshape:
+                # —— L 形挖角（裁剪有图）模式 ——
+                # 语义：L 形区域保留外框素材花纹，被切掉的角显示洞色。
+                # 配置：margins 全 0（L 形 = 画布挖角），mode='rect_lshape'。
+                lp = self._lshape_params
+                # 外框尺寸优先用 L 形解析结果（已与文件名校验），否则用文件名解析值
+                lw = float(lp.get('outer_w_cm') or 0)
+                lh = float(lp.get('outer_h_cm') or 0)
+                if lw > 0 and lh > 0:
+                    canvas_w_cm, canvas_h_cm = lw, lh
+                    design.canvas_w_cm = canvas_w_cm + TRIM_CM
+                    design.canvas_h_cm = canvas_h_cm + TRIM_CM
+                design.mode = 'rect_lshape'
+                design.l_corner = lp.get('corner', 'tr')
+                design.l_cut_w_cm = max(0.0, float(lp.get('cut_w_cm', 0)))
+                design.l_cut_h_cm = max(0.0, float(lp.get('cut_h_cm', 0)))
+                design.inner_margin_top_cm = 0.0
+                design.inner_margin_bottom_cm = 0.0
+                design.inner_margin_left_cm = 0.0
+                design.inner_margin_right_cm = 0.0
+                # 挖掉的角 = 洞（白色；JPG 不支持透明）
+                design.pool_hole_transparent = True
+                # 外框素材 = 匹配到的完整矩形花纹图（铺满画布，L 形区域保留）
+                design.pool_outer_material_image = best.path
+                design.outer_bg_image = best.path
+                design.pool_inner_material_image = best.path
+                self._log(
+                    f"L 形挖角模式：corner={design.l_corner}, "
+                    f"挖角 {design.l_cut_w_cm:.1f}x{design.l_cut_h_cm:.1f} cm, "
+                    f"外框 {canvas_w_cm:.1f}x{canvas_h_cm:.1f} cm（画布含1cm损耗）"
+                )
             else:
-                default_m = min(canvas_w_cm, canvas_h_cm) * 0.10
-                design.inner_margin_top_cm = default_m
-                design.inner_margin_bottom_cm = default_m
-                design.inner_margin_left_cm = default_m
-                design.inner_margin_right_cm = default_m
+                design.mode = 'rect_hole'
+                # 边距优先用草图，否则用默认等比例值（10% 短边）
+                # [契约变更 2026-08-27] 画布已 +TRIM_CM(1cm) 作为裁剪损耗，
+                # 草图识别到的 4 个边距视为设计真值，不再追加 +TRIM_CM 偏移。
+                # 内挖由 inner = canvas - sum(margins) 自动推导，因此 inner 相对
+                # sketch 原始内框自动 +1cm（损耗分摊到内挖区域，不挤占边距）。
+                # 新不变量：(outer+1) = ml + inner_w + mr；(outer+1)_v = mt + inner_h + mb
+                if sketch_result and sketch_result.success:
+                    design.inner_margin_top_cm = sketch_result.margin_top_cm
+                    design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm
+                    design.inner_margin_left_cm = sketch_result.margin_left_cm
+                    design.inner_margin_right_cm = sketch_result.margin_right_cm
+                else:
+                    default_m = min(canvas_w_cm, canvas_h_cm) * 0.10
+                    design.inner_margin_top_cm = default_m
+                    design.inner_margin_bottom_cm = default_m
+                    design.inner_margin_left_cm = default_m
+                    design.inner_margin_right_cm = default_m
 
-            # 水池模式开关 + 外框素材图
-            design.pool_hole_transparent = True
-            design.pool_outer_material_image = best.path
-            # 同时也写到外框素材字段（方便用户在"背景设置"里看到并编辑）
-            design.outer_bg_image = best.path
+                # 水池模式开关 + 外框素材图
+                design.pool_hole_transparent = True
+                design.pool_outer_material_image = best.path
+                # 同时也写到外框素材字段（方便用户在"背景设置"里看到并编辑）
+                design.outer_bg_image = best.path
             # [Fix 2026-08-26] 传递素材原始设计方向尺寸（文件名方向，未经过oriented交换）
             # 渲染时用它判断素材是否需要旋转90度后再等比缩放（避免cover过度裁剪 / stretch变形）
             try:
@@ -275,6 +318,43 @@ class _SketchParseWorker(QThread):
             self.finished_ok.emit(result)
         except Exception as e:
             logger.exception("草图后台解析异常")
+            if self.isInterruptionRequested():
+                return
+            self.finished_err.emit(str(e))
+
+
+class _LShapeParseWorker(QThread):
+    """L 形草图异步解析 Worker：后台跑 parse_lshape_sketch（多尺度 OCR，耗时较长）。
+
+    输出：
+        finished_ok(LSketchParseResult)  → UI 弹出确认框
+        finished_err(str)                → 异常消息
+    """
+
+    finished_ok = pyqtSignal(object)
+    finished_err = pyqtSignal(str)
+
+    def __init__(self, sketch_path: str, target_w: float, target_h: float, parent=None):
+        super().__init__(parent)
+        self._sketch_path = sketch_path
+        self._target_w = target_w
+        self._target_h = target_h
+
+    def run(self):
+        try:
+            from core.pool_designer import parse_lshape_sketch
+            result = parse_lshape_sketch(
+                self._sketch_path,
+                target_outer_w_cm=self._target_w,
+                target_outer_h_cm=self._target_h,
+            )
+            # 若已被新解析取代（requestInterruption），不再发射旧结果，避免覆盖新结果
+            if self.isInterruptionRequested():
+                logger.info("[LShapeParseWorker] 已被取消，丢弃旧解析结果")
+                return
+            self.finished_ok.emit(result)
+        except Exception as e:
+            logger.exception("L 形草图后台解析异常")
             if self.isInterruptionRequested():
                 return
             self.finished_err.emit(str(e))

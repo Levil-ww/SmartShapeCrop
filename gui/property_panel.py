@@ -65,8 +65,10 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
         self._pool_worker = None  # type: PoolRenderWorker | None
         self._sketch_parse_worker = None  # type: _SketchParseWorker | None
+        self._lshape_parse_worker = None  # type: _LShapeParseWorker | None
         self._sketch_path = ""
         self._sketch_parse_result = None  # 草图解析缓存，供实时回填 UI
+        self._lshape_params = None  # L 形挖角参数（确认后写入：corner/cut_w_cm/cut_h_cm/outer_w_cm/outer_h_cm）
         # —— 持久化设置（与圆角裁剪工具共用同一份 QSettings）——
         self._app_settings = get_app_settings()
         self._build_ui()
@@ -95,8 +97,8 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         row_size_mode = QHBoxLayout()
         gb1 = QGroupBox("画布尺寸 (厘米)")
         f = QVBoxLayout(gb1)
-        self._sp_w = self._dspin(5, 450, self.design.canvas_w_cm, decimals=1)
-        self._sp_h = self._dspin(5, 450, self.design.canvas_h_cm, decimals=1)
+        self._sp_w = self._dspin(5, 500, self.design.canvas_w_cm, decimals=1)
+        self._sp_h = self._dspin(5, 500, self.design.canvas_h_cm, decimals=1)
         self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(self.design.dpi)
         f.addLayout(self._row("宽(cm)", self._sp_w))
         f.addLayout(self._row("高(cm)", self._sp_h))
@@ -154,8 +156,9 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._cb_lcorner = QComboBox()
         self._cb_lcorner.addItem("左上角", "tl"); self._cb_lcorner.addItem("右上角", "tr")
         self._cb_lcorner.addItem("左下角", "bl"); self._cb_lcorner.addItem("右下角", "br")
-        self._sp_lw = self._dspin(0, 50, self.design.l_cut_w_cm)
-        self._sp_lh = self._dspin(0, 50, self.design.l_cut_h_cm)
+        # [Fix 2026-08-28] 挖角尺寸范围放宽到 0-450cm（大尺寸 L 形挖角，如 33x450cm 图挖 100cm 角）
+        self._sp_lw = self._dspin(0, 450, self.design.l_cut_w_cm)
+        self._sp_lh = self._dspin(0, 450, self.design.l_cut_h_cm)
         fl.addLayout(self._row("挖角位置", self._cb_lcorner))
         fl.addLayout(self._row("挖角宽度(cm)", self._sp_lw))
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))

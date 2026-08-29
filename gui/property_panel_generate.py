@@ -76,6 +76,7 @@ class _GenerateMixin:
             self._matcher, tpl_dir, target_name, self._sketch_path,
             pre_parsed_result=self._sketch_parse_result,
             user_margins=user_margins,
+            lshape_params=getattr(self, '_lshape_params', None),
             parent=self)
         worker.progress.connect(self._on_pool_progress)
         worker.finished_ok.connect(self._on_pool_finished_ok)
@@ -125,6 +126,13 @@ class _GenerateMixin:
             if idx >= 0:
                 self._cb_mode.setCurrentIndex(idx)
             self._on_mode_change()
+            # L 形挖角参数同步（以 Worker 回传的 design 为准）
+            if design.mode == 'rect_lshape':
+                ci = self._cb_lcorner.findData(design.l_corner)
+                if ci >= 0:
+                    self._cb_lcorner.setCurrentIndex(ci)
+                self._sp_lw.setValue(max(0.0, design.l_cut_w_cm))
+                self._sp_lh.setValue(max(0.0, design.l_cut_h_cm))
             self._sp_outer_margin.setValue(max(0, design.outer_margin_cm))
             self._sp_mt.setValue(max(0, design.inner_margin_top_cm))
             self._sp_mb.setValue(max(0, design.inner_margin_bottom_cm))
@@ -134,9 +142,10 @@ class _GenerateMixin:
             if design.outer_bg_image:
                 self._ed_outer_img.setText(design.outer_bg_image)
 
-            # 3) 内挖素材自动匹配（仅当挖空方式为"素材填充"时）
+            # 3) 内挖素材自动匹配（仅当挖空方式为"素材填充"且非 L 形模式时）
+            #    L 形模式：L 形区域保留外框素材，挖掉的角显示洞色，不涉及内挖素材。
             inner_match_info = ""
-            if hm == "image":
+            if hm == "image" and self.design.mode != 'rect_lshape':
                 try:
                     inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
                     inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
@@ -191,16 +200,28 @@ class _GenerateMixin:
             try:
                 info = f"✅ 生成成功！\n"
                 info += f"画布：{self.design.canvas_w_cm:.1f} × {self.design.canvas_h_cm:.1f} cm\n"
-                # 内挖由设计派生值：canvas - margin_left - margin_right
-                inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
-                inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
-                info += f"内挖：{inner_w_cm:.1f} × {inner_h_cm:.1f} cm\n"
-                info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
-                         f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm\n")
+                if self.design.mode == 'rect_lshape':
+                    info += (f"L形挖角：corner={self.design.l_corner}，"
+                             f"挖角 {self.design.l_cut_w_cm:.1f} × {self.design.l_cut_h_cm:.1f} cm\n")
+                    info += (f"外框尺寸：{max(0, self.design.canvas_w_cm - 1.0):.1f} × "
+                             f"{max(0, self.design.canvas_h_cm - 1.0):.1f} cm"
+                             f"（画布含 1cm 裁剪损耗）\n")
+                else:
+                    # 内挖由设计派生值：canvas - margin_left - margin_right
+                    inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
+                    inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
+                    info += f"内挖：{inner_w_cm:.1f} × {inner_h_cm:.1f} cm\n"
+                    info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
+                             f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm\n")
                 # 内挖素材匹配结果
                 if inner_match_info:
                     info += inner_match_info
-                if sketch_result is not None and sketch_result.success:
+                if self.design.mode == 'rect_lshape':
+                    lp = getattr(self, '_lshape_params', None) or {}
+                    info += (f"L形草图识别：corner={lp.get('corner', '?')}，"
+                             f"挖角 {float(lp.get('cut_w_cm', 0)):.1f} × "
+                             f"{float(lp.get('cut_h_cm', 0)):.1f} cm\n")
+                elif sketch_result is not None and sketch_result.success:
                     sr = sketch_result
                     info += f"识别草图成功：\n"
                     info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
@@ -249,6 +270,9 @@ class _GenerateMixin:
                   若没有用户修改，返回空 dict。
         """
         result = {}
+        # L 形模式：margins 恒为 0（L 形 = 画布挖角），不检测用户边距修改
+        if getattr(self, '_lshape_params', None):
+            return result
         sr = self._sketch_parse_result
         if sr is None or not getattr(sr, 'success', False):
             return result

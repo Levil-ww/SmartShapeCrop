@@ -28,8 +28,8 @@ from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_s
 logger = logging.getLogger(__name__)
 
 from .property_panel_widgets import ColorButton, _SketchDropLabel
-from .property_panel_workers import PoolRenderWorker, _SketchParseWorker
-from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
+from .property_panel_workers import PoolRenderWorker, _SketchParseWorker, _LShapeParseWorker
+from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog, _LShapeConfirmDialog
 
 class _PoolBoxMixin:
     def _build_pool_box(self):
@@ -104,8 +104,22 @@ class _PoolBoxMixin:
         btn_sk1.clicked.connect(self._pool_pick_sketch)
         btn_sk2 = QPushButton("清除草图")
         btn_sk2.clicked.connect(self._pool_clear_sketch)
+        # 新增：L 形挖角识别（后台多尺度 OCR，识别成功弹确认框）
+        btn_sk3 = QPushButton("✂️ 识别L形挖角")
+        btn_sk3.setToolTip(
+            "把当前草图按 L 形挖角识别（A/B/C/D/E/F 六处尺寸标注）。\n"
+            "识别成功会弹出确认框，可修改挖角位置/宽/高后一键生成。\n"
+            "上传草图后也会自动尝试 L 形识别；此按钮用于手动重新识别。")
+        btn_sk3.setStyleSheet(
+            "QPushButton { background:#FFF3E0; color:#B26A00; border:1px solid #E6A23C;"
+            " border-radius:4px; padding:4px 6px; }"
+            "QPushButton:hover { background:#FFE8C2; }"
+            "QPushButton:disabled { color:#ccc; background:#f5f5f5; border-color:#ddd; }")
+        btn_sk3.clicked.connect(self._pool_try_lshape_parse)
+        self._pool_btn_lshape = btn_sk3
         sk_btns.addWidget(btn_sk1)
         sk_btns.addWidget(btn_sk2)
+        sk_btns.addWidget(btn_sk3)
         sk_desc = QLabel(
             "草图格式示例（红色线标注上下左右边距即可，\n"
             "自动识别失败时可在下方【内挖边距】手动调整）\n"
@@ -199,11 +213,11 @@ class _PoolBoxMixin:
                     raw_outer_w, raw_outer_h = parsed.width_cm, parsed.height_cm
                     gui_w = raw_outer_w + 1.0
                     gui_h = raw_outer_h + 1.0
-                    # 范围夹取
-                    gui_w = max(5.0, min(450.0, float(gui_w)))
-                    gui_h = max(5.0, min(450.0, float(gui_h)))
-                    raw_outer_w = max(5.0, min(450.0, float(raw_outer_w)))
-                    raw_outer_h = max(5.0, min(450.0, float(raw_outer_h)))
+                    # 范围夹取（上限 500：450cm 外框 + 1cm 损耗 = 451cm 画布）
+                    gui_w = max(5.0, min(500.0, float(gui_w)))
+                    gui_h = max(5.0, min(500.0, float(gui_h)))
+                    raw_outer_w = max(5.0, min(500.0, float(raw_outer_w)))
+                    raw_outer_h = max(5.0, min(500.0, float(raw_outer_h)))
                     # 保存原始外框尺寸（无损耗），供草图解析像素→厘米换算用
                     self._pool_raw_outer_w = raw_outer_w
                     self._pool_raw_outer_h = raw_outer_h
@@ -214,8 +228,8 @@ class _PoolBoxMixin:
                         f"（含1cm损耗，目标外框 {raw_outer_w:.1f}×{raw_outer_h:.1f} cm，可在画布尺寸中微调）")
                 else:
                     # 普通模式：直接使用解析结果，无 +1cm
-                    w = max(5.0, min(450.0, float(w)))
-                    h = max(5.0, min(450.0, float(h)))
+                    w = max(5.0, min(500.0, float(w)))
+                    h = max(5.0, min(500.0, float(h)))
                     self._pool_raw_outer_w = w
                     self._pool_raw_outer_h = h
                     self._sp_w.setValue(w)
@@ -483,7 +497,10 @@ class _PoolBoxMixin:
             logger.warning(f"草图加载为 PIL Image 失败: {e}")
             self.sketch_loaded.emit(None)
         # —— 3) 后台异步解析草图（若目标尺寸已知）——
+        # 矩形解析：上传即跑，快速回填 4 边距（现有行为）
         self._pool_auto_parse_sketch()
+        # L 形解析：后台多尺度 OCR（较慢），成功弹确认框；失败自动忽略（保留矩形结果）
+        self._pool_try_lshape_parse()
 
 
     def _pool_auto_parse_sketch(self):
@@ -615,9 +632,139 @@ class _PoolBoxMixin:
         self._set_pool_status(f"草图解析异常：{err_msg}")
 
 
+    # ================= L 形挖角识别 =================
+
+    def _pool_try_lshape_parse(self):
+        """启动后台 L 形草图解析（多尺度 OCR，耗时较长）。
+
+        与矩形解析并行：矩形结果先回填 4 边距；L 形成功则弹确认框，
+        由用户决定是否切换为 L 形挖角模式。失败/取消均不影响矩形结果。
+        """
+        if not self._sketch_path or not os.path.isfile(self._sketch_path):
+            self._set_pool_status("请先上传尺寸草图，再进行 L 形挖角识别", is_error=True)
+            return
+        if self._pool_btn_lshape is not None:
+            self._pool_btn_lshape.setEnabled(False)
+            self._pool_btn_lshape.setText("识别中…")
+        # 目标尺寸：优先文件名解析的原始外框（无 1cm 损耗）
+        raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
+        raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
+        if raw_w <= 0 or raw_h <= 0:
+            raw_w = self._sp_w.value()
+            raw_h = self._sp_h.value()
+        if raw_w <= 0 or raw_h <= 0:
+            self._set_pool_status("请先填写目标尺寸，再进行 L 形挖角识别", is_error=True)
+            if self._pool_btn_lshape is not None:
+                self._pool_btn_lshape.setEnabled(True)
+                self._pool_btn_lshape.setText("✂️ 识别L形挖角")
+            return
+
+        # 取消前一次未完成的 L 形解析（避免旧结果弹框）
+        if self._lshape_parse_worker is not None and self._lshape_parse_worker.isRunning():
+            try:
+                self._lshape_parse_worker.requestInterruption()
+                self._lshape_parse_worker.wait(2000)
+            except Exception:
+                pass
+        worker = _LShapeParseWorker(self._sketch_path, raw_w, raw_h, self)
+        worker.finished_ok.connect(self._on_lshape_parsed)
+        worker.finished_err.connect(self._on_lshape_parse_err)
+        worker.finished.connect(self._on_lshape_worker_finished)
+        self._lshape_parse_worker = worker
+        self._set_pool_status(f"正在识别 L 形挖角（多尺度 OCR，约 10~20 秒）…")
+        worker.start()
+
+    def _on_lshape_worker_finished(self):
+        """L 形解析线程结束：恢复按钮状态（无论成功失败）"""
+        if self._pool_btn_lshape is not None:
+            self._pool_btn_lshape.setEnabled(True)
+            self._pool_btn_lshape.setText("✂️ 识别L形挖角")
+
+    def _on_lshape_parsed(self, result):
+        """L 形解析完成：成功 → 弹确认框；非 L 形 → 提示并保留矩形结果。"""
+        try:
+            # 防御：忽略已过期的旧 worker（sender 不再是当前 worker）
+            if self.sender() is not self._lshape_parse_worker:
+                logger.info("[PropertyPanel] 忽略已过期的 L 形解析结果")
+                return
+            if not result.success:
+                # 不是 L 形（或尺寸不全）：保留矩形解析结果，仅提示
+                self._set_pool_status(
+                    f"ℹ️ L 形识别未成功（已按矩形解析处理）：{result.message}", is_error=False)
+                return
+            # 弹出确认框（阻塞，用户决定）
+            dlg = _LShapeConfirmDialog(result, self)
+            if dlg.exec_():
+                corner, cut_w_cm, cut_h_cm = dlg.values()
+                self._apply_lshape_params(corner, cut_w_cm, cut_h_cm, result)
+            else:
+                self._set_pool_status(
+                    "已取消 L 形挖角（保留矩形解析结果，可点「识别L形挖角」重新识别）")
+        except Exception as e:
+            logger.exception(f"[PropertyPanel] _on_lshape_parsed 异常: {e}")
+            self._set_pool_status(f"L 形识别回调异常：{e}", is_error=True)
+
+    def _on_lshape_parse_err(self, err_msg: str):
+        """L 形解析异常：忽略（矩形结果不受影响）"""
+        logger.warning(f"[PropertyPanel] L 形解析异常（忽略）: {err_msg}")
+        self._set_pool_status(f"L 形识别异常（已忽略，保留矩形结果）：{err_msg}")
+
+    def _apply_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float, result):
+        """用户确认 L 形挖角：保存参数 → 回填 UI → 切换模式 → 触发预览。
+
+        回填：
+            - 裁剪模式 → rect_lshape（L形挖角）
+            - L 形参数组：挖角位置 / 宽度 / 高度
+            - 画布尺寸 = 外框 + 1cm 损耗（与水池模式一致）
+        """
+        self._lshape_params = {
+            'corner': corner,
+            'cut_w_cm': max(0.0, cut_w_cm),
+            'cut_h_cm': max(0.0, cut_h_cm),
+            'outer_w_cm': max(0.0, float(result.outer_w_cm or 0)),
+            'outer_h_cm': max(0.0, float(result.outer_h_cm or 0)),
+        }
+        try:
+            # 1) 裁剪模式 → L 形挖角
+            idx = self._cb_mode.findData('rect_lshape')
+            if idx >= 0:
+                self._cb_mode.setCurrentIndex(idx)
+            self._on_mode_change()
+            # 2) L 形参数组回填
+            ci = self._cb_lcorner.findData(corner)
+            if ci >= 0:
+                self._cb_lcorner.setCurrentIndex(ci)
+            self._sp_lw.setValue(max(0.0, cut_w_cm))
+            self._sp_lh.setValue(max(0.0, cut_h_cm))
+            # 3) 画布尺寸 = 外框 + 1cm 损耗（保存 raw 外框供解析换算）
+            if result.outer_w_cm > 0 and result.outer_h_cm > 0:
+                self._pool_raw_outer_w = float(result.outer_w_cm)
+                self._pool_raw_outer_h = float(result.outer_h_cm)
+                self._sp_w.setValue(float(result.outer_w_cm) + 1.0)
+                self._sp_h.setValue(float(result.outer_h_cm) + 1.0)
+            # 4) 触发预览渲染
+            self._set_pool_status(
+                f"✅ L 形挖角已确认：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm，"
+                f"外框 {result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm。\n"
+                f"点击下方「匹配模板 → 解析草图 → 生成预览」完成素材匹配与渲染。")
+            self._apply_quiet()
+        except Exception as e:
+            logger.exception(f"[PropertyPanel] _apply_lshape_params 异常: {e}")
+            self._set_pool_status(f"L 形参数回填异常：{e}", is_error=True)
+
+
     def _pool_clear_sketch(self):
         self._sketch_path = ""
         self._sketch_parse_result = None
+        self._lshape_params = None
+        # 取消正在运行的 L 形解析（避免旧结果弹框）
+        if self._lshape_parse_worker is not None and self._lshape_parse_worker.isRunning():
+            try:
+                self._lshape_parse_worker.requestInterruption()
+                self._lshape_parse_worker.wait(2000)
+            except Exception:
+                pass
+        self._lshape_parse_worker = None
         self._pool_sk_preview.clear()
         # 恢复默认的拖拽提示样式和文字
         self._pool_sk_preview.setText("（未上传）\n或拖入图片")

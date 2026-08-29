@@ -638,12 +638,40 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     # 不需要保存/恢复 inner_mask 内部的像素
     # 白色填充只作用于 inner_mask 内部，外部的素材图花纹自然保留
     
-    # 白色填充内部挖空区域
-    canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+    # [Fix 2026-08-28] 裁剪有图（L 形挖角）语义：
+    # rect_lshape + 池素材时，"L 形区域保留外框素材、被切掉的角显示洞色"。
+    # 与旧"素材中间挖 L 形洞"（inner_mask 覆盖为 inner_fill）不同——
+    # 这里 L 形 = 保留区（素材裁成 L 形），cut 角 = 挖掉区（填 hole_bg_color）。
+    lshape_cut_done = False
+    if design.mode == 'rect_lshape' and is_pool_with_material:
+        from .geometry import build_lshape_mask, compute_inner_corner_radii
+        lshape = design.l_shape_px()
+        inner_rect = design.inner_rect_px()
+        outer = design.outer_rect_px()
+        corners = design.corners_px
+        inner_corners = compute_inner_corner_radii(
+            outer, inner_rect, corners,
+            direct=design.pool_hole_transparent,
+        )
+        # full_inner = 整个 inner_rect；inner_mask = L 形（inner_rect 挖角）
+        # 差集 = 被切掉的角（cut 区域）
+        full_inner_img = build_lshape_mask(
+            (W, H), inner_rect, lshape.corner,
+            0, 0,
+            inner_corners, fill_value=255)
+        cut_area_mask = np.array(full_inner_img, dtype=bool) & ~inner_mask
+        if cut_area_mask.any():
+            hole_arr = np.full((H, W, 3), design.hole_bg_color, dtype=np.uint8)
+            canvas_arr[cut_area_mask] = hole_arr[cut_area_mask]
+        # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
+        lshape_cut_done = True
+    else:
+        # 白色填充内部挖空区域
+        canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
 
     # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
     # inner_mask 是 L 形（不含 cut 区域），需要将 cut 区域也填充
-    if design.mode == 'rect_lshape':
+    if design.mode == 'rect_lshape' and not lshape_cut_done:
         from .geometry import build_lshape_mask, compute_inner_corner_radii
         lshape = design.l_shape_px()
         inner_rect = design.inner_rect_px()
