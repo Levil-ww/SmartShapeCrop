@@ -1350,6 +1350,50 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         ocr_raw, zone_of, excluded_fields, excluded_values,
         n_holes, layout)
 
+    # ===== [NUMERIC SANITY Add-On 2026-08-29] per-hole 桶 outlier 修正 =====
+    # OCR 偶发把「21.7」读成「217」（丢小数点），Step6 Post A 错删了几何包含
+    # 的正确值，留下错误的整数。这里在进入 Step7 之前做合理性 cap + 小数点
+    # 恢复：217→21.7，215→21.5，413→41.3 等。 Staff Engineer Mode 铁律：
+    # 纯 ADD-ON，旧 buckets 构建代码一字未改。
+    _cap_h = max(target_outer_w_cm * 0.9, 1.0) if target_outer_w_cm > 0 else 999.0
+    _cap_v = max(target_outer_h_cm * 0.9, 1.0) if target_outer_h_cm > 0 else 999.0
+    for f in list(buckets.keys()):
+        # 只处理 margin_* 和 inner_* 桶，gap/outer 等不动
+        is_margin = f.startswith('margin_')
+        is_inner_dim = f.startswith('inner_')
+        is_gap = f.startswith('gap_')
+        is_outer = f in ('outer_w', 'outer_h')
+        if not (is_margin or is_inner_dim):
+            continue
+        # 判定轴向上限（margin_top/bottom 用 _cap_v；margin_left/right 用 _cap_h）
+        if is_margin:
+            axis_limit = _cap_v if ('top' in f or 'bottom' in f) else _cap_h
+        else:  # inner_w / inner_h
+            axis_limit = _cap_h if f.endswith('_w') else _cap_v
+        # 对桶内每个候选做 outlier 修正
+        _repaired = []
+        for (v, c, bb) in buckets[f]:
+            if v <= axis_limit:
+                _repaired.append((v, c, bb))
+                continue
+            # 值超 cap → 尝试小数点恢复（OCR 丢了小数点）
+            rec = None
+            if abs(v - round(v)) <= 0.01:  # 整数 → 小数丢失
+                iv = int(round(v))
+                s = str(iv)
+                # 3 位整数 → 倒数 2 位加小数点：217→21.7, 413→41.3
+                if len(s) == 3:
+                    rec = float(f"{s[:2]}.{s[2:]}")
+                # 2 位整数 → 只有当恢复后更合理才尝试（如 99→9.9 但 margin 一般>10，跳过）
+            if rec is not None and 0.3 <= rec <= axis_limit:
+                _repaired.append((rec, c * 0.85, bb))
+                logger.info(f"[MH Step6-Sanity] {f}: {v}→{rec} (小数恢复)")
+            # else: 恢复失败 → 丢弃这个 outlier
+        if _repaired:
+            buckets[f] = _repaired
+        else:
+            del buckets[f]  # 所有候选都是 outlier → 删桶（后续 fallback）
+
     # ==== Step 7: 外框候选枚举选优 ====
     def _try_assignment(tw_cand, th_cand):
         asg = _build_multi_hole_assignment(

@@ -259,6 +259,30 @@ class PoolRenderWorker(QThread):
                     gaps = list(getattr(sketch_result, 'hole_gaps_cm', []) or [])
                     layout = getattr(sketch_result, 'layout_type', 'horizontal') or 'horizontal'
 
+                    # ===== [MULTI-HOLE SANITY Add-On 2026-08-29] 全局 mt/mb/ml/mr 覆盖 =====
+                    # Bug fix：共享 margin_top/margin_bottom 桶可能为空（每个洞有独立 mt），
+                    # 导致 L236-239 把 design.inner_margin_* 全设为 0 → GUI 边距栏全 0 →
+                    # 渲染洞 y 对齐到画布顶。修复：用 HoleInfo 的 per-hole 值的中位数
+                    # 作为全局 fallback，保证 GUI 显示合理值；per-hole 计算路径不受影响。
+                    _all_mt = [getattr(h, 'margin_top_cm', 0) for h in holes if getattr(h, 'margin_top_cm', 0) > 0]
+                    _all_mb = [getattr(h, 'margin_bottom_cm', 0) for h in holes if getattr(h, 'margin_bottom_cm', 0) > 0]
+                    _all_ml = [getattr(h, 'margin_left_cm', 0) for h in holes if getattr(h, 'margin_left_cm', 0) > 0]
+                    _all_mr = [getattr(h, 'margin_right_cm', 0) for h in holes if getattr(h, 'margin_right_cm', 0) > 0]
+                    if _all_mt:
+                        design.inner_margin_top_cm = min(_all_mt)  # 取最小值（最保守）
+                    if _all_mb:
+                        design.inner_margin_bottom_cm = min(_all_mb)
+                    if _all_ml:
+                        design.inner_margin_left_cm = min(_all_ml)
+                    if _all_mr:
+                        design.inner_margin_right_cm = min(_all_mr)
+                    self._log(
+                        f"[多洞全局边距修正] mt={design.inner_margin_top_cm:.1f} "
+                        f"mb={design.inner_margin_bottom_cm:.1f} "
+                        f"ml={design.inner_margin_left_cm:.1f} "
+                        f"mr={design.inner_margin_right_cm:.1f}"
+                    )
+
                     # 画布坐标原点 = (outer_margin_cm, outer_margin_cm)。水池模式下通常=0。
                     ox_cm = design.outer_margin_cm
                     oy_cm = design.outer_margin_cm
