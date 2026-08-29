@@ -755,6 +755,256 @@ def test_92_multi_hole_border_each_hole_four_sides_10px():
     logger.info(f"[T92] 多洞每洞 4 边 10px 黑框 OK ({bw}px)，每洞中心均非 BLACK ✓")
 
 
+def test_93_user_multihole_params_override_sketch_in_worker():
+    """T93: 多洞 UI 用户修改的洞宽/洞高/间距，经 PoolRenderWorker 正确覆盖 sketch 值并重算坐标。
+
+    模拟流程（纯后台，不启动 GUI）：
+    1) 构造假的 TemplateMatcher（外框素材匹配）—— 用 tempfile + 1x1 占位图；
+    2) 构造假的 MultiHoleParseResult sketch_result（通过 pre_parsed_result 注入 Worker 避免真实 parse_sketch）；
+    3) Worker 启用 user_multihole_params：洞1 w/h、洞2 w/h、间距1↔2 都人为改到不同值；
+    4) Worker 输出 design.pool_holes_cm 长度==2，每个洞的 w/h/间距 与 UI 值严格一致，
+       且 x_cm 的连续性成立（ml + w1 + gap12 + w2 + mr == canvas_w）。
+
+    这覆盖的契约是：多洞参数面板值必须"像单洞边距一样"经过 Worker 进入 design 数据。
+    """
+    import os, tempfile
+    try:
+        from PyQt5.QtWidgets import QApplication  # noqa: F401
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"PyQt5 不可用: {e}")
+    try:
+        from core.geometry import CropDesign
+        from core.parser.template_matcher import TemplateMatcher
+        from core.pool_designer import HoleInfo, MultiHoleParseResult
+        from gui.property_panel_workers import PoolRenderWorker
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"模块导入失败: {e}")
+
+    # —— 构造假模板库目录（采用 test_template_matcher.py 验证通过的 ;竖版WxHcm 形态）——
+    with tempfile.TemporaryDirectory() as tpl_dir:
+        from PIL import Image as _PILImage
+        # 与核心测试用例相同的"产品-...-花型;竖版WxHcm.jpg"解析格式，保证 TemplateMatcher 100% 命中。
+        outer_p = os.path.join(tpl_dir, "双面草-定制-定制尺寸-安妮森林;竖版236x484cm.jpg")
+        _PILImage.new('RGB', (100, 50), (128, 128, 128)).save(outer_p, 'JPEG', quality=90)
+
+        matcher = TemplateMatcher()
+        matcher.set_template_dir(tpl_dir)
+        matcher.scan_library(force=True)
+
+        # —— 构造假 sketch_result：2 横排洞，outer=247x50cm（与图4示例接近）——
+        outer_w = 247.0
+        outer_h = 50.0
+        h1 = HoleInfo(index=0, w_cm=50.0, h_cm=17.0,
+                      margin_top_cm=10.0, margin_bottom_cm=23.0,
+                      margin_left_cm=36.0, margin_right_cm=0.0)
+        h2 = HoleInfo(index=1, w_cm=58.0, h_cm=26.0,
+                      margin_top_cm=10.0, margin_bottom_cm=15.0,
+                      margin_left_cm=0.0,  margin_right_cm=78.0)
+        sr = MultiHoleParseResult()
+        sr.success = True
+        sr.message = "fake multihole"
+        sr.outer_w_cm = outer_w
+        sr.outer_h_cm = outer_h
+        sr.is_multi_hole = True
+        sr.layout_type = 'horizontal'
+        sr.holes = [h1, h2]
+        sr.hole_gaps_cm = [20.0]
+        # 补齐 SketchParseResult 兼容字段（PoolWorker 全局边距优先使用这些）
+        sr.margin_top_cm = 10.0
+        sr.margin_bottom_cm = 15.0
+        sr.margin_left_cm = 36.0
+        sr.margin_right_cm = 78.0
+
+        # UI 修改：洞1→54x18，洞2→61x26，间距1↔2→19
+        # （正好对齐用户图4上：洞1=54×18，洞2=61×26，间距=19 cm）
+        ump = {
+            'active_count': 2,
+            'holes_wh': [(54.0, 18.0), (61.0, 26.0)],
+            'gaps_cm': [19.0],
+            'layout_type': 'horizontal',
+        }
+
+        # 构造一个真实存在的临时草图文件（哪怕空文件也行），让 Worker L150 条件 True，
+        # 从而进入「使用界面已解析的草图结果」分支，把 pre_parsed_result 赋给 sketch_result。
+        # 这与真实 GUI 行为一致：用户点击按钮时 sketch_path 几乎总是存在的。
+        import tempfile as _tf
+        _sketch_fh, _sketch_path = _tf.mkstemp(suffix='.jpg', prefix='t93_fake_sketch_')
+        os.close(_sketch_fh)
+        with open(_sketch_path, 'wb') as _f:
+            # 写一个最小有效 JPEG（1x1 白图），避免 parse_sketch 在极端 fallback 场景下直接 IOError
+            from PIL import Image as _PI2
+            _PI2.new('RGB', (10, 10), (255, 255, 255)).save(_f, 'JPEG', quality=90)
+        try:
+            # target 文件名：采用同"花型;横版WxHcm后缀"解析格式，与 outer=247×50（宽>高 横版）一致。
+            target = "双面草-定制-定制尺寸-安妮森林;横版248x51cm"
+            worker = PoolRenderWorker(
+                matcher=matcher,
+                template_dir=tpl_dir,
+                target_filename=target,
+                sketch_path=_sketch_path,   # 真实文件，触发 pre_parsed_result 赋值
+                pre_parsed_result=sr,
+                user_margins=None,
+                user_multihole_params=ump,
+            )
+            # 直接同步 run()，不走 QThread.start() 事件循环
+            ok_results: list[tuple] = []
+            err_results: list[str] = []
+            worker.finished_ok.connect(lambda d, s, t: ok_results.append((d, s, t)))
+            worker.finished_err.connect(lambda m: err_results.append(m))
+            worker.run()
+
+            assert not err_results, f"PoolRenderWorker 意外失败: {err_results}"
+            assert ok_results, "Worker 未发射 finished_ok"
+            design, sketch_result, _log_txt = ok_results[0]
+            d = design  # type: CropDesign
+
+            # —— 核心断言：UI 修改已写入 design.pool_holes_cm ——
+            assert getattr(d, 'pool_is_multi_hole', False) is True
+            assert len(d.pool_holes_cm) == 2, f"洞数应为2，实际={len(d.pool_holes_cm)}"
+            assert d.pool_holes_gaps_cm == [19.0], f"间距覆盖失败: {d.pool_holes_gaps_cm}"
+            h1c, h2c = d.pool_holes_cm
+            # w/h 必须是 UI 值（Worker 不应该再偷偷 +1 TRIM_CM ——
+            #   UI 已经直接填入与 sketch 扩展后一致的量级，因此相等即可）
+            assert h1c['w_cm'] == pytest.approx(54.0, abs=0.01), f"洞1宽未覆盖: {h1c['w_cm']}"
+            assert h1c['h_cm'] == pytest.approx(18.0, abs=0.01), f"洞1高未覆盖: {h1c['h_cm']}"
+            assert h2c['w_cm'] == pytest.approx(61.0, abs=0.01), f"洞2宽未覆盖: {h2c['w_cm']}"
+            assert h2c['h_cm'] == pytest.approx(26.0, abs=0.01), f"洞2高未覆盖: {h2c['h_cm']}"
+
+            # 几何自洽：横排的 x 必须连续 ——
+            #   x1 = ml ; x2 = x1 + w1 + gap ; 最后 x2 + w2 + mr == canvas_w
+            TRIM_CM = 1.0  # 与 Worker 一致：canvas = outer + 1cm
+            canvas_w_expected = outer_w + TRIM_CM
+            assert d.canvas_w_cm == pytest.approx(canvas_w_expected, abs=0.01)
+            x1_expected = d.inner_margin_left_cm        # 36.0
+            x2_expected = x1_expected + 54.0 + 19.0      # 109.0
+            assert h1c['x_cm'] == pytest.approx(x1_expected, abs=0.01), (
+                f"洞1 x 错误: {h1c['x_cm']}, 期望 {x1_expected}")
+            assert h2c['x_cm'] == pytest.approx(x2_expected, abs=0.01), (
+                f"洞2 x 错误: {h2c['x_cm']}, 期望 {x2_expected}")
+            total = h2c['x_cm'] + h2c['w_cm'] + d.inner_margin_right_cm
+            assert total == pytest.approx(d.canvas_w_cm, abs=0.01), (
+                f"横排不自洽: x2+w2+mr={total} != canvas_w={d.canvas_w_cm}")
+
+            # per-hole y：mt=10 时 y1=y2=10.0（因为两洞 mt=10）
+            assert h1c['y_cm'] == pytest.approx(10.0, abs=0.01), f"洞1 y 错误: {h1c['y_cm']}"
+            # y2 独立边距： sketch h2.margin_top=10（与全局一致）
+            assert h2c['y_cm'] == pytest.approx(10.0, abs=0.01), f"洞2 y 错误: {h2c['y_cm']}"
+
+            # 每洞素材匹配查询输入：与 pool_holes_cm 解耦（在 _on_pool_finished_ok 内部读取）
+            # 这里至少保证洞素材字段是可写、且 w/h 可用作查询尺寸。
+            d.pool_holes_cm[0]['inner_material_path'] = '洞1-54x18-fake.jpg'
+            d.pool_holes_cm[1]['inner_material_path'] = '洞2-61x26-fake.jpg'
+            assert '54x18' in d.pool_holes_cm[0]['inner_material_path']
+            assert '61x26' in d.pool_holes_cm[1]['inner_material_path']
+            logger.info("[T93] 多洞UI→Worker 覆盖 + 几何自洽 OK ✓")
+        finally:
+            try:
+                os.unlink(_sketch_path)
+            except Exception:
+                pass
+
+
+
+def test_94_multihole_none_single_hole_no_impact():
+    """T94: user_multihole_params=None（等价 GroupBox 隐藏的单洞场景）→ 零影响。
+
+    与 T93 相同骨架，但不传入 user_multihole_params；且 sr.is_multi_hole=False
+    模拟纯单洞草图，验证：
+      - pool_is_multi_hole == False
+      - pool_holes_cm == []（默认空）
+      - Worker 正常走旧单洞分支：inner=canvas-margins 成立。
+    """
+    import os, tempfile
+    try:
+        from PyQt5.QtWidgets import QApplication  # noqa: F401
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"PyQt5 不可用: {e}")
+    try:
+        from core.geometry import CropDesign
+        from core.parser.template_matcher import TemplateMatcher
+        from core.pool_designer import SketchParseResult
+        from gui.property_panel_workers import PoolRenderWorker
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"模块导入失败: {e}")
+
+    with tempfile.TemporaryDirectory() as tpl_dir:
+        from PIL import Image as _PILImage
+        # outer=133×60.5 是宽>高的横版图；文件名用 ";横版133x60.5cm" 匹配方向，
+        # 避免 parse_filename 二次 swap 导致 canvas 尺寸反了。
+        outer_p = os.path.join(tpl_dir, "吸水皮革-定制-定制尺寸-庄园秘境;横版133x60.5cm.jpg")
+        _PILImage.new('RGB', (100, 50), (100, 100, 100)).save(outer_p, 'JPEG', quality=90)
+
+        matcher = TemplateMatcher()
+        matcher.set_template_dir(tpl_dir)
+        matcher.scan_library(force=True)
+
+        outer_w, outer_h = 133.0, 60.5
+        sr = SketchParseResult()
+        sr.success = True
+        sr.message = "fake single"
+        sr.outer_w_cm = outer_w
+        sr.outer_h_cm = outer_h
+        sr.inner_w_cm = 60.5 - 10.0 - 10.0  # placeholder
+        sr.inner_h_cm = 133.0 - 10.0 - 10.0
+        sr.margin_top_cm = 9.5
+        sr.margin_bottom_cm = 9.5
+        sr.margin_left_cm = 6.5
+        sr.margin_right_cm = 6.5
+        sr.is_multi_hole = False
+        sr.layout_type = 'single'
+        sr.holes = []
+        sr.hole_gaps_cm = []
+
+        # 与 T93 同样修法：给一个真实临时草图文件路径，确保 pre_parsed_result 被使用。
+        import tempfile as _tf2
+        _sk2_fh, _sk2_path = _tf2.mkstemp(suffix='.jpg', prefix='t94_fake_sketch_')
+        os.close(_sk2_fh)
+        with open(_sk2_path, 'wb') as _f2:
+            from PIL import Image as _PI3
+            _PI3.new('RGB', (10, 10), (255, 255, 255)).save(_f2, 'JPEG', quality=90)
+        try:
+            # 不传 user_multihole_params（=None），且草图本身是单洞
+            worker = PoolRenderWorker(
+                matcher=matcher,
+                template_dir=tpl_dir,
+                target_filename="吸水皮革-定制-定制尺寸-庄园秘境;横版134x61.5cm",
+                sketch_path=_sk2_path,
+                pre_parsed_result=sr,
+                user_margins=None,
+                user_multihole_params=None,
+            )
+            ok_results: list[tuple] = []
+            err_results: list[str] = []
+            worker.finished_ok.connect(lambda d, s, t: ok_results.append((d, s, t)))
+            worker.finished_err.connect(lambda m: err_results.append(m))
+            worker.run()
+
+            assert not err_results, f"PoolRenderWorker 意外失败: {err_results}"
+            design = ok_results[0][0]  # type: CropDesign
+            # —— 零侵入契约断言 ——
+            assert getattr(design, 'pool_is_multi_hole', False) is False
+            assert getattr(design, 'pool_holes_cm', []) == []
+            # 单洞内挖不变式：inner = canvas - margins（canvas = outer + TRIM）
+            TRIM = 1.0
+            exp_w = outer_w + TRIM - design.inner_margin_left_cm - design.inner_margin_right_cm
+            exp_h = outer_h + TRIM - design.inner_margin_top_cm - design.inner_margin_bottom_cm
+            inner_w = design.canvas_w_cm - design.inner_margin_left_cm - design.inner_margin_right_cm
+            inner_h = design.canvas_h_cm - design.inner_margin_top_cm - design.inner_margin_bottom_cm
+            assert inner_w == pytest.approx(exp_w, abs=0.01), (
+                f"inner_w={inner_w} != exp_w={exp_w} | "
+                f"canvas={design.canvas_w_cm}x{design.canvas_h_cm} | "
+                f"ml={design.inner_margin_left_cm} mr={design.inner_margin_right_cm}")
+            assert inner_h == pytest.approx(exp_h, abs=0.01), (
+                f"inner_h={inner_h} != exp_h={exp_h} | "
+                f"mt={design.inner_margin_top_cm} mb={design.inner_margin_bottom_cm}")
+            logger.info("[T94] 单洞/多洞UI隐藏时，Worker 行为零变更 ✓")
+        finally:
+            try:
+                os.unlink(_sk2_path)
+            except Exception:
+                pass
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s [%(name)s] %(levelname)s %(message)s')

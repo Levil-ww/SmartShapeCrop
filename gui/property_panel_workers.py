@@ -48,6 +48,7 @@ class PoolRenderWorker(QThread):
                  sketch_path: str = "",
                  pre_parsed_result=None,
                  user_margins: dict = None,
+                 user_multihole_params: dict = None,
                  lshape_params: dict = None,
                  parent=None):
         """
@@ -56,6 +57,18 @@ class PoolRenderWorker(QThread):
             值: float (cm)
         当 user_margins 提供时，会覆盖 pre_parsed_result 中的对应边距值，
         确保素材匹配使用用户修正后的内挖尺寸。
+
+        user_multihole_params: 可选 dict，包含用户在多洞参数面板上手动修改后的
+            洞宽/洞高/洞间距真值（仅多洞场景使用，单洞必须为 None）。
+            形状：{
+                'active_count': int,          # 当前激活洞数（>=2 才生效）
+                'holes_wh': [(w,h),(w,h),..], # 每洞宽/高，单位 cm；长度==active_count
+                'gaps_cm':   [g12, g23,..],   # 洞1↔洞2 / 洞2↔洞3 间距，单位 cm；len==active_count-1
+                'layout_type': 'horizontal'|'vertical'|'mixed',
+            }
+        提供时：在 sketch 多洞分支构建完 design.pool_holes_cm 之后，再用 UI 真值覆盖
+        每洞 w/h/间距 + 重算 x/y 画布坐标，确保后续每洞素材匹配与预览几何一致。
+        单洞/多洞数据不足 2 洞 → 静默忽略。
 
         lshape_params: 可选 dict，L 形挖角模式参数。
             键: 'corner' (tl/tr/bl/br), 'cut_w_cm', 'cut_h_cm', 'outer_w_cm', 'outer_h_cm'
@@ -69,6 +82,9 @@ class PoolRenderWorker(QThread):
         self._sketch = sketch_path
         self._pre_parsed = pre_parsed_result  # 预解析结果（来自 PropertyPanel 自动解析）
         self._user_margins = user_margins  # 用户手动修改的边距（覆盖 pre_parsed）
+        # ===== [MULTI-HOLE Add-On 2026-08-29] UI 多洞改动 → Worker 覆盖 =====
+        # 单洞（None 或 active_count<2）→ 零行为影响，旧分支不变。
+        self._user_multihole = user_multihole_params or None
         self._lshape_params = lshape_params or None  # L 形挖角参数（None = 矩形/普通水池模式）
         self._log_lines: list[str] = []
 
@@ -406,6 +422,110 @@ class PoolRenderWorker(QThread):
                             f"  Hole[{i}] 画布位置 x={hc['x_cm']:.1f} y={hc['y_cm']:.1f} "
                             f"size={hc['w_cm']:.1f}x{hc['h_cm']:.1f} cm"
                         )
+
+                    # ===== [MULTI-HOLE UI OVERRIDE Add-On 2026-08-29] =====
+                    # 用户在多洞参数面板上改动后：UI → _detect_multihole_edits() →
+                    # self._user_multihole → 覆盖每洞 w/h/间距并重算 x/y，保证
+                    # 后续每洞素材匹配 (_on_pool_finished_ok) 和预览都使用 UI 最新值。
+                    # 单洞（_user_multihole 为 None 或 active_count<2）→ 直接跳过。
+                    _ump = self._user_multihole
+                    if isinstance(_ump, dict):
+                        _n = int(_ump.get('active_count', 0) or 0)
+                        _wh = _ump.get('holes_wh', []) or []
+                        _gs = _ump.get('gaps_cm', []) or []
+                        if _n >= 2 and len(_wh) >= _n and len(_gs) >= (_n - 1):
+                            # layout 优先级：UI 传入 > sketch_result > design.pool_layout_type
+                            _lo = (_ump.get('layout_type')
+                                   or getattr(sketch_result, 'layout_type', None)
+                                   or getattr(design, 'pool_layout_type', None)
+                                   or 'horizontal')
+                            design.pool_layout_type = _lo
+                            # 截取严格 == _n 段数据（避免 UI 传长了误写）
+                            _new_wh = [(max(0.0, float(w)), max(0.0, float(h)))
+                                       for (w, h) in list(_wh)[:_n]]
+                            _new_gaps = [max(0.0, float(g)) for g in list(_gs)[:(_n - 1)]]
+                            # 保留原 per-hole 边距 (mt/mb/ml/mr) 作为 y/x 起点的真值
+                            # —— 这些来自 sketch 方向锁定，用户没改就不变。
+                            _old = list(design.pool_holes_cm or [])
+                            def _mt_i(i):
+                                if 0 <= i < len(_old):
+                                    v = _old[i].get('mt_cm', 0.0)
+                                    if v and v > 0:
+                                        return float(v)
+                                return design.inner_margin_top_cm
+                            def _mb_i(i):
+                                if 0 <= i < len(_old):
+                                    v = _old[i].get('mb_cm', 0.0)
+                                    if v and v > 0:
+                                        return float(v)
+                                return design.inner_margin_bottom_cm
+                            def _ml_i(i, shared_ml):
+                                if 0 <= i < len(_old):
+                                    v = _old[i].get('ml_cm', 0.0)
+                                    if v and v > 0:
+                                        return float(v)
+                                return shared_ml if i == 0 else 0.0
+                            def _mr_i(i, shared_mr):
+                                if 0 <= i < len(_old):
+                                    v = _old[i].get('mr_cm', 0.0)
+                                    if v and v > 0:
+                                        return float(v)
+                                return shared_mr if i == _n - 1 else 0.0
+                            _ox = design.outer_margin_cm
+                            _oy = design.outer_margin_cm
+                            _s_ml = design.inner_margin_left_cm
+                            _s_mt = design.inner_margin_top_cm
+                            _s_mr = design.inner_margin_right_cm
+                            _new_holes = []
+                            if _lo == 'vertical':
+                                cursor_y = _oy + _mt_i(0)
+                                for i, (_w, _h) in enumerate(_new_wh):
+                                    if i > 0:
+                                        cursor_y += _new_gaps[i - 1]
+                                    hmt = _mt_i(i)
+                                    hmb = _mb_i(i)
+                                    hml = _ml_i(i, _s_ml)
+                                    hmr = _mr_i(i, _s_mr)
+                                    _new_holes.append({
+                                        'x_cm': _ox + hml,
+                                        'y_cm': cursor_y,
+                                        'w_cm': _w, 'h_cm': _h,
+                                        'mt_cm': hmt, 'mb_cm': hmb,
+                                        'ml_cm': hml, 'mr_cm': hmr,
+                                    })
+                                    cursor_y += _h
+                            else:  # horizontal / mixed → 横排语义（占 90% 业务）
+                                cursor_x = _ox + _ml_i(0, _s_ml)
+                                for i, (_w, _h) in enumerate(_new_wh):
+                                    if i > 0:
+                                        cursor_x += _new_gaps[i - 1]
+                                    hmt = _mt_i(i)
+                                    hmb = _mb_i(i)
+                                    hml = _ml_i(i, _s_ml)
+                                    hmr = _mr_i(i, _s_mr)
+                                    _new_holes.append({
+                                        'x_cm': cursor_x,
+                                        'y_cm': _oy + hmt,
+                                        'w_cm': _w, 'h_cm': _h,
+                                        'mt_cm': hmt, 'mb_cm': hmb,
+                                        'ml_cm': hml, 'mr_cm': hmr,
+                                    })
+                                    cursor_x += _w
+                            design.pool_holes_cm = _new_holes
+                            design.pool_holes_gaps_cm = _new_gaps
+                            design.pool_is_multi_hole = True
+                            self._log(
+                                f"[多洞UI覆盖] 应用用户手动修改的多洞参数: "
+                                f"N={_n} layout={_lo} "
+                                f"wh={[(round(w,1),round(h,1)) for w,h in _new_wh]} "
+                                f"gaps={[round(g,1) for g in _new_gaps]}"
+                            )
+                            for i, hc in enumerate(_new_holes):
+                                self._log(
+                                    f"  Hole[{i}] UI覆盖后 x={hc['x_cm']:.1f} y={hc['y_cm']:.1f} "
+                                    f"size={hc['w_cm']:.1f}x{hc['h_cm']:.1f} cm"
+                                )
+                    # ===== [END UI OVERRIDE Add-On] =====
                 # ===== [END ADD-ON] =====
 
                 # 水池模式开关 + 外框素材图

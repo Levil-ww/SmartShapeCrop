@@ -269,6 +269,158 @@ def _classify_hole_layout(all_rects):
         logger.info(f"[MH Step1-2] 非多洞：最终选出内框 {len(inners4)} 个（<2）→ 回退单洞")
         return None, [], ''
 
+    # ========== Phase D.5: 单洞否决验证层 [CRITICAL FIX 2026-08-29] ==========
+    # 问题：OpenCV 矩形检测有时会把**一个内框**错误分割成两部分（如边框断裂、
+    # 内部有装饰线条打断），导致两个几乎贴在一起的候选矩形被 Phase D 选出，
+    # 被 Phase E 分类为多洞。这是**严重的功能错误**——单洞草图被识别为多洞。
+    #
+    # 本阶段在 Phase E（布局分类）之前拦截这类假多洞。检查逻辑：
+    #
+    # VETO-1 间距不足否决:
+    #   所有候选洞两两之间的 gap（在中心距较大的轴上）若 < min(洞在该轴的尺寸) × 0.10
+    #   AND < 外框短边 × 0.015 → 判定为"一个洞被分割" → 否决
+    #
+    # VETO-2 极端面积差否决:
+    #   最大洞面积 / 最小洞面积 > 5.0 → 大概率是一个真实洞 + 若干噪点
+    #
+    # VETO-3 严格包含否决:
+    #   候选洞 A 严格包含候选洞 B → 是嵌套结构，不是并排多洞 → 否决
+    #
+    # VETO-4 轴对齐+同尺寸否决:
+    #   两候选共享同一 x 起点或同一 y 起点，且在共享轴上尺寸差 < 15%
+    #   AND 间距 < min(洞尺寸) × 0.15 → 极大概率是同洞被水平/垂直分割
+    #
+    # 所有 VETO 均返回 (None, [], '') → 上层自动回退单洞 7 步法。
+    _outer_short_side = min(ow, oh)
+
+    # 预计算两两几何关系（供所有 VETO 共享）
+    def _pairwise_gaps(inners_list):
+        """返回 list of (gap_axis_name, gap_value, axis_hole_size_min, a_idx, b_idx)。"""
+        results = []
+        n = len(inners_list)
+        for i in range(n):
+            xi, yi, wi, hi = inners_list[i]
+            cx_i, cy_i = xi + wi / 2, yi + hi / 2
+            for j in range(i + 1, n):
+                xj, yj, wj, hj = inners_list[j]
+                cx_j, cy_j = xj + wj / 2, yj + hj / 2
+                dx = abs(cx_j - cx_i)
+                dy = abs(cy_j - cy_i)
+                # 水平距离（两洞在 x 轴方向的 gap）
+                gap_x = max(0, max(xj, xi) - min(xi + wi, xj + wj))
+                # 垂直距离（两洞在 y 轴方向的 gap）
+                gap_y = max(0, max(yj, yi) - min(yi + hi, yj + hj))
+                # 中心距较大的轴为主轴
+                if dx >= dy:
+                    results.append(('x', gap_x, min(wi, wj), i, j))
+                else:
+                    results.append(('y', gap_y, min(hi, hj), i, j))
+        return results
+
+    _pgaps = _pairwise_gaps(inners4)
+
+    # --- VETO-1: 间距不足否决 ---
+    _veto1_triggered = False
+    for axis_name, gap_val, axis_hole_min, _ai, _bi in _pgaps:
+        # 间距 < 该轴洞最小尺寸的 10% AND < 外框短边的 1.5%
+        if gap_val < axis_hole_min * 0.10 and gap_val < _outer_short_side * 0.015:
+            _veto1_triggered = True
+            logger.warning(
+                f"[MH Step1-2 VETO-1] 间距不足否决: "
+                f"gap_{axis_name}={gap_val:.1f}px < "
+                f"min_hole_{axis_name}={axis_hole_min:.1f}×10%={axis_hole_min*0.10:.1f} "
+                f"AND < outer_short={_outer_short_side:.1f}×1.5%={_outer_short_side*0.015:.1f}"
+            )
+            break
+
+    if _veto1_triggered:
+        logger.info("[MH Step1-2 VETO-1 ⇒ 回退单洞] 候选洞间距过小，判定为单洞被分割")
+        return None, [], ''
+
+    # --- VETO-2: 极端面积差否决 ---
+    _areas = [iw * ih for _ix, _iy, iw, ih in inners4]
+    _max_area = max(_areas)
+    _min_area = min(_areas)
+    if _min_area > 0 and _max_area / _min_area > 5.0:
+        logger.warning(
+            f"[MH Step1-2 VETO-2] 极端面积差否决: "
+            f"max_area={_max_area} / min_area={_min_area} = "
+            f"{_max_area / _min_area:.1f}x > 5.0x → 大概率单洞+噪点"
+        )
+        logger.info("[MH Step1-2 VETO-2 ⇒ 回退单洞] 候选洞面积差异过大")
+        return None, [], ''
+
+    # --- VETO-3: 严格包含否决 ---
+    def _strictly_contains_veto(a, b):
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        edges = (ax <= bx, ay <= by, ax + aw >= bx + bw, ay + ah >= by + bh)
+        if not all(edges):
+            return False
+        if ax == bx and ay == by and aw == bw and ah == bh:
+            return False
+        return True
+
+    _veto3_triggered = False
+    for _i in range(len(inners4)):
+        for _j in range(len(inners4)):
+            if _i == _j:
+                continue
+            if _strictly_contains_veto(inners4[_i], inners4[_j]):
+                _veto3_triggered = True
+                logger.warning(
+                    f"[MH Step1-2 VETO-3] 严格包含否决: "
+                    f"inners4[{_i}]={inners4[_i]} 包含 inner[{_j}]={inners4[_j]} → 嵌套非并排"
+                )
+                break
+        if _veto3_triggered:
+            break
+
+    if _veto3_triggered:
+        logger.info("[MH Step1-2 VETO-3 ⇒ 回退单洞] 候选洞存在严格包含关系")
+        return None, [], ''
+
+    # --- VETO-4: 轴对齐+同尺寸+小间距否决 ---
+    _veto4_triggered = False
+    for axis_name, gap_val, axis_hole_min, ai, bi in _pgaps:
+        ra = inners4[ai]
+        rb = inners4[bi]
+        ax, ay, aw, ah = ra
+        bx, by, bw, bh = rb
+        # 横排假洞检查：共享同一 y 起点 OR 共享同一 y 中心（水平对齐）
+        # 且 width 差 < 15%，且间距 < min(w)×0.15
+        if axis_name == 'x':
+            # y 轴对齐检查（共享 y 起点或 y 中心接近）
+            y_aligned = (abs(ay - by) < max(ah, bh) * 0.10) or \
+                        (abs((ay + ah / 2) - (by + bh / 2)) < max(ah, bh) * 0.10)
+            w_similar = abs(aw - bw) / max(aw, bw, 1) < 0.15
+            if y_aligned and w_similar and gap_val < min(aw, bw) * 0.15:
+                _veto4_triggered = True
+                logger.warning(
+                    f"[MH Step1-2 VETO-4] 水平轴对齐+同尺寸否决: "
+                    f"y_aligned={y_aligned} w_diff={abs(aw-bw)/max(aw,bw,1)*100:.0f}% "
+                    f"gap={gap_val:.1f}px < {min(aw,bw)*0.15:.1f}px"
+                )
+                break
+        else:  # axis_name == 'y'
+            x_aligned = (abs(ax - bx) < max(aw, bw) * 0.10) or \
+                        (abs((ax + aw / 2) - (bx + bw / 2)) < max(aw, bw) * 0.10)
+            h_similar = abs(ah - bh) / max(ah, bh, 1) < 0.15
+            if x_aligned and h_similar and gap_val < min(ah, bh) * 0.15:
+                _veto4_triggered = True
+                logger.warning(
+                    f"[MH Step1-2 VETO-4] 垂直轴对齐+同尺寸否决: "
+                    f"x_aligned={x_aligned} h_diff={abs(ah-bh)/max(ah,bh,1)*100:.0f}% "
+                    f"gap={gap_val:.1f}px < {min(ah,bh)*0.15:.1f}px"
+                )
+                break
+
+    if _veto4_triggered:
+        logger.info("[MH Step1-2 VETO-4 ⇒ 回退单洞] 候选洞轴对齐+同尺寸+小间距")
+        return None, [], ''
+
+    logger.info(f"[MH Step1-2 PhaseD.5 通过] 4 项 VETO 均未触发 → 确认真多洞")
+
     # ========== Phase E: 布局分类 + 排序 ==========
     cxs = [ix + iw / 2 for ix, iy, iw, ih in inners4]
     cys = [iy + ih / 2 for ix, iy, iw, ih in inners4]

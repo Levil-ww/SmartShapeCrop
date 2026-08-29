@@ -69,6 +69,16 @@ class _GenerateMixin:
         # 用户修正后的内挖尺寸。
         user_margins = self._detect_user_margin_edits()
 
+        # ===== [MULTI-HOLE Add-On 2026-08-29] UI 多洞改动 → 传入 Worker =====
+        # 类比单洞 user_margins：只要多洞 GroupBox 处于激活（active_count>=2），
+        # 就把当前 SpinBox 的真值传给 Worker。Worker 内"多洞UI覆盖 Add-On"分支
+        # 再覆盖 sketch 解析的每洞 w/h/间距 + 重算 x/y，保证：
+        #   1) design.pool_holes_cm[i].w/h = 用户修改值
+        #   2) _on_pool_finished_ok 多洞独立素材匹配，自然按覆盖后的 w/h 做匹配
+        #   3) 预览/渲染（_apply_quiet → _collect → image_ops）使用同一套洞几何。
+        # 单洞场景（GroupBox 隐藏，active_count==0）→ 返回 None → Worker 零影响。
+        user_multihole_params = self._detect_multihole_edits()
+
         # 启动 Worker
         self._pool_btn_generate.setEnabled(False)
         self._pool_btn_generate.setText("处理中…请稍候")
@@ -76,6 +86,7 @@ class _GenerateMixin:
             self._matcher, tpl_dir, target_name, self._sketch_path,
             pre_parsed_result=self._sketch_parse_result,
             user_margins=user_margins,
+            user_multihole_params=user_multihole_params,
             lshape_params=getattr(self, '_lshape_params', None),
             parent=self)
         worker.progress.connect(self._on_pool_progress)
@@ -450,4 +461,62 @@ class _GenerateMixin:
                             f"{sr_val:.2f} → {current_val:.2f}")
 
         return result
+
+    # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 UI → Worker 传值采集 =====
+    def _detect_multihole_edits(self):
+        """读取多洞参数面板当前的洞宽/洞高/洞间距真值。
+
+        与单洞 _detect_user_margin_edits 语义一致：
+        - 单洞/多洞 GroupBox 未激活（active_count<2）→ 返回 None，Worker 不做覆盖。
+        - 多洞激活时：即使"没改"，也返回当前 SpinBox 的值。这样能保证：
+          1) 用户先点一次"匹配模板→解析草图→生成预览"回填 UI，
+          2) 用户改洞2宽或间距1↔2后再次点按钮，
+          3) Worker 直接用 UI 真值重建 design.pool_holes_cm，完全与单洞"边距覆盖
+             sketch"链路对齐。
+        返回形状见 PoolRenderWorker.__init__ 中 user_multihole_params 的 docstring。
+        """
+        try:
+            # —— 防御性前置条件（任何一条不满足 → 返回 None，零侵入）——
+            if not hasattr(self, '_mh_active_count'):
+                return None
+            active_count = int(getattr(self, '_mh_active_count', 0) or 0)
+            if active_count < 2:
+                return None
+            holes_w = getattr(self, '_mh_sp_hole_w', None)
+            holes_h = getattr(self, '_mh_sp_hole_h', None)
+            gaps = getattr(self, '_mh_sp_gaps', None)
+            if not isinstance(holes_w, list) or not isinstance(holes_h, list):
+                return None
+            if len(holes_w) < active_count or len(holes_h) < active_count:
+                return None
+            n_gaps_needed = active_count - 1
+            if n_gaps_needed > 0:
+                if not isinstance(gaps, list) or len(gaps) < n_gaps_needed:
+                    return None
+            # —— 真值采集：前 active_count 个洞 + 前 active_count-1 间距 ——
+            wh = []
+            for i in range(active_count):
+                wv = max(0.0, float(holes_w[i].value()))
+                hv = max(0.0, float(holes_h[i].value()))
+                wh.append((wv, hv))
+            gs = []
+            for i in range(n_gaps_needed):
+                gs.append(max(0.0, float(gaps[i].value())))
+            layout = None
+            if hasattr(self, 'design') and self.design is not None:
+                layout = getattr(self.design, 'pool_layout_type', None)
+            if (getattr(self, '_sketch_parse_result', None) is not None
+                    and getattr(self._sketch_parse_result, 'success', False)):
+                layout = (getattr(self._sketch_parse_result, 'layout_type', None)
+                          or layout)
+            layout = layout or 'horizontal'
+            return {
+                'active_count': active_count,
+                'holes_wh': wh,
+                'gaps_cm': gs,
+                'layout_type': layout,
+            }
+        except Exception as e:
+            logger.warning(f"[Multi-hole UI] _detect_multihole_edits 失败（忽略，按 sketch 默认跑）: {e}")
+            return None
 
