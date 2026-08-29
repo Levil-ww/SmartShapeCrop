@@ -775,9 +775,34 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     """返回挖洞区域（即内部填充区域）的 bool mask，与边框带的同心圆角保持一致。"""
     from .geometry import (make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask, 
                            apply_rounded_corners_to_mask, compute_inner_corner_radii,
-                           build_lshape_mask)
+                           build_lshape_mask, RectShape)
     W, H = design.canvas_w_px, design.canvas_h_px
     m = make_mask((W, H))
+
+    # ===== [MULTI-HOLE Add-On 2026-08-29] PURE ADD-ON GUARD =====
+    # 触发条件：mode==rect_hole + 有多洞列表 + 至少 2 洞。
+    # 多洞场景下：各洞做矩形 UNION，不做圆角（圆角算法基于单 inner_rect）。
+    # 满足则在这里直接 return，完全不触碰下面的原单洞分支。
+    multi_holes = getattr(design, 'pool_holes_cm', [])
+    if (design.mode == 'rect_hole'
+            and getattr(design, 'pool_is_multi_hole', False)
+            and isinstance(multi_holes, list)
+            and len(multi_holes) >= 2):
+        for hc in multi_holes:
+            hx = design.cm2px(float(hc.get('x_cm', 0.0)))
+            hy = design.cm2px(float(hc.get('y_cm', 0.0)))
+            hw = design.cm2px(float(hc.get('w_cm', 0.0)))
+            hh = design.cm2px(float(hc.get('h_cm', 0.0)))
+            if hw <= 0 or hh <= 0:
+                continue
+            # Clamp to canvas
+            rx = max(0.0, hx)
+            ry = max(0.0, hy)
+            rw = max(1.0, min(float(W) - rx, hw))
+            rh = max(1.0, min(float(H) - ry, hh))
+            fill_rect_mask(m, RectShape(rx, ry, rw, rh), 255)
+        return np.array(m, dtype=bool)
+    # ===== [END ADD-ON] — 以下原单洞/椭圆/L 形 代码一字未改 =====
 
     inner_rect = design.inner_rect_px()
     outer = design.outer_rect_px()

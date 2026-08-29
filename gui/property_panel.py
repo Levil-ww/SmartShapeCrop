@@ -10,7 +10,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize
 from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
-    QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
+    QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit, QFormLayout,
     QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
     QToolButton, QMenu, QAction, QDialog, QApplication,
 )
@@ -69,6 +69,11 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._sketch_path = ""
         self._sketch_parse_result = None  # 草图解析缓存，供实时回填 UI
         self._lshape_params = None  # L 形挖角参数（确认后写入：corner/cut_w_cm/cut_h_cm/outer_w_cm/outer_h_cm）
+        # ===== [MULTI-HOLE Add-On 2026-08-29] 激活洞数（用于 _collect 限定写回范围） =====
+        # 默认 0：单洞模式，_collect 多洞分支不会写回任何数据；
+        # 多洞模式下由 _fill_multi_hole_ui/_hide_multi_hole_ui 更新为 2..MAX_MH_UI_HOLES。
+        # 预分配 8 个 SpinBox 只是 UI 占位，绝不可以全部写回 design！
+        self._mh_active_count = 0
         # —— 持久化设置（与圆角裁剪工具共用同一份 QSettings）——
         self._app_settings = get_app_settings()
         self._build_ui()
@@ -149,6 +154,54 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         row_inner_corner.addWidget(gb_inner)
         row_inner_corner.addWidget(self._gb_corner)
         self._inner_layout.addLayout(row_inner_corner)
+
+        # 3b) ===== [MULTI-HOLE Add-On 2026-08-29] 多洞参数区（默认隐藏）=====
+        # 单洞模式：永远隐藏 → 视觉和行为零影响；
+        # 多洞模式：Worker 完成后按 design.pool_is_multi_hole 显示。
+        # 洞 1~N 尺寸 + N-1 洞间距的 SpinBox。纯加 GroupBox，不改动 gb_inner 任何行。
+        self._gb_multihole = QGroupBox("多洞参数（厘米）")
+        self._gb_multihole.setObjectName("gb_multihole")
+        fm = QFormLayout(self._gb_multihole)
+        fm.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        # 标题标签（初始占位，回填 sketch_result 时再写入具体洞数）
+        self._mh_title_label = QLabel("洞数量：0（仅多洞模式生效）")
+        self._mh_title_label.setStyleSheet("font-weight:bold; color:#2a6;")
+        fm.addRow(self._mh_title_label)
+
+        # 初始化最大洞数=8（常规产品足够；支持更多洞时可 expand 动态增行）
+        self._MAX_MH_UI_HOLES = 8
+        self._mh_sp_hole_w = []   # list[QDoubleSpinBox]
+        self._mh_sp_hole_h = []   # list[QDoubleSpinBox]
+        self._mh_sp_gaps = []     # list[QDoubleSpinBox] len = N-1
+        self._mh_rows_widgets = []  # list[(QLabel, QWidget)] 用于显隐控制
+
+        for idx in range(self._MAX_MH_UI_HOLES):
+            i = idx + 1
+            spw = self._dspin(0, 1000, 0.0); spw.setSuffix(" cm")
+            sph = self._dspin(0, 1000, 0.0); sph.setSuffix(" cm")
+            row_w = QHBoxLayout(); row_w.addWidget(QLabel("宽"), 0); row_w.addWidget(spw, 1)
+            row_h = QHBoxLayout(); row_h.addWidget(QLabel("高"), 0); row_h.addWidget(sph, 1)
+            cols = QVBoxLayout(); cols.addLayout(row_w); cols.addLayout(row_h)
+            wrap = QWidget(); wrap.setLayout(cols)
+            lab = QLabel(f"洞{i}")
+            fm.addRow(lab, wrap)
+            self._mh_sp_hole_w.append(spw)
+            self._mh_sp_hole_h.append(sph)
+            self._mh_rows_widgets.append((lab, wrap))
+
+            # 间距：N 个洞 → N-1 个间距。最后一个洞之后不加
+            if idx < self._MAX_MH_UI_HOLES - 1:
+                spg = self._dspin(0, 1000, 0.0); spg.setSuffix(" cm")
+                lab_gap = QLabel(f"间距{i}↔{i+1}")
+                fm.addRow(lab_gap, spg)
+                self._mh_sp_gaps.append(spg)
+                self._mh_rows_widgets.append((lab_gap, spg))
+
+        # 默认所有洞/间距都隐藏；回填时根据真实洞数 show 对应行
+        self._set_multi_hole_row_visibility(0)
+        self._gb_multihole.hide()   # 启动时默认隐藏（单洞模式）
+        self._inner_layout.addWidget(self._gb_multihole)
 
         # 4) L 形参数
         self._gb_l = QGroupBox("L形挖角参数")
@@ -271,6 +324,95 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def _row(self, label: str, widget: QWidget) -> QHBoxLayout:
         lay = QHBoxLayout(); lay.addWidget(QLabel(label), 0); lay.addWidget(widget, 1)
         return lay
+
+    # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 UI 辅助函数 =====
+    # 单洞模式下这些函数不会被调用（所有调用都被 if is_multi_hole guard 包住）。
+    def _set_multi_hole_row_visibility(self, n_holes: int):
+        """显示前 N 个洞 + 前 N-1 个间距；其余隐藏。n_holes=0 全部隐藏。"""
+        if not hasattr(self, '_mh_rows_widgets') or not self._mh_rows_widgets:
+            return
+        n_show = max(0, int(n_holes))
+        n_gaps_show = max(0, n_show - 1)
+        # _mh_rows_widgets 构造顺序：[hole0, gap0, hole1, gap1, ..., hole(N-2), gap(N-2), hole(N-1)]
+        # 判断行类型：gap 的 widget 是 QDoubleSpinBox（单一控件）；
+        # hole 的 widget 是外层 QWidget（含宽高两行的包装）。
+        h_idx = 0
+        g_idx = 0
+        for (lab, wgt) in self._mh_rows_widgets:
+            if isinstance(wgt, QDoubleSpinBox):
+                show = (g_idx < n_gaps_show)
+                g_idx += 1
+            else:
+                show = (h_idx < n_show)
+                h_idx += 1
+            lab.setVisible(show)
+            wgt.setVisible(show)
+
+    def _fill_multi_hole_ui(self, holes_cm: list, gaps_cm: list, layout: str = 'horizontal'):
+        """PoolWorker 结束后：把 design.pool_holes_cm/gaps 填到多洞 SpinBox。
+
+        同时：(1) 显示 GroupBox + 对应行；(2) 写 layout 标记到 design 供 _collect 读取。
+        """
+        try:
+            n = len(holes_cm) if holes_cm else 0
+            # ===== [MULTI-HOLE Add-On 2026-08-29] 同步激活洞数 → _collect 写回严格限定 N =====
+            # 单洞(0/1) 或非池模式 → 必须写 0，避免残留激活洞数导致 _collect 污染 design
+            self._mh_active_count = max(0, int(n)) if n >= 2 else 0
+            # 先显隐行（保证 setVisible 生效）
+            self._set_multi_hole_row_visibility(n if n >= 2 else 0)
+            # 显示 / 隐藏 GroupBox
+            want_visible = (n >= 2)
+            if hasattr(self, '_gb_multihole'):
+                # 显式 show：避免 Qt 在 QFormLayout setVisible(row widget) 后 GroupBox
+                # 自身仍然 hide 导致无法出现在 UI。
+                if want_visible:
+                    self._gb_multihole.show()
+                else:
+                    self._gb_multihole.hide()
+            title = ""
+            if n >= 2:
+                layout_zh = {"horizontal": "横排", "vertical": "竖排"}.get((layout or 'horizontal'), "排列")
+                title = f"共 {n} 洞（{layout_zh}）"
+            else:
+                title = "洞数量：0（仅多洞模式生效）"
+            if hasattr(self, '_mh_title_label'):
+                self._mh_title_label.setText(title)
+            if n < 2:
+                return
+            # 把 layout 存到 design（_collect 里读取使用）；如果字段不存在则忽略
+            try:
+                self.design.pool_layout_type = (layout or 'horizontal')
+            except Exception:
+                pass
+            # 批量填值：blockSignals 避免无谓的预览重算
+            signals_blocked = []
+            def _blk(sp):
+                sp.blockSignals(True)
+                signals_blocked.append(sp)
+            for i in range(min(n, len(self._mh_sp_hole_w))):
+                hc = holes_cm[i]
+                _blk(self._mh_sp_hole_w[i]); self._mh_sp_hole_w[i].setValue(max(0.0, float(hc.get('w_cm', 0))))
+                _blk(self._mh_sp_hole_h[i]); self._mh_sp_hole_h[i].setValue(max(0.0, float(hc.get('h_cm', 0))))
+            for i in range(min(len(gaps_cm or []), len(self._mh_sp_gaps))):
+                _blk(self._mh_sp_gaps[i]); self._mh_sp_gaps[i].setValue(max(0.0, float(gaps_cm[i])))
+            for sp in signals_blocked:
+                sp.blockSignals(False)
+        except Exception as e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(f"[Multi-hole UI] 回填多洞参数失败: {e}")
+
+    def _hide_multi_hole_ui(self):
+        """单洞/非池模式：隐藏多洞 GroupBox（零视觉影响）。"""
+        try:
+            # ===== [MULTI-HOLE Add-On 2026-08-29] 清除激活洞数 =====
+            # 保证：隐藏后再点"应用"时 _collect 多洞分支完全跳过，不再把 8 个 SpinBox
+            # 写回 design，避免状态栏出现 洞3..洞8 (0x0) 等冗余。
+            self._mh_active_count = 0
+            if hasattr(self, '_gb_multihole'):
+                self._gb_multihole.hide()
+            self._set_multi_hole_row_visibility(0)
+        except Exception:
+            pass
 
     def _pick_file(self, target_edit: QLineEdit, filt: str):
         path, _ = QFileDialog.getOpenFileName(self, "选择文件", "", filt)

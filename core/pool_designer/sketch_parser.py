@@ -65,6 +65,19 @@ class SketchParseResult:
     margin_left_cm: float = 0.0
     margin_right_cm: float = 0.0
     debug: dict = field(default_factory=dict)
+    # ===== 多洞扩展字段（2026-08-29 新增，均有默认值 → 向后兼容）=====
+    # 布局类型："single"（单洞，默认） / "horizontal"（横排多洞） /
+    #           "vertical"（竖排多洞） / "mixed"（混合）
+    layout_type: str = "single"
+    # 是否为多洞识别结果
+    is_multi_hole: bool = False
+    # 洞列表（仅当 is_multi_hole=True 时有值；单洞时空列表）
+    # 每项是 sketch_parser_multihole.HoleInfo dataclass
+    holes: list = field(default_factory=list)
+    # 洞间距列表（仅多洞横/竖排时有意义，长度 = len(holes)-1）
+    hole_gaps_cm: list = field(default_factory=list)
+    # 多洞模式下内框像素矩形列表（单洞时只有 debug['inner_rect_px']）
+    inner_rects_px: list = field(default_factory=list)
 
 
 def _7step_parse(cv2, gray_img, color_img, tesseract,
@@ -443,6 +456,69 @@ def parse_sketch(
     if not ok:
         result.message = reason
         return result
+
+    # ===== [多洞扩展 2026-08-29] 入口分流 =====
+    # 原则：先快速尝试多洞路径（_classify_hole_layout <5ms），
+    # 若草图判定为多洞 → 走 9 步多洞解析；
+    # 若草图为单洞或多洞失败（_fallback_to_single_hole=True）→ 继续执行
+    #   原有的 7 步单洞解析，零修改、零干扰。
+    # 这段代码是 PURE ADD-ON，不触碰任何后续原有逻辑体。
+    try:
+        from .sketch_parser_multihole import try_parse_multi_hole
+        _progress(7, "检测多洞布局...")
+        mhr = try_parse_multi_hole(
+            image_path,
+            target_outer_w_cm=target_outer_w_cm,
+            target_outer_h_cm=target_outer_h_cm,
+            progress_callback=progress_callback,
+        )
+        if mhr.get('success'):
+            # 多洞识别成功 → 填充扩展结果立即返回
+            result.success = True
+            result.message = mhr.get('message', '多洞识别成功')
+            result.method = mhr.get('method', 'multihole_v1')
+            result.outer_w_cm = mhr.get('outer_w', 0.0)
+            result.outer_h_cm = mhr.get('outer_h', 0.0)
+            # 兼容字段：第一个洞的尺寸（下游代码不变即可读到"内框尺寸"）
+            result.inner_w_cm = mhr.get('inner_w', 0.0)
+            result.inner_h_cm = mhr.get('inner_h', 0.0)
+            result.margin_top_cm = mhr.get('margin_top', 0.0)
+            result.margin_bottom_cm = mhr.get('margin_bottom', 0.0)
+            result.margin_left_cm = mhr.get('margin_left', 0.0)
+            result.margin_right_cm = mhr.get('margin_right', 0.0)
+            # 多洞扩展字段
+            result.is_multi_hole = True
+            result.layout_type = mhr.get('layout', 'horizontal')
+            result.holes = mhr.get('holes', [])
+            result.hole_gaps_cm = mhr.get('gaps', [])
+            result.inner_rects_px = mhr.get('inner_rects_px', [])
+            # 调试信息（兼容旧键名 + 新增多洞键）
+            result.debug['outer_rect_px'] = mhr.get('outer_rect_px')
+            result.debug['inner_rects_px'] = mhr.get('inner_rects_px', [])
+            result.debug['direction_margins'] = mhr.get('direction_labels', {})
+            result.debug['self_consistency'] = mhr.get('self_consistency', 0)
+            result.debug['is_multi_hole'] = True
+            result.debug['layout'] = mhr.get('layout', '')
+            result.debug['hole_gaps'] = mhr.get('gaps', [])
+            result.debug['step9_assignment'] = {
+                k: (round(v[0], 2), round(v[1], 3))
+                for k, v in mhr.get('debug_assignment', {}).items()
+            }
+            logger.info(f"[parse_sketch] 多洞路径成功: layout={result.layout_type} "
+                        f"outer={result.outer_w_cm:.1f}x{result.outer_h_cm:.1f} "
+                        f"holes={len(result.holes)}")
+            return result
+        else:
+            # 非多洞布局 → 静默回退到单洞 7 步法（不打日志打扰用户）
+            if not mhr.get('_fallback_to_single_hole', True):
+                # 罕见：多洞路径识别为多洞但解析失败 → 失败结果直接返回
+                result.message = mhr.get('message', '多洞识别失败')
+                result.debug['fail_reason'] = mhr.get('message', '')
+                return result
+            # 否则（quick_check 判定非多洞，或异常 → fallback=True）→ 继续单洞
+    except Exception as e:
+        # 多洞扩展层异常 → 绝不影响原有单洞路径
+        logger.warning(f"[多洞扩展] 入口分流异常（继续单洞路径）: {e}")
 
     _progress(10, "加载图片...")
     cv2 = _safe_import_cv2()

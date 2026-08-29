@@ -138,6 +138,29 @@ class _GenerateMixin:
             self._sp_mb.setValue(max(0, design.inner_margin_bottom_cm))
             self._sp_ml.setValue(max(0, design.inner_margin_left_cm))
             self._sp_mr.setValue(max(0, design.inner_margin_right_cm))
+
+            # ===== [MULTI-HOLE Add-On 2026-08-29] 回填多洞 UI =====
+            # pool_is_multi_hole=True 且 holes>=2 → 显示/填 多洞 GroupBox；否则隐藏。
+            # 单洞流程 pool_is_multi_hole=False（默认）→ 只 _hide_multi_hole_ui，不改变旧 UI。
+            try:
+                is_mh = (getattr(design, 'pool_is_multi_hole', False)
+                         and isinstance(getattr(design, 'pool_holes_cm', []), list)
+                         and len(design.pool_holes_cm) >= 2)
+                if is_mh:
+                    layout_m = getattr(design, 'pool_layout_type', None)
+                    if layout_m is None and sketch_result is not None:
+                        layout_m = getattr(sketch_result, 'layout_type', 'horizontal')
+                    layout_m = layout_m or 'horizontal'
+                    self._fill_multi_hole_ui(
+                        design.pool_holes_cm,
+                        list(getattr(design, 'pool_holes_gaps_cm', []) or []),
+                        layout_m,
+                    )
+                else:
+                    self._hide_multi_hole_ui()
+            except Exception as e:
+                import logging as _lgg
+                _lgg.getLogger(__name__).warning(f"[Multi-hole UI] Worker 回填多洞 UI 失败: {e}")
             # 外框素材路径写到"背景设置"编辑框
             if design.outer_bg_image:
                 self._ed_outer_img.setText(design.outer_bg_image)
@@ -207,12 +230,32 @@ class _GenerateMixin:
                              f"{max(0, self.design.canvas_h_cm - 1.0):.1f} cm"
                              f"（画布含 1cm 裁剪损耗）\n")
                 else:
-                    # 内挖由设计派生值：canvas - margin_left - margin_right
-                    inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
-                    inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
-                    info += f"内挖：{inner_w_cm:.1f} × {inner_h_cm:.1f} cm\n"
-                    info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
-                             f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm\n")
+                    # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞显示替换单洞内挖行 =====
+                    # 仅当 pool_is_multi_hole=True 且 pool_holes_cm>=2 时显示每洞 + 间距；
+                    # 否则走原单洞代码一字不变。
+                    is_mh_design = (getattr(self.design, 'pool_is_multi_hole', False)
+                                    and isinstance(getattr(self.design, 'pool_holes_cm', []), list)
+                                    and len(self.design.pool_holes_cm) >= 2)
+                    if is_mh_design:
+                        holes = self.design.pool_holes_cm
+                        gaps = list(getattr(self.design, 'pool_holes_gaps_cm', []) or [])
+                        # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
+                        # 极端情况下 design 残留 0 值洞（历史 state / 旧缓存）也不会显示。
+                        valid_holes = [hc for hc in holes if (float(hc.get('w_cm',0))>0) or (float(hc.get('h_cm',0))>0)]
+                        valid_gaps = gaps[:max(0, len(valid_holes)-1)]
+                        for i, hc in enumerate(valid_holes):
+                            info += f"洞{i+1}：{hc['w_cm']:.1f} × {hc['h_cm']:.1f} cm\n"
+                        gaps_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(valid_gaps)) if valid_gaps else "无"
+                        info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
+                                 f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm，"
+                                 f"中距：{gaps_txt}\n")
+                    else:
+                        # ===== 单洞原有代码（一字未改） =====
+                        inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
+                        inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
+                        info += f"内挖：{inner_w_cm:.1f} × {inner_h_cm:.1f} cm\n"
+                        info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
+                                 f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm\n")
                 # 内挖素材匹配结果
                 if inner_match_info:
                     info += inner_match_info
@@ -223,10 +266,27 @@ class _GenerateMixin:
                              f"{float(lp.get('cut_h_cm', 0)):.1f} cm\n")
                 elif sketch_result is not None and sketch_result.success:
                     sr = sketch_result
-                    info += f"识别草图成功：\n"
-                    info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
-                    info += f"  内挖：{(sr.outer_w_cm - sr.margin_left_cm - sr.margin_right_cm):.1f} × {(sr.outer_h_cm - sr.margin_top_cm - sr.margin_bottom_cm):.1f} cm\n"
-                    info += f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f} cm\n"
+                    # ===== [MULTI-HOLE Add-On 2026-08-29] 草图结果行 多洞替换 =====
+                    sr_is_mh = (getattr(sr, 'is_multi_hole', False)
+                                and hasattr(sr, 'holes')
+                                and isinstance(sr.holes, list)
+                                and len(sr.holes) >= 2)
+                    if sr_is_mh:
+                        info += f"识别草图成功（{getattr(sr,'layout_type','horizontal')}，{len(sr.holes)}洞）：\n"
+                        info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
+                        # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
+                        valid_holes = [h for h in sr.holes if (float(getattr(h,'w_cm',0))>0) or (float(getattr(h,'h_cm',0))>0)]
+                        for i, h in enumerate(valid_holes):
+                            info += f"  洞{i+1}：{h.w_cm:.1f} × {h.h_cm:.1f} cm\n"
+                        sr_gaps = list(getattr(sr, 'hole_gaps_cm', []) or [])[:max(0,len(valid_holes)-1)]
+                        g_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(sr_gaps)) if sr_gaps else "无"
+                        info += (f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/"
+                                 f"左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f}，中距：{g_txt} cm\n")
+                    else:
+                        info += f"识别草图成功：\n"
+                        info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
+                        info += f"  内挖：{(sr.outer_w_cm - sr.margin_left_cm - sr.margin_right_cm):.1f} × {(sr.outer_h_cm - sr.margin_top_cm - sr.margin_bottom_cm):.1f} cm\n"
+                        info += f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f} cm\n"
                     if hasattr(sr, 'debug') and sr.debug:
                         dir_vals = sr.debug.get("direction_margins", {}) if isinstance(sr.debug, dict) else {}
                         if dir_vals:

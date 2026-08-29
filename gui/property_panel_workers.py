@@ -244,6 +244,93 @@ class PoolRenderWorker(QThread):
                     design.inner_margin_left_cm = default_m
                     design.inner_margin_right_cm = default_m
 
+                # ===== [MULTI-HOLE Add-On 2026-08-29] PURE ADD-ON GUARD =====
+                # 仅当 sketch_result.is_multi_hole=True 且 holes>=2 时触发。
+                # 将 sketch 解析的洞列表转换为「画布相对厘米坐标」绝对位置，
+                # 供 image_ops._get_inner_pixel_mask 的 Add-On 分支渲染 UNION mask。
+                # 单洞场景下 pool_holes_cm 默认为空 → Add-On 分支跳过 → 旧代码零影响。
+                if (sketch_result
+                        and sketch_result.success
+                        and getattr(sketch_result, 'is_multi_hole', False)
+                        and hasattr(sketch_result, 'holes')
+                        and isinstance(sketch_result.holes, list)
+                        and len(sketch_result.holes) >= 2):
+                    holes = sketch_result.holes
+                    gaps = list(getattr(sketch_result, 'hole_gaps_cm', []) or [])
+                    layout = getattr(sketch_result, 'layout_type', 'horizontal') or 'horizontal'
+
+                    # 画布坐标原点 = (outer_margin_cm, outer_margin_cm)。水池模式下通常=0。
+                    ox_cm = design.outer_margin_cm
+                    oy_cm = design.outer_margin_cm
+                    # 共享 y 起点与洞高：横排洞等高且上下边距共用。
+                    # 用 design.inner_margin_top_cm（已被上方 sketch 赋值）作为共享 mt。
+                    # 注意：TRIM_CM 已加到 canvas_w/h，但 hole 的 w/h 本身是 草图 真值(cm)，
+                    # 我们希望 hole 的绝对位置 = 草图上的绝对位置 + TRIM/2 分布（通过
+                    # inner_margin 保持不变来让渲染器在 canvas_w/h = outer+TRIM 的大画布
+                    # 上以相同边距定位 hole，即 hole 本身的位置相对画布边缘自然分摊了 TRIM）。
+                    shared_mt = design.inner_margin_top_cm
+                    shared_ml = holes[0].margin_left_cm if holes else design.inner_margin_left_cm
+                    shared_mr = holes[-1].margin_right_cm if holes else design.inner_margin_right_cm
+
+                    if layout == 'horizontal':
+                        # y 轴：每个 hole 从 ox_cm + shared_mt 起，高度取 hole[i].h_cm
+                        y_cm = oy_cm + shared_mt
+                        cursor_x = ox_cm + shared_ml   # 第一个洞的 x 起点
+                        for i, h in enumerate(holes):
+                            # gap
+                            if i > 0 and i - 1 < len(gaps):
+                                cursor_x += gaps[i - 1]
+                            x_cm = cursor_x
+                            w_cm = max(0.0, h.w_cm)
+                            h_cm = max(0.0, h.h_cm)
+                            design.pool_holes_cm.append({
+                                'x_cm': x_cm, 'y_cm': y_cm,
+                                'w_cm': w_cm, 'h_cm': h_cm,
+                            })
+                            cursor_x += w_cm
+                    elif layout == 'vertical':
+                        # 竖排：x 起点共享 ml；沿 y 轴用 gap 分开
+                        shared_mb = design.inner_margin_bottom_cm
+                        x_cm = ox_cm + shared_ml
+                        cursor_y = oy_cm + shared_mt
+                        for i, h in enumerate(holes):
+                            if i > 0 and i - 1 < len(gaps):
+                                cursor_y += gaps[i - 1]
+                            y_cm = cursor_y
+                            w_cm = max(0.0, h.w_cm)
+                            h_cm = max(0.0, h.h_cm)
+                            design.pool_holes_cm.append({
+                                'x_cm': x_cm, 'y_cm': y_cm,
+                                'w_cm': w_cm, 'h_cm': h_cm,
+                            })
+                            cursor_y += h_cm
+                    else:  # mixed：退化按横排
+                        y_cm = oy_cm + shared_mt
+                        cursor_x = ox_cm + shared_ml
+                        for i, h in enumerate(holes):
+                            if i > 0 and i - 1 < len(gaps):
+                                cursor_x += gaps[i - 1]
+                            design.pool_holes_cm.append({
+                                'x_cm': cursor_x, 'y_cm': y_cm,
+                                'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                            })
+                            cursor_x += h.w_cm
+
+                    # 标记：image_ops Add-On 检查该标记和 holes>=2 才触发
+                    design.pool_is_multi_hole = True
+                    design.pool_holes_gaps_cm = gaps
+
+                    self._log(
+                        f"多洞模式写入: N={len(holes)} layout={layout} "
+                        f"gaps={[round(g,1) for g in gaps]}"
+                    )
+                    for i, hc in enumerate(design.pool_holes_cm):
+                        self._log(
+                            f"  Hole[{i}] 画布位置 x={hc['x_cm']:.1f} y={hc['y_cm']:.1f} "
+                            f"size={hc['w_cm']:.1f}x{hc['h_cm']:.1f} cm"
+                        )
+                # ===== [END ADD-ON] =====
+
                 # 水池模式开关 + 外框素材图
                 design.pool_hole_transparent = True
                 design.pool_outer_material_image = best.path

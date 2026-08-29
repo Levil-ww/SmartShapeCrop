@@ -128,6 +128,89 @@ class _LayersMixin:
             if d.hole_bg_image and (cur_inner is None or cur_inner != d.hole_bg_image):
                 d.pool_inner_material_image = d.hole_bg_image
 
+        # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 SpinBox → design.pool_holes_cm/gaps =====
+        # 仅当 pool_is_multi_hole=True 且 UI 已构建多洞控件时，才把控件值同步回 design。
+        # 单洞模式下：pool_is_multi_hole=False → pool_holes_cm 默认为空 → 零行为影响；
+        # 旧单洞 L 形/椭圆/矩形 代码完全不经过这里。
+        try:
+            if (getattr(d, 'pool_is_multi_hole', False)
+                    and hasattr(self, '_mh_sp_hole_w')
+                    and isinstance(self._mh_sp_hole_w, list)
+                    and len(self._mh_sp_hole_w) >= 2):
+                # ==== 严格按「激活洞数」取数据：避免 8 个 SpinBox 预分配 0 值被整体写回 ====
+                # active_count 由 _fill_multi_hole_ui(n) / _hide_multi_hole_ui() 维护；
+                # 检测为 2 洞 → N=2 → 只写回洞1/洞2 + 间1_2，其他洞3..洞8 不写入 status / mask。
+                active_count = int(getattr(self, '_mh_active_count', 0) or 0)
+                if active_count < 2:
+                    active_count = 0
+                n_holes = max(0, min(active_count, len(self._mh_sp_hole_w)))
+                n_gaps = max(0, min(n_holes - 1, len(getattr(self, '_mh_sp_gaps', []) or [])))
+                if n_holes < 2:
+                    # 激活洞数不足 2 → 把多洞字段清空（后续 mask 退回单洞分支，保证单洞语义正确）
+                    try:
+                        d.pool_holes_cm = []
+                        d.pool_holes_gaps_cm = []
+                        setattr(d, 'pool_is_multi_hole', False)
+                    except Exception:
+                        pass
+                else:
+                    # 优先用 design 上存的 pool_layout_type；取不到则退化 horizontal（横排占 90% 业务）
+                    layout = getattr(d, 'pool_layout_type', None) or 'horizontal'
+                    ox_cm = d.outer_margin_cm
+                    oy_cm = d.outer_margin_cm
+                    # 洞宽/高：range(n_holes) 限定前 N 个 SpinBox
+                    new_wh = []
+                    for i in range(n_holes):
+                        wv = max(0.0, self._mh_sp_hole_w[i].value())
+                        hv = max(0.0, self._mh_sp_hole_h[i].value())
+                        new_wh.append((wv, hv))
+                    # 间距：range(n_gaps) 限定前 N-1 个 SpinBox
+                    new_gaps = []
+                    for i in range(n_gaps):
+                        new_gaps.append(max(0.0, self._mh_sp_gaps[i].value()))
+                    # 按 layout 重算绝对坐标（画布相对 cm）
+                    new_holes_cm = []
+                    if layout == 'horizontal':
+                        y_cm = oy_cm + d.inner_margin_top_cm
+                        cursor_x = ox_cm + d.inner_margin_left_cm
+                        for i, (wv, hv) in enumerate(new_wh):
+                            if i > 0 and i - 1 < len(new_gaps):
+                                cursor_x += new_gaps[i - 1]
+                            new_holes_cm.append({
+                                'x_cm': cursor_x, 'y_cm': y_cm,
+                                'w_cm': wv, 'h_cm': hv,
+                            })
+                            cursor_x += wv
+                    elif layout == 'vertical':
+                        x_cm = ox_cm + d.inner_margin_left_cm
+                        cursor_y = oy_cm + d.inner_margin_top_cm
+                        for i, (wv, hv) in enumerate(new_wh):
+                            if i > 0 and i - 1 < len(new_gaps):
+                                cursor_y += new_gaps[i - 1]
+                            new_holes_cm.append({
+                                'x_cm': x_cm, 'y_cm': cursor_y,
+                                'w_cm': wv, 'h_cm': hv,
+                            })
+                            cursor_y += hv
+                    else:  # mixed：退化横排
+                        y_cm = oy_cm + d.inner_margin_top_cm
+                        cursor_x = ox_cm + d.inner_margin_left_cm
+                        for i, (wv, hv) in enumerate(new_wh):
+                            if i > 0 and i - 1 < len(new_gaps):
+                                cursor_x += new_gaps[i - 1]
+                            new_holes_cm.append({
+                                'x_cm': cursor_x, 'y_cm': y_cm,
+                                'w_cm': wv, 'h_cm': hv,
+                            })
+                            cursor_x += wv
+                    # 写回 design：pool_holes_cm 长度严格 == n_holes，不会含 0 值洞
+                    d.pool_holes_cm = new_holes_cm
+                    d.pool_holes_gaps_cm = new_gaps
+        except Exception as e:
+            # 静默失败：不影响主预览流程
+            import logging as _logging
+            _logging.getLogger(__name__).warning(f"[Multi-hole UI] 多洞字段回写 design 失败: {e}")
+
 
     def _apply_quiet(self):
         """属性变动时：静默触发预览，按钮统一 apply 也会调用"""

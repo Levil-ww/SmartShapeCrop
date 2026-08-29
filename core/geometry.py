@@ -175,6 +175,18 @@ class CropDesign:
     pool_material_design_w_cm: float = 0.0
     pool_material_design_h_cm: float = 0.0
 
+    # ===== [多洞 Add-On 2026-08-29] 纯加性字段；默认值保持旧行为零变化 =====
+    # 当 sketch 识别为 is_multi_hole=True 时，PoolWorker 会填充：
+    #   pool_is_multi_hole = True
+    #   pool_holes_cm = list[dict] 每个洞的画布相对坐标（厘米）{x_cm, y_cm, w_cm, h_cm}
+    #   pool_holes_gaps_cm = list[float] N-1 个洞间隙（仅 UI 展示/调试用）
+    #
+    # image_ops._get_inner_pixel_mask 会在 mode=='rect_hole' 且 len(pool_holes_cm)>=2 时
+    # 走 Add-On 的 UNION mask 分支，完全不触碰下面的单洞 inner_rect_px 逻辑。
+    pool_is_multi_hole: bool = False
+    pool_holes_cm: list = field(default_factory=list)
+    pool_holes_gaps_cm: list = field(default_factory=list)
+
     # —— 渲染加速：Worker 预加载的模板图缓存 ——
     _cached_outer_image: Image.Image | None = None
 

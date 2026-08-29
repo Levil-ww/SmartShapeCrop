@@ -578,6 +578,66 @@ class _PoolBoxMixin:
                     self._sp_ml.blockSignals(False)
                     self._sp_mr.blockSignals(False)
 
+                # ===== [MULTI-HOLE Add-On 2026-08-29] 草图解析完成后回填多洞 UI =====
+                # 仅当 sketch_result.is_multi_hole=True 且 holes>=2 时，填多洞 SpinBox 并显示 GroupBox；
+                # 单洞场景：调用 _hide_multi_hole_ui() → 视觉零影响，只 hide 本就隐藏的 GroupBox。
+                try:
+                    is_mh_result = (getattr(result, 'is_multi_hole', False)
+                                    and hasattr(result, 'holes')
+                                    and isinstance(result.holes, list)
+                                    and len(result.holes) >= 2)
+                    if is_mh_result:
+                        # 从 sketch_result 构建一份"假的"画布相对 holes_cm（因为 PoolWorker 还没跑，
+                        # design 还没最终确定），给用户预览多洞参数。值仅用于 UI 显示，不会触发渲染。
+                        holes = result.holes
+                        gaps = list(getattr(result, 'hole_gaps_cm', []) or [])
+                        layout = getattr(result, 'layout_type', 'horizontal') or 'horizontal'
+                        fake_holes_cm = []
+                        ox_cm = self.design.outer_margin_cm
+                        oy_cm = self.design.outer_margin_cm
+                        mt = result.margin_top_cm
+                        mb = result.margin_bottom_cm
+                        ml = holes[0].margin_left_cm if holes else result.margin_left_cm
+                        if layout == 'horizontal':
+                            y_cm = oy_cm + mt
+                            cursor_x = ox_cm + ml
+                            for i, h in enumerate(holes):
+                                if i > 0 and i - 1 < len(gaps):
+                                    cursor_x += gaps[i - 1]
+                                fake_holes_cm.append({
+                                    'x_cm': cursor_x, 'y_cm': y_cm,
+                                    'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                                })
+                                cursor_x += h.w_cm
+                        elif layout == 'vertical':
+                            x_cm = ox_cm + ml
+                            cursor_y = oy_cm + mt
+                            for i, h in enumerate(holes):
+                                if i > 0 and i - 1 < len(gaps):
+                                    cursor_y += gaps[i - 1]
+                                fake_holes_cm.append({
+                                    'x_cm': x_cm, 'y_cm': cursor_y,
+                                    'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                                })
+                                cursor_y += h.h_cm
+                        else:
+                            y_cm = oy_cm + mt
+                            cursor_x = ox_cm + ml
+                            for i, h in enumerate(holes):
+                                if i > 0 and i - 1 < len(gaps):
+                                    cursor_x += gaps[i - 1]
+                                fake_holes_cm.append({
+                                    'x_cm': cursor_x, 'y_cm': y_cm,
+                                    'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                                })
+                                cursor_x += h.w_cm
+                        self._fill_multi_hole_ui(fake_holes_cm, gaps, layout)
+                    else:
+                        self._hide_multi_hole_ui()
+                except Exception as e:
+                    import logging as _lgg2
+                    _lgg2.getLogger(__name__).warning(f"[Multi-hole UI] 草图解析后回填多洞 UI 失败: {e}")
+
                 # 构造状态消息（带 try/except 防护）
                 try:
                     dir_vals = result.debug.get("direction_margins", {}) if isinstance(result.debug, dict) else {}
@@ -593,14 +653,49 @@ class _PoolBoxMixin:
                                 f"\n  🔤 方向标注: 上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm"
                             )
 
-                    self._set_pool_status(
-                        f"✅ 识别草图成功：\n"
-                        f"  外框：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm\n"
-                        f"  内挖（按画布+边距派生）：{(result.outer_w_cm - result.margin_left_cm - result.margin_right_cm):.1f} × {(result.outer_h_cm - result.margin_top_cm - result.margin_bottom_cm):.1f} cm\n"
-                        f"  边距：上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f} cm"
-                        f"{dir_info}"
-                        f"\n（已按识别值填入【内挖边距】栏，画布已含 1cm 裁剪损耗，内挖会自动外扩 1cm）"
-                    )
+                    # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞状态栏（替换单洞"内挖/边距"行）=====
+                    # 仅当 is_multi_hole=True 且 holes>=2 时，显示每洞尺寸 + 洞间距；
+                    # 单洞场景保持原文本一字不变。
+                    is_mh = (getattr(result, 'is_multi_hole', False)
+                             and hasattr(result, 'holes')
+                             and isinstance(result.holes, list)
+                             and len(result.holes) >= 2)
+                    if is_mh:
+                        holes = result.holes
+                        gaps = list(getattr(result, 'hole_gaps_cm', []) or [])
+                        layout = getattr(result, 'layout_type', 'horizontal') or 'horizontal'
+                        # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
+                        valid_holes = [h for h in holes if (float(getattr(h,'w_cm',0))>0) or (float(getattr(h,'h_cm',0))>0)]
+                        valid_gaps = gaps[:max(0,len(valid_holes)-1)]
+                        holes_txt_lines = []
+                        for i, h in enumerate(valid_holes):
+                            holes_txt_lines.append(
+                                f"  洞{i+1}：{h.w_cm:.1f} × {h.h_cm:.1f} cm"
+                            )
+                        gaps_txt = "，".join(f"间{i+1}_{i+2}={valid_gaps[i]:.1f}" for i in range(len(valid_gaps))) if valid_gaps else "无"
+                        # 边距：上/下共享；左=第1洞ml；右=最后1洞mr；再加中间间距列表
+                        margin_mh_txt = (f"边距：上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}"
+                                         f"/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f}"
+                                         f"，中距：{gaps_txt}")
+                        mh_info = (
+                            f"✅ 识别草图成功（{layout}，{len(valid_holes)}洞）：\n"
+                            f"  外框：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm\n"
+                        )
+                        for line in holes_txt_lines:
+                            mh_info += line + "\n"
+                        mh_info += f"  {margin_mh_txt}{dir_info}\n"
+                        mh_info += "（已按识别值填入【内挖边距】栏和【多洞参数】区，画布已含 1cm 裁剪损耗）"
+                        self._set_pool_status(mh_info)
+                    else:
+                        # ===== 单洞原有代码（一字未改） =====
+                        self._set_pool_status(
+                            f"✅ 识别草图成功：\n"
+                            f"  外框：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm\n"
+                            f"  内挖（按画布+边距派生）：{(result.outer_w_cm - result.margin_left_cm - result.margin_right_cm):.1f} × {(result.outer_h_cm - result.margin_top_cm - result.margin_bottom_cm):.1f} cm\n"
+                            f"  边距：上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f} cm"
+                            f"{dir_info}"
+                            f"\n（已按识别值填入【内挖边距】栏，画布已含 1cm 裁剪损耗，内挖会自动外扩 1cm）"
+                        )
                 except Exception as e:
                     logger.exception(f"[PropertyPanel] 草图状态消息构造失败: {e}")
                     self._set_pool_status(
