@@ -700,6 +700,55 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         from .geometry import (make_mask, fill_rect_mask, apply_rounded_corners_to_mask,
                                compute_inner_corner_radii, RectShape,
                                build_lshape_mask)
+        # ===== [MULTI-HOLE Add-On 2026-08-29] PRE-COMPUTE 每洞独立 4 边边框 =====
+        # 多洞 mode=rect_hole + N>=2 时：不依赖后续单洞大 inner_rect shrink（那玩意儿
+        # 只生成"整个内挖的大边框"，UNION 小 mask 后只剩顶部横条，左/右/下三边全丢 ——
+        # 用户截图中的半吊子黑线就是这么来的）。
+        # 解决方案：对每洞独立做 full_rect & ~shrunk_rect(2*border_width_px) 得到
+        # 每洞 10px 完整 4 边环，逐洞 OR 合并；后续单洞代码跑完后再 override border_mask。
+        # border_width_px 与 L533 同一变量（max(2, ceil(10*pixel_scale))），保证与单洞
+        # 边框厚度/缩放宽高 像素级 1:1 一致。
+        _mh_border_mask = None  # None = 非多洞 / 非 rect_hole / 洞不足 2
+        _multi_holes = getattr(design, 'pool_holes_cm', [])
+        if (design.mode == 'rect_hole'
+                and getattr(design, 'pool_is_multi_hole', False)
+                and isinstance(_multi_holes, list)
+                and len(_multi_holes) >= 2):
+            _mh_border_mask = np.zeros((H, W), dtype=bool)
+            for _hc in _multi_holes:
+                _hx = design.cm2px(float(_hc.get('x_cm', 0.0)))
+                _hy = design.cm2px(float(_hc.get('y_cm', 0.0)))
+                _hw = design.cm2px(float(_hc.get('w_cm', 0.0)))
+                _hh = design.cm2px(float(_hc.get('h_cm', 0.0)))
+                if _hw <= 0 or _hh <= 0:
+                    continue
+                _rx = max(0.0, _hx)
+                _ry = max(0.0, _hy)
+                _rw = max(1.0, min(float(W) - _rx, _hw))
+                _rh = max(1.0, min(float(H) - _ry, _hh))
+                # 全洞 mask
+                _hf = make_mask((W, H))
+                fill_rect_mask(_hf, RectShape(_rx, _ry, _rw, _rh), 255)
+                _hole_full = np.array(_hf, dtype=bool)
+                # shrink 2*bw → 内部洞（与单洞 has_shrunk 公式完全对齐）
+                _sh_w = max(0.0, _rw - 2 * border_width_px)
+                _sh_h = max(0.0, _rh - 2 * border_width_px)
+                if _sh_w > 0 and _sh_h > 0:
+                    _sh_r = RectShape(
+                        x=_rx + border_width_px,
+                        y=_ry + border_width_px,
+                        w=_sh_w, h=_sh_h,
+                    )
+                    _hs = make_mask((W, H))
+                    fill_rect_mask(_hs, _sh_r, 255)
+                    _hole_shrunk = np.array(_hs, dtype=bool)
+                    _border_i = _hole_full & ~_hole_shrunk
+                else:
+                    # 洞尺寸太小无法 shrink — 等价单洞 has_shrunk=False → 整洞作为边框区
+                    _border_i = _hole_full
+                _mh_border_mask |= _border_i
+        # ===== [END ADD-ON PRE-COMPUTE] =====
+
         inner_rect = design.inner_rect_px()
         outer = design.outer_rect_px()
         corners = design.corners_px
@@ -748,6 +797,13 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             border_mask = inner_mask & ~np.array(mask_b_img, dtype=bool)
         else:
             border_mask = inner_mask
+
+        # ===== [MULTI-HOLE Add-On 2026-08-29] APPLY 多洞边框 override =====
+        # 只有多洞 PRE-COMPUTE 成功时覆盖；单洞 / rect_lshape / 少于 2 洞：_mh_border_mask is None，
+        # 保持上面原代码算出来的 border_mask 一字不变。
+        if _mh_border_mask is not None:
+            border_mask = _mh_border_mask
+        # ===== [END ADD-ON APPLY] =====
     else:
         from .geometry import _erode_mask
         eroded = _erode_mask(inner_mask, border_width_px)

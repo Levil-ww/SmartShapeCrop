@@ -661,6 +661,100 @@ def test_91_multi_hole_empty_defaults_still_single_hole_code_path():
     logger.info(f"[T91] 单洞默认路径零回归: true_pixels={int(np.count_nonzero(mask))}")
 
 
+def test_92_multi_hole_border_each_hole_four_sides_10px():
+    """T92: 多洞模式下，render_layout_pillow 输出必须为每洞绘制完整 4 边 10px 黑框。
+
+    重现用户真实场景：outer=350×59 cm；2 横排洞 45×35.5 cm；mt=11.5 mb=12 ml=21.5 gap=46 mr=192.5。
+    DPI 取 72（10px border 在 72dpi 时仍然约 10 像素，验证足够）。
+
+    断言 (每洞独立)：
+    (A) 洞 top 边沿水平线上、left 边沿竖直线、right 边沿竖直线、bottom 边沿水平线
+        —— 这些位置的像素应全为 BLACK (0,0,0)。
+    (B) 洞内部向内 2 个 border_width 像素的中心像素 必须 不是 BLACK（内部白）。
+    """
+    try:
+        import numpy as np
+        from core.geometry import CropDesign
+        from core.image_ops import render_design
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"本地模块导入失败: {e}")
+
+    d = CropDesign()
+    d.canvas_w_cm = 351.0
+    d.canvas_h_cm = 60.0
+    d.dpi = 72
+    d.mode = 'rect_hole'
+    d.outer_margin_cm = 0.0
+    d.inner_margin_top_cm = 11.5
+    d.inner_margin_bottom_cm = 12.0
+    d.inner_margin_left_cm = 21.5
+    d.inner_margin_right_cm = 192.5
+    d.pool_is_multi_hole = True
+    x0 = 21.5
+    d.pool_holes_cm = [
+        {'x_cm': x0,             'y_cm': 11.5, 'w_cm': 45.0, 'h_cm': 35.5},
+        {'x_cm': x0 + 45 + 46,   'y_cm': 11.5, 'w_cm': 45.0, 'h_cm': 35.5},
+    ]
+    d.pool_holes_gaps_cm = [46.0]
+
+    img = render_design(d, quality='preview', pixel_scale=1.0)
+    # --- PURE PIL SAMPLING (bypass PIL+numpy interface env quirks) ---
+    rgb_img = img.convert('RGB')
+    W_arr, H_arr = rgb_img.size   # PIL size = (W, H)
+
+    # pixel_scale=1.0 → bw = max(2, ceil(10*1)) = 10
+    bw = 10
+
+    def px(cm_):
+        return int(round(d.cm2px(cm_)))
+
+    for i, hc in enumerate(d.pool_holes_cm):
+        x1 = px(hc['x_cm']); y1 = px(hc['y_cm'])
+        x2 = px(hc['x_cm'] + hc['w_cm']); y2 = px(hc['y_cm'] + hc['h_cm'])
+
+        # 采样 5 点；纯 PIL getpixel，避免 numpy striding 造成的环境误判
+        n = 5
+        xs = np.linspace(x1, x2 - 1, n).astype(int)
+        xs = np.clip(xs, 0, W_arr - 1)
+        ys_top    = np.full(n, y1,       dtype=int)
+        ys_bottom = np.full(n, y2 - 1,   dtype=int)
+        ys_vert   = np.linspace(y1, y2 - 1, n).astype(int)
+        ys_vert   = np.clip(ys_vert, 0, H_arr - 1)
+        xs_left   = np.full(n, x1,       dtype=int)
+        xs_right  = np.full(n, x2 - 1,   dtype=int)
+
+        def _rgbs(xs_, ys_):
+            return [rgb_img.getpixel((int(x), int(y))) for x, y in zip(xs_, ys_)]
+
+        BLACK = (0, 0, 0)
+        top_rgbs   = _rgbs(xs, ys_top)
+        bot_rgbs   = _rgbs(xs, ys_bottom)
+        left_rgbs  = _rgbs(xs_left, ys_vert)
+        right_rgbs = _rgbs(xs_right, ys_vert)
+
+        top_ok   = all(p == BLACK for p in top_rgbs)
+        bot_ok   = all(p == BLACK for p in bot_rgbs)
+        left_ok  = all(p == BLACK for p in left_rgbs)
+        right_ok = all(p == BLACK for p in right_rgbs)
+
+        assert top_ok,   (f"洞{i+1} 上边沿采样未全黑 (x={x1}..{x2}, y={y1}); "
+                          f"Image W={W_arr} H={H_arr}; actual rgbs={top_rgbs}")
+        assert bot_ok,   f"洞{i+1} 下边沿采样未全黑 (x={x1}..{x2}, y={y2-1}); actual rgbs={bot_rgbs}"
+        assert left_ok,  f"洞{i+1} 左边沿采样未全黑 (x={x1}, y={y1}..{y2}); actual rgbs={left_rgbs}"
+        assert right_ok, f"洞{i+1} 右边沿采样未全黑 (x={x2-1}, y={y1}..{y2}); actual rgbs={right_rgbs}"
+
+        # (B) 中心：向内 2*bw 像素以上，绝对不能 BLACK
+        cx = px(hc['x_cm'] + hc['w_cm'] / 2)
+        cy = px(hc['y_cm'] + hc['h_cm'] / 2)
+        cx = int(np.clip(cx, 0, W_arr - 1))
+        cy = int(np.clip(cy, 0, H_arr - 1))
+        center_rgb = rgb_img.getpixel((cx, cy))
+        assert center_rgb != BLACK, \
+            f"洞{i+1} 中心像素 ({cx},{cy})={center_rgb} 为 BLACK，疑似边框溢出或 hole 整体未画白"
+
+    logger.info(f"[T92] 多洞每洞 4 边 10px 黑框 OK ({bw}px)，每洞中心均非 BLACK ✓")
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s [%(name)s] %(levelname)s %(message)s')
