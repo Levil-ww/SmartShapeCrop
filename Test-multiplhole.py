@@ -1,5 +1,5 @@
 from core.pool_designer import parse_sketch
-r = parse_sketch("C:\\Users\\Administrator\\Desktop\\智能裁剪设计器\\测试草图文件-矩形多洞\\双面革-定制-裁剪有图-戴安娜;59x350cm裁剪有图.png")
+r = parse_sketch("path/to/your_sketch.png")
 print(f"多洞: {r.is_multi_hole} 布局: {r.layout_type} N={len(r.holes)}")
 print(f"外框: {r.outer_w_cm}x{r.outer_h_cm}")
 for i, h in enumerate(r.holes):

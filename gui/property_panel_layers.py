@@ -216,6 +216,18 @@ class _LayersMixin:
                             return default_mr
                         return 0.0
 
+                    # ===== [INNER MATERIAL Add-On 2026-08-29] 继承 per-hole 素材字段 =====
+                    # _collect() 完全重建 pool_holes_cm（L219-278），会丢失 UI 层素材匹配写入的
+                    # inner_material_path / _cached_inner_image / _src_design_w_cm 等。
+                    # 在每个洞构建完几何字段后，从 old_holes[i] 继承素材相关键。
+                    _MATERIAL_KEYS = ('inner_material_path', '_cached_inner_image',
+                                      '_src_design_w_cm', '_src_design_h_cm')
+
+                    def _inherit_material(i):
+                        """从 old_holes[i] 继承素材相关字段（_collect 重建会丢失）。"""
+                        src = old_holes[i] if (0 <= i < len(old_holes) and isinstance(old_holes[i], dict)) else {}
+                        return {k: src[k] for k in _MATERIAL_KEYS if k in src}
+
                     new_holes_cm = []
                     if layout == 'horizontal':
                         shared_ml = d.inner_margin_left_cm
@@ -228,13 +240,15 @@ class _LayersMixin:
                             hmb = _mb_i(i, d.inner_margin_bottom_cm)
                             hml = _ml_i(i, shared_ml)
                             hmr = _mr_i(i, d.inner_margin_right_cm)
-                            new_holes_cm.append({
+                            _hole_dict = {
                                 'x_cm': cursor_x,
-                                'y_cm': oy_cm + hmt,   # 每洞独立 mt_i！
+                                'y_cm': oy_cm + hmt,
                                 'w_cm': wv, 'h_cm': hv,
                                 'mt_cm': hmt, 'mb_cm': hmb,
                                 'ml_cm': hml, 'mr_cm': hmr,
-                            })
+                            }
+                            _hole_dict.update(_inherit_material(i))
+                            new_holes_cm.append(_hole_dict)
                             cursor_x += wv
                     elif layout == 'vertical':
                         shared_ml = d.inner_margin_left_cm
@@ -247,13 +261,15 @@ class _LayersMixin:
                             hmb = _mb_i(i, d.inner_margin_bottom_cm)
                             hml = _ml_i(i, shared_ml)
                             hmr = _mr_i(i, d.inner_margin_right_cm)
-                            new_holes_cm.append({
-                                'x_cm': ox_cm + hml,  # 每洞独立 ml_i！
+                            _hole_dict = {
+                                'x_cm': ox_cm + hml,
                                 'y_cm': cursor_y,
                                 'w_cm': wv, 'h_cm': hv,
                                 'mt_cm': hmt, 'mb_cm': hmb,
                                 'ml_cm': hml, 'mr_cm': hmr,
-                            })
+                            }
+                            _hole_dict.update(_inherit_material(i))
+                            new_holes_cm.append(_hole_dict)
                             cursor_y += hv
                     else:  # mixed：退化横排
                         shared_ml = d.inner_margin_left_cm
@@ -266,13 +282,15 @@ class _LayersMixin:
                             hmb = _mb_i(i, d.inner_margin_bottom_cm)
                             hml = _ml_i(i, shared_ml)
                             hmr = _mr_i(i, d.inner_margin_right_cm)
-                            new_holes_cm.append({
+                            _hole_dict = {
                                 'x_cm': cursor_x,
                                 'y_cm': oy_cm + hmt,
                                 'w_cm': wv, 'h_cm': hv,
                                 'mt_cm': hmt, 'mb_cm': hmb,
                                 'ml_cm': hml, 'mr_cm': hmr,
-                            })
+                            }
+                            _hole_dict.update(_inherit_material(i))
+                            new_holes_cm.append(_hole_dict)
                             cursor_x += wv
                     # 写回 design：pool_holes_cm 长度严格 == n_holes，不会含 0 值洞
                     d.pool_holes_cm = new_holes_cm

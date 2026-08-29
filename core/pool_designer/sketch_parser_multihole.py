@@ -1080,10 +1080,13 @@ def _build_multi_hole_assignment(dir_locked, buckets, outer_w_cand, outer_h_cand
     assignment['total_h'] = (outer_h_cand, 0.7)
 
     # --- 共享边距：方向锁定优先 ---
+    # [Bug fix] alt_key 必须指向 per-hole 桶（margin_top_0 等），不能和 key 相同！
+    # 桶结构是 margin_top_0/margin_top_1... 没有全局 margin_top 桶。
+    # 之前 alt_key=key 导致 fallback 永远不触发，全局 mt/mb 恒为 0。
     shared_fields = {
-        'margin_top': ('margin_top', 0.0),
-        'margin_bottom': ('margin_bottom', 0.0),
-        'margin_left': ('margin_left_0', 0.0),   # margin_left 对应 margin_left_0
+        'margin_top': ('margin_top_0', 0.0),      # fallback 到第一个洞的 mt
+        'margin_bottom': (f'margin_bottom_{n_holes - 1}', 0.0),  # fallback 到最后一个洞的 mb
+        'margin_left': ('margin_left_0', 0.0),
         'margin_right': (f'margin_right_{n_holes - 1}', 0.0),
     }
     for key, (alt_key, _) in shared_fields.items():
@@ -1368,8 +1371,8 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         # 判定轴向上限（margin_top/bottom 用 _cap_v；margin_left/right 用 _cap_h）
         if is_margin:
             axis_limit = _cap_v if ('top' in f or 'bottom' in f) else _cap_h
-        else:  # inner_w / inner_h
-            axis_limit = _cap_h if f.endswith('_w') else _cap_v
+        else:  # inner_w / inner_h（桶名是 inner_w_0/inner_w_1... 以 _N 结尾，不能用 endswith）
+            axis_limit = _cap_h if f.startswith('inner_w') else _cap_v
         # 对桶内每个候选做 outlier 修正
         _repaired = []
         for (v, c, bb) in buckets[f]:

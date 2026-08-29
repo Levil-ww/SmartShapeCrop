@@ -169,47 +169,129 @@ class _GenerateMixin:
             #    L 形模式：L 形区域保留外框素材，挖掉的角显示洞色，不涉及内挖素材。
             inner_match_info = ""
             if hm == "image" and self.design.mode != 'rect_lshape':
-                try:
-                    inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
-                    inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
-                    target_name = self._pool_target.text().strip()
-                    if target_name and inner_w_cm > 0 and inner_h_cm > 0:
-                        import re
-                        # 用正则替换原目标文件名中的尺寸部分为内挖尺寸
-                        # 原格式: ...-{W}x{H}CM... → 替换为内挖尺寸
-                        dim_match = re.search(
-                            r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
-                            target_name
-                        )
-                        if dim_match:
-                            new_dim = f'{inner_w_cm:.1f}x{inner_h_cm:.1f}CM'
-                            inner_query = (target_name[:dim_match.start()]
-                                           + new_dim
-                                           + target_name[dim_match.end():])
-                        else:
-                            # 兜底：构造标准查询格式
-                            from core.parser.name_parser import parse_filename
-                            p = parse_filename(target_name)
-                            pat = p.pool_pattern_name or p.pattern_name or ""
-                            inner_query = f"{pat}-裁剪有图-{inner_w_cm:.1f}x{inner_h_cm:.1f}CM" if pat else ""
-
-                        if inner_query:
-                            self._set_pool_status(f"正在匹配内挖素材…", is_error=False)
-                            QApplication.processEvents()
-                            self._matcher.scan_library(force=False)
-                            best_inner, _ = self._matcher.find_best_match(inner_query)
-                            if best_inner is not None:
-                                self.design.pool_inner_material_image = best_inner.path
-                                self.design.hole_bg_image = best_inner.path
-                                inner_match_info = f"内挖素材：{os.path.basename(best_inner.path)} (score={best_inner.score:.1f})\n"
-                                self._ed_hole_img.setText(best_inner.path)
+                # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞：每洞独立匹配内挖素材 =====
+                # 触发条件：pool_is_multi_hole=True 且 pool_holes_cm>=2
+                # 为每洞用独立的 w_cm/h_cm + pool_pattern_name 构造查询文件名，
+                # 调用 matcher.find_best_match()，结果存入 pool_holes_cm[i]['inner_material_path']。
+                # 单洞场景 pool_is_multi_hole=False → 跳过，走下面的原有单洞逻辑一字不变。
+                _mh = (getattr(self.design, 'pool_is_multi_hole', False)
+                       and isinstance(getattr(self.design, 'pool_holes_cm', []), list)
+                       and len(self.design.pool_holes_cm) >= 2)
+                if _mh:
+                    try:
+                        self._matcher.scan_library(force=False)
+                        import re as _re
+                        _target_name = self._pool_target.text().strip()
+                        # ===== 查询名构造：与单洞逻辑完全对齐（关键修复） =====
+                        # 优先：正则替换 target 名中的尺寸部分 → 保留花型名（如"安妮森林"）
+                        # 兜底：parse_filename 取 pattern_name（去掉冒号后的尺寸）
+                        _tmpl = ""  # 最终查询模板（带原始花型名、占位尺寸）
+                        _dim_match = None
+                        if _target_name:
+                            _dim_match = _re.search(
+                                r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
+                                _target_name
+                            )
+                        if _dim_match:
+                            # ✅ 正确路径：正则替换 → 保留原始花型名（如 "安妮森林"）
+                            # 例："双面草-定制-裁剪有图-安妮森林:50x247cm裁剪有图"
+                            #           → template = "双面草-定制-裁剪有图-安妮森林:{W}x{H}CM裁剪有图"
+                            _tmpl = (_target_name[:_dim_match.start()]
+                                     + '{W:.1f}x{H:.1f}CM'
+                                     + _target_name[_dim_match.end():])
+                        elif _target_name:
+                            # 兜底：无尺寸 → 尝试 parse_filename 提取 pattern_name（比 pool_pattern_name 更可靠）
+                            from core.parser.name_parser import parse_filename as _parse_fn
+                            _p = _parse_fn(_target_name)
+                            # pattern_name 是 "安妮森林:50x247cm" → 去掉冒号后的尺寸
+                            _flower = _p.pattern_name or _p.pool_pattern_name or ""
+                            _flower = _flower.split(':')[0].strip() if _flower else ""
+                            if _flower:
+                                _tmpl = f"{_flower}-裁剪有图-{{W:.1f}}x{{H:.1f}}CM"
+                        # ===== 为每洞填充独立尺寸 =====
+                        _preload_cache = {}  # path -> PIL.Image 避免重复磁盘 IO
+                        for _i, _hc in enumerate(self.design.pool_holes_cm):
+                            _w = float(_hc.get('w_cm', 0))
+                            _h = float(_hc.get('h_cm', 0))
+                            if _w <= 0 or _h <= 0:
+                                _hc['inner_material_path'] = None
+                                continue
+                            if _tmpl:
+                                _q = _tmpl.format(W=_w, H=_h)
                             else:
-                                inner_match_info = "内挖素材：未找到匹配（请手动选择）\n"
-                        else:
-                            inner_match_info = "内挖素材：无花型名，跳过自动匹配\n"
-                except Exception as e:
-                    logger.warning(f"[PropertyPanel] 内挖素材自动匹配失败: {e}")
-                    inner_match_info = f"内挖素材匹配异常：{e}\n"
+                                _q = ""
+                            if _q:
+                                self._set_pool_status(f"正在匹配洞{_i+1}素材…", is_error=False)
+                                QApplication.processEvents()
+                                _best, _ = self._matcher.find_best_match(_q)
+                                if _best is not None:
+                                    _hc['inner_material_path'] = _best.path
+                                    inner_match_info += (f"洞{_i+1}素材："
+                                                         f"{os.path.basename(_best.path)}"
+                                                         f" (score={_best.score:.1f})\n")
+                                else:
+                                    _hc['inner_material_path'] = None
+                                    inner_match_info += f"洞{_i+1}素材：未找到匹配\n"
+                            else:
+                                _hc['inner_material_path'] = None
+                                inner_match_info += f"洞{_i+1}素材：无花型名跳过\n"
+                        # 预加载所有匹配到的素材图
+                        try:
+                            from core.image_ops import load_image_rgb
+                            for _hc in self.design.pool_holes_cm:
+                                _p = _hc.get('inner_material_path')
+                                if _p and os.path.isfile(_p):
+                                    if _p not in _preload_cache:
+                                        _preload_cache[_p] = load_image_rgb(_p)
+                                    _hc['_cached_inner_image'] = _preload_cache[_p]
+                        except Exception as _pre_e:
+                            logger.warning(f"[Multi-hole inner material] 预加载素材失败: {_pre_e}")
+                    except Exception as _mh_e:
+                        logger.warning(f"[Multi-hole inner material] 多洞独立匹配失败: {_mh_e}")
+                        inner_match_info = f"多洞素材匹配异常：{_mh_e}\n"
+                else:
+                    # ===== 单洞原有内挖素材匹配（一字未改） =====
+                    try:
+                        inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
+                        inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
+                        target_name = self._pool_target.text().strip()
+                        if target_name and inner_w_cm > 0 and inner_h_cm > 0:
+                            import re
+                            # 用正则替换原目标文件名中的尺寸部分为内挖尺寸
+                            # 原格式: ...-{W}x{H}CM... → 替换为内挖尺寸
+                            dim_match = re.search(
+                                r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
+                                target_name
+                            )
+                            if dim_match:
+                                new_dim = f'{inner_w_cm:.1f}x{inner_h_cm:.1f}CM'
+                                inner_query = (target_name[:dim_match.start()]
+                                               + new_dim
+                                               + target_name[dim_match.end():])
+                            else:
+                                # 兜底：构造标准查询格式
+                                from core.parser.name_parser import parse_filename
+                                p = parse_filename(target_name)
+                                pat = p.pool_pattern_name or p.pattern_name or ""
+                                inner_query = f"{pat}-裁剪有图-{inner_w_cm:.1f}x{inner_h_cm:.1f}CM" if pat else ""
+
+                            if inner_query:
+                                self._set_pool_status(f"正在匹配内挖素材…", is_error=False)
+                                QApplication.processEvents()
+                                self._matcher.scan_library(force=False)
+                                best_inner, _ = self._matcher.find_best_match(inner_query)
+                                if best_inner is not None:
+                                    self.design.pool_inner_material_image = best_inner.path
+                                    self.design.hole_bg_image = best_inner.path
+                                    inner_match_info = f"内挖素材：{os.path.basename(best_inner.path)} (score={best_inner.score:.1f})\n"
+                                    self._ed_hole_img.setText(best_inner.path)
+                                else:
+                                    inner_match_info = "内挖素材：未找到匹配（请手动选择）\n"
+                            else:
+                                inner_match_info = "内挖素材：无花型名，跳过自动匹配\n"
+                    except Exception as e:
+                        logger.warning(f"[PropertyPanel] 内挖素材自动匹配失败: {e}")
+                        inner_match_info = f"内挖素材匹配异常：{e}\n"
 
             # 4) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
             self._set_pool_status("正在生成预览图…", is_error=False)

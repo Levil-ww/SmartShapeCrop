@@ -895,6 +895,71 @@ def _render_inner_area(design: CropDesign, quality: str = 'export') -> Image.Ima
     if design.pool_hole_transparent:
         return Image.new('RGB', (W, H), (255, 255, 255))
 
+    # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞独立素材填充 =====
+    # 触发条件：pool_is_multi_hole=True 且 pool_holes_cm>=2 且至少一洞有 inner_material_path。
+    # 为每洞独立加载+适配+paste 素材到对应画布位置，实现"每洞用独立尺寸匹配的素材"。
+    # 单洞/无多洞素材 → 跳过此分支，走下面原有单洞代码一字不变。
+    _multi_holes = getattr(design, 'pool_holes_cm', [])
+    _is_mh = (getattr(design, 'pool_is_multi_hole', False)
+              and isinstance(_multi_holes, list)
+              and len(_multi_holes) >= 2)
+    if _is_mh:
+        # 检查是否至少一洞有内挖素材
+        _has_any_inner = any(
+            (_hc.get('inner_material_path') is not None
+             or _hc.get('_cached_inner_image') is not None)
+            for _hc in _multi_holes
+        )
+        if _has_any_inner:
+            result = Image.new('RGB', (W, H), design.hole_bg_color)
+            for _hc in _multi_holes:
+                _hx = design.cm2px(float(_hc.get('x_cm', 0.0)))
+                _hy = design.cm2px(float(_hc.get('y_cm', 0.0)))
+                _hw = design.cm2px(float(_hc.get('w_cm', 0.0)))
+                _hh = design.cm2px(float(_hc.get('h_cm', 0.0)))
+                _iw = max(1, int(round(_hw)))
+                _ih = max(1, int(round(_hh)))
+                _ix = max(0, int(round(_hx)))
+                _iy = max(0, int(round(_hy)))
+                # 边界保护：洞不超出画布
+                if _ix + _iw > W:
+                    _iw = W - _ix
+                if _iy + _ih > H:
+                    _ih = H - _iy
+                if _iw <= 0 or _ih <= 0:
+                    continue
+                # 获取素材：优先用 Worker 预加载缓存，否则从 path 加载
+                _cached = _hc.get('_cached_inner_image')
+                _path = _hc.get('inner_material_path')
+                _src = None
+                if _cached is not None:
+                    _src = _cached
+                elif _path and os.path.isfile(_path):
+                    try:
+                        _src = load_image_rgb(_path)
+                    except Exception as _e:
+                        logger.debug(f"[_render_inner_area multi-hole] 加载洞素材失败 path={_path}: {_e}")
+                        _src = None
+                if _src is None:
+                    continue
+                # 适配：内挖素材使用 adapt_pool_material（与外框素材一致的简单拉伸模式，
+                # 保证图案完整性不被裁剪），素材自身有设计方向尺寸时传入用于旋转校正。
+                _is_tile = _looks_like_tile(_path) if _path else False
+                if _is_tile:
+                    _adapted = _tile_fill(_src, _iw, _ih)
+                else:
+                    _adapted = adapt_pool_material(
+                        _src, _iw, _ih,
+                        material_design_w_cm=float(_hc.get('_src_design_w_cm', 0.0)),
+                        material_design_h_cm=float(_hc.get('_src_design_h_cm', 0.0)),
+                        canvas_w_cm=float(_hc.get('w_cm', 0.0)),
+                        canvas_h_cm=float(_hc.get('h_cm', 0.0)),
+                        quality=quality,
+                    )
+                result.paste(_adapted, (_ix, _iy))
+            return result
+    # ===== [END MULTI-HOLE Add-On] =====
+
     # —— 水池内挖素材：按内挖像素尺寸渲染，贴到画布内挖位置 ——
     # 与外框素材（按画布尺寸渲染）不同，内挖素材应按内挖尺寸精确缩放
     pool_inner = getattr(design, 'pool_inner_material_image', None)

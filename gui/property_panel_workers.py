@@ -258,24 +258,44 @@ class PoolRenderWorker(QThread):
                     holes = sketch_result.holes
                     gaps = list(getattr(sketch_result, 'hole_gaps_cm', []) or [])
                     layout = getattr(sketch_result, 'layout_type', 'horizontal') or 'horizontal'
+                    # [MULTI-HOLE EXPANSION Add-On] 每个洞尺寸 +1cm（往外扩），间距 -1cm 补偿
+                    # 不变量：ml + Σ(w_i+1) + Σ(gap_j-1) + mr = outer + 1 = canvas_w
+                    # 单洞已自动 +1（inner=canvas-margins）；多洞需显式扩 + 间距补偿
+                    gaps = [max(0.0, g - TRIM_CM) for g in gaps]
 
                     # ===== [MULTI-HOLE SANITY Add-On 2026-08-29] 全局 mt/mb/ml/mr 覆盖 =====
-                    # Bug fix：共享 margin_top/margin_bottom 桶可能为空（每个洞有独立 mt），
-                    # 导致 L236-239 把 design.inner_margin_* 全设为 0 → GUI 边距栏全 0 →
-                    # 渲染洞 y 对齐到画布顶。修复：用 HoleInfo 的 per-hole 值的中位数
-                    # 作为全局 fallback，保证 GUI 显示合理值；per-hole 计算路径不受影响。
+                    # Bug fix (2026-08-29): 优先使用 sketch_result 的全局已方向锁定值，
+                    # 不再从 per-hole HoleInfo 取 min。根因：per-hole margin_left_0
+                    # 在 decimal 移位后变成 3.6（应为 36.0），min(36.0, 3.6) = 3.6 → GUI 左边距显示 3.6。
+                    # 全局值 sketch_result.margin_left 已被方向/箭头锁定为正确的 36.0，直接使用。
+                    _sr_ml = getattr(sketch_result, 'margin_left', 0) or 0
+                    _sr_mr = getattr(sketch_result, 'margin_right', 0) or 0
+                    _sr_mt = getattr(sketch_result, 'margin_top', 0) or 0
+                    _sr_mb = getattr(sketch_result, 'margin_bottom', 0) or 0
+                    # Per-hole fallback（仅当全局值为 0 时兜底）
                     _all_mt = [getattr(h, 'margin_top_cm', 0) for h in holes if getattr(h, 'margin_top_cm', 0) > 0]
                     _all_mb = [getattr(h, 'margin_bottom_cm', 0) for h in holes if getattr(h, 'margin_bottom_cm', 0) > 0]
-                    _all_ml = [getattr(h, 'margin_left_cm', 0) for h in holes if getattr(h, 'margin_left_cm', 0) > 0]
-                    _all_mr = [getattr(h, 'margin_right_cm', 0) for h in holes if getattr(h, 'margin_right_cm', 0) > 0]
-                    if _all_mt:
-                        design.inner_margin_top_cm = min(_all_mt)  # 取最小值（最保守）
-                    if _all_mb:
+                    if _sr_mt > 0:
+                        design.inner_margin_top_cm = _sr_mt
+                    elif _all_mt:
+                        design.inner_margin_top_cm = min(_all_mt)
+                    if _sr_mb > 0:
+                        design.inner_margin_bottom_cm = _sr_mb
+                    elif _all_mb:
                         design.inner_margin_bottom_cm = min(_all_mb)
-                    if _all_ml:
-                        design.inner_margin_left_cm = min(_all_ml)
-                    if _all_mr:
-                        design.inner_margin_right_cm = min(_all_mr)
+                    # 左右边距：**优先全局值**（方向锁定的正确性远高于 per-hole）
+                    if _sr_ml > 0:
+                        design.inner_margin_left_cm = _sr_ml
+                    else:
+                        _all_ml = [getattr(h, 'margin_left_cm', 0) for h in holes if getattr(h, 'margin_left_cm', 0) > 0]
+                        if _all_ml:
+                            design.inner_margin_left_cm = min(_all_ml)
+                    if _sr_mr > 0:
+                        design.inner_margin_right_cm = _sr_mr
+                    else:
+                        _all_mr = [getattr(h, 'margin_right_cm', 0) for h in holes if getattr(h, 'margin_right_cm', 0) > 0]
+                        if _all_mr:
+                            design.inner_margin_right_cm = min(_all_mr)
                     self._log(
                         f"[多洞全局边距修正] mt={design.inner_margin_top_cm:.1f} "
                         f"mb={design.inner_margin_bottom_cm:.1f} "
@@ -313,8 +333,8 @@ class PoolRenderWorker(QThread):
                                 cursor_x += gaps[i - 1]
                             x_cm = cursor_x
                             y_cm = oy_cm + _mt_of(h)   # 每洞独立 y
-                            w_cm = max(0.0, h.w_cm)
-                            h_cm = max(0.0, h.h_cm)
+                            w_cm = max(0.0, h.w_cm) + TRIM_CM  # 往外扩1cm
+                            h_cm = max(0.0, h.h_cm) + TRIM_CM  # 往外扩1cm
                             # ===== [PER-HOLE Add-On] 同时存 per-hole mt/mb/ml/mr =====
                             design.pool_holes_cm.append({
                                 'x_cm': x_cm, 'y_cm': y_cm,
@@ -333,8 +353,8 @@ class PoolRenderWorker(QThread):
                                 cursor_y += gaps[i - 1]
                             x_cm = ox_cm + _ml_of(h)   # 每洞独立 x
                             y_cm = cursor_y
-                            w_cm = max(0.0, h.w_cm)
-                            h_cm = max(0.0, h.h_cm)
+                            w_cm = max(0.0, h.w_cm) + TRIM_CM  # 往外扩1cm
+                            h_cm = max(0.0, h.h_cm) + TRIM_CM  # 往外扩1cm
                             design.pool_holes_cm.append({
                                 'x_cm': x_cm, 'y_cm': y_cm,
                                 'w_cm': w_cm, 'h_cm': h_cm,
@@ -349,17 +369,19 @@ class PoolRenderWorker(QThread):
                         for i, h in enumerate(holes):
                             if i > 0 and i - 1 < len(gaps):
                                 cursor_x += gaps[i - 1]
+                            _w_exp = max(0.0, h.w_cm) + TRIM_CM  # 往外扩1cm
+                            _h_exp = max(0.0, h.h_cm) + TRIM_CM  # 往外扩1cm
                             design.pool_holes_cm.append({
                                 'x_cm': cursor_x,
                                 'y_cm': oy_cm + _mt_of(h),  # 每洞独立 y
-                                'w_cm': max(0.0, h.w_cm),
-                                'h_cm': max(0.0, h.h_cm),
+                                'w_cm': _w_exp,
+                                'h_cm': _h_exp,
                                 'mt_cm': _mt_of(h),
                                 'mb_cm': _mb_of(h),
                                 'ml_cm': _ml_of(h),
                                 'mr_cm': max(0.0, getattr(h, 'margin_right_cm', 0.0)),
                             })
-                            cursor_x += h.w_cm
+                            cursor_x += _w_exp
 
                     # 标记：image_ops Add-On 检查该标记和 holes>=2 才触发
                     design.pool_is_multi_hole = True
@@ -368,6 +390,10 @@ class PoolRenderWorker(QThread):
                     self._log(
                         f"多洞模式写入: N={len(holes)} layout={layout} "
                         f"gaps={[round(g,1) for g in gaps]}"
+                    )
+                    self._log(
+                        f"  [挖洞扩展] 每洞尺寸+{TRIM_CM:.1f}cm，间距-{TRIM_CM:.1f}cm补偿 "
+                        f"（保证 ml+Σ(w+1)+Σ(gap-1)+mr = outer+1 = canvas）"
                     )
                     for i, hc in enumerate(design.pool_holes_cm):
                         self._log(
