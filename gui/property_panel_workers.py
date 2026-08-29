@@ -262,57 +262,78 @@ class PoolRenderWorker(QThread):
                     # 画布坐标原点 = (outer_margin_cm, outer_margin_cm)。水池模式下通常=0。
                     ox_cm = design.outer_margin_cm
                     oy_cm = design.outer_margin_cm
-                    # 共享 y 起点与洞高：横排洞等高且上下边距共用。
-                    # 用 design.inner_margin_top_cm（已被上方 sketch 赋值）作为共享 mt。
-                    # 注意：TRIM_CM 已加到 canvas_w/h，但 hole 的 w/h 本身是 草图 真值(cm)，
-                    # 我们希望 hole 的绝对位置 = 草图上的绝对位置 + TRIM/2 分布（通过
-                    # inner_margin 保持不变来让渲染器在 canvas_w/h = outer+TRIM 的大画布
-                    # 上以相同边距定位 hole，即 hole 本身的位置相对画布边缘自然分摊了 TRIM）。
+                    # ===== [MULTI-HOLE PER-HOLE Add-On 2026-08-29] per-hole mt_i/ml_i =====
+                    # 每个 hole.margin_top_cm 已由 parser 填充：
+                    #   Case A (异边距) → per-hole 桶命中 → 独立 mt=20.5 / 21.7
+                    #   Case B (同边距) → per-hole 桶空 → fallback 全局 mt=11.5
+                    # 防御性 fallback：若某洞 margin_top_cm==0 → 退回共享 mt
                     shared_mt = design.inner_margin_top_cm
                     shared_ml = holes[0].margin_left_cm if holes else design.inner_margin_left_cm
                     shared_mr = holes[-1].margin_right_cm if holes else design.inner_margin_right_cm
 
+                    def _mt_of(h):
+                        v = getattr(h, 'margin_top_cm', 0.0)
+                        return v if v > 0 else shared_mt
+                    def _mb_of(h):
+                        v = getattr(h, 'margin_bottom_cm', 0.0)
+                        return v if v > 0 else design.inner_margin_bottom_cm
+                    def _ml_of(h):
+                        v = getattr(h, 'margin_left_cm', 0.0)
+                        return v if v > 0 else shared_ml
+
                     if layout == 'horizontal':
-                        # y 轴：每个 hole 从 ox_cm + shared_mt 起，高度取 hole[i].h_cm
-                        y_cm = oy_cm + shared_mt
-                        cursor_x = ox_cm + shared_ml   # 第一个洞的 x 起点
+                        # ===== [PER-HOLE] y 轴：每洞独立 mt_i；x 轴连续（ml→w→gap→w→mr）=====
+                        cursor_x = ox_cm + _ml_of(holes[0])
                         for i, h in enumerate(holes):
-                            # gap
                             if i > 0 and i - 1 < len(gaps):
                                 cursor_x += gaps[i - 1]
                             x_cm = cursor_x
+                            y_cm = oy_cm + _mt_of(h)   # 每洞独立 y
                             w_cm = max(0.0, h.w_cm)
                             h_cm = max(0.0, h.h_cm)
+                            # ===== [PER-HOLE Add-On] 同时存 per-hole mt/mb/ml/mr =====
                             design.pool_holes_cm.append({
                                 'x_cm': x_cm, 'y_cm': y_cm,
                                 'w_cm': w_cm, 'h_cm': h_cm,
+                                'mt_cm': _mt_of(h),
+                                'mb_cm': _mb_of(h),
+                                'ml_cm': _ml_of(h),
+                                'mr_cm': max(0.0, getattr(h, 'margin_right_cm', 0.0)),
                             })
                             cursor_x += w_cm
                     elif layout == 'vertical':
-                        # 竖排：x 起点共享 ml；沿 y 轴用 gap 分开
-                        shared_mb = design.inner_margin_bottom_cm
-                        x_cm = ox_cm + shared_ml
-                        cursor_y = oy_cm + shared_mt
+                        # ===== [PER-HOLE] x 轴：每洞独立 ml_i；y 轴连续（mt→h→gap→h→mb）=====
+                        cursor_y = oy_cm + _mt_of(holes[0])
                         for i, h in enumerate(holes):
                             if i > 0 and i - 1 < len(gaps):
                                 cursor_y += gaps[i - 1]
+                            x_cm = ox_cm + _ml_of(h)   # 每洞独立 x
                             y_cm = cursor_y
                             w_cm = max(0.0, h.w_cm)
                             h_cm = max(0.0, h.h_cm)
                             design.pool_holes_cm.append({
                                 'x_cm': x_cm, 'y_cm': y_cm,
                                 'w_cm': w_cm, 'h_cm': h_cm,
+                                'mt_cm': _mt_of(h),
+                                'mb_cm': _mb_of(h),
+                                'ml_cm': _ml_of(h),
+                                'mr_cm': max(0.0, getattr(h, 'margin_right_cm', 0.0)),
                             })
                             cursor_y += h_cm
                     else:  # mixed：退化按横排
-                        y_cm = oy_cm + shared_mt
-                        cursor_x = ox_cm + shared_ml
+                        cursor_x = ox_cm + _ml_of(holes[0])
                         for i, h in enumerate(holes):
                             if i > 0 and i - 1 < len(gaps):
                                 cursor_x += gaps[i - 1]
                             design.pool_holes_cm.append({
-                                'x_cm': cursor_x, 'y_cm': y_cm,
-                                'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                                'x_cm': cursor_x,
+                                'y_cm': oy_cm + _mt_of(h),  # 每洞独立 y
+                                'w_cm': max(0.0, h.w_cm),
+                                'h_cm': max(0.0, h.h_cm),
+                                'mt_cm': _mt_of(h),
+                                'mb_cm': _mb_of(h),
+                                'ml_cm': _ml_of(h),
+                                'mr_cm': max(0.0, getattr(h, 'margin_right_cm', 0.0)),
                             })
                             cursor_x += h.w_cm
 

@@ -667,23 +667,37 @@ class _PoolBoxMixin:
                         # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
                         valid_holes = [h for h in holes if (float(getattr(h,'w_cm',0))>0) or (float(getattr(h,'h_cm',0))>0)]
                         valid_gaps = gaps[:max(0,len(valid_holes)-1)]
+                        # ===== [PER-HOLE Add-On] 多洞每洞独立 mt/mb/ml/mr 显示 =====
+                        # 把全局边距行替换为每洞独立边距（带 mt/mb/ml/mr）。
+                        # Case A（异边距）→ 洞1 上20.5/下40.0、洞2 上21.7/下35.0 分别显示；
+                        # Case B（同边距）→ 每洞显示相同 mt/mb，视觉等价共享模式。
                         holes_txt_lines = []
                         for i, h in enumerate(valid_holes):
                             holes_txt_lines.append(
                                 f"  洞{i+1}：{h.w_cm:.1f} × {h.h_cm:.1f} cm"
                             )
                         gaps_txt = "，".join(f"间{i+1}_{i+2}={valid_gaps[i]:.1f}" for i in range(len(valid_gaps))) if valid_gaps else "无"
-                        # 边距：上/下共享；左=第1洞ml；右=最后1洞mr；再加中间间距列表
-                        margin_mh_txt = (f"边距：上{result.margin_top_cm:.1f}/下{result.margin_bottom_cm:.1f}"
-                                         f"/左{result.margin_left_cm:.1f}/右{result.margin_right_cm:.1f}"
-                                         f"，中距：{gaps_txt}")
+                        mh_margin_lines = []
+                        for i, h in enumerate(valid_holes):
+                            mt_h = getattr(h, 'margin_top_cm', 0.0)
+                            mb_h = getattr(h, 'margin_bottom_cm', 0.0)
+                            ml_h = getattr(h, 'margin_left_cm', 0.0)
+                            mr_h = getattr(h, 'margin_right_cm', 0.0)
+                            mh_margin_lines.append(
+                                f"  洞{i+1}边距：上{mt_h:.1f}/下{mb_h:.1f}"
+                                f"/左{ml_h:.1f}/右{mr_h:.1f} cm"
+                            )
+                        gaps_txt_line = (f"  中距：{gaps_txt}" if gaps_txt != "无"
+                                         else "  中距：无")
                         mh_info = (
                             f"✅ 识别草图成功（{layout}，{len(valid_holes)}洞）：\n"
                             f"  外框：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm\n"
                         )
                         for line in holes_txt_lines:
                             mh_info += line + "\n"
-                        mh_info += f"  {margin_mh_txt}{dir_info}\n"
+                        for mline in mh_margin_lines:
+                            mh_info += mline + "\n"
+                        mh_info += gaps_txt_line + dir_info + "\n"
                         mh_info += "（已按识别值填入【内挖边距】栏和【多洞参数】区，画布已含 1cm 裁剪损耗）"
                         self._set_pool_status(mh_info)
                     else:

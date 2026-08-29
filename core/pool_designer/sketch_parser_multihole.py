@@ -427,6 +427,31 @@ def _divide_multi_hole_zones(outer, inners, layout, img_w, img_h):
         if gidx >= 0:
             return f'gap_{gidx}_{gidx + 1}'
 
+        # ===== [MULTI-HOLE PER-HOLE Add-On 2026-08-29] per-hole mt_i/mb_i zone 归属 =====
+        # 当异尺寸异边距的多洞草图上，每个洞的上下边距是独立标注的
+        # （如 Case A 洞1 mt=20.5 / 洞2 mt=21.7）。共享 margin_top 桶只取一个 top 值，
+        # 会把两个标注混在一起丢信息。
+        # 解决方案：在共享 margin_top/bottom 桶逻辑（下面 3/4/5 段）之前，
+        # 先尝试把该点归属到「某洞正上方 / 正下方」的专属区 → 返回 per-hole 桶名。
+        # 早 return；没命中再 fall through 到原共享逻辑 → 同尺寸同边距的旧场景零影响。
+        # 保留的原则：(1) per-hole 桶名与全局桶名不同 → 不会互相污染；
+        #             (2) fallback 策略：所有 per-hole 桶全空 → 自然回退全局桶。
+        if layout in ('horizontal', 'mixed'):
+            for i, (hx, hy, hw, hh) in enumerate(inners):
+                # 正上方：点在该洞的 x 范围内 AND cy 在 0..洞顶之间
+                if hx <= cx <= hx + hw and oy <= cy < hy:
+                    return f'margin_top_{i}'
+                # 正下方：点在该洞的 x 范围内 AND cy 在 洞底..外框底之间
+                if hx <= cx <= hx + hw and hy + hh < cy <= oy + oh:
+                    return f'margin_bottom_{i}'
+        if layout == 'vertical':
+            for i, (hx, hy, hw, hh) in enumerate(inners):
+                # 竖排：每洞独立 left / right 归属（同理横向场景的 mt/mb）
+                if ox <= cx < hx and hy <= cy <= hy + hh:
+                    return f'margin_left_{i}'
+                if hx + hw < cx <= ox + ow and hy <= cy <= hy + hh:
+                    return f'margin_right_{i}'
+
         # 3) 共享的 top / bottom 区域（横排和 mixed）
         if layout in ('horizontal', 'mixed'):
             if oy <= cy < min_top_iy and min_left_ix <= cx <= max_right_ix:
@@ -1074,6 +1099,26 @@ def _build_multi_hole_assignment(dir_locked, buckets, outer_w_cand, outer_h_cand
             else:
                 assignment[key] = (0.0, 0.3)
 
+    # ===== [MULTI-HOLE PER-HOLE Add-On 2026-08-29] per-hole mt_i / mb_i =====
+    # 横向场景每洞可能有独立的 mt_i / mb_i；纵向场景同理 ml_i / mr_i。
+    # 读取策略：先查 per-hole 桶 → 无则 fallback 全局桶。
+    # 这样 Case A（异边距）每个洞取自己的值；Case B（同边距）per-hole 桶为空 →
+    # 自然回退全局桶 → 行为等价共享模式，零回归。
+    for idx in range(n_holes):
+        for axis, (global_key, per_key) in (
+                ('top', ('margin_top', f'margin_top_{idx}')),
+                ('bottom', ('margin_bottom', f'margin_bottom_{idx}')),
+                ('left', ('margin_left', f'margin_left_{idx}')),
+                ('right', ('margin_right', f'margin_right_{idx}')),
+        ):
+            # 方向锁定优先（per-hole 暂不支持方向锁定）
+            # 注意：assignment 存的是 2-tuple (value, conf)，不能按 3-tuple 解包
+            gv, gc = assignment.get(global_key, (0.0, 0.3))
+            pv, pc, _ = _top_from_bucket(per_key, 0.0)
+            final_v = pv if pv > 0 else gv
+            final_c = max(pc, gc)
+            assignment[per_key] = (max(final_v, 0.0), final_c)
+
     # --- 各洞 inner_w / inner_h ---
     for idx in range(n_holes):
         w_key = f'inner_w_{idx}'
@@ -1455,15 +1500,21 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
 
     holes = []
     for idx in range(n_holes):
+        # ===== [MULTI-HOLE PER-HOLE Add-On 2026-08-29] per-hole mt/mb/ml/mr =====
+        # 优先取 per-hole 桶；fallback 全局桶 mt/mb/ml/mr（保证同边距场景零回归）
+        mt_i = assignment.get(f'margin_top_{idx}', (mt, 0))[0]
+        mb_i = assignment.get(f'margin_bottom_{idx}', (mb, 0))[0]
+        ml_i = assignment.get(f'margin_left_{idx}', (ml, 0))[0]
+        mr_i = assignment.get(f'margin_right_{idx}', (mr, 0))[0]
         hi = HoleInfo(
             index=idx,
             rect_px=inners[idx],
             w_cm=assignment.get(f'inner_w_{idx}', (0, 0))[0],
             h_cm=assignment.get(f'inner_h_{idx}', (0, 0))[0],
-            margin_left_cm=ml if idx == 0 else 0.0,   # 仅最左洞有 ml
-            margin_right_cm=mr if idx == n_holes - 1 else 0.0,
-            margin_top_cm=mt,
-            margin_bottom_cm=mb,
+            margin_left_cm=ml_i,
+            margin_right_cm=mr_i,
+            margin_top_cm=mt_i,
+            margin_bottom_cm=mb_i,
         )
         holes.append(hi)
 

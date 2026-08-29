@@ -246,9 +246,16 @@ class _GenerateMixin:
                         for i, hc in enumerate(valid_holes):
                             info += f"洞{i+1}：{hc['w_cm']:.1f} × {hc['h_cm']:.1f} cm\n"
                         gaps_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(valid_gaps)) if valid_gaps else "无"
-                        info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
-                                 f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm，"
-                                 f"中距：{gaps_txt}\n")
+                        # ===== [PER-HOLE Add-On] 多洞每洞独立 mt/mb/ml/mr =====
+                        # 从 pool_holes_cm dict（PoolWorker 已填充 mt_cm/mb_cm/ml_cm/mr_cm）读 per-hole 边距
+                        for i, hc in enumerate(valid_holes):
+                            hmt = hc.get('mt_cm', self.design.inner_margin_top_cm)
+                            hmb = hc.get('mb_cm', self.design.inner_margin_bottom_cm)
+                            hml = hc.get('ml_cm', self.design.inner_margin_left_cm)
+                            hmr = hc.get('mr_cm', self.design.inner_margin_right_cm)
+                            info += (f"  洞{i+1}边距：上{hmt:.1f}/下{hmb:.1f}/"
+                                     f"左{hml:.1f}/右{hmr:.1f} cm\n")
+                        info += f"  中距：{gaps_txt}\n"
                     else:
                         # ===== 单洞原有代码（一字未改） =====
                         inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
@@ -280,8 +287,15 @@ class _GenerateMixin:
                             info += f"  洞{i+1}：{h.w_cm:.1f} × {h.h_cm:.1f} cm\n"
                         sr_gaps = list(getattr(sr, 'hole_gaps_cm', []) or [])[:max(0,len(valid_holes)-1)]
                         g_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(sr_gaps)) if sr_gaps else "无"
-                        info += (f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/"
-                                 f"左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f}，中距：{g_txt} cm\n")
+                        # ===== [PER-HOLE Add-On] 草图结果每洞独立边距 =====
+                        for i, h in enumerate(valid_holes):
+                            smt = getattr(h, 'margin_top_cm', sr.margin_top_cm)
+                            smb = getattr(h, 'margin_bottom_cm', sr.margin_bottom_cm)
+                            sml = getattr(h, 'margin_left_cm', sr.margin_left_cm)
+                            smr = getattr(h, 'margin_right_cm', sr.margin_right_cm)
+                            info += (f"  洞{i+1}边距：上{smt:.1f}/下{smb:.1f}/"
+                                     f"左{sml:.1f}/右{smr:.1f} cm\n")
+                        info += f"  中距：{g_txt}\n"
                     else:
                         info += f"识别草图成功：\n"
                         info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
