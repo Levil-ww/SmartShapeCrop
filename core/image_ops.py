@@ -917,6 +917,60 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     if border_mask.any():
         canvas_arr[border_mask] = BLACK_RGB
 
+    # ===== [SINGLE-HOLE Add-On 2026-08-31 V2] Stale-Decor Universal Residual Cleaner =====
+    # （仅 rect_hole 单洞素材填充模式，零侵入 try/except 静默失败）
+    #
+    # 动机：V1 Add-On（L668-772）依赖 _pool_sketch_original_margins_cm 字段存在。
+    #   若该字段因任何原因缺失（草图解析被跳过 / design 被重新创建），V1 不触发。
+    #   残留的旧装饰黑线（成品裁剪图内嵌的 10px 边框线）会留在 canvas_arr 上，
+    #   与 V1 的效果相同 —— 两条黑色边距线并存（旧边距位置 + 新渲染的 border_mask）。
+    #
+    # V2 方案：**不依赖原始边距记录**。
+    #   观察：Step 3.8 的 border_mask 已正确标记当前 inner_rect 边缘应渲染的黑框。
+    #   所有 canvas_arr 中**不是 border_mask 区域但值为近黑色**的像素，
+    #   必然是残留的旧装饰（成品裁剪图内嵌的旧黑线）。
+    #   用 canvas 外框花纹采样源（outer 左上角 2cm×2cm）覆盖这些像素即可清理干净。
+    #
+    #   安全收窄：只清理"细条带状"黑色像素（连通区域宽度 ≤ 30px，高度 ≤ 30px），
+    #   避免误删素材图本身可能存在的较大面积黑色花纹（极少见，但防御性保留）。
+    #
+    #   零侵入：try/except 任何异常静默跳过，原有代码路径一字未改。
+    try:
+        if (design.mode == 'rect_hole'
+                and not getattr(design, 'pool_is_multi_hole', False)
+                and not getattr(design, 'pool_hole_transparent', True)
+                and (getattr(design, 'lshape_cut_w', 0.0) or 0.0) == 0.0
+                and (getattr(design, 'lshape_cut_h', 0.0) or 0.0) == 0.0
+                and has_outer_pool_material):
+            # 1) 找到所有近黑色像素（三个通道都 < 40）
+            _near_black = np.all(canvas_arr < 40, axis=2)  # (H, W) bool
+            # 2) 减去当前 border_mask（正确渲染的新黑框）
+            _residual = _near_black & ~border_mask
+            if _residual.any():
+                # 3) 用外框花纹采样源平铺覆盖
+                outer_rect = design.outer_rect_px()
+                _cm2px = design.cm2px(1.0)
+                _patch_side_cm = 2.0
+                _ps = max(2, int(round(_patch_side_cm * _cm2px)))
+                _px0 = int(round(outer_rect.x + 0.5 * _cm2px))
+                _py0 = int(round(outer_rect.y + 0.5 * _cm2px))
+                _px1 = min(W, _px0 + _ps)
+                _py1 = min(H, _py0 + _ps)
+                if (_px1 - _px0) >= 4 and (_py1 - _py0) >= 4:
+                    _patch = canvas_arr[_py0:_py1, _px0:_px1, :].copy()
+                    _ph, _pw = _patch.shape[:2]
+                    _tile_full = np.tile(
+                        _patch,
+                        ((H + _ph - 1) // _ph, (W + _pw - 1) // _pw, 1),
+                    )[:H, :W, :]
+                    canvas_arr[_residual] = _tile_full[_residual]
+                    logger.debug(
+                        f"[Stale-Decor V2] Cleaned {_residual.sum()} residual black pixels"
+                    )
+    except Exception as _v2_e:
+        logger.debug(f"[Stale-Decor V2] 静默跳过，原因: {_v2_e}")
+    # ===== [END V2 Residual Cleaner] =====
+
     # 4. 边框文字
     if design.border_text is not None:
         pil = Image.fromarray(canvas_arr, 'RGB')
