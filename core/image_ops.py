@@ -667,6 +667,91 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         lshape_cut_done = True
     else:
         # 白色填充内部挖空区域
+        # =====================================================================
+        # [SINGLE-HOLE INNER-BORDER STALE-INVALIDATION Add-On 2026-08-31]
+        # 缓存/衍生数据失效修复：池模式+独立内挖素材时，外框素材图(pool_outer_material_image)
+        # 本身是"完整成品"——内含原设计边距位置的内装饰边框+内花纹。当用户修改边距后
+        # （下方 L670 仅覆盖当前 inner_mask），新旧内框边界之间的 margin 环带里仍残留
+        # 旧位置的棕色装饰边框→造成"双内框重叠"。
+        #
+        # 修复（加法式，零侵入）：
+        #   1) 当前 inner_rect 向四周扩张 BUFFER_CM(=4.5cm) 形成扩展矩形(夹到 outer)
+        #   2) 环带 = 扩展矩形 \ 实际 inner_rect
+        #   3) 从 inner_fill 中心采样纯花纹 tile（远离四边→不含任何装饰边框），
+        #      平铺覆盖环带，清除旧 bake-in 装饰边框。
+        #      内挖花纹=边距花纹，视觉自然无缝衔接。
+        # 守卫条件（任一不满足→跳过，旧代码行为一字不变）：
+        #   · rect_hole · 单洞（pool_is_multi_hole=False 或 holes<2）
+        #   · 有独立外框素材池图 · 有独立内挖素材 · 非空白(pool_hole_transparent=False)
+        # 防御：任何异常→写 debug log 并跳过，绝不影响原渲染结果。
+        # =====================================================================
+        _addon_activated = False
+        try:
+            _is_mh = (getattr(design, 'pool_is_multi_hole', False)
+                      and isinstance(getattr(design, 'pool_holes_cm', []), list)
+                      and len(getattr(design, 'pool_holes_cm', [])) >= 2)
+            if (design.mode == 'rect_hole'
+                    and not _is_mh
+                    and is_pool_with_material
+                    and has_inner_pool_material
+                    and not design.pool_hole_transparent):
+                from .geometry import RectShape, fill_rect_mask, make_mask
+                BUFFER_CM = 4.5  # 覆盖 2~4cm 常见棕色装饰边框宽度
+                _ir = design.inner_rect_px()
+                _or_outer = design.outer_rect_px()
+                _buf_px = float(design.cm2px(BUFFER_CM))
+
+                # 扩展矩形：夹到 outer 内，不越过画框
+                _ex_x = max(float(_or_outer.x), float(_ir.x) - _buf_px)
+                _ex_y = max(float(_or_outer.y), float(_ir.y) - _buf_px)
+                _ex_r = min(float(_or_outer.right), float(_ir.right) + _buf_px)
+                _ex_b = min(float(_or_outer.bottom), float(_ir.bottom) + _buf_px)
+                _ex_w = max(1.0, _ex_r - _ex_x)
+                _ex_h = max(1.0, _ex_b - _ex_y)
+                _ex_rect = RectShape(_ex_x, _ex_y, _ex_w, _ex_h)
+
+                # 构造环带 mask：扩展矩形 & 非实际内矩形
+                _m_ex = make_mask((W, H))
+                fill_rect_mask(_m_ex, _ex_rect, 255)
+                _mask_ex = np.array(_m_ex, dtype=bool)
+                # inner_rect 实际区域 mask（不从 inner_mask 取，避免圆角被扩展误删）
+                _m_in = make_mask((W, H))
+                fill_rect_mask(_m_in, _ir, 255)
+                _mask_in = np.array(_m_in, dtype=bool)
+                # 环带：扩展区 ∩ 非内区
+                _ring_mask = _mask_ex & ~_mask_in
+
+                if _ring_mask.any():
+                    # —— 从 inner_fill 中心取纯花纹 tile（1/6 内缩→不含装饰边框）——
+                    _ix0 = int(round(_ir.x))
+                    _iy0 = int(round(_ir.y))
+                    _iw = int(round(_ir.w))
+                    _ih = int(round(_ir.h))
+                    _inset_x = max(2, _iw // 6)
+                    _inset_y = max(2, _ih // 6)
+                    _tx0 = _ix0 + _inset_x
+                    _tx1 = _ix0 + _iw - _inset_x
+                    _ty0 = _iy0 + _inset_y
+                    _ty1 = _iy0 + _ih - _inset_y
+                    if (_tx1 - _tx0) >= 4 and (_ty1 - _ty0) >= 4:
+                        _tile = inner_fill_arr[_ty0:_ty1, _tx0:_tx1].copy()
+                        _th, _tw = _tile.shape[:2]
+                        # —— 构造覆盖整幅画布的平铺 pattern（numpy 广播）——
+                        _ny = int(np.ceil(H / _th))
+                        _nx = int(np.ceil(W / _tw))
+                        if _ny > 0 and _nx > 0 and _th > 0 and _tw > 0:
+                            _big = np.tile(_tile, (_ny, _nx, 1))
+                            _tiled = _big[:H, :W, :]
+                            # —— 用平铺花纹覆盖环带（清除旧 bake-in 内装饰边框）——
+                            canvas_arr[_ring_mask] = _tiled[_ring_mask]
+                            _addon_activated = True
+        except Exception as _ao_e:
+            logger.debug(f"[Inner-Border-Stale Add-On] 跳过（不影响主渲染）: {_ao_e}")
+        # 清理 Add-On 临时变量（避免污染 outer 作用域）
+        del _addon_activated
+        # =====================================================================
+        # [END ADD-ON]
+        # =====================================================================
         canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
 
     # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
