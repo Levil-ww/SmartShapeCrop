@@ -5,6 +5,7 @@ gui/cropper_panel.py
 """
 from __future__ import annotations
 import os
+import re
 import logging
 import time
 from datetime import date, datetime, timedelta
@@ -25,6 +26,10 @@ from core.config import CUT_LOSS_CM, CORNER_CUT_LOSS_CM, DEFAULT_DPI
 from core.app_settings import get_app_settings, TemplateDirHistory
 
 logger = logging.getLogger(__name__)
+
+# 已知图片扩展名（用于从文件名中去除扩展名，不能用 os.path.splitext，
+# 因为文件名里有小数点如 "80.5x130cm" 会被误判为扩展名）
+_KNOWN_IMAGE_EXT_RE = re.compile(r'\.(jpg|jpeg|png|bmp|tiff|tif|webp|gif|psd|psb)$', re.I)
 
 
 def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
@@ -767,53 +772,74 @@ class CropperPanel(QWidget):
     
     def _update_name_preview(self):
         """更新文件名预览
-        - 尺寸优先使用目标文件名原始尺寸（不含+1cm损耗），若无则使用裁剪参数
-        - 圆角优先使用目标文件名原始圆角（不含+0.5cm损耗），若无则使用圆角设置
+        - 自动命名：优先直接使用目标文件名输入框的原始内容（用户输入什么就是什么），
+          若目标文件名输入框为空则回退到重新拼装逻辑（向后兼容旧场景）
+        - 手动命名：使用用户自定义输入
         """
         if self._ck_auto_name.isChecked():
-            product = self._ed_product.text().strip() or "产品"
-
-            # 1) 确定用于命名的尺寸和布局：优先使用目标解析结果中的原始尺寸（不含损耗）
-            tp = self._target_parsed
-            use_target_size = (
-                tp is not None
-                and tp.width_cm > 0
-                and tp.height_cm > 0
-            )
-            if use_target_size:
-                layout = tp.layout or self._get_layout()
-                w = tp.width_cm
-                h = tp.height_cm
+            # [Fix 直接使用目标文件名 2026-08-31]
+            # 用户在"目标文件名"输入框输入的内容 = 期望的输出文件名。
+            # 处理：去掉可能的路径前缀 → 去掉已知图片扩展名（防止 .5x130cm 里的小数点被误判为扩展名） → 统一加 .jpg。
+            raw_target = self._ed_target_name.text().strip()
+            if raw_target:
+                # 去掉可能的完整路径（网络路径或本地路径），只保留文件名部分
+                base = os.path.basename(raw_target)
+                # 只识别已知图片扩展名（不能用 os.path.splitext，因为文件名里有小数点如 "80.5"）
+                m = _KNOWN_IMAGE_EXT_RE.search(base)
+                name_body = base[:m.start()] if m else base
+                name = (name_body or base) + ".jpg"
             else:
-                layout = self._get_layout()
-                w = self._sp_w.value()
-                h = self._sp_h.value()
-
-            # 2) 短边 × 长边，竖版加前缀
-            short_side = min(w, h)
-            long_side = max(w, h)
-            size_str = f"{_fmt_num(short_side)}x{_fmt_num(long_side)}cm"
-            if layout == '竖版':
-                spec_parts = [f"竖版{size_str}"]
-            else:
-                spec_parts = [size_str]
-
-            # 3) 圆角描述：优先使用目标解析结果中的原始圆角（不含损耗），
-            #    无目标解析时回退到圆角设置（手动输入场景）
-            if tp is not None and tp.corners:
-                corners = tp.corners
-            else:
-                corners = self._get_corners_config()
-            corner_spec = format_corner_spec(corners)
-            if corner_spec:
-                spec_parts.append(corner_spec)
-
-            spec_str = ''.join(spec_parts)
-            name = f"{product};{spec_str}.jpg"
+                # 回退：目标文件名为空时，用原有重新拼装逻辑（向后兼容）
+                name = self._build_filename_from_params()
         else:
             name = self._ed_custom_name.text().strip() or "output.jpg"
 
         self._lbl_name_preview.setText(name)
+
+    def _build_filename_from_params(self) -> str:
+        """根据当前 UI 参数重新拼装输出文件名（目标文件名为空时的回退逻辑）。
+
+        不改动原有拼装规则，仅从 _update_name_preview 中抽出来作为独立方法。
+        """
+        product = self._ed_product.text().strip() or "产品"
+
+        # 1) 确定用于命名的尺寸和布局：优先使用目标解析结果中的原始尺寸（不含损耗）
+        tp = self._target_parsed
+        use_target_size = (
+            tp is not None
+            and tp.width_cm > 0
+            and tp.height_cm > 0
+        )
+        if use_target_size:
+            layout = tp.layout or self._get_layout()
+            w = tp.width_cm
+            h = tp.height_cm
+        else:
+            layout = self._get_layout()
+            w = self._sp_w.value()
+            h = self._sp_h.value()
+
+        # 2) 短边 × 长边，竖版加前缀
+        short_side = min(w, h)
+        long_side = max(w, h)
+        size_str = f"{_fmt_num(short_side)}x{_fmt_num(long_side)}cm"
+        if layout == '竖版':
+            spec_parts = [f"竖版{size_str}"]
+        else:
+            spec_parts = [size_str]
+
+        # 3) 圆角描述：优先使用目标解析结果中的原始圆角（不含损耗），
+        #    无目标解析时回退到圆角设置（手动输入场景）
+        if tp is not None and tp.corners:
+            corners = tp.corners
+        else:
+            corners = self._get_corners_config()
+        corner_spec = format_corner_spec(corners)
+        if corner_spec:
+            spec_parts.append(corner_spec)
+
+        spec_str = ''.join(spec_parts)
+        return f"{product};{spec_str}.jpg"
     
     def _build_crop_config(self) -> CropConfig:
         """构建裁剪配置"""
