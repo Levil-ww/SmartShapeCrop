@@ -279,7 +279,16 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         # 当外背景剔除条件不成立时，remaining 不会被赋值，
         # 原代码直接引用 remaining 触发 UnboundLocalError。
         remaining = None
-        if color_dist_to_outer_bg < 25.0 and first_t > outer_bg_thickness_threshold:
+        # [Fix 2026-09-01] 增加 outer_bg 必须是浅色的额外约束。
+        # 当源图没有外背景（边缘直接是深棕/米色装饰边框）时，
+        # _estimate_outer_background 会把装饰边框色当作"外背景"返回，
+        # 导致颜色距离很小，错误地把唯一的装饰边框层也过滤掉 → border_layers=[]
+        # → Step A 不执行 → 圆弧处变成白色背景 → 白色弧线 bug。
+        # 真实的外背景几乎总是白色/浅色（mean > 200），
+        # 装饰边框（深棕、米色、黑色等）不会满足这个条件，
+        # 从根本上排除了"装饰边框被误判为外背景"的可能。
+        outer_bg_mean = float(np.mean(outer_bg))
+        if color_dist_to_outer_bg < 25.0 and first_t > outer_bg_thickness_threshold and outer_bg_mean > 200:
             remaining = border_layers[1:]
         if remaining:
             border_layers = remaining
