@@ -125,8 +125,26 @@ class _LayersMixin:
         if hm_now == "image":
             # 防御性 getattr：兼容旧 CropDesign 实例（未声明 pool_inner_material_image 字段）
             cur_inner = getattr(d, 'pool_inner_material_image', None)
-            if d.hole_bg_image and (cur_inner is None or cur_inner != d.hole_bg_image):
-                d.pool_inner_material_image = d.hole_bg_image
+            # ===== [SINGLE-HOLE Add-On 2026-08-31] basename 防御 —— basename-only 不覆盖全路径 =====
+            # 背景：_on_pool_finished_ok 将 _ed_hole_img 用于显示，有时写入 basename（文件名）、
+            #   有时写入 path（全路径）。若 UI 控件中当前仅保留 basename（非有效路径），
+            #   却直接用它覆盖 pool_inner（已有的全路径真值） → 后续 render_design 中
+            #   os.path.isfile(pool_inner) 失败 → 内挖素材加载链路断裂，退回纯色占位。
+            # 修复：只有当 hole_bg_image 本身是有效路径（isfile / isabs / 含目录分隔符）时，
+            #   才允许同步覆盖 pool_inner_material_image；否则保留已有全路径真值。
+            # 纯加法条件收窄，不改变 hole_bg_image=有效全路径 场景的任何行为。
+            _bg_path = d.hole_bg_image
+            _bg_path_valid = False
+            if _bg_path:
+                _bg_path_valid = (
+                    os.path.isfile(_bg_path)
+                    or os.path.isabs(_bg_path)
+                    or (os.path.dirname(_bg_path) != '')
+                )
+            if _bg_path_valid:
+                if _bg_path and (cur_inner is None or cur_inner != _bg_path):
+                    d.pool_inner_material_image = _bg_path
+            # ===== [END SINGLE-HOLE Add-On basename 防御] =====
 
         # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 SpinBox → design.pool_holes_cm/gaps =====
         # 仅当 pool_is_multi_hole=True 且 UI 已构建多洞控件时，才把控件值同步回 design。

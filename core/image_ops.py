@@ -665,93 +665,113 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             canvas_arr[cut_area_mask] = hole_arr[cut_area_mask]
         # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
         lshape_cut_done = True
-    else:
+    # ===== [SINGLE-HOLE Add-On 2026-08-31] Stale Decor Black Border Invalidation =====
+    # （仅 rect_hole 单洞素材填充模式，零侵入，外层完整 try/except 静默失败）
+    #
+    # 根因：canvas 来源于 pool_outer_material_image（匹配到的"成品裁剪图"），
+    #   该图本身内嵌了草图解析成功时刻（原始边距）的装饰性 10px 黑边框 + 内挖底色花纹。
+    #   当用户手动修改任一/多个边距后，新的 inner_rect 位置/尺寸发生变化：
+    #     (a) canvas_arr[inner_mask] = inner_fill_arr[inner_mask] 只覆盖"新内挖区"，
+    #         旧内嵌装饰（包括旧的 10px 黑线）仍然保留在 canvas 上。
+    #     (b) render_design 末尾 L812 几何差法又按最新 inner_rect 画了一圈新的 10px 黑框。
+    #   结果 → 两条黑色边距线同时存在（旧边距位置 + 新边距位置），用户：
+    #     "修改边距参数时，裁剪的内挖尺寸就随之变化了，但是修改之前的尺寸边框为什么还存在？"
+    #
+    # 修复：检测到"当前边距 ≠ 草图解析成功时记录的原始边距（差异 > 0.1 cm 任意一边）"时，
+    #   构造 Part A mask = 旧内挖矩形 ∩ 新内挖矩形之外 = 应该是"外框花纹（边距环带）"但
+    #   仍保留了旧装饰黑线 + 旧内挖底色花纹 的 stale 区域。用 canvas 外框花纹采样源
+    #   （outer 矩形左上角 2cm×2cm patch，肯定是真正外框花纹，不是内挖装饰，也不是
+    #   第一轮错误修复的"内挖花纹"）平铺覆盖 Part A mask。边距环带恢复为正确外框花纹。
+    #
+    # 保护：if 判定严格收窄（rect_hole + 非多洞 + 有 outer + 非挖空 + 非L形 + 原始边距存在且
+    #   与当前边距不同），try/except 任何异常静默跳过，原有代码路径一字未被修改。
+    _sd_done = False
+    try:
+        _sd_orig = getattr(design, '_pool_sketch_original_margins_cm', None)
+        if (_sd_orig is not None
+                and isinstance(_sd_orig, (tuple, list))
+                and len(_sd_orig) == 4
+                and design.mode == 'rect_hole'
+                and not getattr(design, 'pool_is_multi_hole', False)
+                and not getattr(design, 'pool_hole_transparent', True)
+                and (getattr(design, 'lshape_cut_w', 0.0) or 0.0) == 0.0
+                and (getattr(design, 'lshape_cut_h', 0.0) or 0.0) == 0.0
+                and has_outer_pool_material):
+            _ot = float(_sd_orig[0] or 0.0)
+            _ob = float(_sd_orig[1] or 0.0)
+            _ol = float(_sd_orig[2] or 0.0)
+            _or_ = float(_sd_orig[3] or 0.0)
+            _ct = float(getattr(design, 'inner_margin_top_cm', 0.0) or 0.0)
+            _cb = float(getattr(design, 'inner_margin_bottom_cm', 0.0) or 0.0)
+            _cl = float(getattr(design, 'inner_margin_left_cm', 0.0) or 0.0)
+            _cr = float(getattr(design, 'inner_margin_right_cm', 0.0) or 0.0)
+            if (abs(_ct - _ot) > 0.1 or abs(_cb - _ob) > 0.1
+                    or abs(_cl - _ol) > 0.1 or abs(_cr - _or_) > 0.1):
+                # ===== 1) 构造旧 / 新 inner_rect =====
+                from .geometry import RectShape, make_mask, fill_rect_mask
+                outer_rect = design.outer_rect_px()
+                _ox = outer_rect.x
+                _oy = outer_rect.y
+                _ow = outer_rect.w
+                _oh = outer_rect.h
+                _cm2px = design.cm2px(1.0)
+                _old_x = _ox + _ol * _cm2px
+                _old_y = _oy + _ot * _cm2px
+                _old_w = _ow - (_ol + _or_) * _cm2px
+                _old_h = _oh - (_ot + _ob) * _cm2px
+                _new_rect = design.inner_rect_px()
+                _old_rect = RectShape(
+                    x=max(0.0, _old_x),
+                    y=max(0.0, _old_y),
+                    w=max(1.0, min(float(W) - max(0.0, _old_x), _old_w)),
+                    h=max(1.0, min(float(H) - max(0.0, _old_y), _old_h)),
+                )
+                _new_rect_clamped = RectShape(
+                    x=max(0.0, _new_rect.x),
+                    y=max(0.0, _new_rect.y),
+                    w=max(1.0, min(float(W) - max(0.0, _new_rect.x), _new_rect.w)),
+                    h=max(1.0, min(float(H) - max(0.0, _new_rect.y), _new_rect.h)),
+                )
+                # Part A mask = 旧内挖矩形 ∩ 新内挖矩形之外（stale 装饰区）
+                _old_full = make_mask((W, H))
+                fill_rect_mask(_old_full, _old_rect, 255)
+                _old_mask = np.array(_old_full, dtype=bool)
+                _new_full = make_mask((W, H))
+                fill_rect_mask(_new_full, _new_rect_clamped, 255)
+                _new_mask = np.array(_new_full, dtype=bool)
+                _stale_A = _old_mask & (~_new_mask)
+                if _stale_A.any():
+                    # ===== 2) 采集外框花纹采样源：outer 矩形左上角 2cm × 2cm patch =====
+                    _patch_side_cm = 2.0
+                    _ps = max(2, int(round(_patch_side_cm * _cm2px)))
+                    # 起点：outer.x + 0.5cm，outer.y + 0.5cm（避开 canvas 边缘可能的拉伸瑕疵）
+                    _px0 = int(round(_ox + 0.5 * _cm2px))
+                    _py0 = int(round(_oy + 0.5 * _cm2px))
+                    _px1 = min(W, _px0 + _ps)
+                    _py1 = min(H, _py0 + _ps)
+                    if (_px1 - _px0) >= 4 and (_py1 - _py0) >= 4:
+                        _patch = canvas_arr[_py0:_py1, _px0:_px1, :].copy()
+                        _ph, _pw = _patch.shape[:2]
+                        # ===== 3) Tile 覆盖 stale_A：生成 tile 画布，按 mask 赋值 =====
+                        _tile_full = np.tile(
+                            _patch,
+                            (
+                                (H + _ph - 1) // _ph,
+                                (W + _pw - 1) // _pw,
+                                1,
+                            ),
+                        )[:H, :W, :]
+                        canvas_arr[_stale_A] = _tile_full[_stale_A]
+                        _sd_done = True
+    except Exception as _sd_e:
+        import logging as _sd_log
+        _sd_log.getLogger(__name__).debug(
+            f"[SINGLE-HOLE Stale-Decor-Invalidation Add-On] 静默跳过，原因: {_sd_e}"
+        )
+        _sd_done = False
+    # ===== [END SINGLE-HOLE Add-On Stale Decor Black Border Invalidation] =====
+    if not lshape_cut_done:
         # 白色填充内部挖空区域
-        # =====================================================================
-        # [SINGLE-HOLE INNER-BORDER STALE-INVALIDATION Add-On 2026-08-31]
-        # 缓存/衍生数据失效修复：池模式+独立内挖素材时，外框素材图(pool_outer_material_image)
-        # 本身是"完整成品"——内含原设计边距位置的内装饰边框+内花纹。当用户修改边距后
-        # （下方 L670 仅覆盖当前 inner_mask），新旧内框边界之间的 margin 环带里仍残留
-        # 旧位置的棕色装饰边框→造成"双内框重叠"。
-        #
-        # 修复（加法式，零侵入）：
-        #   1) 当前 inner_rect 向四周扩张 BUFFER_CM(=4.5cm) 形成扩展矩形(夹到 outer)
-        #   2) 环带 = 扩展矩形 \ 实际 inner_rect
-        #   3) 从 inner_fill 中心采样纯花纹 tile（远离四边→不含任何装饰边框），
-        #      平铺覆盖环带，清除旧 bake-in 装饰边框。
-        #      内挖花纹=边距花纹，视觉自然无缝衔接。
-        # 守卫条件（任一不满足→跳过，旧代码行为一字不变）：
-        #   · rect_hole · 单洞（pool_is_multi_hole=False 或 holes<2）
-        #   · 有独立外框素材池图 · 有独立内挖素材 · 非空白(pool_hole_transparent=False)
-        # 防御：任何异常→写 debug log 并跳过，绝不影响原渲染结果。
-        # =====================================================================
-        _addon_activated = False
-        try:
-            _is_mh = (getattr(design, 'pool_is_multi_hole', False)
-                      and isinstance(getattr(design, 'pool_holes_cm', []), list)
-                      and len(getattr(design, 'pool_holes_cm', [])) >= 2)
-            if (design.mode == 'rect_hole'
-                    and not _is_mh
-                    and is_pool_with_material
-                    and has_inner_pool_material
-                    and not design.pool_hole_transparent):
-                from .geometry import RectShape, fill_rect_mask, make_mask
-                BUFFER_CM = 4.5  # 覆盖 2~4cm 常见棕色装饰边框宽度
-                _ir = design.inner_rect_px()
-                _or_outer = design.outer_rect_px()
-                _buf_px = float(design.cm2px(BUFFER_CM))
-
-                # 扩展矩形：夹到 outer 内，不越过画框
-                _ex_x = max(float(_or_outer.x), float(_ir.x) - _buf_px)
-                _ex_y = max(float(_or_outer.y), float(_ir.y) - _buf_px)
-                _ex_r = min(float(_or_outer.right), float(_ir.right) + _buf_px)
-                _ex_b = min(float(_or_outer.bottom), float(_ir.bottom) + _buf_px)
-                _ex_w = max(1.0, _ex_r - _ex_x)
-                _ex_h = max(1.0, _ex_b - _ex_y)
-                _ex_rect = RectShape(_ex_x, _ex_y, _ex_w, _ex_h)
-
-                # 构造环带 mask：扩展矩形 & 非实际内矩形
-                _m_ex = make_mask((W, H))
-                fill_rect_mask(_m_ex, _ex_rect, 255)
-                _mask_ex = np.array(_m_ex, dtype=bool)
-                # inner_rect 实际区域 mask（不从 inner_mask 取，避免圆角被扩展误删）
-                _m_in = make_mask((W, H))
-                fill_rect_mask(_m_in, _ir, 255)
-                _mask_in = np.array(_m_in, dtype=bool)
-                # 环带：扩展区 ∩ 非内区
-                _ring_mask = _mask_ex & ~_mask_in
-
-                if _ring_mask.any():
-                    # —— 从 inner_fill 中心取纯花纹 tile（1/6 内缩→不含装饰边框）——
-                    _ix0 = int(round(_ir.x))
-                    _iy0 = int(round(_ir.y))
-                    _iw = int(round(_ir.w))
-                    _ih = int(round(_ir.h))
-                    _inset_x = max(2, _iw // 6)
-                    _inset_y = max(2, _ih // 6)
-                    _tx0 = _ix0 + _inset_x
-                    _tx1 = _ix0 + _iw - _inset_x
-                    _ty0 = _iy0 + _inset_y
-                    _ty1 = _iy0 + _ih - _inset_y
-                    if (_tx1 - _tx0) >= 4 and (_ty1 - _ty0) >= 4:
-                        _tile = inner_fill_arr[_ty0:_ty1, _tx0:_tx1].copy()
-                        _th, _tw = _tile.shape[:2]
-                        # —— 构造覆盖整幅画布的平铺 pattern（numpy 广播）——
-                        _ny = int(np.ceil(H / _th))
-                        _nx = int(np.ceil(W / _tw))
-                        if _ny > 0 and _nx > 0 and _th > 0 and _tw > 0:
-                            _big = np.tile(_tile, (_ny, _nx, 1))
-                            _tiled = _big[:H, :W, :]
-                            # —— 用平铺花纹覆盖环带（清除旧 bake-in 内装饰边框）——
-                            canvas_arr[_ring_mask] = _tiled[_ring_mask]
-                            _addon_activated = True
-        except Exception as _ao_e:
-            logger.debug(f"[Inner-Border-Stale Add-On] 跳过（不影响主渲染）: {_ao_e}")
-        # 清理 Add-On 临时变量（避免污染 outer 作用域）
-        del _addon_activated
-        # =====================================================================
-        # [END ADD-ON]
-        # =====================================================================
         canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
 
     # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
@@ -1054,9 +1074,37 @@ def _render_inner_area(design: CropDesign, quality: str = 'export') -> Image.Ima
         ih_px = max(1, int(round(inner_rect.h)))
         # 1) 将素材缩放到内挖像素尺寸
         is_tile = _looks_like_tile(pool_inner)
-        material_img = load_and_fit(pool_inner, iw_px, ih_px,
-                                    mode='tile' if is_tile else 'cover',
-                                    quality=quality)
+        # ===== [SINGLE-HOLE Add-On 2026-08-31] 对齐多洞内填：非平铺类改用 adapt_pool_material =====
+        # 多洞逻辑（L947-958）：平铺类 → _tile_fill；非平铺类 → adapt_pool_material（方向校正+简单stretch）
+        # 原单洞逻辑：平铺类 → load_and_fit(tile)；非平铺类 → load_and_fit(cover=等比裁剪)。
+        # 差异影响：cover 会按中心裁剪素材，当用户修改边距（改变内挖比例）后，
+        #   裁剪边界与 canvas（外框成品图）内嵌的旧内挖图案边缘位置相对位移，
+        #   视觉上呈现"两条内挖边缘/图案错位叠加"——用户反馈的"重叠"。
+        # 修复：单洞非平铺类改用 adapt_pool_material（方向校正+简单stretch，无裁剪无位移），
+        #   与多洞一字不差的语义。任何异常自动回退到原 load_and_fit(cover) 保证零影响。
+        if is_tile:
+            material_img = load_and_fit(pool_inner, iw_px, ih_px,
+                                        mode='tile', quality=quality)
+        else:
+            try:
+                _src_inner = load_image_rgb(pool_inner)
+                _src_w_cm = float(getattr(design, 'pool_inner_src_design_w_cm', 0.0) or 0.0)
+                _src_h_cm = float(getattr(design, 'pool_inner_src_design_h_cm', 0.0) or 0.0)
+                material_img = adapt_pool_material(
+                    _src_inner, iw_px, ih_px,
+                    material_design_w_cm=_src_w_cm,
+                    material_design_h_cm=_src_h_cm,
+                    canvas_w_cm=float(inner_rect.w) / max(design.cm2px(1.0), 1e-6),
+                    canvas_h_cm=float(inner_rect.h) / max(design.cm2px(1.0), 1e-6),
+                    quality=quality,
+                )
+            except Exception as _sh_e:
+                logger.debug(
+                    f"[_render_inner_area] 单洞 adapt_pool_material Add-On 失败，回退原 load_and_fit(cover): {_sh_e}"
+                )
+                material_img = load_and_fit(pool_inner, iw_px, ih_px,
+                                            mode='cover', quality=quality)
+        # ===== [END SINGLE-HOLE Add-On 对齐多洞内填] =====
         # 2) 创建全画布底色 + 将素材贴到内挖位置
         result = Image.new('RGB', (W, H), design.hole_bg_color)
         ox = max(0, int(round(inner_rect.x)))

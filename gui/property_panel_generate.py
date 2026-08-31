@@ -115,6 +115,25 @@ class _GenerateMixin:
         try:
             # 1) 把 Worker 构建的设计写回 self.design，并同步到所有 SpinBox / 控件
             self.design = design
+            # ===== [SINGLE-HOLE Add-On 2026-08-31] 记录草图解析成功时的原始边距 =====
+            # render_design 中的 Stale Decor Invalidation Add-On（core/image_ops.py）
+            # 需要比对"当前边距 vs 草图解析原始边距"，当差异 > 0.1cm 时清理
+            #   outer 成品图内嵌的旧装饰黑线（否则"旧边框 + 新边框"两条黑线并存）。
+            # 本记录在 sketch_result.success=True 时写入新字段；失败路径默认字段为 None
+            #   → invalidation 不激活；用户后续点击"生成预览"前可以继续调整。
+            try:
+                _sr_ok = bool(sketch_result is not None
+                              and getattr(sketch_result, 'success', False))
+                if _sr_ok:
+                    self.design._pool_sketch_original_margins_cm = (
+                        float(getattr(self.design, 'inner_margin_top_cm', 0.0) or 0.0),
+                        float(getattr(self.design, 'inner_margin_bottom_cm', 0.0) or 0.0),
+                        float(getattr(self.design, 'inner_margin_left_cm', 0.0) or 0.0),
+                        float(getattr(self.design, 'inner_margin_right_cm', 0.0) or 0.0),
+                    )
+            except Exception:
+                pass
+            # ===== [END SINGLE-HOLE Add-On 记录草图解析原始边距] =====
             # 同步挖空方式 ComboBox
             hm = self._pool_hole_mode.currentData()
             if hm == "blank":
@@ -294,6 +313,20 @@ class _GenerateMixin:
                                 if best_inner is not None:
                                     self.design.pool_inner_material_image = best_inner.path
                                     self.design.hole_bg_image = best_inner.path
+                                    # ===== [SINGLE-HOLE Add-On 2026-08-31] 记录内挖素材设计尺寸 =====
+                                    # 与多洞 pool_holes_cm[i] 存 _src_design_w_cm/_src_design_h_cm 语义对齐；
+                                    # 供 _render_inner_area 单洞 Add-On 调用 adapt_pool_material 时
+                                    #   做"文件名设计方向 ≠ 像素存储方向"的硬校正（cond_C）。
+                                    # 纯写入新字段，不修改已有字段，零行为影响。
+                                    try:
+                                        self.design.pool_inner_src_design_w_cm = float(
+                                            getattr(best_inner, 'w_cm', 0.0) or 0.0)
+                                        self.design.pool_inner_src_design_h_cm = float(
+                                            getattr(best_inner, 'h_cm', 0.0) or 0.0)
+                                    except Exception:
+                                        self.design.pool_inner_src_design_w_cm = 0.0
+                                        self.design.pool_inner_src_design_h_cm = 0.0
+                                    # ===== [END SINGLE-HOLE Add-On 记录内挖素材设计尺寸] =====
                                     inner_match_info = f"内挖素材：{os.path.basename(best_inner.path)} (score={best_inner.score:.1f})\n"
                                     self._ed_hole_img.setText(best_inner.path)
                                 else:
