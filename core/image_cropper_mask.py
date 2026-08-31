@@ -238,9 +238,14 @@ def _build_multi_layer_corner_mask(
 
             if max_protect > 0:
                 ring_inner_bound = max(0.0, float(r) - float(max_protect))
-                # 基础 ring_region：保护从 ring_inner_bound 到 r+2 的区域
+                # [Fix 2026-08-31] dist 上界改为 r+1.5，与 Step A d_region 对齐。
+                # 旧值 r+2 会保护 dist ∈ [r+0.5, r+2] 的像素，但 Step A 的 d_region
+                # 只覆盖 dist ≤ r+0.5 → 这些被保护但不被重绘的像素会保持原图颜色，
+                # 在图像边缘（上边/左边）形成黑色直角尾巴。
+                # 0.5 太小，整数像素在圆弧上的 dist 可偏离精确 R 达 ±1.4px（√2），
+                # 所以用 r+1.5 容差：既能覆盖圆弧上所有整数像素，又和 Step A 完全对齐。
                 ring_region = (angle >= ang_min) & (angle <= ang_max) & \
-                              (dist >= ring_inner_bound) & (dist <= float(r) + 2.0)
+                              (dist >= ring_inner_bound) & (dist <= float(r) + 1.5)
             else:
                 ring_region = np.zeros_like(base_cut, dtype=bool)
 

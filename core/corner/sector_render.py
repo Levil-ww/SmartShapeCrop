@@ -351,7 +351,7 @@ def _redraw_border_on_corner(
         # [v8] valid_region 已经用 R+2 容差包含边界外 2px（用于直弧衔接处），
         # 这里 dist <= R_total 仍保留以避免在弧外画边框色；真正的弧外清理由
         # beyond_arc 负责。
-        d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist <= float(R_total) + 0.5)
+        d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist <= float(R_total) + 1.5)
         if not np.any(d_region):
             continue
 
