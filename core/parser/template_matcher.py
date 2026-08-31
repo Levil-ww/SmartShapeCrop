@@ -791,6 +791,38 @@ class TemplateMatcher:
             f"🔍 目标形状关键词: 全部={tgt_shape_kw}, 形状类={tgt_shape_only}"
         )
 
+        # [Fix A 方向关键词严格匹配 2026-08-31]
+        # 目标含显式方向关键词(竖版/横版)时，候选集剔除方向不一致的模板
+        # 规则：目标竖版 → 仅保留 layout==竖版 的模板
+        #       目标横版 → 仅保留 layout==横版 的模板（含默认横版的无关键词模板，向后兼容）
+        #       目标无显式方向 → 保持原行为（不按方向过滤）
+        tgt_direction_kw = tgt_shape_kw & _SHAPE_KEYWORDS_DIRECTION
+        tgt_has_explicit_direction = bool(tgt_direction_kw)
+        if tgt_has_explicit_direction and candidate_keys:
+            tgt_explicit_vert = bool(tgt_direction_kw & {'竖版', '竖'})
+            tgt_explicit_hori = bool(tgt_direction_kw & {'横版', '横'})
+            filtered = set()
+            for k in candidate_keys:
+                e = self._cache.get(k)
+                if e is None:
+                    filtered.add(k)
+                    continue
+                tpl_layout = e._layout or ""
+                if not tpl_layout:
+                    filtered.add(k)
+                    continue
+                tpl_is_vert = (tpl_layout == '竖版')
+                if tgt_explicit_vert and tpl_is_vert:
+                    filtered.add(k)
+                elif tgt_explicit_hori and not tpl_is_vert:
+                    filtered.add(k)
+            if self.enable_match_debug_log:
+                self._log(
+                    f"🎯 方向严格过滤: 目标方向={tgt_direction_kw}, "
+                    f"候选 {len(candidate_keys)} → {len(filtered)}"
+                )
+            candidate_keys = filtered
+
         scored_count = 0
         shape_rejected_count = 0
         for k in candidate_keys:
@@ -843,6 +875,8 @@ class TemplateMatcher:
                 # —— 水池模式 ——
                 tgt_pool_mode=tgt.pool_mode,
                 tgt_pool_pattern=(tgt.pool_pattern_name or "").lower(),
+                # [Fix B 2026-08-31] 方向严格匹配兜底参数
+                tgt_has_explicit_direction=tgt_has_explicit_direction,
             )
             scored_count += 1
             if score > 0:
@@ -1034,6 +1068,8 @@ class TemplateMatcher:
         # —— 水池设计器新增参数（默认保持旧行为）——
         tgt_pool_mode: bool = False,
         tgt_pool_pattern: str = "",
+        # [Fix B 方向严格匹配 2026-08-31] 目标是否含显式方向关键词
+        tgt_has_explicit_direction: bool = False,
     ) -> tuple[float, dict]:
         details = {
             'name_match': False,
@@ -1156,6 +1192,10 @@ class TemplateMatcher:
                     score += 10
                     details['direction_match'] = True
                 else:
+                    if tgt_has_explicit_direction:
+                        # [Fix B 2026-08-31] 目标含显式方向关键词时，方向不一致直接否决
+                        # 兜底：即使 Fix A 预过滤遗漏（如缓存条目无 layout），也确保不会胜出
+                        return 0.0, details
                     if details.get('ratio_diff', float('inf')) < 0.05:
                         score += 3
 
@@ -1208,6 +1248,7 @@ class TemplateMatcher:
         tgt_layout = target.layout or ""
         has_size = (target.width_cm > 0 and target.height_cm > 0)
         t_ratio = max(target.width_cm, target.height_cm) / min(target.width_cm, target.height_cm) if has_size else None
+        _tgt_direction_kw = set(target.shape_keywords or []) & {'横版', '竖版', '横', '竖'}
         return self._compute_match_score_fast(
             entry,
             tgt_pattern=tgt_pattern,
@@ -1220,6 +1261,8 @@ class TemplateMatcher:
             # —— 水池模式 ——
             tgt_pool_mode=target.pool_mode,
             tgt_pool_pattern=(target.pool_pattern_name or "").lower(),
+            # [Fix B 2026-08-31] 方向严格匹配兜底参数
+            tgt_has_explicit_direction=bool(_tgt_direction_kw),
         )
 
     def get_library_stats(self) -> dict:

@@ -780,11 +780,12 @@ def test_93_user_multihole_params_override_sketch_in_worker():
     except Exception as e:  # pragma: no cover
         pytest.skip(f"模块导入失败: {e}")
 
-    # —— 构造假模板库目录（采用 test_template_matcher.py 验证通过的 ;竖版WxHcm 形态）——
+    # —— 构造假模板库目录（采用 test_template_matcher.py 验证通过的 ;横版WxHcm 形态）——
     with tempfile.TemporaryDirectory() as tpl_dir:
         from PIL import Image as _PILImage
-        # 与核心测试用例相同的"产品-...-花型;竖版WxHcm.jpg"解析格式，保证 TemplateMatcher 100% 命中。
-        outer_p = os.path.join(tpl_dir, "双面草-定制-定制尺寸-安妮森林;竖版236x484cm.jpg")
+        # 与核心测试用例相同的"产品-...-花型;横版WxHcm.jpg"解析格式，保证 TemplateMatcher 100% 命中。
+        # [Fix 2026-08-31] 模板方向须与目标(横版)一致，方向错配已被严格匹配修复拦截。
+        outer_p = os.path.join(tpl_dir, "双面草-定制-定制尺寸-安妮森林;横版247x50cm.jpg")
         _PILImage.new('RGB', (100, 50), (128, 128, 128)).save(outer_p, 'JPEG', quality=90)
 
         matcher = TemplateMatcher()

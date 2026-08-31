@@ -169,14 +169,20 @@ class TestShapeKeywordMatching:
         assert '圆形' not in best.filename, \
             f"目标无圆形关键词，不应匹配含圆形的模板: {best.filename}"
 
-    def test_direction_keyword_allowed_with_shape_mismatch(self, tmp_path):
-        """方向关键词（横版/竖版）不应被过滤，只有形状关键词才需要严格匹配"""
+    def test_no_keyword_target_keeps_lenient_direction_behavior(self, tmp_path):
+        """[Fix C 2026-08-31] 目标无显式方向关键词时，保持原行为：不按方向过滤（向后兼容）
+
+        原 test_direction_keyword_allowed_with_shape_mismatch 的断言（弧形不匹配）仍成立，
+        但其文档/命名错误地声称"方向关键词不应被过滤"为通用规则。
+        本测试更名后明确：方向放行仅适用于"目标无显式方向关键词"的兼容场景；
+        目标含显式方向关键词时的严格匹配见 TestDirectionKeywordStrictMatching。
+        """
         templates = [
-            # 横版 + 弧形（方向正确但形状不正确）
+            # 横版 + 弧形（形状不正确）
             ("素材-素锦弧形;横版90x160cm.jpg", (500, 900)),
             # 横版 + 正确形状
             ("素材-素锦;横版90x160cm.jpg", (500, 900)),
-            # 竖版 + 正确形状（方向不同但形状正确）
+            # 竖版 + 正确形状（目标无方向关键词时仍可作为候选）
             ("素材-素锦;竖版160x90cm.jpg", (900, 500)),
         ]
         for name, size in templates:
@@ -185,9 +191,111 @@ class TestShapeKeywordMatching:
 
         m = TemplateMatcher()
         m.set_template_dir(str(tmp_path))
-        target = "素材-素锦;90x160CM"
+        target = "素材-素锦;90x160CM"  # 无显式方向关键词
         best, _ = m.find_best_match(target)
         assert best is not None
-        # 不应匹配含弧形的模板
+        # 形状关键词仍需严格匹配
         assert '弧形' not in best.filename, \
-            f"方向关键词不应替代形状匹配: {best.filename}"
+            f"形状关键词仍需严格匹配: {best.filename}"
+
+
+class TestDirectionKeywordStrictMatching:
+    """[Fix 2026-08-31] 方向关键词(横版/竖版)严格匹配测试
+
+    修复根因：原逻辑仅在形状关键词(弧形/圆形/方形)上严格匹配，方向关键词放行，
+    叠加 norm2 交换尺寸比较，导致 竖版目标 错配 横版/无关键词(默认横版)模板。
+    修复后：目标含显式方向关键词时，模板方向必须一致方可匹配。
+    """
+
+    @pytest.fixture
+    def mixed_direction_dir(self, tmp_path):
+        """含竖版/横版/无关键词模板的库"""
+        templates = [
+            # 竖版模板（与竖版目标同向）
+            ("双面格-定制-定制尺寸-花幔;竖版26x46cm.jpg", (600, 1100)),
+            # 无关键词模板（默认横版，曾错配竖版目标）
+            ("双面格-定制-定制尺寸-花幔;25x44cm.jpg", (1100, 600)),
+            # 显式横版模板
+            ("双面格-定制-定制尺寸-花幔;横版46x26cm.jpg", (1100, 600)),
+        ]
+        for name, size in templates:
+            img = Image.new('RGB', size, (255, 255, 255))
+            img.save(tmp_path / name, 'JPEG', quality=80)
+        return str(tmp_path)
+
+    def test_vertical_target_matches_vertical_template(self, mixed_direction_dir):
+        """竖版目标应匹配竖版模板"""
+        m = TemplateMatcher()
+        m.set_template_dir(mixed_direction_dir)
+        target = "双面格-定制-定制尺寸-花幔;竖版26x46cm左下角右下角圆角半径1.5cm"
+        best, _ = m.find_best_match(target)
+        assert best is not None
+        assert '竖版' in best.filename, \
+            f"竖版目标应匹配竖版模板，实得: {best.filename}"
+
+    def test_vertical_target_rejects_horizontal_template(self, mixed_direction_dir):
+        """竖版目标不得匹配横版模板（含无关键词默认横版）"""
+        m = TemplateMatcher()
+        m.set_template_dir(mixed_direction_dir)
+        target = "双面格-定制-定制尺寸-花幔;竖版26x46cm左下角右下角圆角半径1.5cm"
+        best, _ = m.find_best_match(target)
+        assert best is not None
+        assert '横版' not in best.filename, \
+            f"竖版目标不得匹配显式横版模板: {best.filename}"
+        assert '25x44' not in best.filename, \
+            f"竖版目标不得匹配无方向关键词(默认横版)模板: {best.filename}"
+
+    def test_horizontal_target_rejects_vertical_template(self, mixed_direction_dir):
+        """横版目标不得匹配竖版模板"""
+        m = TemplateMatcher()
+        m.set_template_dir(mixed_direction_dir)
+        target = "双面格-定制-定制尺寸-花幔;横版46x26cm"
+        best, _ = m.find_best_match(target)
+        assert best is not None
+        assert '竖版' not in best.filename, \
+            f"横版目标不得匹配竖版模板: {best.filename}"
+
+    def test_vertical_target_only_horizontal_available_returns_none(self, tmp_path):
+        """竖版目标，库中只有横版/无关键词模板时，不得返回横版模板作为最佳匹配"""
+        templates = [
+            ("双面格-定制-定制尺寸-花幔;横版46x26cm.jpg", (1100, 600)),
+            ("双面格-定制-定制尺寸-花幔;25x44cm.jpg", (1100, 600)),
+        ]
+        for name, size in templates:
+            img = Image.new('RGB', size, (255, 255, 255))
+            img.save(tmp_path / name, 'JPEG', quality=80)
+
+        m = TemplateMatcher()
+        m.set_template_dir(str(tmp_path))
+        target = "双面格-定制-定制尺寸-花幔;竖版26x46cm"
+        best, candidates = m.find_best_match(target)
+        # 竖版目标在只有横版模板的库中：不得返回横版模板作为最佳匹配
+        if best is not None:
+            assert '横版' not in best.filename, \
+                f"竖版目标不得返回横版模板作为最佳匹配: {best.filename}"
+            assert '25x44' not in best.filename, \
+                f"竖版目标不得返回无关键词(默认横版)模板: {best.filename}"
+
+    def test_user_reported_case_vertical_26x46_vs_25x44(self, tmp_path):
+        """用户报告的回归用例：竖版26x46cm 不得匹配 25x44cm（默认横版）
+
+        复现原 bug：原评分给该错配 83 分（花型+30/比例+40/交换尺寸+5/材质+5/方向错配+3），
+        高于绝大多数候选，导致横版素材被作为竖版目标的最佳匹配。
+        """
+        templates = [
+            # 用户库中存在的"问题素材"（无竖版关键词 → 默认横版）
+            ("双面格-定制-定制尺寸-花幔;25x44cm.jpg", (1100, 600)),
+        ]
+        for name, size in templates:
+            img = Image.new('RGB', size, (255, 255, 255))
+            img.save(tmp_path / name, 'JPEG', quality=80)
+
+        m = TemplateMatcher()
+        m.set_template_dir(str(tmp_path))
+        # 用户报告的目标文件名
+        target = "双面格-定制-定制尺寸-花幔;竖版26x46cm左下角右下角圆角半径1.5cm"
+        best, _ = m.find_best_match(target)
+        # 竖版目标不得匹配默认横版的 25x44cm 模板
+        if best is not None:
+            assert '25x44' not in best.filename, \
+                f"竖版26x46目标不得匹配横版25x44模板: {best.filename}"
