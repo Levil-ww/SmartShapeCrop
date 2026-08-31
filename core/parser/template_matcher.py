@@ -101,6 +101,7 @@ class TemplateEntry:
     _shape_keywords_serialized: str = ""
     _file_mtime: float = 0.0
     _ratio_bucket: str = ""  # 新增：比例分桶标签
+    _has_corners: bool = False  # 新增：文件名是否已含圆角信息（排除已裁剪素材用）
 
     # ---- 解析对象兼容（延迟构造） ----
     @property
@@ -137,6 +138,7 @@ class TemplateEntry:
             self._pattern_key = ""
             self._shape_keywords_serialized = ""
             self._ratio_bucket = ""
+            self._has_corners = False
             return
         self._product_name = value.product_name or ""
         self._layout = value.layout or ""
@@ -148,6 +150,9 @@ class TemplateEntry:
         kw = value.shape_keywords or []
         self._shape_keywords_serialized = json.dumps(kw, ensure_ascii=False) if kw else ""
         self._ratio_bucket = ratio_bucket_for(self._width_cm, self._height_cm)
+        # 新增：缓存圆角标记，用于排除已裁剪素材
+        corners = value.corners
+        self._has_corners = bool(corners) and any(v > 0 for v in corners.values())
 
     # ---- 序列化 ----
     def to_cache_dict(self) -> dict:
@@ -166,6 +171,7 @@ class TemplateEntry:
             "_shape_keywords_serialized": self._shape_keywords_serialized,
             "_file_mtime": self._file_mtime,
             "_ratio_bucket": self._ratio_bucket,
+            "_has_corners": self._has_corners,
         }
 
     @classmethod
@@ -189,6 +195,17 @@ class TemplateEntry:
             # 兼容旧版缓存：没有 ratio_bucket 则现算
             rb = ratio_bucket_for(e._width_cm, e._height_cm)
         e._ratio_bucket = rb
+        # 兼容旧版缓存：补算 _has_corners（从文件名重新解析）
+        if "_has_corners" in d:
+            e._has_corners = bool(d.get("_has_corners", False))
+        else:
+            try:
+                from .name_parser import parse_filename as _pf
+                _p = _pf(e.filename)
+                _c = _p.corners
+                e._has_corners = bool(_c) and any(v > 0 for v in _c.values()) if _c else False
+            except Exception:
+                e._has_corners = False
         return e
 
 
@@ -196,7 +213,7 @@ class TemplateEntry:
 # 磁盘缓存容器
 # ============================================================================
 
-_CACHE_SCHEMA_VERSION = 2  # v2：新增 idx_ratio 字段 + TemplateEntry._ratio_bucket
+_CACHE_SCHEMA_VERSION = 3  # v3：新增 _has_corners 字段，用于排除已裁剪素材
 
 
 @dataclass
@@ -833,6 +850,13 @@ class TemplateMatcher:
                     and e._width_cm <= 0 and e._height_cm <= 0):
                 continue
 
+            # [Fix 排除已裁剪素材-评分循环兜底 2026-08-31]
+            # 二次硬排除：防止预过滤遗漏（如缓存条目 shape_pool 计算时遗漏的边界情况）。
+            if tgt_has_corners and e._has_corners:
+                if self.enable_match_debug_log:
+                    self._log(f"   ❌ 已裁剪素材排斥: [{e.filename}] 含圆角，目标也有圆角 → 跳过")
+                continue
+
             template_is_circle = e.is_circular
             if tgt_has_corners and template_is_circle:
                 continue
@@ -938,6 +962,17 @@ class TemplateMatcher:
             all_keys = set(self._cache.keys())
             true_circ = set(self._idx_circular.get(True, []))
             shape_pool = all_keys - true_circ
+
+        # [Fix 排除已裁剪素材 2026-08-31]
+        # 目标有圆角要求时，排除模板库中已经带圆角的条目（即已经被裁剪过的成品图）。
+        # 原因：圆角裁剪工具的源素材必须是"原始未裁剪图"，已带圆角的图无法再被正确裁圆角。
+        # 不影响无圆角目标（如水池设计器、直接匹配无圆角图等场景）。
+        if target_has_corners and shape_pool:
+            before_shape = len(shape_pool)
+            shape_pool = {k for k in shape_pool
+                          if not (self._cache.get(k) and self._cache[k]._has_corners)}
+            if self.enable_match_debug_log:
+                logger.debug(f"🎯 预过滤-排除已裁剪素材: shape_pool {before_shape} → {len(shape_pool)}")
 
         # --- B. 有花型名 ---
         if target_pattern:
