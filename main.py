@@ -11,12 +11,13 @@ from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QHBoxLayout,
     QAction, QFileDialog, QMessageBox, QStatusBar, QLabel, QTabWidget,
+    QProgressDialog,
 )
 
 from core.geometry import CropDesign, BorderLayer
 from core.log_setup import setup_logging
 from core.image_ops import save_jpg, render_design
-from gui.canvas_widget import PreviewCanvas
+from gui.canvas_widget import PreviewCanvas, ExportSaveWorker
 from gui.property_panel import PropertyPanel
 from gui.cropper_panel import CropperPanel
 
@@ -164,6 +165,12 @@ class MainWindow(QMainWindow):
         self._status_size = QLabel("画布尺寸：-")
         sb.addPermanentWidget(self._status_size)
 
+        # [Fix 2026-09-02 B] 导出 JPG 状态保护（防重复点击 + UI 阻塞）
+        self._is_saving: bool = False
+        self._save_worker: ExportSaveWorker | None = None
+        self._save_progress: QProgressDialog | None = None
+        self._a_save: QAction | None = None   # 稍后在 _build_menu 赋值
+
         # 菜单
         self._build_menu()
 
@@ -221,6 +228,7 @@ class MainWindow(QMainWindow):
 
         a_save = QAction("导出 JPG…", self); a_save.setShortcut(QKeySequence.Save)
         a_save.triggered.connect(self._on_save); m_file.addAction(a_save)
+        self._a_save = a_save   # [Fix B] 导出期间禁用菜单/快捷键
 
         m_file.addSeparator()
         a_quit = QAction("退出", self); a_quit.setShortcut(QKeySequence.Quit)
@@ -316,38 +324,121 @@ class MainWindow(QMainWindow):
         self.canvas.rendered.emit(pil_img)
 
     def _on_save(self):
-        # 关键：保存时使用全分辨率 LANCZOS 重渲，确保导出质量
+        """
+        [Fix 2026-09-02 B] 导出 JPG 异步化：
+          渲染与保存全流程移至 ExportSaveWorker（后台 QThread），主线程不再阻塞 5-15 秒。
+          语义、输出与原实现 100% 一致：
+            · 始终走 design.clone() 快照（F4 跨线程竞争保护）
+            · quality='export'（全分辨率 LANCZOS）
+            · quality=95 JPEG + DPI 元数据
+          新增交互：
+            · 防重复点击（_is_saving 守卫 + 保存动作禁用）
+            · QProgressDialog（不确定进度条 + 取消按钮 → requestInterruption）
+            · 完成/失败/取消 三种分支提示
+        """
         if self.panel.design is None:
             QMessageBox.warning(self, "无法保存", "请先生成预览再保存")
             return
-        
-        # 检查当前是否使用 LOD 预览
+
+        # ---- 防重复点击守卫（菜单 Ctrl+S / 面板"导出 JPG"按钮 双入口）----
+        if self._is_saving:
+            QMessageBox.information(
+                self, "正在导出",
+                "上一次导出正在后台进行中，请稍候…\n可通过进度条取消本次导出。")
+            return
+
+        # ---- LOD 提示确认（与原逻辑相同，文案更新为"后台渲染"以匹配新行为）----
         if self.canvas.is_lod_active():
             reply = QMessageBox.question(
                 self, "保存确认",
-                "当前预览为低分辨率代理图。\n保存时将渲染全分辨率图像，可能需要一些时间。\n\n是否继续保存？",
+                "当前预览为低分辨率代理图。\n"
+                "保存时将在后台渲染全分辨率印刷级图像（LANCZOS 高质量），\n"
+                "可通过进度窗口取消，不会卡住界面。\n\n是否继续保存？",
                 QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
+                QMessageBox.Yes,
             )
             if reply == QMessageBox.No:
                 return
-        
-        # 优先使用水池设计器中的"输出文件名"，否则回退尺寸命名
+
+        # ---- 输出路径选择 ----
         base_name = self.panel.get_output_filename()
         default_name = base_name + ".jpg"
         path, _ = QFileDialog.getSaveFileName(
             self, "导出为 JPG", default_name, "JPEG 图片 (*.jpg *.jpeg)")
         if not path:
             return
-        try:
-            # 保存阶段用 LANCZOS 重新渲染一次，确保导出图不受预览 BILINEAR 影响
-            img = render_design(self.panel.design, quality='export')
-            save_jpg(img, path, quality=95, dpi=self.panel.design.dpi)
-            self.statusBar().showMessage(f"已保存：{path}", 5000)
-            QMessageBox.information(self, "保存成功",
-                                    f"已导出 JPG：\n{path}\n\n尺寸：{img.width}×{img.height} px")
-        except Exception as e:
-            QMessageBox.critical(self, "保存失败", str(e))
+
+        # ---- 进入保存状态 ----
+        self._is_saving = True
+        dpi = self.panel.design.dpi
+        if self._a_save is not None:
+            self._a_save.setEnabled(False)
+        self.statusBar().showMessage("导出：正在后台渲染全分辨率图像…", 0)
+
+        # ---- 不确定进度对话框（取消 → worker.requestInterruption）----
+        #   setRange(0,0) 显示"忙碌"条；不调用 exec_()（非模态，保留事件循环）
+        dlg = QProgressDialog(self)
+        dlg.setWindowTitle("导出 JPG")
+        dlg.setLabelText(
+            f"正在为导出渲染 & 保存全分辨率图像…\n\n目标：{path}\n"
+            f"画布：{self.panel.design.canvas_w_cm:.1f} × {self.panel.design.canvas_h_cm:.1f} cm "
+            f"@ {dpi} DPI（印刷级 LANCZOS）\n"
+            f"大画布可能需要数秒，界面不会卡住。")
+        dlg.setRange(0, 0)   # 不确定进度
+        dlg.setCancelButtonText("取消导出")
+        dlg.setMinimumDuration(0)  # 立即显示
+        dlg.setWindowModality(Qt.WindowModal)
+        self._save_progress = dlg
+
+        # ---- 启动后台 Worker（快照 防 F4 竞争，与 PreviewRenderWorker 同法）----
+        worker = ExportSaveWorker(
+            self.panel.design.clone(),
+            out_path=path,
+            dpi=dpi,
+            jpeg_quality=95,
+            parent=self,
+        )
+        self._save_worker = worker
+
+        # ---- 信号连线 ----
+        worker.save_ok.connect(self._on_save_ok)
+        worker.save_err.connect(self._on_save_err)
+        worker.save_cancelled.connect(self._on_save_cancelled)
+        dlg.canceled.connect(worker.requestInterruption)
+
+        # ---- 启动 ----
+        worker.start()
+        dlg.show()
+
+    # ---- [Fix B] Export 异步信号处理器 ----
+    def _save_cleanup(self) -> None:
+        """（内部）统一重置保存相关状态。"""
+        self._is_saving = False
+        if self._a_save is not None:
+            self._a_save.setEnabled(True)
+        if self._save_progress is not None:
+            self._save_progress.close()
+            self._save_progress = None
+        self._save_worker = None
+
+    def _on_save_ok(self, path: str, elapsed: float, img_w: int, img_h: int) -> None:
+        self._save_cleanup()
+        self.statusBar().showMessage(f"已保存：{path}（耗时 {elapsed:.1f}s）", 8000)
+        QMessageBox.information(
+            self, "保存成功",
+            f"✅ 已导出 JPG：\n{path}\n\n"
+            f"尺寸：{img_w}×{img_h} px\n"
+            f"总耗时：{elapsed:.1f} 秒（后台执行，界面保持响应）")
+
+    def _on_save_err(self, msg: str) -> None:
+        self._save_cleanup()
+        self.statusBar().showMessage("保存失败", 5000)
+        QMessageBox.critical(self, "保存失败", msg)
+
+    def _on_save_cancelled(self) -> None:
+        self._save_cleanup()
+        self.statusBar().showMessage("导出已取消", 3000)
+        # 不弹错误对话框（用户主动取消），避免打扰
 
 
 def _write_crash_log(exc_type, exc_value, tb) -> None:

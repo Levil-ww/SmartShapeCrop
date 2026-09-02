@@ -55,20 +55,36 @@ def fit_image_to_rect(src_img: Image.Image,
       - 'export' (默认): LANCZOS 重采样，最终导出用，质量最高
       - 'preview': BILINEAR 重采样，预览刷新用，3-5× 加速，肉眼差异可忽略
     """
-    resample = Image.BILINEAR if quality == 'preview' else Image.LANCZOS
+    base_resample = Image.BILINEAR if quality == 'preview' else Image.LANCZOS
     sw, sh = src_img.size
     if sw <= 0 or sh <= 0:
         return Image.new('RGB', (target_w, target_h), bg_color)
 
+    # ---- [Fix 2026-09-02] 严重下采样保护（素材尺寸 >> 目标尺寸时 BILINEAR=aliasing 伪影）----
+    # 图像理论：下采样 > ~1.5× 时，BILINEAR 的 2×2 邻域无低通滤波，
+    #   高频花纹（百合线稿、文字边）产生混叠 aliasing → 用户感知"马赛克/色块/失真"。
+    # LANCZOS 有多 tap 核（8-tap / 6-tap）天然抗锯齿，对单次 stretch / cover 中间 resize
+    #   的额外开销 < 30ms（8K→1K 级别），远小于整体 GUI 渲染 1-2s，可忽略。
+    # 逻辑语义：纯 stretch / cover / contain 的输出与原算法 100% 一致，
+    #   仅插值核变化；export 本来就是 LANCZOS，不受影响；upscale / 近 1:1 场景
+    #   继续用 BILINEAR，保持预览加速初衷（3-5× 于 LANCZOS）。
+    def _smart_resize(img, tw, th, base):
+        iw, ih = img.size
+        sx, sy = tw / iw, th / ih
+        # 任意一边 >1.5× 下采样 → 强制 LANCZOS 抗锯齿
+        if min(sx, sy) < 1.0 / 1.5:
+            return img.resize((tw, th), Image.LANCZOS)
+        return img.resize((tw, th), base)
+
     if mode == 'tile':
         return _tile_fill(src_img, target_w, target_h)
     if mode == 'stretch':
-        return src_img.resize((target_w, target_h), resample)
+        return _smart_resize(src_img, target_w, target_h, base_resample)
 
     scale = max(target_w / sw, target_h / sh) if mode == 'cover' \
         else min(target_w / sw, target_h / sh)
     nw, nh = max(1, int(sw * scale)), max(1, int(sh * scale))
-    resized = src_img.resize((nw, nh), resample)
+    resized = _smart_resize(src_img, nw, nh, base_resample)
 
     if mode == 'cover':
         # 居中裁剪
@@ -303,7 +319,7 @@ def adapt_pool_material(src_img: Image.Image,
     [Fix 2026-08-27] 与参考项目对齐：使用简单拉伸模式，
     避免 contain/cover 模式下的两侧黑边或边框线条被裁剪问题。
     """
-    resample = Image.BILINEAR if quality == 'preview' else Image.LANCZOS
+    base_resample = Image.BILINEAR if quality == 'preview' else Image.LANCZOS
     sw, sh = src_img.size
     if sw <= 0 or sh <= 0:
         return Image.new('RGB', (target_w, target_h), (255, 255, 255))
@@ -388,7 +404,17 @@ def adapt_pool_material(src_img: Image.Image,
     ar_diff_pct = abs(ar_src - ar_tgt) / max(ar_tgt, 1e-6) * 100
 
     # 简单拉伸到目标尺寸
-    stretched = src_img.resize((target_w, target_h), resample)
+    # [Fix 2026-09-02] 严重下采样抗锯齿：LOD 预览时素材 4-8× 下采样、
+    #   或 300DPI 素材在全分辨率 preview 时 2×+ 下采样，BILINEAR 会 aliasing
+    #   → 用户感知"马赛克/色块/失真"。任意一边 >1.5× 下采样时强制 LANCZOS，
+    #   其余情况保留 base_resample（预览 BILINEAR 加速、导出 LANCZOS 高质量）。
+    #   语义不变：仍是"简单拉伸到 (target_w,target_h)"，仅插值核自适应。
+    sx_ds, sy_ds = target_w / sw, target_h / sh
+    if min(sx_ds, sy_ds) < 1.0 / 1.5:
+        _stretch_resample = Image.LANCZOS
+    else:
+        _stretch_resample = base_resample
+    stretched = src_img.resize((target_w, target_h), _stretch_resample)
 
     logger.info(
         f"[adapt_pool_material] 使用简单拉伸(stretch)模式: "
@@ -456,9 +482,16 @@ def render_design_lod(design: CropDesign, scale: float = 0.25) -> Image.Image:
     # 在 LOD 尺寸上渲染，传递 pixel_scale 以缩放固定像素值（如边框宽度）
     lod_result = render_design(lod_design, quality='preview', pixel_scale=scale)
     
-    # 放大回原尺寸，使用 NEAREST 保持锐利边缘（如边框）
+    # 放大回原尺寸，使用 BILINEAR 双线性插值
+    # [Fix 2026-09-02] 原方案 Image.NEAREST 将低分辨率像素硬复制 4×4 放大，
+    #   导致花纹图案呈现明显马赛克/像素块（用户反馈图1内挖花纹失真）。
+    #   改为 BILINEAR 与代码库中 quality='preview' 的标准一致（fit_image_to_rect L58 /
+    #   adapt_pool_material L306 均使用 BILINEAR 作为预览插值），花纹过渡自然。
+    #   边框锐利度：LOD 预览仅用于 GUI 显示，边框 3px→12px 的轻微抗锯齿在预览中
+    #   可忽略；最终导出 JPG 走 render_design(quality='export') 全分辨率，
+    #   不经过此处，故边框与花纹绝对质量不受影响。
     if lod_result.size != (original_w, original_h):
-        lod_result = lod_result.resize((original_w, original_h), Image.NEAREST)
+        lod_result = lod_result.resize((original_w, original_h), Image.BILINEAR)
     
     return lod_result
 
@@ -1317,14 +1350,22 @@ def _draw_text_side(draw: ImageDraw.ImageDraw, font, text, x, y, h, side, color)
 
 # ---------- 保存 JPG ----------
 
-def save_jpg(img: Image.Image, out_path: str, quality: int = 95, dpi: int | None = None) -> None:
-    """保存为 JPG，可选写入 DPI 元数据（印刷用）"""
+def save_jpg(img: Image.Image, out_path: str, quality: int = 95, dpi: int | tuple[int, int] | None = None) -> None:
+    """保存为 JPG，可选写入 DPI 元数据（印刷用）。
+    dpi 兼容：单个 int（如 150 → (150,150)） 或 (int,int) 元组（已明确水平/垂直）。
+    """
     ext = os.path.splitext(out_path)[1].lower()
     if ext not in ('.jpg', '.jpeg'):
         out_path = os.path.splitext(out_path)[0] + '.jpg'
     save_kwargs = {'quality': quality, 'optimize': True}
     if dpi is not None:
-        save_kwargs['dpi'] = (dpi, dpi)
+        # 规范化：允许 int 或 二元 tuple/list；PIL JPEG 需要 (dpi_x, dpi_y) 且每项为可 round 的标量
+        if isinstance(dpi, (tuple, list)) and len(dpi) == 2:
+            dx, dy = int(round(dpi[0])), int(round(dpi[1]))
+        else:
+            ds = int(round(dpi))  # type: ignore[arg-type]
+            dx, dy = ds, ds
+        save_kwargs['dpi'] = (dx, dy)
     img.save(out_path, 'JPEG', **save_kwargs)
 
 

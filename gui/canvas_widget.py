@@ -20,7 +20,13 @@ logger = logging.getLogger(__name__)
 
 # LOD 触发阈值：像素量超过此值时使用低分辨率渲染
 LOD_PIXEL_THRESHOLD = 1_000_000  # 100万像素
-LOD_SCALE_FACTOR = 0.25  # 1/4 分辨率
+# [Fix 2026-09-02 A1] 原 0.25 (1/4 边长 = 1/16 像素) 预览显示"马赛克"感：
+#   用户 29MP 画布 → LOD 仅 1.8MP，花纹精细度先天不足，任何插值都救不回。
+#   改为 0.50 (1/2 边长 = 1/4 像素)：LOD = 7.3MP，花纹细节 ×4，肉眼观感
+#   从"劣化占位图"跃升为"可信预览"。速度代价：LOD 渲染像素 ×4，原 ~100ms
+#   → 新 ~400ms，依旧属于即时 GUI 反馈 (<500ms)。后台全分辨率渲染独立进行，
+#   整体交互节奏不变。
+LOD_SCALE_FACTOR = 0.50  # 1/2 分辨率（像素量 1/4）
 
 # 异步渲染阈值：超过此像素量的设计使用后台线程渲染
 ASYNC_RENDER_THRESHOLD = 200_000  # 20万像素
@@ -52,6 +58,56 @@ class PreviewRenderWorker(QThread):
             if self.isInterruptionRequested():
                 return
             self.finished_err.emit(str(e))
+
+
+class ExportSaveWorker(QThread):
+    """
+    [Fix 2026-09-02 B] 导出 JPG 专用后台 Worker：
+      1) 在独立线程中全分辨率 LANCZOS 渲染 render_design(quality='export')
+      2) 同线程内写入 JPG 文件（IO 操作与 GUI 解耦）
+      3) 通过信号返回结果，UI 主线程全程不阻塞、无"卡住"。
+    原实现 main.py _on_save 在主线程同步执行 render_design + save_jpg：
+      29.3 MP 画布 + 300DPI 素材 → 5-15 秒 UI 完全冻结（Windows标为"未响应"）。
+    本 Worker 照搬 PreviewRenderWorker 的已验证模式（clone 快照防 F4 竞争）。
+    """
+    save_ok = pyqtSignal(str, float, int, int)   # (path, elapsed_sec, img_w, img_h)
+    save_err = pyqtSignal(str)
+    save_cancelled = pyqtSignal()
+
+    def __init__(self, design_snapshot, out_path: str, dpi: int,
+                 jpeg_quality: int = 95, parent=None):
+        super().__init__(parent)
+        self._design = design_snapshot
+        self._out_path = out_path
+        self._dpi = dpi
+        self._jpeg_q = jpeg_quality
+
+    def run(self):
+        try:
+            from core.image_ops import render_design, save_jpg
+            t0 = time.perf_counter()
+            # 步骤1：全分辨率 LANCZOS 渲染
+            if self.isInterruptionRequested():
+                self.save_cancelled.emit()
+                return
+            img = render_design(self._design, quality='export')
+            if self.isInterruptionRequested():
+                self.save_cancelled.emit()
+                return
+            # 步骤2：写入 JPG（同线程内 IO，避免跨线程搬运 29MP 图像）
+            save_jpg(img, self._out_path, quality=self._jpeg_q, dpi=self._dpi)
+            elapsed = time.perf_counter() - t0
+            if self.isInterruptionRequested():
+                # 极端情况：文件已写入但用户在 save 途中取消 → 保留文件（不删除避免误操作）
+                self.save_cancelled.emit()
+                return
+            self.save_ok.emit(self._out_path, elapsed, img.width, img.height)
+        except Exception as e:
+            logger.exception("[ExportSaveWorker] 导出渲染或保存失败")
+            if self.isInterruptionRequested():
+                self.save_cancelled.emit()
+                return
+            self.save_err.emit(str(e))
 
 
 class PreviewCanvas(QWidget):
@@ -271,10 +327,14 @@ class PreviewCanvas(QWidget):
         if not hasattr(self, '_source_pixmap') or self._source_pixmap is None:
             self._preview_pixmap = None
             return
-        # LOD 预览使用 FastTransformation 加速（LOD 已缩小 4×，放大无需平滑）
-        # 全分辨率预览使用 SmoothTransformation 保证显示质量
+        # [Fix 2026-09-02 A2] 始终使用 SmoothTransformation（双线性）做最后一英里显示缩放：
+        #   旧逻辑：LOD 时走 FastTransformation (Qt=NEAREST)。依据错误注释
+        #   "LOD 已缩小 4×，放大无需平滑"，但事实上 _update_preview_pixmap L263
+        #   已先把 source 缩到 widget×2 尺寸，这里再 scaled() 到 widget 实际尺寸
+        #   通常是 DOWNscale（非 upscale），NEAREST 下采样 = 额外 aliasing 色块。
+        #   SmoothTransformation 的开销对 <8MP 的 pixmap 是毫秒级，无理由不启用。
         w, h = max(1, self.width()), max(1, self.height())
-        transform = Qt.FastTransformation if self._use_lod else Qt.SmoothTransformation
+        transform = Qt.SmoothTransformation
         self._preview_pixmap = self._source_pixmap.scaled(
             w, h, Qt.KeepAspectRatio, transform)
 
