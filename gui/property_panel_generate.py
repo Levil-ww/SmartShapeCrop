@@ -175,10 +175,21 @@ class _GenerateMixin:
                 self._sp_lw.setValue(max(0.0, design.l_cut_w_cm))
                 self._sp_lh.setValue(max(0.0, design.l_cut_h_cm))
             self._sp_outer_margin.setValue(max(0, design.outer_margin_cm))
+            # [Fix 2026-09-02] blockSignals 保护：避免 Worker 回填 4 次 setValue 触发
+            #   4 次冗余的 valueChanged → _apply_quiet 渲染。Worker 完成后最终会调
+            #   一次 _apply_quiet（L354），所以这里的 setValue 不需要触发预览。
+            self._sp_mt.blockSignals(True)
+            self._sp_mb.blockSignals(True)
+            self._sp_ml.blockSignals(True)
+            self._sp_mr.blockSignals(True)
             self._sp_mt.setValue(max(0, design.inner_margin_top_cm))
             self._sp_mb.setValue(max(0, design.inner_margin_bottom_cm))
             self._sp_ml.setValue(max(0, design.inner_margin_left_cm))
             self._sp_mr.setValue(max(0, design.inner_margin_right_cm))
+            self._sp_mt.blockSignals(False)
+            self._sp_mb.blockSignals(False)
+            self._sp_ml.blockSignals(False)
+            self._sp_mr.blockSignals(False)
 
             # ===== [MULTI-HOLE Add-On 2026-08-29] 回填多洞 UI =====
             # pool_is_multi_hole=True 且 holes>=2 → 显示/填 多洞 GroupBox；否则隐藏。

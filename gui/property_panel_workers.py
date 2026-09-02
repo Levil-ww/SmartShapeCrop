@@ -208,25 +208,24 @@ class PoolRenderWorker(QThread):
 
             # [Fix 2026-08-28] 用户手动修改的边距优先于草图识别结果
             # 当用户在 UI 上手动调整了边距值（SpinBox），这些值通过 user_margins
-            # 传入 Worker，在此覆盖 sketch_result 中的对应字段，确保：
-            # 1) CropDesign 使用用户修正后的边距
-            # 2) 内挖尺寸（canvas - margins）正确
-            # 3) 后续素材匹配（内挖素材）基于正确的内挖尺寸
+            # 传入 Worker，用于覆盖 design 中的对应边距字段。
+            #
+            # [Fix 2026-09-02] 不再修改 sketch_result 对象（引用传递会污染
+            #   PropertyPanel 的 self._sketch_parse_result，导致后续
+            #   _detect_user_margin_edits 对比基准被篡改，检测不到用户修改）。
+            #   改为在下面构建设计时直接从 user_margins 取值。
+            #
             # L 形模式：margins 恒为 0（L 形 = 画布挖角），跳过该覆盖逻辑。
             if self._user_margins and sketch_result and sketch_result.success and not is_lshape:
                 um = self._user_margins
                 changed = []
                 if 'top' in um and um['top'] is not None:
-                    sketch_result.margin_top_cm = float(um['top'])
                     changed.append(f"上:{um['top']:.1f}")
                 if 'bottom' in um and um['bottom'] is not None:
-                    sketch_result.margin_bottom_cm = float(um['bottom'])
                     changed.append(f"下:{um['bottom']:.1f}")
                 if 'left' in um and um['left'] is not None:
-                    sketch_result.margin_left_cm = float(um['left'])
                     changed.append(f"左:{um['left']:.1f}")
                 if 'right' in um and um['right'] is not None:
-                    sketch_result.margin_right_cm = float(um['right'])
                     changed.append(f"右:{um['right']:.1f}")
                 if changed:
                     self._log(f"应用用户手动修改的边距：{', '.join(changed)}")
@@ -281,10 +280,27 @@ class PoolRenderWorker(QThread):
                 # sketch 原始内框自动 +1cm（损耗分摊到内挖区域，不挤占边距）。
                 # 新不变量：(outer+1) = ml + inner_w + mr；(outer+1)_v = mt + inner_h + mb
                 if sketch_result and sketch_result.success:
-                    design.inner_margin_top_cm = sketch_result.margin_top_cm
-                    design.inner_margin_bottom_cm = sketch_result.margin_bottom_cm
-                    design.inner_margin_left_cm = sketch_result.margin_left_cm
-                    design.inner_margin_right_cm = sketch_result.margin_right_cm
+                    # 先取草图值，再用 user_margins 覆盖（如果提供了）
+                    # [Fix 2026-09-02] 不再在上面修改 sketch_result 对象本身，
+                    #   保持 PropertyPanel._sketch_parse_result 的原始值不被污染。
+                    _mt = sketch_result.margin_top_cm
+                    _mb = sketch_result.margin_bottom_cm
+                    _ml = sketch_result.margin_left_cm
+                    _mr = sketch_result.margin_right_cm
+                    if self._user_margins and not is_lshape:
+                        um = self._user_margins
+                        if 'top' in um and um['top'] is not None:
+                            _mt = float(um['top'])
+                        if 'bottom' in um and um['bottom'] is not None:
+                            _mb = float(um['bottom'])
+                        if 'left' in um and um['left'] is not None:
+                            _ml = float(um['left'])
+                        if 'right' in um and um['right'] is not None:
+                            _mr = float(um['right'])
+                    design.inner_margin_top_cm = _mt
+                    design.inner_margin_bottom_cm = _mb
+                    design.inner_margin_left_cm = _ml
+                    design.inner_margin_right_cm = _mr
                 else:
                     default_m = min(canvas_w_cm, canvas_h_cm) * 0.10
                     design.inner_margin_top_cm = default_m

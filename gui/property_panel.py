@@ -133,6 +133,13 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._sp_mb = self._dspin(0, 450, self.design.inner_margin_bottom_cm)
         self._sp_ml = self._dspin(0, 450, self.design.inner_margin_left_cm)
         self._sp_mr = self._dspin(0, 450, self.design.inner_margin_right_cm)
+        # [Fix 2026-09-02] 边距 SpinBox 改值即时预览（纯 Canvas 重渲染，不跑 PoolWorker）
+        # 之前用户改边距后必须手动点大按钮或底部小按钮，体验不佳且容易漏触发生效。
+        # valueChanged → _apply_quiet → _collect + design_changed → Canvas 重渲染。
+        self._sp_mt.valueChanged.connect(self._apply_quiet)
+        self._sp_mb.valueChanged.connect(self._apply_quiet)
+        self._sp_ml.valueChanged.connect(self._apply_quiet)
+        self._sp_mr.valueChanged.connect(self._apply_quiet)
         fi.addLayout(self._row("上", self._sp_mt))
         fi.addLayout(self._row("下", self._sp_mb))
         fi.addLayout(self._row("左", self._sp_ml))
