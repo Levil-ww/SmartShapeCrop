@@ -411,6 +411,29 @@ class MainWindow(QMainWindow):
         dlg.show()
 
     # ---- [Fix B] Export 异步信号处理器 ----
+    def _retire_save_worker(self, timeout_ms: int = 10000) -> None:
+        """
+        [Fix 2026-09-02 C] 安全退役导出线程（对齐 PreviewCanvas._retire_worker 的已验证范式）：
+          - 先取走引用，避免新旧 worker 混淆；
+          - 仍在运行则 requestInterruption() 并 wait() 等其真正结束；
+          - 结束（或超时）后才 deleteLater()，绝不在运行中析构 QThread。
+
+        缺陷回溯：原 _save_cleanup 直接 `self._save_worker = None` 丢弃引用，
+        而 main() 的 app.aboutToQuit 只连接了 canvas.shutdown（仅管渲染线程），
+        导出线程完全无人接管。导出大图（38MP 画布需数秒）途中关闭窗口，
+        必然触发 "QThread: Destroyed while thread is still running" 崩溃。
+        """
+        w = self._save_worker
+        self._save_worker = None
+        if w is None:
+            return
+        if w.isRunning():
+            w.requestInterruption()
+            if not w.wait(timeout_ms):
+                logging.getLogger(__name__).warning(
+                    "[MainWindow] 导出线程未在超时内结束，放弃等待")
+        w.deleteLater()
+
     def _save_cleanup(self) -> None:
         """（内部）统一重置保存相关状态。"""
         self._is_saving = False
@@ -419,7 +442,8 @@ class MainWindow(QMainWindow):
         if self._save_progress is not None:
             self._save_progress.close()
             self._save_progress = None
-        self._save_worker = None
+        # 不再直接置 None，改为安全退役（中断 + 等待 + deleteLater）
+        self._retire_save_worker()
 
     def _on_save_ok(self, path: str, elapsed: float, img_w: int, img_h: int) -> None:
         self._save_cleanup()
@@ -439,6 +463,19 @@ class MainWindow(QMainWindow):
         self._save_cleanup()
         self.statusBar().showMessage("导出已取消", 3000)
         # 不弹错误对话框（用户主动取消），避免打扰
+
+    def closeEvent(self, event) -> None:
+        """
+        [Fix 2026-09-02 C] 关闭窗口前确保所有后台线程已结束。
+
+        原先仅靠 main() 中的 app.aboutToQuit → canvas.shutdown 处理渲染线程，
+        导出线程无人接管。此处补齐：若正在导出则先中断并等待其结束，
+        再交由画布清理渲染线程，避免关闭瞬间析构仍在运行的 QThread。
+        """
+        if self._is_saving:
+            self._retire_save_worker()
+        self.canvas.shutdown()
+        super().closeEvent(event)
 
 
 def _write_crash_log(exc_type, exc_value, tb) -> None:
