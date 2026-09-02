@@ -32,3 +32,6 @@ scripts/logs/
 /crash.log
 /simple_corner_test.png
 /test_corner_result.png
+
+# 本地归档（2026-09-02 整理：调试图片与 .bak 备份，仅本地保留）
+_archive/
