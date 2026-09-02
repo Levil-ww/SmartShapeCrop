@@ -9,7 +9,7 @@ import re
 import logging
 import time
 from datetime import date, datetime, timedelta
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QColor
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QDoubleSpinBox,
@@ -66,6 +66,59 @@ class CropWorker(QThread):
             self.finished_err.emit(str(e))
 
 
+class AutoMatchWorker(QThread):
+    """
+    异步模板匹配 Worker — 将 scan_library + find_best_match 移至后台线程。
+
+    模板库扫描（特别是首次 20万+ 文件全量扫描）和匹配评分会阻塞 UI 主线程。
+    通过 QThread 异步执行，配合 QProgressDialog 进度反馈。
+    """
+
+    finished_ok = pyqtSignal(object, list, float, dict)  # (best_entry, candidates, elapsed, stats)
+    finished_err = pyqtSignal(str)
+    progress = pyqtSignal(int, str)
+    log_msg = pyqtSignal(str)
+
+    def __init__(self, template_dir: str, target_name: str, matcher: TemplateMatcher, parent=None):
+        super().__init__(parent)
+        self._template_dir = template_dir
+        self._target_name = target_name
+        self._matcher = matcher
+
+    def run(self):
+        try:
+            # 1) 确保 matcher 目录正确（仅当不同时设置，避免清空缓存）
+            if self._matcher.get_template_dir() != self._template_dir:
+                self._matcher.set_template_dir(self._template_dir)
+
+            self.progress.emit(10, "正在扫描模板库...")
+            self.log_msg.emit("正在扫描模板库...")
+
+            t0 = time.time()
+            self._matcher.scan_library(force=False)
+
+            self.progress.emit(60, "正在匹配源图...")
+            self.log_msg.emit("正在匹配源图...")
+
+            best, candidates = self._matcher.find_best_match(self._target_name)
+            match_dt = time.time() - t0
+
+            self.progress.emit(100, "匹配完成")
+            self.log_msg.emit(f"匹配完成，耗时 {match_dt:.2f}s")
+
+            stats = {}
+            try:
+                stats = self._matcher.get_library_stats()
+            except Exception:
+                pass
+
+            self.finished_ok.emit(best, candidates, match_dt, stats)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.finished_err.emit(str(e))
+
+
 class CropperPanel(QWidget):
     """裁剪操作面板"""
     
@@ -83,6 +136,7 @@ class CropperPanel(QWidget):
         self._corner_programmatic = False
         self._app_settings = get_app_settings()
         self._worker: CropWorker | None = None
+        self._match_worker: AutoMatchWorker | None = None
         self._progress: QProgressDialog | None = None
         self._build_ui()
         self._restore_last_template_dir()
@@ -592,14 +646,25 @@ class CropperPanel(QWidget):
             # 只有不同时才设置（避免清空缓存）
             self._matcher.set_template_dir(abs_dir)
 
-    def _auto_match(self):
-        """从目标文件名自动匹配模板库中的源图（高性能版）。
+    # ===== 自动匹配（异步 + 进度条 + 自动预览）=====
 
-        性能关键点：
-        - **不要**每次都 set_template_dir：它会清空内存缓存和倒排索引
-        - 磁盘缓存 + 增量扫描：第二次起几乎瞬间完成
-        - 倒排索引预过滤：从 20 万全量降到几百条候选再评分
+    def _auto_match(self):
+        """从目标文件名自动匹配模板库中的源图（异步，不阻塞 UI）。
+
+        流程：
+        1) 后台线程执行 scan_library + find_best_match（避免 UI 卡死）
+        2) 进度条实时反馈扫描/匹配进度
+        3) 匹配成功后静默填充裁剪参数 → 自动触发预览生成
+        4) 匹配结果日志显示在 _lbl_match_log 标签
         """
+        # 防重入
+        if self._match_worker is not None and self._match_worker.isRunning():
+            QMessageBox.information(self, "提示", "正在匹配中，请稍候...")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, "提示", "正在生成预览中，请稍候...")
+            return
+
         target_name = self._ed_target_name.text().strip()
         if not target_name:
             QMessageBox.information(self, "提示", "请输入目标文件名")
@@ -613,84 +678,106 @@ class CropperPanel(QWidget):
 
         self._lbl_match_log.setText("正在匹配中...")
 
-        # 确保 matcher 目录正确（仅当不同时设置，避免清空缓存）
-        if self._matcher.get_template_dir() != template_dir:
-            self._matcher.set_template_dir(template_dir)
+        # 创建异步 Worker
+        self._match_worker = AutoMatchWorker(template_dir, target_name, self._matcher)
+        self._match_worker.finished_ok.connect(
+            lambda best, candidates, dt, stats: self._on_match_done(
+                best, candidates, dt, stats, template_dir, target_name
+            )
+        )
+        self._match_worker.finished_err.connect(self._on_match_err)
+        self._match_worker.progress.connect(self._on_progress)
+        self._match_worker.log_msg.connect(self._lbl_match_log.setText)
 
-        t0 = time.time()
-        # 这里 scan_library 是增量/磁盘缓存的：第一次慢，之后几百毫秒
-        # 但 _auto_match 没必要强扫；find_best_match 内部会按需 scan
-        self._matcher.scan_library(force=False)
-        best, candidates = self._matcher.find_best_match(target_name)
-        match_dt = time.time() - t0
+        self._show_progress("正在匹配模板...")
+        self._progress.setRange(0, 100)
+        self._match_worker.start()
+
+    def _on_match_done(self, best, candidates, match_dt, stats, template_dir, target_name):
+        """自动匹配完成回调（主线程）。"""
+        self._hide_progress()
+        self._match_worker = None
 
         # 记录到历史（带扫描后的总数），并写默认目录
-        try:
-            stats = self._matcher.get_library_stats()
-            total = stats.get("total", 0)
-        except Exception as e:
-            logger.warning(f"获取模板库统计信息失败: {e}")
-            total = 0
+        total = stats.get("total", 0) if stats else 0
         self._app_settings.add_template_history(template_dir, total_files=int(total))
         self._refresh_template_history_ui()
 
         # 解析目标文件名获取完整裁剪参数（含圆角）
         target_parsed = parse_filename(target_name)
-        self._target_parsed = target_parsed  # 保存原始解析结果（含目标尺寸，不含损耗）
+        self._target_parsed = target_parsed
 
         if best:
+            # 填充源图路径
             self._set_source_path(best.path)
 
-            # 优先使用目标文件名中的参数，模板参数作为回退
-            if target_parsed.product_name:
-                self._ed_product.setText(target_parsed.product_name)
-            elif best.parsed and best.parsed.product_name:
-                self._ed_product.setText(best.parsed.product_name)
+            # 填充裁剪参数（保持原有逻辑）
+            self._apply_match_params(target_parsed, best)
 
-            if target_parsed.layout:
-                idx = self._cb_layout.findData(target_parsed.layout)
-                if idx >= 0:
-                    self._cb_layout.setCurrentIndex(idx)
-            elif best.parsed and best.parsed.layout:
-                idx = self._cb_layout.findData(best.parsed.layout)
-                if idx >= 0:
-                    self._cb_layout.setCurrentIndex(idx)
+            # 静默显示匹配结果在日志标签
+            match_info = (
+                f"✅ 匹配成功（{match_dt:.2f}s）| "
+                f"源图: {os.path.basename(best.path)} | "
+                f"得分: {best.score:.2f}"
+            )
+            self._lbl_match_log.setText(match_info)
 
-            # 尺寸自动识别 + 切割损耗（CUT_LOSS_CM）
-            if target_parsed.width_cm > 0 and target_parsed.height_cm > 0:
-                self._sp_w.setValue(target_parsed.width_cm + CUT_LOSS_CM)
-                self._sp_h.setValue(target_parsed.height_cm + CUT_LOSS_CM)
-            elif best.parsed and best.parsed.width_cm > 0:
-                self._sp_w.setValue(best.parsed.width_cm + CUT_LOSS_CM)
-                self._sp_h.setValue(best.parsed.height_cm + CUT_LOSS_CM)
-
-            # 圆角只从目标文件名获取（模板通常不含圆角信息）
-            if target_parsed.corners:
-                self._corner_programmatic = True
-                try:
-                    for key in ('tl', 'tr', 'bl', 'br'):
-                        if key in target_parsed.corners and target_parsed.corners[key] > 0:
-                            self._sp_corners[key].setValue(target_parsed.corners[key] + CORNER_CUT_LOSS_CM)
-                        else:
-                            self._sp_corners[key].setValue(0)
-                finally:
-                    self._corner_programmatic = False
-
-            msg = (f"✅ 匹配成功！(耗时 {match_dt:.2f}s)\n\n"
-                   f"源图: {os.path.basename(best.path)}\n"
-                   f"匹配得分: {best.score:.2f}\n\n"
-                   f"已自动填充裁剪参数（尺寸 +1cm / 圆角 +0.5cm 切割损耗）：\n"
-                   f"- 产品名称: {target_parsed.product_name or (best.parsed.product_name if best.parsed else '-')}\n"
-                   f"- 尺寸: {_fmt_num(self._sp_w.value())}×{_fmt_num(self._sp_h.value())}cm 布局: {target_parsed.layout or (best.parsed.layout if best.parsed else '-')}\n"
-                   f"- 圆角(命名→裁剪): {self._format_corners_for_msg(target_parsed.corners)} → {self._format_corners_for_msg(self._get_corners_config())}")
-            QMessageBox.information(self, "匹配成功", msg)
+            # 自动触发预览生成（匹配→预览 一站式）
+            QTimer.singleShot(100, self._generate_preview)
         else:
+            # 匹配失败，显示提示
             self._lbl_match_log.setText(f"❌ 未找到匹配的模板（耗时 {match_dt:.2f}s）")
-            QMessageBox.warning(self, "匹配失败",
-                                "未在模板库中找到匹配的源图。\n\n请检查：\n"
-                                "1. 模板库目录是否正确\n"
-                                "2. 模板库中是否有对应花型的图片\n"
-                                "3. 尺寸和方向是否匹配")
+            QMessageBox.warning(
+                self, "匹配失败",
+                "未在模板库中找到匹配的源图。\n\n请检查：\n"
+                "1. 模板库目录是否正确\n"
+                "2. 模板库中是否有对应花型的图片\n"
+                "3. 尺寸和方向是否匹配"
+            )
+
+    def _on_match_err(self, err_msg: str):
+        """自动匹配异常回调。"""
+        self._hide_progress()
+        self._match_worker = None
+        self._lbl_match_log.setText(f"❌ 匹配出错: {err_msg}")
+        QMessageBox.critical(self, "匹配失败", err_msg)
+
+    def _apply_match_params(self, target_parsed, best):
+        """将匹配结果填充到 UI 控件。保持原有填充逻辑，仅抽成独立方法。"""
+        # 优先使用目标文件名中的参数，模板参数作为回退
+        if target_parsed.product_name:
+            self._ed_product.setText(target_parsed.product_name)
+        elif best.parsed and best.parsed.product_name:
+            self._ed_product.setText(best.parsed.product_name)
+
+        if target_parsed.layout:
+            idx = self._cb_layout.findData(target_parsed.layout)
+            if idx >= 0:
+                self._cb_layout.setCurrentIndex(idx)
+        elif best.parsed and best.parsed.layout:
+            idx = self._cb_layout.findData(best.parsed.layout)
+            if idx >= 0:
+                self._cb_layout.setCurrentIndex(idx)
+
+        # 尺寸自动识别 + 切割损耗（CUT_LOSS_CM）
+        if target_parsed.width_cm > 0 and target_parsed.height_cm > 0:
+            self._sp_w.setValue(target_parsed.width_cm + CUT_LOSS_CM)
+            self._sp_h.setValue(target_parsed.height_cm + CUT_LOSS_CM)
+        elif best.parsed and best.parsed.width_cm > 0:
+            self._sp_w.setValue(best.parsed.width_cm + CUT_LOSS_CM)
+            self._sp_h.setValue(best.parsed.height_cm + CUT_LOSS_CM)
+
+        # 圆角只从目标文件名获取（模板通常不含圆角信息）
+        if target_parsed.corners:
+            self._corner_programmatic = True
+            try:
+                for key in ('tl', 'tr', 'bl', 'br'):
+                    if key in target_parsed.corners and target_parsed.corners[key] > 0:
+                        self._sp_corners[key].setValue(target_parsed.corners[key] + CORNER_CUT_LOSS_CM)
+                    else:
+                        self._sp_corners[key].setValue(0)
+            finally:
+                self._corner_programmatic = False
     
     def _auto_parse(self):
         """从文件名自动识别参数（优先使用目标文件名输入框，回退到源图文件名）"""

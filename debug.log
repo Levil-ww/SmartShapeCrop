@@ -24,3 +24,11 @@
 [7404:15404:0902/143205.832:WARNING:kernel_parameter_setter.cc(150)] [KernelParameterSetter] NotifyDoublePinyinSchemeChanged failed, scheme=Sogou status=1
 [7404:15404:0902/143208.037:WARNING:kernel_parameter_setter.cc(150)] [KernelParameterSetter] NotifyDoublePinyinSchemeChanged failed, scheme=Sogou status=1
 [7404:15404:0902/143304.624:WARNING:kernel_parameter_setter.cc(150)] [KernelParameterSetter] NotifyDoublePinyinSchemeChanged failed, scheme=Sogou status=1
+[28156:26400:0902/150852.475:WARNING:kernel_parameter_setter.cc(150)] [KernelParameterSetter] NotifyDoublePinyinSchemeChanged failed, scheme=Sogou status=1
+[28156:26400:0902/150852.475:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.v6.filemap.sogouime
+[28156:26400:0902/150852.475:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[28156:26400:0902/150852.476:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:6
+[288:27708:0902/150904.429:WARNING:kernel_parameter_setter.cc(150)] [KernelParameterSetter] NotifyDoublePinyinSchemeChanged failed, scheme=Sogou status=1
+[288:27708:0902/150904.429:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.v6.filemap.sogouime
+[288:27708:0902/150904.429:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[288:27708:0902/150904.429:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:6
