@@ -538,12 +538,11 @@ class _PoolBoxMixin:
         self._pool_auto_parse_sketch()
         # ===== [L-Shape Panel Refactor 2026-09-02] L 形解析委托给 LShapePanel =====
         # 原 _pool_try_lshape_parse 已迁移到 LShapePanel.try_lshape_parse；
-        # 上传草图后自动尝试 L 形识别的行为保持一致：同步草图到 LShapePanel 缩略图 + 触发识别。
+        # 水池设计器仅同步草图/缩略图到 LShapePanel，不再自动触发 L 形识别弹窗
+        # （用户需切换到 L 形面板手动点「识别L形挖角」，两个面板职责单一化）。
         if self._lshape_panel is not None:
             self._lshape_panel.sync_sketch_preview(p)
             self._lshape_panel.set_sketch_path_for_view(p)
-            # 自动尝试 L 形解析（与原 _pool_load_sketch_from_path 末尾行为一致）
-            self._on_lshape_recognize_started()
 
 
     def _pool_auto_parse_sketch(self):
