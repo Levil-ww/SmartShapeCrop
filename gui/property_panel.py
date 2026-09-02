@@ -65,10 +65,12 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
         self._pool_worker = None  # type: PoolRenderWorker | None
         self._sketch_parse_worker = None  # type: _SketchParseWorker | None
-        self._lshape_parse_worker = None  # type: _LShapeParseWorker | None
         self._sketch_path = ""
         self._sketch_parse_result = None  # 草图解析缓存，供实时回填 UI
-        self._lshape_params = None  # L 形挖角参数（确认后写入：corner/cut_w_cm/cut_h_cm/outer_w_cm/outer_h_cm）
+        # ===== [L-Shape Panel Refactor 2026-09-02] L 形挖角逻辑已迁移到 LShapePanel =====
+        # _lshape_parse_worker 与 _lshape_params 现由 LShapePanel 持有；PropertyPanel 通过
+        # self._lshape_panel 间接访问。保留 _lshape_panel 引用以便 _collect / _detect_* 等链路读取。
+        self._lshape_panel = None  # type: 'LShapePanel | None' —— 由 main.py 通过 set_lshape_panel 注入
         # ===== [MULTI-HOLE Add-On 2026-08-29] 激活洞数（用于 _collect 限定写回范围） =====
         # 默认 0：单洞模式，_collect 多洞分支不会写回任何数据；
         # 多洞模式下由 _fill_multi_hole_ui/_hide_multi_hole_ui 更新为 2..MAX_MH_UI_HOLES。
@@ -210,19 +212,10 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._gb_multihole.hide()   # 启动时默认隐藏（单洞模式）
         self._inner_layout.addWidget(self._gb_multihole)
 
-        # 4) L 形参数
-        self._gb_l = QGroupBox("L形挖角参数")
-        fl = QVBoxLayout(self._gb_l)
-        self._cb_lcorner = QComboBox()
-        self._cb_lcorner.addItem("左上角", "tl"); self._cb_lcorner.addItem("右上角", "tr")
-        self._cb_lcorner.addItem("左下角", "bl"); self._cb_lcorner.addItem("右下角", "br")
-        # [Fix 2026-08-28] 挖角尺寸范围放宽到 0-450cm（大尺寸 L 形挖角，如 33x450cm 图挖 100cm 角）
-        self._sp_lw = self._dspin(0, 450, self.design.l_cut_w_cm)
-        self._sp_lh = self._dspin(0, 450, self.design.l_cut_h_cm)
-        fl.addLayout(self._row("挖角位置", self._cb_lcorner))
-        fl.addLayout(self._row("挖角宽度(cm)", self._sp_lw))
-        fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
-        self._inner_layout.addWidget(self._gb_l)
+        # 4) L 形参数 —— 已迁移到独立的 LShapePanel（gui/lshape_panel.py）
+        # 原 _gb_l / _cb_lcorner / _sp_lw / _sp_lh 由 LShapePanel 承载；
+        # PropertyPanel 通过 self._lshape_panel 间接访问（_collect / _sync_panel_from_design）。
+        # _on_mode_change 不再需要切换 _gb_l 可见性（LShapePanel 作为独立 tab 始终可见）。
 
         # 5) 椭圆参数
         self._gb_e = QGroupBox("椭圆参数")
@@ -331,6 +324,146 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def _row(self, label: str, widget: QWidget) -> QHBoxLayout:
         lay = QHBoxLayout(); lay.addWidget(QLabel(label), 0); lay.addWidget(widget, 1)
         return lay
+
+    # ==================== LShapePanel 桥接（迁移自原 L 形挖角逻辑） ====================
+    # L 形挖角的 UI 与识别逻辑已迁移到独立的 LShapePanel（gui/lshape_panel.py）。
+    # PropertyPanel 通过本节方法与 LShapePanel 双向通信，保持原功能逻辑不变：
+    #   - set_lshape_panel: main.py 注入 LShapePanel 引用；
+    #   - _on_lshape_params_changed: 用户改挖角参数 → 触发即时预览（替代原 _apply_quiet）；
+    #   - _on_lshape_applied: 用户确认 L 形挖角 → 切换模式 + 更新画布 + 触发预览
+    #     （迁移自原 _apply_lshape_params 中"切换模式/更新画布"部分，参数回填由 LShapePanel 自行完成）；
+    #   - _on_lshape_recognize_started: 用户点"识别 L 形挖角" → 把草图路径/目标尺寸注入 LShapePanel；
+    #   - _get_lshape_params: PoolRenderWorker / _detect_user_margin_edits 读取 L 形参数（替代原 self._lshape_params）。
+    def set_lshape_panel(self, panel) -> None:
+        """main.py 在创建两个面板后调用，注入 LShapePanel 引用并连接全部双向同步信号。"""
+        self._lshape_panel = panel
+
+        # —— L 形挖角原有信号（LShapePanel → PropertyPanel）——
+        panel.lshape_params_changed.connect(self._on_lshape_params_changed)
+        panel.lshape_applied.connect(self._on_lshape_applied)
+        panel.lshape_recognize_started.connect(self._on_lshape_recognize_started)
+
+        # —— 新增：草图上传/清除/查看/拖入（LShapePanel → PropertyPanel，委托同一套方法）——
+        panel.sketch_pick_requested.connect(self._pool_pick_sketch)
+        panel.sketch_clear_requested.connect(self._pool_clear_sketch)
+        panel.sketch_view_requested.connect(self._pool_view_sketch)
+        panel.sketch_load_requested.connect(self._pool_load_sketch_from_path)
+
+        # —— 新增：目标文件名变更/选文件/清空/历史选择（LShapePanel → PropertyPanel）——
+        panel.target_changed.connect(self._on_lshape_target_changed)
+        panel.target_pick_requested.connect(self._pool_pick_target_file)
+        panel.target_clear_requested.connect(lambda: self._pool_target.clear())
+        panel.target_history_pick.connect(self._on_lshape_target_history_pick)
+
+        # —— 新增：一键生成（LShapePanel → PropertyPanel，委托同一套方法）——
+        panel.generate_requested.connect(self._pool_run_generate)
+
+        # —— 反向同步：把当前 state 回填到 LShapePanel（草图 + 目标文件名 + 历史菜单）——
+        panel.sync_sketch_preview(getattr(self, '_sketch_path', ''))
+        panel.set_sketch_path_for_view(getattr(self, '_sketch_path', ''))
+        if hasattr(self, '_pool_target'):
+            panel.sync_target_from_panel(self._pool_target.text())
+        if hasattr(self, '_pool_target_history_menu') and self._pool_target_history_menu:
+            panel.set_history_menu(self._pool_target_history_menu)
+
+    def _on_lshape_params_changed(self, *_):
+        """用户改动挖角参数（位置/宽/高）→ 触发即时预览。
+
+        与原 _apply_quiet 链路一致：_collect 读取 LShapePanel 控件值 → design_changed。
+        """
+        self._apply_quiet()
+
+    def _on_lshape_applied(self, params: dict):
+        """用户在确认框中确认 L 形挖角 → 切换模式 + 更新画布 + 触发预览。
+
+        迁移自原 _apply_lshape_params 中"切换模式 + 更新画布尺寸"部分；
+        参数回填（_cb_lcorner/_sp_lw/_sp_lh）已由 LShapePanel._apply_lshape_params 自行完成。
+        """
+        try:
+            # 1) 裁剪模式 → L 形挖角
+            idx = self._cb_mode.findData('rect_lshape')
+            if idx >= 0:
+                self._cb_mode.setCurrentIndex(idx)
+            self._on_mode_change()
+            # 2) 画布尺寸 = 外框 + 1cm 损耗（保存 raw 外框供解析换算）
+            outer_w = float(params.get('outer_w_cm', 0) or 0)
+            outer_h = float(params.get('outer_h_cm', 0) or 0)
+            if outer_w > 0 and outer_h > 0:
+                self._pool_raw_outer_w = outer_w
+                self._pool_raw_outer_h = outer_h
+                self._sp_w.setValue(outer_w + 1.0)
+                self._sp_h.setValue(outer_h + 1.0)
+            # 3) 触发预览渲染
+            self._set_pool_status(
+                f"✅ L 形挖角已确认：corner={params.get('corner', '?')}，"
+                f"挖角 {float(params.get('cut_w_cm', 0)):.1f} × "
+                f"{float(params.get('cut_h_cm', 0)):.1f} cm，"
+                f"外框 {outer_w:.1f} × {outer_h:.1f} cm。\n"
+                f"点击下方「匹配模板 → 解析草图 → 生成预览」完成素材匹配与渲染。")
+            self._apply_quiet()
+        except Exception as e:
+            logger.exception(f"[PropertyPanel] _on_lshape_applied 异常: {e}")
+            self._set_pool_status(f"L 形参数回填异常：{e}", is_error=True)
+
+    def _on_lshape_recognize_started(self):
+        """用户点 LShapePanel 的"识别 L 形挖角"按钮 → 注入草图路径/目标尺寸并启动解析。
+
+        迁移自原 _pool_try_lshape_parse 中"准备参数"部分；
+        实际的 Worker 启动/确认框/参数回填由 LShapePanel.try_lshape_parse 承载。
+        """
+        if self._lshape_panel is None:
+            return
+        if not self._sketch_path or not os.path.isfile(self._sketch_path):
+            self._lshape_panel._set_status(
+                "请先在水池设计器上传尺寸草图，再进行 L 形挖角识别", is_error=True)
+            return
+        # 目标尺寸：优先文件名解析的原始外框（无 1cm 损耗）
+        raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
+        raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
+        if raw_w <= 0 or raw_h <= 0:
+            raw_w = self._sp_w.value()
+            raw_h = self._sp_h.value()
+        if raw_w <= 0 or raw_h <= 0:
+            self._lshape_panel._set_status(
+                "请先在水池设计器填写目标尺寸，再进行 L 形挖角识别", is_error=True)
+            return
+        self._lshape_panel.try_lshape_parse(self._sketch_path, raw_w, raw_h)
+
+    def _get_lshape_params(self):
+        """读取 LShapePanel._lshape_params（替代原 self._lshape_params）。
+
+        供 PoolRenderWorker / _detect_user_margin_edits 等链路使用。
+        """
+        if self._lshape_panel is None:
+            return None
+        return self._lshape_panel.get_lshape_params()
+
+    def _on_lshape_target_changed(self, text: str):
+        """LShapePanel 目标文件名变更 → 同步到水池设计器 + 触发统一处理。
+
+        与水池设计器中 _pool_target.textChanged → _on_pool_target_changed 走同一套逻辑，
+        但先写入 _pool_target 再触发，保证 _on_pool_target_changed 内部状态一致。
+        """
+        if self._lshape_panel is None:
+            return
+        # blockSignals 避免 _pool_target.setText 反过来触发 LShapePanel → 递归
+        self._pool_target.blockSignals(True)
+        try:
+            if self._pool_target.text() != text:
+                self._pool_target.setText(text)
+        finally:
+            self._pool_target.blockSignals(False)
+        # 触发统一处理（解析尺寸 + 回填画布 + 自动识别草图边距）
+        self._on_pool_target_changed(text)
+
+    def _on_lshape_target_history_pick(self, name: str):
+        """LShapePanel 历史菜单选中 → 写入水池设计器目标文件名 + 触发统一处理。"""
+        if self._lshape_panel is None or not name:
+            return
+        self._pool_target.setText(name)
+        self._pool_target.setFocus()
+        self._pool_target.setCursorPosition(len(name))
+
 
     # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 UI 辅助函数 =====
     # 单洞模式下这些函数不会被调用（所有调用都被 if is_multi_hole guard 包住）。
@@ -496,7 +629,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     # ---- 模式切换显示/隐藏 L 形 / 椭圆 ----
     def _on_mode_change(self):
         mode = self._cb_mode.currentData()
-        self._gb_l.setVisible(mode == 'rect_lshape')
+        # L 形参数已迁移到独立 LShapePanel（始终作为 tab 可见，无需此处切换）
         self._gb_e.setVisible(mode == 'ellipse_hole')
 
     # ---- 边框层增删改 ----

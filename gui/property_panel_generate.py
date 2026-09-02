@@ -93,12 +93,18 @@ class _GenerateMixin:
         # 启动 Worker
         self._pool_btn_generate.setEnabled(False)
         self._pool_btn_generate.setText("处理中…请稍候")
+        # ===== [L-Shape Panel Refactor] 同步一键生成按钮状态到 LShapePanel =====
+        if self._lshape_panel is not None:
+            self._lshape_panel.set_generate_enabled(False, "处理中…请稍候")
         worker = PoolRenderWorker(
             self._matcher, tpl_dir, target_name, self._sketch_path,
             pre_parsed_result=self._sketch_parse_result,
             user_margins=user_margins,
             user_multihole_params=user_multihole_params,
-            lshape_params=getattr(self, '_lshape_params', None),
+            # ===== [L-Shape Panel Refactor 2026-09-02] 从 LShapePanel 读取 L 形参数 =====
+            # 原 getattr(self, '_lshape_params', None) 已迁移到 LShapePanel._lshape_params；
+            # 通过 self._get_lshape_params() 间接访问，语义与原直读字段一致。
+            lshape_params=self._get_lshape_params(),
             parent=self)
         worker.progress.connect(self._on_pool_progress)
         worker.finished_ok.connect(self._on_pool_finished_ok)
@@ -106,6 +112,8 @@ class _GenerateMixin:
         worker.finished.connect(lambda: (
             self._pool_btn_generate.setEnabled(True),
             self._pool_btn_generate.setText("🔍 匹配模板 → 解析草图 → 生成预览"),
+            # ===== [L-Shape Panel Refactor] 恢复 LShapePanel 一键生成按钮 =====
+            self._lshape_panel.set_generate_enabled(True, "🔍 匹配模板 → 解析草图 → 生成预览") if self._lshape_panel is not None else None,
         ))
         self._pool_worker = worker
         worker.start()
@@ -167,13 +175,12 @@ class _GenerateMixin:
             if idx >= 0:
                 self._cb_mode.setCurrentIndex(idx)
             self._on_mode_change()
-            # L 形挖角参数同步（以 Worker 回传的 design 为准）
-            if design.mode == 'rect_lshape':
-                ci = self._cb_lcorner.findData(design.l_corner)
-                if ci >= 0:
-                    self._cb_lcorner.setCurrentIndex(ci)
-                self._sp_lw.setValue(max(0.0, design.l_cut_w_cm))
-                self._sp_lh.setValue(max(0.0, design.l_cut_h_cm))
+            # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数同步到 LShapePanel =====
+            # 原 self._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
+            # 通过 self._lshape_panel.set_lshape_params() 回填，语义与原直设控件一致。
+            if design.mode == 'rect_lshape' and self._lshape_panel is not None:
+                self._lshape_panel.set_lshape_params(
+                    design.l_corner, design.l_cut_w_cm, design.l_cut_h_cm)
             self._sp_outer_margin.setValue(max(0, design.outer_margin_cm))
             # [Fix 2026-09-02] blockSignals 保护：避免 Worker 回填 4 次 setValue 触发
             #   4 次冗余的 valueChanged → _apply_quiet 渲染。Worker 完成后最终会调
@@ -415,7 +422,10 @@ class _GenerateMixin:
                 if inner_match_info:
                     info += inner_match_info
                 if self.design.mode == 'rect_lshape':
-                    lp = getattr(self, '_lshape_params', None) or {}
+                    # ===== [L-Shape Panel Refactor 2026-09-02] 从 LShapePanel 读取 L 形参数 =====
+                    # 原 getattr(self, '_lshape_params', None) 已迁移到 LShapePanel；
+                    # 通过 self._get_lshape_params() 间接访问，语义与原直读字段一致。
+                    lp = self._get_lshape_params() or {}
                     info += (f"L形草图识别：corner={lp.get('corner', '?')}，"
                              f"挖角 {float(lp.get('cut_w_cm', 0)):.1f} × "
                              f"{float(lp.get('cut_h_cm', 0)):.1f} cm\n")
@@ -493,7 +503,8 @@ class _GenerateMixin:
         """
         result = {}
         # L 形模式：margins 恒为 0（L 形 = 画布挖角），不检测用户边距修改
-        if getattr(self, '_lshape_params', None):
+        # ===== [L-Shape Panel Refactor 2026-09-02] 从 LShapePanel 读取 L 形参数 =====
+        if self._get_lshape_params() is not None:
             return result
         sr = self._sketch_parse_result
         if sr is None or not getattr(sr, 'success', False):

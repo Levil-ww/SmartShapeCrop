@@ -19,6 +19,7 @@ from core.image_ops import save_jpg, render_design
 from gui.canvas_widget import PreviewCanvas, ExportSaveWorker
 from gui.property_panel import PropertyPanel
 from gui.cropper_panel import CropperPanel
+from gui.lshape_panel import LShapePanel
 
 
 def resource_path(relative_path: str) -> str:
@@ -123,10 +124,9 @@ def _preset_tile() -> CropDesign:
 
 
 PRESETS = [
-    ("图1 矩形嵌套+文字", _preset_rect_nested),
-    ("图2/4 L形挖角",    _preset_lshape),
-    ("图3 椭圆嵌套",     _preset_ellipse),
-    ("图5 瓷砖嵌套",     _preset_tile),
+    ("图 矩形嵌套挖洞", _preset_rect_nested),
+    ("图 L形挖角",    _preset_lshape),
+    ("图 椭圆嵌套",     _preset_ellipse),
 ]
 
 
@@ -138,13 +138,19 @@ class MainWindow(QMainWindow):
         # 中央：左边画布 + 右边标签页（属性面板/裁剪面板）
         splitter = QSplitter(Qt.Horizontal)
         self.canvas = PreviewCanvas()
-        
+
         # 右侧标签页
         self._tabs = QTabWidget()
         self.panel = PropertyPanel()
         self.cropper = CropperPanel()
+        # ===== [L-Shape Panel Refactor 2026-09-02] 独立的 L 形挖角设计面板 =====
+        # 把 L 形挖角功能从【水池设计器】拆出，单开一个面板放在【水池设计器】右侧，
+        # 名称"L形挖角设计"，承载所有 L 形挖角相关 UI 与识别逻辑。
+        self.lshape_panel = LShapePanel()
+        self.panel.set_lshape_panel(self.lshape_panel)  # 注入引用 + 连接信号
         self._tabs.addTab(self.cropper, "圆角裁剪工具")
         self._tabs.addTab(self.panel, "水池设计器")
+        self._tabs.addTab(self.lshape_panel, "L形挖角设计")
         
         splitter.addWidget(self.canvas)
         splitter.addWidget(self._tabs)
@@ -275,8 +281,11 @@ class MainWindow(QMainWindow):
         p._sp_mt.setValue(d.inner_margin_top_cm); p._sp_mb.setValue(d.inner_margin_bottom_cm)
         p._sp_ml.setValue(d.inner_margin_left_cm); p._sp_mr.setValue(d.inner_margin_right_cm)
         ci = {'tl': 0, 'tr': 1, 'bl': 2, 'br': 3}.get(d.l_corner, 3)
-        p._cb_lcorner.setCurrentIndex(ci)
-        p._sp_lw.setValue(d.l_cut_w_cm); p._sp_lh.setValue(d.l_cut_h_cm)
+        # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数同步到 LShapePanel =====
+        # 原 p._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
+        # 通过 p._lshape_panel.set_lshape_params() 回填，语义与原直设控件一致。
+        if p._lshape_panel is not None:
+            p._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
         p._sp_erx.setValue(d.ellipse_rx_ratio); p._sp_ery.setValue(d.ellipse_ry_ratio)
         p._btn_outer_color.set_color(d.outer_bg_color); p._btn_hole_color.set_color(d.hole_bg_color)
         p._ed_outer_img.setText(d.outer_bg_image or ""); p._ed_hole_img.setText(d.hole_bg_image or "")

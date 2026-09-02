@@ -76,9 +76,18 @@ class _LayersMixin:
         d.inner_margin_bottom_cm = self._sp_mb.value()
         d.inner_margin_left_cm = self._sp_ml.value()
         d.inner_margin_right_cm = self._sp_mr.value()
-        d.l_corner = self._cb_lcorner.currentData()
-        d.l_cut_w_cm = self._sp_lw.value()
-        d.l_cut_h_cm = self._sp_lh.value()
+        # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数从 LShapePanel 读取 =====
+        # 原 self._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
+        # 通过 self._lshape_panel.get_corner()/get_cut_w_cm()/get_cut_h_cm() 读取，
+        # 语义与原直读控件完全一致。
+        if self._lshape_panel is not None:
+            d.l_corner = self._lshape_panel.get_corner()
+            d.l_cut_w_cm = self._lshape_panel.get_cut_w_cm()
+            d.l_cut_h_cm = self._lshape_panel.get_cut_h_cm()
+        else:
+            d.l_corner = 'br'
+            d.l_cut_w_cm = 0.0
+            d.l_cut_h_cm = 0.0
         # 圆角设置
         d.corner_tl_cm = self._sp_design_corners['tl'].value()
         d.corner_tr_cm = self._sp_design_corners['tr'].value()
