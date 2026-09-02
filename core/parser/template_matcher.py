@@ -199,13 +199,15 @@ class TemplateEntry:
         if "_has_corners" in d:
             e._has_corners = bool(d.get("_has_corners", False))
         else:
-            try:
-                from .name_parser import parse_filename as _pf
-                _p = _pf(e.filename)
-                _c = _p.corners
-                e._has_corners = bool(_c) and any(v > 0 for v in _c.values()) if _c else False
-            except Exception:
-                e._has_corners = False
+            # [Perf-Opt] 旧缓存无 _has_corners 字段时，不再调用完整 parse_filename
+            # （21万条目时会触发21万次正则），改用文件名关键词快速判定。
+            # 功能语义等价：_has_corners 仅用于"目标要求圆角时排除已裁剪素材"的硬过滤。
+            # 只要文件名含圆角相关关键词，就视为"已裁剪/含圆角"，排除即可——
+            # 关键词误判（包含角字但非圆角要求）为 False Positive 是安全的（多排除一些候选）。
+            fn = d.get("filename", "") or ""
+            _corner_kw = ('圆角', '半径', '左上角', '右上角', '左下角', '右下角',
+                          '圆弧角', '弧角', '圆角弧')
+            e._has_corners = any(kw in fn for kw in _corner_kw)
         return e
 
 

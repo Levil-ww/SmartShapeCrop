@@ -37,6 +37,17 @@ class _GenerateMixin:
             QMessageBox.information(self, "提示", "正在处理中，请稍候…")
             return
 
+        # [Perf-Opt] 如果后台预热扫描仍在进行，等待其完成后再启动渲染 Worker。
+        # 避免两个子线程竞争写 TemplateMatcher（_cache/索引/子目录 mtime）。
+        # 预热完成后内存缓存已就绪，PoolRenderWorker 内的 scan_library 会
+        # 走 quick-skip 路径（毫秒级），总等待时间 = 预热剩余时间而不是从头扫描。
+        warmup = getattr(self, '_warmup_worker', None)
+        if warmup is not None and warmup.isRunning():
+            self._set_pool_status("⏳ 模板库预热扫描即将完成…请稍候")
+            QApplication.processEvents()  # 刷新状态栏文字
+            # 使用 wait(30 分钟超时) 等待预热自然结束；极端超时也允许继续（scan_library 会做正确的事）
+            warmup.wait(30 * 60 * 1000)
+
         # V2.0 修复：EXE 模式下用户机器可能未安装 Tesseract-OCR，在执行草图解析前
         # 先主动检查引擎状态，给出明确的安装指引，而不是解析后模糊提示"未识别"
         if self._sketch_path and os.path.isfile(self._sketch_path):

@@ -28,7 +28,7 @@ from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_s
 logger = logging.getLogger(__name__)
 
 from .property_panel_widgets import ColorButton, _SketchDropLabel
-from .property_panel_workers import PoolRenderWorker, _SketchParseWorker, _LShapeParseWorker
+from .property_panel_workers import PoolRenderWorker, _SketchParseWorker, _LShapeParseWorker, _WarmupScanWorker
 from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog, _LShapeConfirmDialog
 
 class _PoolBoxMixin:
@@ -270,14 +270,64 @@ class _PoolBoxMixin:
 
 
     def _pool_restore_last_template_dir(self):
-        """启动时：恢复上次使用的模板库目录 + 填充历史记录下拉/菜单"""
+        """启动时：恢复上次使用的模板库目录 + 填充历史记录下拉/菜单
+
+        [Perf-Opt] 恢复目录后立即触发后台预热扫描（_WarmupScanWorker），
+        让磁盘缓存加载和增量扫描在用户操作 UI 的时间内并行完成。
+        磁盘缓存命中时预热 <1s 即结束；首次冷启动扫描时，用户在填写
+        文件名/上传草图的几分钟里扫描也能并行完成。
+        """
         self._pool_refresh_template_history_ui()
         last_dir = self._app_settings.get_default_template_dir()
         if last_dir and os.path.isdir(last_dir):
             self._pool_set_template_dir_ui(last_dir)
-            # 同步到 matcher（不立即扫描，用户点"生成"时再走磁盘缓存）
-            self._pool_on_template_dir_changed(last_dir)
+            self._pool_on_template_dir_changed(last_dir, warmup=True)
 
+    def _pool_trigger_warmup(self, abs_dir: str):
+        """启动后台预热扫描；若已有预热在跑则先等待其停止（避免竞争写 TemplateMatcher）"""
+        # 如果已有生成任务在跑，不做预热——生成流程内部会先扫描
+        if self._pool_worker is not None and self._pool_worker.isRunning():
+            return
+        # 已有预热在跑：目录相同就复用；目录不同先停掉旧的
+        warmup = getattr(self, '_warmup_worker', None)
+        if warmup is not None and warmup.isRunning():
+            old_dir = getattr(warmup, '_template_dir', '')
+            if os.path.abspath(old_dir) == abs_dir:
+                return  # 同一个目录，不用重新预热
+            warmup.quit()
+            warmup.wait(2000)
+            if warmup.isRunning():
+                warmup.terminate()
+                warmup.wait(1000)
+
+        warmup = _WarmupScanWorker(self._matcher, abs_dir, parent=self)
+        @warmup.finished_ok.connect
+        def _on_ok(entry_count, dt):
+            logger.info(f"[PoolBox] 预热扫描完成：{entry_count} 条目，耗时 {dt:.2f}s")
+        @warmup.finished_err.connect
+        def _on_err(msg):
+            logger.warning(f"[PoolBox] 预热扫描出错：{msg}")
+        self._warmup_worker = warmup
+        warmup.start()
+
+    def _pool_on_template_dir_changed(self, text: str, warmup: bool = True):
+        """模板库目录变更时更新匹配引擎（只有目录真正不同才 set）。
+
+        [Perf-Opt] warmup=True 时立即启动后台预热扫描线程，把等待前移到用户
+        填写其他参数的空闲时间。
+        """
+        text = (text or "").strip()
+        if not text or not os.path.isdir(text):
+            return
+        abs_dir = os.path.abspath(text)
+        dir_changed = (self._matcher.get_template_dir() != abs_dir)
+        if dir_changed:
+            self._matcher.set_template_dir(abs_dir)
+        if warmup:
+            # 目录变更或仍无内存缓存 → 启动预热（目录相同但缓存为空也会触发，
+            # 例：用户切到另一个历史目录后又切回，此时内部缓存已被清空）
+            if dir_changed or not self._matcher._cache:
+                self._pool_trigger_warmup(abs_dir)
 
     def _pool_refresh_template_history_ui(self):
         """刷新历史记录：ComboBox 下拉项 + 历史菜单"""
@@ -427,16 +477,6 @@ class _PoolBoxMixin:
             self._pool_on_template_dir_changed(path)
             self._app_settings.add_template_history(path)
             self._pool_refresh_template_history_ui()
-
-
-    def _pool_on_template_dir_changed(self, text: str):
-        """模板库目录变更时更新匹配引擎（只有目录真正不同才 set）"""
-        text = (text or "").strip()
-        if not text or not os.path.isdir(text):
-            return
-        abs_dir = os.path.abspath(text)
-        if self._matcher.get_template_dir() != abs_dir:
-            self._matcher.set_template_dir(abs_dir)
 
 
     def _pool_pick_target_file(self):

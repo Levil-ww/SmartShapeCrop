@@ -28,6 +28,38 @@ from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_s
 logger = logging.getLogger(__name__)
 
 
+class _WarmupScanWorker(QThread):
+    """[Perf-Opt] 后台预热扫描：用户选择/恢复模板库目录后立即在后台执行 scan_library，
+    把磁盘缓存加载到内存、做增量扫描。这样用户填写文件名/上传草图的时间与扫描
+    并行执行，点"生成预览"时命中缓存即可秒出。
+
+    与 PoolRenderWorker 互斥：启动渲染前若发现预热仍在跑，等待结束即可复用结果。
+    TemplateMatcher.scan_library 内部有缓存命中检查（_try_quick_skip + 内存缓存），
+    重复调用幂等且接近零开销。
+    """
+    finished_ok = pyqtSignal(int, float)   # (entry_count, elapsed_sec)
+    finished_err = pyqtSignal(str)
+
+    def __init__(self, matcher: TemplateMatcher, template_dir: str, parent=None):
+        super().__init__(parent)
+        self._matcher = matcher
+        self._template_dir = template_dir
+
+    def run(self):
+        try:
+            import time
+            t0 = time.time()
+            abs_dir = os.path.abspath(self._template_dir)
+            if self._matcher.get_template_dir() != abs_dir:
+                self._matcher.set_template_dir(abs_dir)
+            self._matcher.scan_library(force=False)
+            dt = time.time() - t0
+            self.finished_ok.emit(len(self._matcher._cache), dt)
+        except Exception as e:
+            logger.exception(f"[WarmupScan] failed: {e}")
+            self.finished_err.emit(str(e))
+
+
 class PoolRenderWorker(QThread):
     """智能水池一键流程：解析文件名 → 匹配模板 → 解析草图 → 构建 CropDesign。
 
