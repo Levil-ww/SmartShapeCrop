@@ -307,15 +307,17 @@ class AppSettings:
     # 支持的数据源常量（用于存储键命名与 UI 显示）
     TARGET_SRC_CROPPER = "cropper"
     TARGET_SRC_POOL = "pool"
+    TARGET_SRC_LSHAPE = "lshape"  # L 形挖角设计面板（独立历史，不与水池设计器混用）
     TARGET_SRC_LABEL = {
         TARGET_SRC_CROPPER: "圆角裁剪工具",
         TARGET_SRC_POOL: "水池设计器",
+        TARGET_SRC_LSHAPE: "L形挖角设计",
     }
 
     def _target_name_key(self, source: str) -> str:
         """按 source 生成独立的存储键，实现物理隔离"""
         src = (source or "").strip()
-        if src not in (self.TARGET_SRC_CROPPER, self.TARGET_SRC_POOL):
+        if src not in (self.TARGET_SRC_CROPPER, self.TARGET_SRC_POOL, self.TARGET_SRC_LSHAPE):
             src = self.TARGET_SRC_CROPPER
         return f"{self.KEY_TARGET_NAME_HISTORY}/{src}"
 

@@ -19,6 +19,7 @@ L 形挖角设计面板：把 L 形挖角相关的所有 UI 与识别逻辑单�
 from __future__ import annotations
 import logging
 import os
+from datetime import date, datetime, timedelta
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
@@ -27,6 +28,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QToolButton, QMenu, QAction, QFileDialog,
 )
 
+from core.app_settings import get_app_settings
 from .property_panel_widgets import _SketchDropLabel
 from .property_panel_workers import _LShapeParseWorker
 from .property_panel_dialogs import _LShapeConfirmDialog
@@ -60,7 +62,6 @@ class LShapePanel(QWidget):
     target_changed = pyqtSignal(str)
     target_pick_requested = pyqtSignal()
     target_clear_requested = pyqtSignal()
-    target_history_pick = pyqtSignal(str)
     generate_requested = pyqtSignal()
     # —— L 形挖角原有信号 ——
     lshape_params_changed = pyqtSignal()
@@ -74,7 +75,11 @@ class LShapePanel(QWidget):
         self._lshape_parse_worker = None  # type: _LShapeParseWorker | None
         # —— 防止 target_changed 信号在 PropertyPanel 回填时触发递归 ——
         self._block_target_signal = False
+        # —— 持久化设置（与水池设计器/圆角裁剪工具共用同一份 QSettings，但 source 隔离）——
+        self._app_settings = get_app_settings()
         self._build_ui()
+        # —— 初始化本面板独立的目标文件名历史菜单 ——
+        self._refresh_target_history_ui()
 
     # ====================================================================
     # UI 构建
@@ -479,35 +484,90 @@ class LShapePanel(QWidget):
                 pass
         self._lshape_parse_worker = None
 
-    def set_history_menu(self, menu: QMenu):
-        """PropertyPanel 注入目标文件名历史菜单（PropertyPanel 侧维护数据）。"""
-        self._target_history_menu.clear()
-        # 复制菜单项（QMenu 不能被两个 QToolButton 同时持有，所以复制一份）
-        for action in menu.actions():
-            # 创建新 Action，保持原文本与触发器
-            new_action = QAction(action.text(), self._target_history_menu)
-            if action.isSeparator():
-                self._target_history_menu.addSeparator()
-                continue
-            new_action.triggered.connect(lambda checked=False, name=action.text(): self._on_history_pick(name))
-            # 复制 submenu
-            if action.menu():
-                sub = QMenu(action.menu().title(), self._target_history_menu)
-                for sub_action in action.menu().actions():
-                    if sub_action.isSeparator():
-                        sub.addSeparator()
-                    else:
-                        new_sub_action = QAction(sub_action.text(), sub)
-                        new_sub_action.triggered.connect(
-                            lambda checked=False, n=sub_action.text(): self._on_history_pick(n))
-                        sub.addAction(new_sub_action)
-                self._target_history_menu.addMenu(sub)
-            else:
-                self._target_history_menu.addAction(new_action)
+    # ====================================================================
+    # 目标文件名历史记录（独立于水池设计器，使用 TARGET_SRC_LSHAPE）
+    # ====================================================================
+    def _refresh_target_history_ui(self):
+        """刷新本面板目标文件名历史菜单：按日期分组显示最近 3 天记录。
 
-    def _on_history_pick(self, name: str):
-        """从历史菜单选中一条 → 委托 PropertyPanel 写入目标文件名。"""
-        self.target_history_pick.emit(name)
+        与 cropper_panel.py / property_panel_poolbox.py 同构，但 source=TARGET_SRC_LSHAPE，
+        实现物理隔离：L 形挖角面板只显示在本面板输入过的文件名历史。
+        """
+        self._target_history_menu.clear()
+        history = self._app_settings.get_target_name_history(self._app_settings.TARGET_SRC_LSHAPE)
+        if not history:
+            a_empty = QAction("（暂无历史记录）", self._target_history_menu)
+            a_empty.setEnabled(False)
+            self._target_history_menu.addAction(a_empty)
+            return
+
+        today_iso = date.today().isoformat()
+        yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
+        day_before_iso = (date.today() - timedelta(days=2)).isoformat()
+        date_label = {
+            today_iso: "今天",
+            yesterday_iso: "昨天",
+            day_before_iso: "前天",
+        }
+
+        for date_str, items in history.items():
+            label = date_label.get(date_str, date_str)
+            sub = QAction(f"—— {label}（{date_str}）——", self._target_history_menu)
+            sub.setEnabled(False)
+            self._target_history_menu.addAction(sub)
+            for r in items:
+                name = r.get("name", "")
+                ts = r.get("timestamp", 0)
+                time_str = datetime.fromtimestamp(ts).strftime("%H:%M") if ts else "--:--"
+                disp = name if len(name) <= 60 else (name[:57] + "…")
+                a = QAction(f"{time_str}  {disp}", self._target_history_menu)
+                a.setToolTip(name)
+                a.setData(name)
+                a.triggered.connect(lambda _=False, n=name: self._apply_target_from_history(n))
+                self._target_history_menu.addAction(a)
+            a_clear_day = QAction(f"  清空 {label} 的记录", self._target_history_menu)
+            a_clear_day.setData(date_str)
+            a_clear_day.triggered.connect(
+                lambda _=False, d=date_str: self._clear_target_history_by_date(d))
+            self._target_history_menu.addAction(a_clear_day)
+            self._target_history_menu.addSeparator()
+
+        a_clear = QAction("清空全部历史记录", self._target_history_menu)
+        a_clear.triggered.connect(self._clear_target_history)
+        self._target_history_menu.addAction(a_clear)
+
+    def _apply_target_from_history(self, name: str):
+        """从历史菜单选中目标文件名 → 回填到本面板输入框 + 触发 target_changed。
+
+        本面板自行处理（不再委托 PropertyPanel），保证历史记录选中后
+        走本面板的统一 textChanged → target_changed 链路。
+        """
+        if not name:
+            return
+        self._target_edit.setText(name)
+        self._target_edit.setFocus()
+        self._target_edit.setCursorPosition(len(name))
+
+    def _clear_target_history(self):
+        """清空全部目标文件名历史记录（仅 L 形挖角设计面板）"""
+        self._app_settings.clear_target_name_history(self._app_settings.TARGET_SRC_LSHAPE)
+        self._refresh_target_history_ui()
+
+    def _clear_target_history_by_date(self, date_str: str):
+        """清空指定日期的目标文件名历史记录（仅 L 形挖角设计面板）"""
+        self._app_settings.clear_target_name_history_by_date(self._app_settings.TARGET_SRC_LSHAPE, date_str)
+        self._refresh_target_history_ui()
+
+    def _record_target_name_history(self):
+        """记录当前目标文件名到本面板历史（生成成功后调用）。
+
+        使用 TARGET_SRC_LSHAPE source，与水池设计器（TARGET_SRC_POOL）物理隔离，
+        互不干扰。
+        """
+        name = self._target_edit.text().strip()
+        if name:
+            self._app_settings.add_target_name_history(name, self._app_settings.TARGET_SRC_LSHAPE)
+            self._refresh_target_history_ui()
 
     # ====================================================================
     # 状态提示

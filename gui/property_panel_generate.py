@@ -373,6 +373,8 @@ class _GenerateMixin:
             logger.info("[PropertyPanel] 预览已生成")
             # 记录目标文件名到历史（保留 3 天）
             self._pool_record_target_name_history()
+            # 通知 LShapePanel 记录自己的历史（TARGET_SRC_LSHAPE，与水池设计器物理隔离）
+            self.pool_generate_succeeded.emit()
 
             # 5) 结果提示（try/except 防止状态消息失败导致整个流程中断）
             try:

@@ -41,6 +41,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     save_requested = pyqtSignal()
     export_psd_requested = pyqtSignal(str)
     sketch_loaded = pyqtSignal(object)    # 草图上传后发出 PIL Image（None 表示清除），主窗口用于在主画布显示
+    pool_generate_succeeded = pyqtSignal()  # 水池模式生成成功后发出（供 LShapePanel 记录自己的历史）
 
     def get_output_filename(self) -> str:
         """返回用于导出 JPG 的建议文件名（不含扩展名），水池模式优先用输出文件名框"""
@@ -349,22 +350,24 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         panel.sketch_view_requested.connect(self._pool_view_sketch)
         panel.sketch_load_requested.connect(self._pool_load_sketch_from_path)
 
-        # —— 新增：目标文件名变更/选文件/清空/历史选择（LShapePanel → PropertyPanel）——
+        # —— 新增：目标文件名变更/选文件/清空（LShapePanel → PropertyPanel）——
+        # 历史记录由 LShapePanel 自行管理（TARGET_SRC_LSHAPE，与水池设计器物理隔离），
+        # 不再委托 PropertyPanel 处理。
         panel.target_changed.connect(self._on_lshape_target_changed)
         panel.target_pick_requested.connect(self._pool_pick_target_file)
         panel.target_clear_requested.connect(lambda: self._pool_target.clear())
-        panel.target_history_pick.connect(self._on_lshape_target_history_pick)
 
         # —— 新增：一键生成（LShapePanel → PropertyPanel，委托同一套方法）——
         panel.generate_requested.connect(self._pool_run_generate)
 
-        # —— 反向同步：把当前 state 回填到 LShapePanel（草图 + 目标文件名 + 历史菜单）——
+        # —— 反向同步：生成成功后通知 LShapePanel 记录自己的历史 ——
+        self.pool_generate_succeeded.connect(panel._record_target_name_history)
+
+        # —— 反向同步：把当前 state 回填到 LShapePanel（草图 + 目标文件名）——
         panel.sync_sketch_preview(getattr(self, '_sketch_path', ''))
         panel.set_sketch_path_for_view(getattr(self, '_sketch_path', ''))
         if hasattr(self, '_pool_target'):
             panel.sync_target_from_panel(self._pool_target.text())
-        if hasattr(self, '_pool_target_history_menu') and self._pool_target_history_menu:
-            panel.set_history_menu(self._pool_target_history_menu)
 
     def _on_lshape_params_changed(self, *_):
         """用户改动挖角参数（位置/宽/高）→ 触发即时预览。
@@ -455,14 +458,6 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             self._pool_target.blockSignals(False)
         # 触发统一处理（解析尺寸 + 回填画布 + 自动识别草图边距）
         self._on_pool_target_changed(text)
-
-    def _on_lshape_target_history_pick(self, name: str):
-        """LShapePanel 历史菜单选中 → 写入水池设计器目标文件名 + 触发统一处理。"""
-        if self._lshape_panel is None or not name:
-            return
-        self._pool_target.setText(name)
-        self._pool_target.setFocus()
-        self._pool_target.setCursorPosition(len(name))
 
 
     # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 UI 辅助函数 =====

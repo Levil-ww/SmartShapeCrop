@@ -434,14 +434,6 @@ class _PoolBoxMixin:
         a_clear.triggered.connect(self._pool_clear_target_history)
         self._pool_target_history_menu.addAction(a_clear)
 
-        # ===== [L-Shape Panel Refactor] 历史菜单重建后同步到 LShapePanel =====
-        # LShapePanel 通过 set_history_menu 复制一份相同的菜单项，保证两个面板看到一致的历史。
-        if self._lshape_panel is not None:
-            try:
-                self._lshape_panel.set_history_menu(self._pool_target_history_menu)
-            except Exception as e:
-                logger.debug(f"同步历史菜单到 LShapePanel 失败（不影响主流程）: {e}")
-
 
     def _pool_apply_target_from_history(self, name: str):
         """从历史菜单选中目标文件名，回填到目标文件输入框"""
