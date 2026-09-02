@@ -927,14 +927,23 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     #
     # V2 方案：**不依赖原始边距记录**。
     #   观察：Step 3.8 的 border_mask 已正确标记当前 inner_rect 边缘应渲染的黑框。
-    #   所有 canvas_arr 中**不是 border_mask 区域但值为近黑色**的像素，
-    #   必然是残留的旧装饰（成品裁剪图内嵌的旧黑线）。
-    #   用 canvas 外框花纹采样源（outer 左上角 2cm×2cm）覆盖这些像素即可清理干净。
+    #   canvas_arr 中"不是 border_mask 但近黑色"的像素，若形状是细条/小斑点，
+    #   必是残留的旧装饰（成品图内嵌旧黑线）；用外框花纹采样源平铺覆盖即可清理。
     #
-    #   安全收窄：只清理"细条带状"黑色像素（连通区域宽度 ≤ 30px，高度 ≤ 30px），
-    #   避免误删素材图本身可能存在的较大面积黑色花纹（极少见，但防御性保留）。
+    #   【V2.1 关键修复 2026-08-31：连通域细条防御落地，此前注释承诺但代码缺失】
+    #   缺陷回溯：V2 初版直接对全体 _residual 像素做覆盖，未做形状过滤。
+    #     对"克罗印花"等花纹底色含有大量近黑花型元素的素材图，花型像素被一并标记，
+    #     经左上角 2cm×2cm 样片（米色/咖啡色为主）覆盖后 → 整张花纹"变黑为咖"，
+    #     用户表现为"素材填充花纹变色（黑→咖啡色）"。
+    #   修复：两层防御 + 一层兜底上限：
+    #     (1) 连通域 bbox：min(宽, 高) ≤ 30px 判定"细条带状"（与注释一致）：
+    #         残留边框带（~10px 厚，一维长一维薄）符合；大面积花型块（80×80+）不符合。
+    #     (2) 近黑阈值收紧：< 20（原 <40 过于宽泛，深棕/深花纹也会中招）。
+    #     (3) 总面积兜底：清理像素不得超过外框环带面积的 5%，
+    #         极端异常情况下也不会破坏大面积花型。
     #
-    #   零侵入：try/except 任何异常静默跳过，原有代码路径一字未改。
+    #   零侵入：整体保持在 try/except 内，任何异常静默跳过，
+    #          未触碰 render_design 的任何其他逻辑分支。
     try:
         if (design.mode == 'rect_hole'
                 and not getattr(design, 'pool_is_multi_hole', False)
@@ -942,31 +951,70 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                 and (getattr(design, 'lshape_cut_w', 0.0) or 0.0) == 0.0
                 and (getattr(design, 'lshape_cut_h', 0.0) or 0.0) == 0.0
                 and has_outer_pool_material):
-            # 1) 找到所有近黑色像素（三个通道都 < 40）
-            _near_black = np.all(canvas_arr < 40, axis=2)  # (H, W) bool
+            # [V2.1 Fix ②] 近黑阈值从 40 收紧到 20（避免深棕/深花被误纳入）
+            _near_black = np.all(canvas_arr < 20, axis=2)  # (H, W) bool
             # 2) 减去当前 border_mask（正确渲染的新黑框）
             _residual = _near_black & ~border_mask
             if _residual.any():
-                # 3) 用外框花纹采样源平铺覆盖
+                # ===== [V2.1 Fix ①] 连通域 bbox 过滤：细条( min(w,h)≤30px ) 才保留 =====
+                import cv2 as _cv2
+                _res_u8 = (_residual.astype(np.uint8) * 255)
+                _n_lbl, _lbl, _st, _cen = _cv2.connectedComponentsWithStats(
+                    _res_u8, connectivity=8)
+                _thin_band = np.zeros_like(_residual, dtype=bool)
+                # label=0 是背景，从 1 开始遍历
+                _THIN_MAX = 30  # px，与注释"细条带状 30px"一致
+                for _li in range(1, _n_lbl):
+                    _bw = int(_st[_li, _cv2.CC_STAT_WIDTH])
+                    _bh = int(_st[_li, _cv2.CC_STAT_HEIGHT])
+                    # 一维薄即视为细条：边框（10px厚，另一维很长）/ 小段 / 小斑点都命中
+                    if min(_bw, _bh) <= _THIN_MAX:
+                        _thin_band |= (_lbl == _li)
+                # ===== [V2.1 Fix ③] 面积兜底上限：环带 5% =====
                 outer_rect = design.outer_rect_px()
-                _cm2px = design.cm2px(1.0)
-                _patch_side_cm = 2.0
-                _ps = max(2, int(round(_patch_side_cm * _cm2px)))
-                _px0 = int(round(outer_rect.x + 0.5 * _cm2px))
-                _py0 = int(round(outer_rect.y + 0.5 * _cm2px))
-                _px1 = min(W, _px0 + _ps)
-                _py1 = min(H, _py0 + _ps)
-                if (_px1 - _px0) >= 4 and (_py1 - _py0) >= 4:
-                    _patch = canvas_arr[_py0:_py1, _px0:_px1, :].copy()
-                    _ph, _pw = _patch.shape[:2]
-                    _tile_full = np.tile(
-                        _patch,
-                        ((H + _ph - 1) // _ph, (W + _pw - 1) // _pw, 1),
-                    )[:H, :W, :]
-                    canvas_arr[_residual] = _tile_full[_residual]
+                _ox = int(round(outer_rect.x))
+                _oy = int(round(outer_rect.y))
+                _ow = int(round(outer_rect.w))
+                _oh = int(round(outer_rect.h))
+                _inner = design.inner_rect_px()
+                _iw0 = int(round(_inner.x))
+                _ih0 = int(round(_inner.y))
+                _iw1 = int(round(_inner.x + _inner.w))
+                _ih1 = int(round(_inner.y + _inner.h))
+                _ring_area = max(1, _ow * _oh - max(0, (min(_ox+_ow, _iw1)-max(_ox,_iw0)) * max(0, (min(_oy+_oh,_ih1)-max(_oy,_ih0)))))
+                _MAX_PX = max(200, int(_ring_area * 0.05))
+                _kept = _thin_band
+                if _kept.sum() > _MAX_PX:
+                    # 异常态：候选像素过多（防御：几何过滤也可能极端情形漏过）
+                    # 退化策略：不清理任何像素，宁留残留不伤花型
                     logger.debug(
-                        f"[Stale-Decor V2] Cleaned {_residual.sum()} residual black pixels"
+                        f"[Stale-Decor V2.1] 面积兜底触发，拒绝清理："
+                        f"candidate={_kept.sum()} cap={_MAX_PX} ring={_ring_area}"
                     )
+                    _kept = np.zeros_like(_thin_band, dtype=bool)
+                # ================================================================
+                if _kept.any():
+                    # 3) 用外框花纹采样源平铺覆盖（仅覆盖过滤后的细条残留，不再碰花型）
+                    _cm2px = design.cm2px(1.0)
+                    _patch_side_cm = 2.0
+                    _ps = max(2, int(round(_patch_side_cm * _cm2px)))
+                    _px0 = int(round(outer_rect.x + 0.5 * _cm2px))
+                    _py0 = int(round(outer_rect.y + 0.5 * _cm2px))
+                    _px1 = min(W, _px0 + _ps)
+                    _py1 = min(H, _py0 + _ps)
+                    if (_px1 - _px0) >= 4 and (_py1 - _py0) >= 4:
+                        _patch = canvas_arr[_py0:_py1, _px0:_px1, :].copy()
+                        _ph, _pw = _patch.shape[:2]
+                        _tile_full = np.tile(
+                            _patch,
+                            ((H + _ph - 1) // _ph, (W + _pw - 1) // _pw, 1),
+                        )[:H, :W, :]
+                        canvas_arr[_kept] = _tile_full[_kept]
+                        logger.debug(
+                            f"[Stale-Decor V2.1] Cleaned {_kept.sum()} / candidate={_thin_band.sum()} "
+                            f"residual thin-band black pixels "
+                            f"(near-black total={_near_black.sum()}, border_mask excluded)"
+                        )
     except Exception as _v2_e:
         logger.debug(f"[Stale-Decor V2] 静默跳过，原因: {_v2_e}")
     # ===== [END V2 Residual Cleaner] =====
