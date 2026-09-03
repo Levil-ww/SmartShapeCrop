@@ -122,10 +122,12 @@ class _GenerateMixin:
             pre_parsed_result=self._sketch_parse_result,
             user_margins=user_margins,
             user_multihole_params=user_multihole_params,
-            # ===== [L-Shape Panel Refactor 2026-09-02] 从 LShapePanel 读取 L 形参数 =====
-            # 原 getattr(self, '_lshape_params', None) 已迁移到 LShapePanel._lshape_params；
-            # 通过 self._get_lshape_params() 间接访问，语义与原直读字段一致。
-            lshape_params=self._get_lshape_params(),
+            # ===== [2026-09-03 双向隔离 Bug B 修复] lshape_params 只在 source='lshape' 时传给 Worker =====
+            # 之前无条件读 LShapePanel._lshape_params：用户先在 L 面板识别过一次 L 形 →
+            # LShapePanel 持有有效参数 → 切到水池面板点生成 → Worker 误进 L 形模式 →
+            # 日志写 "L 形挖角模式" → 水池面板状态栏混入 L 形数据。
+            # 正确：source='pool' 强制 None（矩形/多洞模式），source='lshape' 才读 LShapePanel。
+            lshape_params=(self._get_lshape_params() if source == 'lshape' else None),
             parent=self)
         worker.progress.connect(self._on_pool_progress)
         worker.finished_ok.connect(self._on_pool_finished_ok)
@@ -153,6 +155,15 @@ class _GenerateMixin:
     def _on_pool_finished_ok(self, design: CropDesign, sketch_result, log_text: str):
         logger.info(f"[PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success={getattr(sketch_result, 'success', 'N/A')}")
         try:
+            # ===== [2026-09-03 修复 NameError] 重建来源面板的 target 名
+            # 内挖素材匹配代码（下方 L268 / L341）需要 effective_target_name，
+            # 但那是 _pool_run_generate 栈帧里的局部变量，Worker.finished_ok 不会带回来。
+            # 复用 _last_generate_source + UI 重建：与启动时的 effective_target_name 语义一致。
+            _src = getattr(self, '_last_generate_source', 'pool')
+            if _src == 'lshape' and self._lshape_panel is not None:
+                _resolved_target_name = self._lshape_panel.get_target_text().strip()
+            else:
+                _resolved_target_name = self._pool_target.text().strip()
             # 1) 把 Worker 构建的设计写回 self.design，并同步到所有 SpinBox / 控件
             self.design = design
             # ===== [SINGLE-HOLE Add-On 2026-08-31] 记录草图解析成功时的原始边距 =====
@@ -265,7 +276,9 @@ class _GenerateMixin:
                     try:
                         self._matcher.scan_library(force=False)
                         import re as _re
-                        _target_name = effective_target_name
+                        # [2026-09-03 修复 NameError] effective_target_name 是 _pool_run_generate
+                        # 的局部变量，Worker.finished_ok 不带它，改用回调顶部重建的 _resolved_target_name
+                        _target_name = _resolved_target_name
                         # ===== 查询名构造：与单洞逻辑完全对齐（关键修复） =====
                         # 优先：正则替换 target 名中的尺寸部分 → 保留花型名（如"安妮森林"）
                         # 兜底：parse_filename 取 pattern_name（去掉冒号后的尺寸）
@@ -338,7 +351,9 @@ class _GenerateMixin:
                     try:
                         inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
                         inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
-                        target_name = effective_target_name
+                        # [2026-09-03 修复 NameError] effective_target_name 跨栈帧不可见，
+                        # 改用回调顶部用 _last_generate_source 重建的 _resolved_target_name
+                        target_name = _resolved_target_name
                         if target_name and inner_w_cm > 0 and inner_h_cm > 0:
                             import re
                             # 用正则替换原目标文件名中的尺寸部分为内挖尺寸

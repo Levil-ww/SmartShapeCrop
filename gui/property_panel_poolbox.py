@@ -552,13 +552,13 @@ class _PoolBoxMixin:
         if source == 'pool':
             self._pool_auto_parse_sketch()
 
-        # ===== [L-Shape Panel Refactor 2026-09-02] L 形解析委托给 LShapePanel =====
-        # 草图上传后自动做 L 形几何预检测（~0.1s，纯 OpenCV 轮廓操作），
-        # 检测到 L 形则自动触发 L 形识别 Worker（多尺度 OCR），识别成功弹确认框。
-        # 矩形 7 步法仍会跑，但 _lshape_auto_pending 标记会 suppress 其 UI 回填，
-        # 避免 L 形识别完成前闪一下错误的矩形预览。
-        if self._lshape_panel is not None:
-            # 更新 L 形面板自己的缩略图（始终，无论来源：pool→双面板都能看，lshape→仅自己能看）
+        # ===== [2026-09-03 双向隔离 Bug A 修复] L 形预检测只在 L 面板上传时触发 =====
+        # 之前 source 不敏感：水池面板上传草图 → L 形预检测也跑 → LShapePanel 被填参数 → 串台。
+        # 正确规则：
+        #   source='pool'  → 仅矩形解析（L552 已隔离），**不动** LShapePanel 任何状态
+        #   source='lshape' → 仅 L 形预检测，更新 LShapePanel 缩略图 + 启动 Worker
+        if self._lshape_panel is not None and source == 'lshape':
+            # 更新 L 形面板自己的缩略图（仅 L 面板自己上传时才同步，避免双向串台）
             self._lshape_panel.sync_sketch_preview(p)
             self._lshape_panel.set_sketch_path_for_view(p)
             try:
