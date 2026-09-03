@@ -104,6 +104,51 @@ def _is_real_border(
     return True
 
 
+def _filter_content_layers(
+    src_img: Image.Image,
+    border_layers: list[tuple[tuple[int, int, int], int]],
+) -> list[tuple[tuple[int, int, int], int]]:
+    """
+    过滤掉那些颜色与素材中心内容过于接近的边框层。
+
+    例如克罗印花素材检测出 [brown(46), cream(12), black(12)] 三层，
+    其中 cream(245,235,220) 是素材底色——不是边框，而是边框之间的内容过渡。
+    此函数利用素材中心区域的平均颜色来识别并剔除这类"伪边框层"。
+
+    过滤条件：border_color 与 center_color 的色差 < 25 → 丢弃。
+    """
+    if len(border_layers) <= 1:
+        return border_layers
+
+    arr = np.array(src_img, dtype=np.float64)
+    H, W = arr.shape[:2]
+    # 中心区域（剔除边缘 10% 后的中间 80%）
+    m0, m1 = int(H * 0.1), int(H * 0.9)
+    n0, n1 = int(W * 0.1), int(W * 0.9)
+    if m1 - m0 < 5 or n1 - n0 < 5:
+        return border_layers
+    center_color = arr[m0:m1, n0:n1].mean(axis=(0, 1))
+
+    filtered: list[tuple[tuple[int, int, int], int]] = []
+    COLOR_MATCH_THRESHOLD = 25.0
+    for color, thickness in border_layers:
+        dist = float(
+            np.linalg.norm(
+                np.array(color, dtype=np.float64) - center_color
+            )
+        )
+        if dist < COLOR_MATCH_THRESHOLD:
+            logger.info(
+                "[LShapeBorder] 过滤内容匹配层 color=%s thickness=%.0f (距中心色 %.1f < %.1f)",
+                color, thickness, dist, COLOR_MATCH_THRESHOLD,
+            )
+        else:
+            filtered.append((color, thickness))
+
+    # 过滤后至少保留 1 层，否则放弃
+    return filtered
+
+
 def detect_pool_material_borders(
     src_img: Image.Image,
     bg_color: tuple[int, int, int] = (255, 255, 255),
@@ -154,6 +199,11 @@ def detect_pool_material_borders(
     if not _is_real_border(src_img, border_layers):
         return []
 
+    # —— 内容匹配层过滤（剔除与中心色接近的过渡层，如棕→米→黑 中间的米色）——
+    border_layers = _filter_content_layers(src_img, border_layers)
+    if not border_layers:
+        return []
+
     return border_layers
 
 
@@ -171,9 +221,11 @@ def compute_cut_edge_bboxes(
     """
     返回需要绘制边框层的矩形 bbox 列表 [(x0,y0,x1,y1), ...]。
 
-    L 形挖角产生两条新边缘：
-      - 一条是 cut 矩形的某条边（水平或垂直），位于 cut 区域的边界
-      - 边框层应向 cut 区域内部延伸 total_border_thickness_px 像素
+    L 形挖角产生两条新边缘（1 条水平 + 1 条垂直）：
+      - 每条 bbox 的一条边贴在 L 形的新边缘线上，
+        向 cut 区域内部延伸 total_border_thickness_px 像素。
+      - 注意：不同角落的 bbox "边缘贴在哪一端" 不同，
+        draw_border_layers_on_cut_edges 会根据 cut_corner 自行判断。
 
     返回 bbox 的坐标系与 outer_rect 一致（画布像素坐标）。
     """
@@ -183,100 +235,96 @@ def compute_cut_edge_bboxes(
     bx = total_border_thickness_px  # 向 cut 区延伸的总厚度
 
     ox, oy = outer_rect.x, outer_rect.y
-    ow, oh = outer_rect.w, outer_rect.h
     oright = outer_rect.right
     obottom = outer_rect.bottom
 
     edges: list[tuple[float, float, float, float]] = []
 
-    if cut_corner == 'br':
-        # cut 区: x ∈ [oright - cut_w, oright], y ∈ [obottom - cut_h, obottom]
-        # 新边缘 1（水平）: y = obottom - cut_h, x ∈ [oright - cut_w, oright]
-        #   边框向下（+y）延伸到 cut 区内部
-        y_top = obottom - cut_h
+    if cut_corner == 'tl':
+        # cut 区: x ∈ [ox, ox+cut_w], y ∈ [oy, oy+cut_h]
+        # 水平边缘: cut 区底部 y = oy+cut_h（保留区在下，cut 在上 → 向内=向上）
+        # 垂直边缘: cut 区右部 x = ox+cut_w（保留区在右，cut 在左 → 向内=向左）
+        edge_y = oy + cut_h + 0.5   # 水平边缘线（像素中心 +0.5）
+        inner_y = max(oy - 0.5, edge_y - bx)
         edges.append((
-            oright - cut_w - 0.5,          # x0: cut 区左边界（含 L 形拐角点）
-            y_top - 0.5,                   # y0: 边缘线位置（像素中心）
-            oright + 0.5,                  # x1: cut 区右边界
-            min(obottom + 0.5, y_top + bx + 0.5),  # y1: 向下延伸到 cut 区
+            ox - 0.5,          # x0 = cut 区左边界
+            inner_y,           # y0 = 向内延伸端
+            ox + cut_w + 0.5,  # x1 = cut 区右边界
+            edge_y,            # y1 = 边缘线 ✓
         ))
-        # 新边缘 2（垂直）: x = oright - cut_w, y ∈ [obottom - cut_h, obottom]
-        #   边框向右（+x）延伸到 cut 区内部
-        x_left = oright - cut_w
+        edge_x = ox + cut_w + 0.5   # 垂直边缘线
+        inner_x = max(ox - 0.5, edge_x - bx)
         edges.append((
-            x_left - 0.5,                  # x0: 边缘线位置
-            obottom - cut_h - 0.5,         # y0: cut 区上边界
-            min(oright + 0.5, x_left + bx + 0.5),  # x1: 向右延伸
-            obottom + 0.5,                 # y1: cut 区下边界
-        ))
-
-    elif cut_corner == 'tl':
-        # cut 区: x ∈ [ox, ox + cut_w], y ∈ [oy, oy + cut_h]
-        # 新边缘 1（水平）: y = oy + cut_h, x ∈ [ox, ox + cut_w]
-        #   边框向上（-y）延伸？不，边缘在 cut 区底部，边框应向 cut 区（上方）延伸 → +y 方向不对
-        #   cut 区在角落 (ox, oy)，这条水平边是 cut 区的底边，方向从左到右
-        #   边框应向上延伸（进入 cut 区内部）
-        y_bottom = oy + cut_h
-        edges.append((
-            ox - 0.5,                      # x0: cut 区左边界
-            max(oy - 0.5, y_bottom - bx - 0.5),   # y0: 向上延伸
-            ox + cut_w + 0.5,              # x1: cut 区右边界
-            y_bottom + 0.5,                # y1: 边缘线位置
-        ))
-        # 新边缘 2（垂直）: x = ox + cut_w, y ∈ [oy, oy + cut_h]
-        #   边框向左（-x）延伸（进入 cut 区内部）
-        x_right = ox + cut_w
-        edges.append((
-            max(ox - 0.5, x_right - bx - 0.5),   # x0: 向左延伸
-            oy - 0.5,                      # y0: cut 区上边界
-            x_right + 0.5,                 # x1: 边缘线位置
-            oy + cut_h + 0.5,              # y1: cut 区下边界
+            inner_x,           # x0 = 向内延伸端
+            oy - 0.5,          # y0 = cut 区上边界
+            edge_x,            # x1 = 边缘线 ✓
+            oy + cut_h + 0.5,  # y1 = cut 区下边界
         ))
 
     elif cut_corner == 'tr':
-        # cut 区: x ∈ [oright - cut_w, oright], y ∈ [oy, oy + cut_h]
-        # 新边缘 1（水平）: y = oy + cut_h, x ∈ [oright - cut_w, oright]
-        #   边框向上延伸（进入 cut 区内部，cut 区在角落上方）
-        y_bottom = oy + cut_h
+        # cut 区: x ∈ [oright-cut_w, oright], y ∈ [oy, oy+cut_h]
+        # 水平边缘: cut 区底部 y = oy+cut_h（保留区在下，cut 在上 → 向内=向上）
+        # 垂直边缘: cut 区左部 x = oright-cut_w（保留区在左，cut 在右 → 向内=向右）
+        edge_y = oy + cut_h + 0.5
+        inner_y = max(oy - 0.5, edge_y - bx)
         edges.append((
-            oright - cut_w - 0.5,          # x0: cut 区左边界
-            max(oy - 0.5, y_bottom - bx - 0.5),   # y0: 向上延伸
-            oright + 0.5,                  # x1: cut 区右边界
-            y_bottom + 0.5,                # y1: 边缘线位置
+            oright - cut_w - 0.5,  # x0 = cut 区左边界
+            inner_y,               # y0 = 向内延伸端
+            oright + 0.5,          # x1 = cut 区右边界
+            edge_y,                # y1 = 边缘线 ✓
         ))
-        # 新边缘 2（垂直）: x = oright - cut_w, y ∈ [oy, oy + cut_h]
-        #   边框向右延伸（进入 cut 区内部）
-        x_left = oright - cut_w
+        edge_x = oright - cut_w + 0.5   # 边缘在 cut 区左边界，向内=向右
+        inner_x = min(oright + 0.5, edge_x + bx)
         edges.append((
-            x_left - 0.5,                  # x0: 边缘线位置
-            oy - 0.5,                      # y0: cut 区上边界
-            min(oright + 0.5, x_left + bx + 0.5),  # x1: 向右延伸
-            oy + cut_h + 0.5,              # y1: cut 区下边界
+            edge_x,              # x0 = 边缘线（左）
+            oy - 0.5,            # y0 = cut 区上边界
+            inner_x,             # x1 = 向内延伸端（右）
+            oy + cut_h + 0.5,    # y1 = cut 区下边界
         ))
 
     elif cut_corner == 'bl':
-        # cut 区: x ∈ [ox, ox + cut_w], y ∈ [obottom - cut_h, obottom]
-        # 新边缘 1（水平）: y = obottom - cut_h, x ∈ [ox, ox + cut_w]
-        #   边框向下延伸（进入 cut 区内部）
-        y_top = obottom - cut_h
+        # cut 区: x ∈ [ox, ox+cut_w], y ∈ [obottom-cut_h, obottom]
+        # 水平边缘: cut 区顶部 y = obottom-cut_h（保留区在上，cut 在下 → 向内=向下）
+        # 垂直边缘: cut 区右部 x = ox+cut_w（保留区在右，cut 在左 → 向内=向左）
+        edge_y = obottom - cut_h - 0.5
+        inner_y = min(obottom + 0.5, edge_y + bx)  # 向内=向下，y1 = edge_y + bx ✓
         edges.append((
-            ox - 0.5,                      # x0: cut 区左边界
-            y_top - 0.5,                   # y0: 边缘线位置
-            ox + cut_w + 0.5,              # x1: cut 区右边界
-            min(obottom + 0.5, y_top + bx + 0.5),  # y1: 向下延伸
+            ox - 0.5,
+            edge_y,              # y0 = 边缘线
+            ox + cut_w + 0.5,
+            inner_y,             # y1 = 向内延伸端
         ))
-        # 新边缘 2（垂直）: x = ox + cut_w, y ∈ [obottom - cut_h, obottom]
-        #   边框向左延伸（进入 cut 区内部）
-        x_right = ox + cut_w
+        edge_x = ox + cut_w + 0.5
+        inner_x = max(ox - 0.5, edge_x - bx)
         edges.append((
-            max(ox - 0.5, x_right - bx - 0.5),   # x0: 向左延伸
-            obottom - cut_h - 0.5,         # y0: cut 区上边界
-            x_right + 0.5,                 # x1: 边缘线位置
-            obottom + 0.5,                 # y1: cut 区下边界
+            inner_x,
+            obottom - cut_h - 0.5,
+            edge_x,
+            obottom + 0.5,
         ))
 
-    # 裁剪到画布内（由调用方传入完整 outer_rect 已保证在画布内，
-    # 但 bx 延伸可能超界）
+    elif cut_corner == 'br':
+        # cut 区: x ∈ [oright-cut_w, oright], y ∈ [obottom-cut_h, obottom]
+        # 水平边缘: cut 区顶部 y = obottom-cut_h（保留区在上，cut 在下 → 向内=向下）
+        # 垂直边缘: cut 区左部 x = oright-cut_w（保留区在左，cut 在右 → 向内=向右）
+        edge_y = obottom - cut_h - 0.5
+        inner_y = min(obottom + 0.5, edge_y + bx)
+        edges.append((
+            oright - cut_w - 0.5,
+            edge_y,              # y0 = 边缘线
+            oright + 0.5,
+            inner_y,             # y1 = 向内延伸端
+        ))
+        edge_x = oright - cut_w + 0.5
+        inner_x = min(oright + 0.5, edge_x + bx)
+        edges.append((
+            edge_x,              # x0 = 边缘线
+            obottom - cut_h - 0.5,
+            inner_x,             # x1 = 向内延伸端
+            obottom + 0.5,
+        ))
+
+    # 裁剪到画布内
     edges_clipped: list[tuple[float, float, float, float]] = []
     for (x0, y0, x1, y1) in edges:
         x0 = max(0.0, x0)
@@ -295,15 +343,25 @@ def compute_cut_edge_bboxes(
 def draw_border_layers_on_cut_edges(
     canvas_arr: np.ndarray,
     edge_bboxes: list[tuple[float, float, float, float]],
-    border_layers: list[tuple[tuple[int, int, int], int]],
+    border_layers: list[tuple[tuple[int, int, int], float]],
+    cut_corner: str = 'tl',
 ) -> None:
     """
     向 canvas_arr（H×W×3 uint8）写入边框层。
 
-    每条 edge_bbox 代表一个"边框绘制区域"矩形。边框层按顺序从外到内
-    依次绘制：最外层颜色贴在边缘线上，内层向内填充。
+    每条 edge_bbox 代表边框绘制区域矩形。bbox 的"边缘侧"贴在 L 形的新边缘线上，
+    延伸向 cut 区内部 total_t 像素。
 
-    实现：对每条 edge 矩形，按 layer thickness 依次填充。
+    边框层绘制顺序：
+      从边缘侧（bbox 的一条边）向内依次铺层，
+      最外层 border_layers[0] 贴在边缘线上，
+      内层向内铺开。
+
+    cut_corner 用于确定每条 bbox 的边缘侧：
+      - 'tl'/'tr' 水平边缘 → cut 在边缘上方 → edge = y1（较大 y）
+      - 'bl'/'br' 水平边缘 → cut 在边缘下方 → edge = y0（较小 y）
+      - 'tl'/'bl' 垂直边缘 → cut 在边缘左侧 → edge = x1（较大 x）
+      - 'tr'/'br' 垂直边缘 → cut 在边缘右侧 → edge = x0（较小 x）
     """
     if not edge_bboxes or not border_layers:
         return
@@ -330,45 +388,52 @@ def draw_border_layers_on_cut_edges(
         # 判断边缘是水平还是垂直为主（长边方向）
         is_horizontal = edge_w >= edge_h
 
-        # 绘制各层：从外到内
-        # 注意：边框层从外到内有序，最外层应贴在"边缘线"一侧
-        # 对于水平边缘（长方形 wider than tall）：
-        #   - cut_corner in {br, bl}: 边缘在 y 较小处，边框向 +y 方向延伸
-        #     最外层 border_layers[0] 在 y=y0, 内层在 y=y0+t1+t2...
-        #   - cut_corner in {tl, tr}: 边缘在 y 较大处，边框向 -y 方向延伸
-        #     最外层 border_layers[0] 在 y=y1, 内层在 y=y1-t1-t2...
-        # 对于垂直边缘同理。
-        #
-        # 为保持简洁统一：我们从最外层开始填充，每一层占用 thickness_px，
-        # 按"从 edge 的一侧向内"的顺序依次填入。
-        # 由于 edge_bbox 本身就是"从边缘线到 cut 区内部"的矩形，
-        # 我们直接把整个 bbox 区域按层切分即可。
-
+        # 根据 cut_corner 确定边缘在 bbox 的哪一端 + 向内方向
         if is_horizontal:
-            # 水平长条：沿 y 方向分层
-            # edge_bbox 的 y 范围就是从边缘线到 cut 区内部
-            remaining_h = edge_h
-            cur_y = y0
+            # 水平 bbox：分层沿 y 方向
+            # tl/tr → cut 在边缘上方 → edge_y=y1, inward=-y (向下减小)
+            # bl/br → cut 在边缘下方 → edge_y=y0, inward=+y (向下增大)
+            if cut_corner in ('tl', 'tr'):
+                edge_y = y1
+                inward_sign = -1  # 向内 = y 减小
+            else:
+                edge_y = y0
+                inward_sign = +1  # 向内 = y 增大
+            remaining = abs(y1 - y0)
+            cur_paint_end = edge_y  # 已绘制的内层边界，从边缘开始
             for color, thickness in border_layers:
-                t = max(1, int(thickness))
-                if remaining_h <= 0:
+                t = max(1, int(round(thickness)))
+                if remaining <= 0:
                     break
-                actual_t = min(t, remaining_h)
-                canvas_arr[cur_y: cur_y + actual_t, x0:x1, :] = color
-                cur_y += actual_t
-                remaining_h -= actual_t
+                actual_t = min(t, remaining)
+                # 从 cur_paint_end 向内 actual_t 像素
+                cur_paint_start = cur_paint_end + inward_sign * actual_t
+                lo, hi = sorted([cur_paint_start, cur_paint_end])
+                canvas_arr[lo:hi, x0:x1, :] = color
+                cur_paint_end = cur_paint_start
+                remaining -= actual_t
         else:
-            # 垂直长条：沿 x 方向分层
-            remaining_w = edge_w
-            cur_x = x0
+            # 垂直 bbox：分层沿 x 方向
+            # tl/bl → cut 在边缘左侧 → edge_x=x1, inward=-x (向左)
+            # tr/br → cut 在边缘右侧 → edge_x=x0, inward=+x (向右)
+            if cut_corner in ('tl', 'bl'):
+                edge_x = x1
+                inward_sign = -1
+            else:
+                edge_x = x0
+                inward_sign = +1
+            remaining = abs(x1 - x0)
+            cur_paint_end = edge_x
             for color, thickness in border_layers:
-                t = max(1, int(thickness))
-                if remaining_w <= 0:
+                t = max(1, int(round(thickness)))
+                if remaining <= 0:
                     break
-                actual_t = min(t, remaining_w)
-                canvas_arr[y0:y1, cur_x: cur_x + actual_t, :] = color
-                cur_x += actual_t
-                remaining_w -= actual_t
+                actual_t = min(t, remaining)
+                cur_paint_start = cur_paint_end + inward_sign * actual_t
+                lo, hi = sorted([cur_paint_start, cur_paint_end])
+                canvas_arr[y0:y1, lo:hi, :] = color
+                cur_paint_end = cur_paint_start
+                remaining -= actual_t
 
 
 # ---------------------------------------------------------------------------
@@ -384,36 +449,53 @@ def apply_lshape_border_completion(
     cut_h_px: float,
     dpi: int = 150,
     bg_color: tuple[int, int, int] = (255, 255, 255),
+    # [2026-09-03 新增] 使用原始素材 + 缩放因子做更精确的边框检测
+    src_material_img: Image.Image | None = None,
+    scale_x: float = 1.0,
+    scale_y: float = 1.0,
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
 
     Args:
         canvas_arr: 画布 numpy 数组 (H, W, 3) uint8，会被原地修改
-        material_img: 加载后的池素材 PIL Image（adapt_pool_material 之前的原图）
-        outer_rect: outer 矩形像素坐标
+        material_img: 已适配到画布尺寸的素材 PIL Image（主要用于参考）
+        outer_rect: 外框矩形像素坐标（通常 = inner_rect_px）
         cut_corner: 'tl'|'tr'|'bl'|'br'
         cut_w_px, cut_h_px: 挖角尺寸（像素）
         dpi: 当前渲染 DPI
-        bg_color: 背景色参考（用于边框检测过滤）
+        bg_color: 背景色参考（用于边框检测过滤；白色为佳）
+        src_material_img: 原始素材图（未拉伸），优先用它检测边框以获得更精确结果
+        scale_x, scale_y: 原始图到画布的缩放比例（canvas_w / src_w）
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
     """
-    if material_img is None:
+    # Step 1: 边框检测
+    # 优先使用原始素材图（未拉伸）→ 更精确，不会受 adapt_pool_material 畸变影响
+    detect_img = src_material_img if src_material_img is not None else material_img
+    if detect_img is None:
         return False
 
-    # Step 1: 检测边框层
-    border_layers = detect_pool_material_borders(material_img, bg_color)
-    if not border_layers:
+    border_layers_src = detect_pool_material_borders(detect_img, bg_color)
+    if not border_layers_src:
         logger.info("[LShapeBorder] 素材无边框层，跳过补全")
         return False
 
-    # Step 2: 计算总边框厚度（像素）
-    total_t = sum(t for _, t in border_layers)
+    # Step 2: 把检测到的厚度按 scale 因子换算到画布坐标系
+    # 对于非等比缩放（scale_x ≠ scale_y），按"厚度沿 x 方向用 scale_x、y 方向用 scale_y"处理
+    # 实际场景中 scale_x ≈ scale_y（素材 AR 与画布 AR 通常匹配），取平均做统一换算即可
+    scale_avg = (scale_x + scale_y) / 2.0 if (scale_x > 0 and scale_y > 0) else 1.0
+    scale_avg = max(scale_avg, 0.1)  # 防御性下限
+
+    border_layers_canvas: list[tuple[tuple[int, int, int], float]] = []
+    for color, thickness in border_layers_src:
+        border_layers_canvas.append((color, float(thickness) * scale_avg))
+
+    total_t = sum(t for _, t in border_layers_canvas)
     logger.info(
-        "[LShapeBorder] 检测到 %d 层边框，总厚度 %.1f px: %s",
-        len(border_layers), total_t, border_layers,
+        "[LShapeBorder] 检测到 %d 层边框（scale=%.2f×），画布总厚度 %.1f px: %s",
+        len(border_layers_canvas), scale_avg, total_t, border_layers_canvas,
     )
 
     # Step 3: 计算 cut 边缘的绘制 bbox
@@ -424,5 +506,7 @@ def apply_lshape_border_completion(
         return False
 
     # Step 4: 绘制
-    draw_border_layers_on_cut_edges(canvas_arr, edge_bboxes, border_layers)
+    draw_border_layers_on_cut_edges(
+        canvas_arr, edge_bboxes, border_layers_canvas, cut_corner=cut_corner,
+    )
     return True

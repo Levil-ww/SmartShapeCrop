@@ -674,7 +674,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     # [Fix 2026-08-28] 裁剪有图（L 形挖角）语义：
     # rect_lshape + 池素材时，"L 形区域保留外框素材、被切掉的角显示洞色"。
     # 与旧"素材中间挖 L 形洞"（inner_mask 覆盖为 inner_fill）不同——
-    # 这里 L 形 = 保留区（素材裁成 L 形），cut 角 = 挖掉区（填 hole_bg_color）。
+    # 这里 L 形 = 保留区（素材裁成 L 形），cut 角 = 挖掉区（填白色）。
+    # [Fix 2026-09-03] cut 区强制填纯白(255,255,255)：用户反馈原 hole_bg_color
+    #   (250,245,230 米色) 与素材底色过于接近，挖角视觉上不够明显。
+    #   白色也是 JPG 模式下表达"挖空/透明"的行业惯例（与 pool_hole_transparent=True 一致）。
     lshape_cut_done = False
     if design.mode == 'rect_lshape' and is_pool_with_material:
         from .geometry import build_lshape_mask, compute_inner_corner_radii
@@ -694,8 +697,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             inner_corners, fill_value=255)
         cut_area_mask = np.array(full_inner_img, dtype=bool) & ~inner_mask
         if cut_area_mask.any():
-            hole_arr = np.full((H, W, 3), design.hole_bg_color, dtype=np.uint8)
-            canvas_arr[cut_area_mask] = hole_arr[cut_area_mask]
+            canvas_arr[cut_area_mask] = 255  # 纯白
         # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
         lshape_cut_done = True
     # ===== [SINGLE-HOLE Add-On 2026-08-31] Stale Decor Black Border Invalidation =====
@@ -1019,25 +1021,39 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         try:
             from .lshape_border import apply_lshape_border_completion
 
-            # 注意：l_shape_px().outer = inner_rect_px()，cut 区相对于 inner_rect 计算
-            # 但视觉上 cut 区位于 inner_rect 内部 → 应使用 inner_rect_px 作为外框参考
             inner_rect = design.inner_rect_px()
             lshape = design.l_shape_px()
             cut_corner = lshape.corner
             cut_w_px = lshape.cut_w
             cut_h_px = lshape.cut_h
 
-            # 从已适配到画布的素材图（canvas）检测边框层
-            # 比从原始图检测再缩放更准确，因为 canvas 已经过 contain+边缘延展
+            # 使用原始素材图（cached_img）做边框检测，避免 adapt_pool_material
+            # 的简单拉伸可能造成的边框像素畸变影响检测精度。
+            # scale = canvas尺寸 / 原始尺寸，用于把检测到的厚度换算到画布坐标系。
+            _src_img = cached_img
+            _scale_x = 1.0
+            _scale_y = 1.0
+            if _src_img is None and design.pool_outer_material_image and os.path.isfile(
+                    design.pool_outer_material_image):
+                _src_img = load_image_rgb(design.pool_outer_material_image)
+            if _src_img is not None:
+                _sw, _sh = _src_img.size
+                if _sw > 0 and _sh > 0:
+                    _scale_x = float(W) / float(_sw)
+                    _scale_y = float(H) / float(_sh)
+
             _completion_ok = apply_lshape_border_completion(
                 canvas_arr=canvas_arr,
-                material_img=canvas,
-                outer_rect=inner_rect,  # cut 区相对于 inner_rect
+                material_img=canvas,                # 画布图 —— 检测和绘制都要参考
+                src_material_img=_src_img,           # 原始素材图 —— 更精确的边框检测
+                scale_x=_scale_x,
+                scale_y=_scale_y,
+                outer_rect=inner_rect,               # cut 区相对于 inner_rect
                 cut_corner=cut_corner,
                 cut_w_px=cut_w_px,
                 cut_h_px=cut_h_px,
                 dpi=design.dpi,
-                bg_color=design.hole_bg_color,
+                bg_color=(255, 255, 255),            # 白色作为 bg 参考，避免误判米色/棕色为 bg
             )
         except Exception as _bc_e:
             logger.debug(f"[LShapeBorder] 补全过程异常（静默跳过）: {_bc_e}")
