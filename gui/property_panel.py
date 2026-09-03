@@ -350,7 +350,12 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     #   - _on_lshape_recognize_started: 用户点"识别 L 形挖角" → 把草图路径/目标尺寸注入 LShapePanel；
     #   - _get_lshape_params: PoolRenderWorker / _detect_user_margin_edits 读取 L 形参数（替代原 self._lshape_params）。
     def set_lshape_panel(self, panel) -> None:
-        """main.py 在创建两个面板后调用，注入 LShapePanel 引用并连接全部双向同步信号。"""
+        """main.py 在创建两个面板后调用，注入 LShapePanel 引用并连接信号。
+
+        [2026-09-03 状态隔离]：目标文件名文本在两个面板之间不再双向同步（Safety 1）。
+        仅共享"尺寸解析结果、草图路径、渲染参数"等共享工作状态；
+        历史记录按来源面板单独写入（Safety 2），不再通过 pool_generate_succeeded 互串。
+        """
         self._lshape_panel = panel
 
         # —— L 形挖角原有信号（LShapePanel → PropertyPanel）——
@@ -367,29 +372,48 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         panel.sketch_view_requested.connect(self._pool_view_sketch)
         panel.sketch_load_requested.connect(self._pool_load_sketch_from_path)
 
-        # —— 新增：目标文件名变更/选文件/清空（LShapePanel → PropertyPanel）——
-        # 历史记录由 LShapePanel 自行管理（TARGET_SRC_LSHAPE，与水池设计器物理隔离），
-        # 不再委托 PropertyPanel 处理。
+        # —— 目标文件名变更/选文件/清空（LShapePanel → 仅改 LShape 自己的 LineEdit）——
+        # [2026-09-03 状态隔离] 每个面板的 LineEdit 独立持有自己的 target 文本。
+        # 尺寸解析仍通过 target_changed → _on_lshape_target_changed 走共享逻辑。
         panel.target_changed.connect(self._on_lshape_target_changed)
-        panel.target_pick_requested.connect(self._pool_pick_target_file)
-        panel.target_clear_requested.connect(lambda: self._pool_target.clear())
 
-        # —— 新增：一键生成（LShapePanel → PropertyPanel，委托同一套方法）——
-        panel.generate_requested.connect(self._pool_run_generate)
+        def _lshape_pick_target():
+            """LShapePanel 的「选文件」：写入 LShape 自己的 LineEdit，不改动 Pool 面板。"""
+            p, _ = QFileDialog.getOpenFileName(
+                self, "选择目标文件（或任意文件，程序只用文件名解析）",
+                "", "所有文件 (*.*);;JPG 图片 (*.jpg *.jpeg);;PNG 图片 (*.png)"
+            )
+            if p:
+                basename = os.path.basename(p)
+                # sync_target_from_panel 内部 block_target_signal=True，因此需要手动 emit
+                panel.sync_target_from_panel(basename)
+                panel.target_changed.emit(basename)
+        panel.target_pick_requested.connect(_lshape_pick_target)
+
+        def _lshape_clear_target():
+            """LShapePanel 的「清空」：仅清空 LShape 自己的 LineEdit。"""
+            panel.sync_target_from_panel("")
+            panel.target_changed.emit("")
+        panel.target_clear_requested.connect(_lshape_clear_target)
+
+        # —— 一键生成（LShapePanel → PropertyPanel）。来源参数标记为 lshape，携带自身 target 文本 ——
+        # [2026-09-03 状态隔离]：_pool_run_generate 通过 target_name_override 直接读取 LShape
+        # 面板当前有效值，避免读 Pool 面板的 _pool_target。source 参数用于历史记录隔离。
+        def _lshape_run_generate(_p=panel):
+            self._pool_run_generate(
+                source='lshape',
+                target_name_override=_p.get_target_text(),
+            )
+        panel.generate_requested.connect(_lshape_run_generate)
 
         # —— 新增：导出 JPG（LShapePanel → PropertyPanel，委托同一套保存流程）——
         # LShapePanel.save_requested 转发到 PropertyPanel.save_requested，
         # 后者在 main.py 中已连接到 MainWindow._on_save，保证两个面板导出逻辑完全一致。
         panel.save_requested.connect(self.save_requested.emit)
 
-        # —— 反向同步：生成成功后通知 LShapePanel 记录自己的历史 ——
-        self.pool_generate_succeeded.connect(panel._record_target_name_history)
-
-        # —— 反向同步：把当前 state 回填到 LShapePanel（草图 + 目标文件名）——
+        # —— 草图同步：把当前草图状态回填到 LShapePanel（目标文件名不再同步，保持独立）——
         panel.sync_sketch_preview(getattr(self, '_sketch_path', ''))
         panel.set_sketch_path_for_view(getattr(self, '_sketch_path', ''))
-        if hasattr(self, '_pool_target'):
-            panel.sync_target_from_panel(self._pool_target.text())
 
     def _on_lshape_params_changed(self, *_):
         """用户改动 L 形参数（挖角或外框尺寸）→ 同步外框到画布 SpinBox + 触发即时预览。
@@ -522,20 +546,15 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         return self._lshape_panel.get_lshape_params()
 
     def _on_lshape_target_changed(self, text: str):
-        """LShapePanel 目标文件名变更 → 同步到水池设计器 + 触发统一处理。
+        """LShapePanel 目标文件名变更 → 仅触发共享的尺寸解析/草图识别逻辑，不改写 Pool LineEdit。
 
-        与水池设计器中 _pool_target.textChanged → _on_pool_target_changed 走同一套逻辑，
-        但先写入 _pool_target 再触发，保证 _on_pool_target_changed 内部状态一致。
+        [2026-09-03 状态隔离]：LShape 面板的 target 文本与 Pool 面板 _pool_target 彼此独立。
+        _on_pool_target_changed(text) 的尺寸解析 + 画布回填 + 草图自动识别 完全基于入参 text，
+        内部不依赖 _pool_target 文本（除历史记录外，而历史记录在 _pool_run_generate 中按
+        source 值调用各自面板的记录函数，两者都从各自 LineEdit 读值，互不干扰）。
         """
         if self._lshape_panel is None:
             return
-        # blockSignals 避免 _pool_target.setText 反过来触发 LShapePanel → 递归
-        self._pool_target.blockSignals(True)
-        try:
-            if self._pool_target.text() != text:
-                self._pool_target.setText(text)
-        finally:
-            self._pool_target.blockSignals(False)
         # 触发统一处理（解析尺寸 + 回填画布 + 自动识别草图边距）
         self._on_pool_target_changed(text)
 

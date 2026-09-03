@@ -32,10 +32,27 @@ from .property_panel_workers import PoolRenderWorker, _SketchParseWorker
 from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
 
 class _GenerateMixin:
-    def _pool_run_generate(self):
+    def _pool_run_generate(self, source: str = 'pool', target_name_override: str | None = None):
+        """水池模式一键生成预览。
+
+        参数:
+            source: 触发来源面板，'pool'=水池设计器，'lshape'=L形挖角设计面板。
+                决定「历史记录写入哪个 source 键」（Safety 2 不变式）。
+            target_name_override: 当 source != 'pool' 时，传入来源面板自己的
+                目标文件名文本。None 表示回退到 Pool 面板 _pool_target。
+                这保证了 LShape 面板即使持有与 Pool 面板不同的 target 文本，
+                生成逻辑仍用来源面板的有效值（Safety 1 不变式）。
+        """
         if self._pool_worker is not None and self._pool_worker.isRunning():
             QMessageBox.information(self, "提示", "正在处理中，请稍候…")
             return
+
+        # ===== [2026-09-03 状态隔离] 统一 target 名：优先 override，回退 pool 面板 =====
+        # 本函数后续所有 self._pool_target.text().strip() 读取都替换为该变量。
+        if target_name_override is not None:
+            effective_target_name = target_name_override.strip()
+        else:
+            effective_target_name = self._pool_target.text().strip()
 
         # [Perf-Opt] 如果后台预热扫描仍在进行，等待其完成后再启动渲染 Worker。
         # 避免两个子线程竞争写 TemplateMatcher（_cache/索引/子目录 mtime）。
@@ -64,7 +81,7 @@ class _GenerateMixin:
             except Exception:
                 pass
 
-        target_name = self._pool_target.text().strip()
+        target_name = effective_target_name
         if not target_name:
             self._set_pool_status("请先填写或选择目标文件名", is_error=True)
             return
@@ -244,7 +261,7 @@ class _GenerateMixin:
                     try:
                         self._matcher.scan_library(force=False)
                         import re as _re
-                        _target_name = self._pool_target.text().strip()
+                        _target_name = effective_target_name
                         # ===== 查询名构造：与单洞逻辑完全对齐（关键修复） =====
                         # 优先：正则替换 target 名中的尺寸部分 → 保留花型名（如"安妮森林"）
                         # 兜底：parse_filename 取 pattern_name（去掉冒号后的尺寸）
@@ -317,7 +334,7 @@ class _GenerateMixin:
                     try:
                         inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
                         inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
-                        target_name = self._pool_target.text().strip()
+                        target_name = effective_target_name
                         if target_name and inner_w_cm > 0 and inner_h_cm > 0:
                             import re
                             # 用正则替换原目标文件名中的尺寸部分为内挖尺寸
@@ -375,9 +392,17 @@ class _GenerateMixin:
             QApplication.processEvents()
             self._apply_quiet()
             logger.info("[PropertyPanel] 预览已生成")
-            # 记录目标文件名到历史（保留 3 天）
-            self._pool_record_target_name_history()
-            # 通知 LShapePanel 记录自己的历史（TARGET_SRC_LSHAPE，与水池设计器物理隔离）
+
+            # ===== [2026-09-03 状态隔离] 历史记录仅写入来源面板（Safety 2 不变式）=====
+            # source='pool'  → 仅调 _pool_record_target_name_history（读 _pool_target，写 TARGET_SRC_POOL）
+            # source='lshape' → 仅调 LShapePanel._record_target_name_history（读自己的 LineEdit，写 TARGET_SRC_LSHAPE）
+            # 两边都从各自的 LineEdit 读值，所以即使两个面板 target 文本不同也互不串台。
+            if source == 'pool':
+                self._pool_record_target_name_history()
+            elif source == 'lshape' and self._lshape_panel is not None:
+                self._lshape_panel._record_target_name_history()
+
+            # 保留信号（不再用于历史记录；未来可挂接状态灯/埋点等副作用）
             self.pool_generate_succeeded.emit()
 
             # 5) 结果提示（try/except 防止状态消息失败导致整个流程中断）

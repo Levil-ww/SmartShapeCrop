@@ -181,16 +181,18 @@ class _PoolBoxMixin:
 
 
     def _on_pool_target_changed(self, text: str):
-        """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高；3) 若有草图则自动识别边距；4) 同步到 LShapePanel"""
+        """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高；3) 若有草图则自动识别边距。
+
+        注意 [2026-09-03 状态隔离]：
+        目标文件名文本不再同步到 LShapePanel。两个面板的 LineEdit 独立持有值，
+        仅共享尺寸解析/草图识别等"解析结果"（不变式 Safety 1）。
+        """
         # 1) 默认同步输出文件名
         self._pool_sync_output_from_target()
 
         # 2) 解析尺寸并回填
         name = text.strip()
         if not name:
-            # 空文本也要同步到 LShapePanel
-            if self._lshape_panel is not None:
-                self._lshape_panel.sync_target_from_panel("")
             return
         try:
             parsed = parse_filename(name)
@@ -235,9 +237,6 @@ class _PoolBoxMixin:
                     self._pool_auto_parse_sketch()
         except Exception:
             pass
-        # 4) 同步目标文件名到 LShapePanel（双向同步）
-        if self._lshape_panel is not None:
-            self._lshape_panel.sync_target_from_panel(text)
 
 
     def _pool_sync_output_from_target(self):
