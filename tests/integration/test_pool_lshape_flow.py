@@ -175,12 +175,15 @@ def test_worker_lshape_params_builds_design(tmp_path, material_path):
     )
     assert design.mode == 'rect_lshape'
     assert design.l_corner == 'tr'
-    # cut 尺寸也 +1cm 损耗补偿：画布已 +1cm，cut 外边缘延伸到余料区才能保证成品尺寸不变
-    assert design.l_cut_w_cm == pytest.approx(101.0)  # 100 草图 + 1cm 损耗
-    assert design.l_cut_h_cm == pytest.approx(3.0)   # 2 草图 + 1cm 损耗
+    # 损耗补偿语义（2026-09-03 业务确认）：外框补 1cm，挖角不补。
+    #   依据 gui/property_panel_layers.py:87「挖角值直接取草图识别的成品真值，
+    #   不做额外损耗补偿」与 gui/lshape_panel.py:414-416「外框 SpinBox 存画布值
+    #   （= 设计外框 + 1cm 损耗）；挖角 SpinBox 存设计值」。
+    assert design.l_cut_w_cm == pytest.approx(100.0)  # 挖角存成品真值，不加损耗
+    assert design.l_cut_h_cm == pytest.approx(2.0)
     assert design.canvas_w_cm == pytest.approx(451.0)  # 外框 + 1cm 损耗
     assert design.canvas_h_cm == pytest.approx(34.0)
-    # 成品保留段 = 画布 - cut = (451-101)=350 = 450-100 ✓; (34-3)=31 = 33-2 ✓
+    # 成品保留段 = 画布 - cut = (451-100)=351; (34-2)=32（外框侧 1cm 为余料）
     assert design.inner_margin_top_cm == 0.0
     assert design.inner_margin_bottom_cm == 0.0
     assert design.inner_margin_left_cm == 0.0

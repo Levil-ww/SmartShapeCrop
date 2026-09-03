@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop V2.1.2 全面检测与方向报告</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --ink:#1b1f27; --ink-2:#4b5563; --ink-3:#7c8595;
+  --line:#e3e6ec; --line-2:#eef0f4;
+  --brand:#1e5eff; --brand-soft:#eef3ff;
+  --p0:#d93025; --p0-soft:#fdecea;
+  --p1:#e8710a; --p1-soft:#fff3e6;
+  --p2:#b7791f; --p2-soft:#fdf6e3;
+  --p3:#5b6b7f; --p3-soft:#eef1f5;
+  --ok:#12805c; --ok-soft:#e6f5ef;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px; line-height:1.75; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 80px}
+
+/* ── header ── */
+header{
+  background:linear-gradient(135deg,#16213b 0%,#1e3a6f 55%,#24508f 100%);
+  color:#fff; padding:44px 0 38px; margin-bottom:32px;
+}
+header .wrap{padding-bottom:0}
+.eyebrow{font-size:12.5px;letter-spacing:.22em;text-transform:uppercase;color:#9dc0ff;font-weight:600;margin-bottom:12px}
+h1{font-size:31px;font-weight:700;letter-spacing:-.3px;line-height:1.3}
+.sub{margin-top:12px;color:#c3d6f5;font-size:14.5px;max-width:840px}
+.vbadge{
+  display:inline-block;margin-top:18px;padding:5px 14px;border-radius:999px;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+  font-size:13px;font-weight:600;letter-spacing:.04em;
+}
+.meta-row{margin-top:20px;display:flex;flex-wrap:wrap;gap:10px 26px;font-size:13px;color:#a9c4ea}
+.meta-row b{color:#fff;font-weight:600}
+
+/* ── nav ── */
+nav{
+  position:sticky;top:0;z-index:50;background:rgba(255,255,255,.94);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+  margin-bottom:30px;
+}
+nav .wrap{padding:0 24px;display:flex;gap:2px;overflow-x:auto}
+nav a{
+  padding:13px 15px;font-size:13.5px;color:var(--ink-2);text-decoration:none;
+  border-bottom:2px solid transparent;white-space:nowrap;font-weight:500;
+}
+nav a:hover{color:var(--brand);border-bottom-color:var(--brand);background:var(--brand-soft)}
+
+/* ── section ── */
+section{margin-bottom:40px;scroll-margin-top:70px}
+h2{
+  font-size:21px;font-weight:700;margin-bottom:6px;letter-spacing:-.2px;
+  display:flex;align-items:center;gap:11px;
+}
+h2 .num{
+  background:var(--brand);color:#fff;width:27px;height:27px;border-radius:7px;
+  display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto;
+}
+.sec-note{color:var(--ink-3);font-size:13.5px;margin-bottom:18px;padding-left:38px}
+h3{font-size:16px;font-weight:650;margin:24px 0 11px;color:var(--ink)}
+p{margin-bottom:12px;color:var(--ink-2)}
+p strong,li strong{color:var(--ink);font-weight:650}
+
+/* ── cards ── */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 24px;margin-bottom:16px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.kpi .k{font-size:12.5px;color:var(--ink-3);font-weight:600;letter-spacing:.03em}
+.kpi .v{font-size:27px;font-weight:750;margin:5px 0 3px;letter-spacing:-.5px}
+.kpi .d{font-size:12.5px;color:var(--ink-3);line-height:1.5}
+.kpi.red .v{color:var(--p0)} .kpi.orange .v{color:var(--p1)}
+.kpi.blue .v{color:var(--brand)} .kpi.green .v{color:var(--ok)}
+
+/* ── table ── */
+table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--card)}
+th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line-2);vertical-align:top}
+th{background:#f0f2f6;font-weight:650;color:var(--ink);font-size:12.5px;letter-spacing:.02em;white-space:nowrap}
+tbody tr:hover{background:#fafbfd}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+code{
+  background:#f0f2f6;padding:1.5px 6px;border-radius:4px;font-size:12.5px;
+  font-family:"Cascadia Mono","JetBrains Mono",Consolas,monospace;color:#334155;
+  border:1px solid var(--line-2);
+}
+.tscroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+
+/* ── badges ── */
+.tag{
+  display:inline-block;padding:2px 9px;border-radius:5px;font-size:11.5px;
+  font-weight:700;letter-spacing:.02em;white-space:nowrap;
+}
+.t-p0{background:var(--p0-soft);color:var(--p0);border:1px solid #f5c6c0}
+.t-p1{background:var(--p1-soft);color:var(--p1);border:1px solid #f7d7b0}
+.t-p2{background:var(--p2-soft);color:var(--p2);border:1px solid #eddfae}
+.t-p3{background:var(--p3-soft);color:var(--p3);border:1px solid #d5dce5}
+.t-ok{background:var(--ok-soft);color:var(--ok);border:1px solid #b8e2d1}
+.t-info{background:var(--brand-soft);color:var(--brand);border:1px solid #cbd9ff}
+
+/* ── finding block ── */
+.finding{
+  border-left:3px solid var(--p0);background:var(--card);
+  border-radius:0 10px 10px 0;padding:16px 20px;margin-bottom:14px;
+  border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+}
+.finding.p1{border-left-color:var(--p1)}
+.finding.p2{border-left-color:var(--p2)}
+.finding.p3{border-left-color:var(--p3)}
+.finding.ok{border-left-color:var(--ok)}
+.finding-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.finding-h .t{font-size:15.5px;font-weight:700;color:var(--ink)}
+.finding p{margin-bottom:8px;font-size:14px}
+.finding ul{margin:8px 0 8px 20px;color:var(--ink-2);font-size:13.5px}
+.finding li{margin-bottom:4px}
+.evidence{
+  background:#f7f8fa;border:1px solid var(--line-2);border-radius:7px;
+  padding:9px 13px;margin-top:10px;font-size:12.5px;color:var(--ink-2);
+  font-family:"Cascadia Mono",Consolas,monospace;line-height:1.85;overflow-x:auto;
+}
+.evidence b{color:var(--p0);font-weight:650}
+
+/* ── callout ── */
+.callout{
+  border-radius:10px;padding:15px 19px;margin:16px 0;font-size:14px;
+  border:1px solid;line-height:1.7;
+}
+.callout .ct{font-weight:700;margin-bottom:5px;display:block;font-size:14px}
+.c-warn{background:#fff8ec;border-color:#f5d9a8;color:#7a4c00}
+.c-warn .ct{color:#8a5200}
+.c-danger{background:var(--p0-soft);border-color:#f3c4bd;color:#7d2018}
+.c-danger .ct{color:var(--p0)}
+.c-ok{background:var(--ok-soft);border-color:#b8e2d1;color:#0d5b41}
+.c-ok .ct{color:var(--ok)}
+.c-info{background:var(--brand-soft);border-color:#cbd9ff;color:#1a3f8f}
+.c-info .ct{color:var(--brand)}
+
+/* ── bars ── */
+.bar-row{display:flex;align-items:center;gap:12px;margin-bottom:9px;font-size:13.5px}
+.bar-row .lbl{flex:0 0 210px;color:var(--ink-2);font-weight:500}
+.bar-track{flex:1;height:9px;background:#eef0f4;border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:5px}
+.bar-row .val{flex:0 0 92px;text-align:right;color:var(--ink-3);font-size:12.5px;font-variant-numeric:tabular-nums}
+
+/* ── timeline ── */
+.tl{position:relative;padding-left:26px;margin-top:8px}
+.tl::before{content:'';position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.tl-item{position:relative;margin-bottom:20px}
+.tl-item::before{
+  content:'';position:absolute;left:-23px;top:6px;width:11px;height:11px;
+  border-radius:50%;background:var(--brand);border:2.5px solid #fff;box-shadow:0 0 0 1.5px var(--brand);
+}
+.tl-item.done::before{background:var(--ok);box-shadow:0 0 0 1.5px var(--ok)}
+.tl-item.next::before{background:var(--p1);box-shadow:0 0 0 1.5px var(--p1)}
+.tl-t{font-weight:700;font-size:14.5px;color:var(--ink);margin-bottom:3px}
+.tl-d{font-size:13.5px;color:var(--ink-2)}
+
+/* ── footer ── */
+footer{
+  border-top:1px solid var(--line);margin-top:48px;padding-top:22px;
+  display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;
+  font-size:12.5px;color:var(--ink-3);
+}
+footer .fv{font-weight:700;color:var(--ink-2)}
+
+ul.plain{margin:8px 0 8px 20px;color:var(--ink-2);font-size:14px}
+ul.plain li{margin-bottom:6px}
+.hl{background:linear-gradient(transparent 62%,#ffe9a8 62%);padding:0 2px;font-weight:650;color:var(--ink)}
+.mono{font-family:"Cascadia Mono",Consolas,monospace;font-size:12.5px}
+.muted{color:var(--ink-3)}
+@media(max-width:640px){
+  h1{font-size:24px} .wrap{padding:0 16px 60px} nav .wrap{padding:0 16px}
+  .bar-row .lbl{flex:0 0 130px;font-size:12.5px} .kpi .v{font-size:23px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">Comprehensive Code Audit &amp; Release Direction</div>
+    <h1>SmartShapeCrop 智能形状裁剪设计器<br>V2.1.2 全面检测与方向报告</h1>
+    <p class="sub">
+      对 <b>core / gui / tests / 打包配置 / 94 份历史文档</b> 的全量只读体检，
+      覆盖 21,649 行生产代码与 6,935 行测试代码。本报告给出技术债清单（含行号证据）、
+      实测测试通过率、以及 V2.1.2 剩余迭代的四条主线建议。
+    </p>
+    <span class="vbadge">版本 V2.1.2 · 检测日期 2026-09-03</span>
+    <div class="meta-row">
+      <span>生产代码 <b>21,649 行</b></span>
+      <span>累计提交 <b>221 次</b></span>
+      <span>测试收集 <b>280 项</b></span>
+      <span>检出技术债 <b>37 项</b></span>
+      <span>扫描方式 <b>只读（源码零改动）</b></span>
+    </div>
+  </div>
+</header>
+
+<nav><div class="wrap">
+  <a href="#s1">执行摘要</a>
+  <a href="#s2">体检数据</a>
+  <a href="#s3">架构地图</a>
+  <a href="#s4">P0 严重项</a>
+  <a href="#s5">P1 结构项</a>
+  <a href="#s6">P2/P3 卫生项</a>
+  <a href="#s7">测试实况</a>
+  <a href="#s8">版本演进</a>
+  <a href="#s9">V2.1.2 方向</a>
+  <a href="#s10">分期路线图</a>
+</div></nav>
+
+<div class="wrap">
+
+<!-- ════ 1 执行摘要 ════ -->
+<section id="s1">
+  <h2><span class="num">1</span>执行摘要</h2>
+  <p class="sec-note">一句话结论 + 五个关键数字</p>
+
+  <div class="callout c-info">
+    <span class="ct">核心判断</span>
+    V2.1.2 目前处于 <span class="hl">「功能狂奔 → 质量欠账」</span> 的临界点：
+    9 月 3 日单日 18 次提交把 L 形挖角推到了新能力高度（边框补全、损耗回传、串台修复），
+    但<span class="hl">零文档归档、测试出现 4 项红灯、6 个后台线程无人接管</span>。
+    功能本身是健康的，<b>失守的是工程纪律</b>。V2.1.2 剩余方向应当从「加功能」切换到「收敛质量 + 补齐契约」，
+    把一个能跑但脆弱的版本，固化成一个敢交给用户天天用的版本。
+  </div>
+
+  <div class="grid g4" style="margin-bottom:18px">
+    <div class="kpi blue"><div class="k">生产代码规模</div><div class="v">21,649</div><div class="d">core 15.4k + gui 6.2k 行</div></div>
+    <div class="kpi orange"><div class="k">测试红灯</div><div class="v">4 / 280</div><div class="d">3 项为语义变更未同步测试</div></div>
+    <div class="kpi red"><div class="k">线程漏管</div><div class="v">6 / 8</div><div class="d">QThread 无规范退役路径</div></div>
+    <div class="kpi orange"><div class="k">零测试覆盖</div><div class="v">≈5,500</div><div class="d">行，占 core 约 36%</div></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">✅ 值得肯定的地方</h3>
+      <ul class="plain">
+        <li><b>架构分层干净</b>：<code>core/</code> 零反向依赖 <code>gui/</code>，业务与界面边界守得住。</li>
+        <li><b>配置有单一来源意识</b>：<code>core/config.py</code> 已集中管理 331 行常量，方向正确。</li>
+        <li><b>线程范式已被正确验证过一次</b>：<code>canvas_widget.py:231-252</code> 的 <code>_retire_worker</code> 是标准答案（requestInterruption → wait → deleteLater）。</li>
+        <li><b>向后兼容层设计考究</b>：<code>core/compat/</code> 用 sys.modules 别名让旧导入路径零成本迁移，同源性有校验。</li>
+        <li><b>文档资产极丰富</b>：94 份 ProductSummary 记录了完整的决策脉络，在同类内部工具中罕见。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">⚠️ 需要立刻止血的地方</h3>
+      <ul class="plain">
+        <li><b>测试契约失守</b>：4 项红灯，其中 3 项是 9/3 改了业务语义但测试未同步 —— 红灯亮了没人看见。</li>
+        <li><b>线程退役只覆盖 2/8</b>：<code>main.py:454</code> 的 closeEvent 只管渲染与导出线程，另外 6 个裸奔。</li>
+        <li><b>主线程阻塞未根治</b>：<code>property_panel_generate.py:73</code> 存在最长 <b>30 分钟</b>的 <code>warmup.wait()</code>。</li>
+        <li><b>渲染层补丁叠加</b>：<code>render_design</code> 632 行内塞了 5 个 Add-On 补丁，各自判定触发条件，无统一缓存失效契约 —— 这是「素材残留」反复修 5 次以上的根因。</li>
+        <li><b>打包配置 7 份并存</b>，spec 遗漏 <code>core.lshape_border</code> 的 hiddenimport。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 2 体检数据 ════ -->
+<section id="s2">
+  <h2><span class="num">2</span>体检数据总览</h2>
+  <p class="sec-note">规模、密度与代码分布 —— 用数据定位"哪里最重"</p>
+
+  <h3>2.1 代码规模分布</h3>
+  <div class="tscroll">
+  <table>
+    <thead><tr><th>模块</th><th class="num">文件数</th><th class="num">行数</th><th class="num">占比</th><th>职责与体检印象</th></tr></thead>
+    <tbody>
+      <tr><td><code>core/pool_designer/</code></td><td class="num">8</td><td class="num">5,637</td><td class="num">26.0%</td><td>草图 OCR 识别管道，最大单一子系统，7 步串行流程</td></tr>
+      <tr><td><code>gui/</code></td><td class="num">10</td><td class="num">6,217</td><td class="num">28.7%</td><td>PropertyPanel 通过 mixin 聚合 <b>2,892 行 / ~75 方法</b></td></tr>
+      <tr><td><code>core/</code> 根目录</td><td class="num">10</td><td class="num">5,704</td><td class="num">26.3%</td><td>image_ops 1,507 行为最，含 632 行 render_design</td></tr>
+      <tr><td><code>core/parser/</code></td><td class="num">2</td><td class="num">2,262</td><td class="num">10.4%</td><td>template_matcher 1,373 行一肩挑五职</td></tr>
+      <tr><td><code>core/corner/</code></td><td class="num">3</td><td class="num">1,557</td><td class="num">7.2%</td><td>圆角算法核心，<b>detection.py 877 行零测试</b></td></tr>
+      <tr><td><code>core/psd/</code></td><td class="num">1</td><td class="num">217</td><td class="num">1.0%</td><td>轻量，无测试但风险低</td></tr>
+      <tr><td><code>main.py</code></td><td class="num">1</td><td class="num">527</td><td class="num">2.4%</td><td><b>22 处访问 panel 私有成员</b>，封装破损最集中处</td></tr>
+      <tr style="background:#fafbfd"><td><b>生产代码合计</b></td><td class="num"><b>35</b></td><td class="num"><b>21,649</b></td><td class="num"><b>100%</b></td><td>—</td></tr>
+      <tr><td><code>tests/</code></td><td class="num">29</td><td class="num">6,935</td><td class="num">—</td><td>254 个 test 函数 / 604 条 assert</td></tr>
+      <tr><td><code>scripts/</code></td><td class="num">165</td><td class="num">22,140</td><td class="num">—</td><td class="muted"><b>诊断脚本比生产代码还多 1.02 倍</b>，需归档治理</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout c-warn">
+    <span class="ct">数据洞察</span>
+    生产代码 21,649 行 vs 诊断脚本 22,140 行 —— <b>脚本体量已超过主程序</b>。
+    这说明大量调试逻辑沉淀在 <code>scripts/</code> 里没有被回收，其中 <code>scripts/_archive/</code>
+    甚至还躺着旧版测试文件（<code>old_tests/test_psd_import.py</code>）。
+    这是"每次 debug 都写一个新脚本"的工作习惯留下的沉积层，会在新人接手时成为巨大的认知负担。
+  </div>
+
+  <h3>2.2 最长函数 Top 10（重构优先级排序）</h3>
+  <div class="card">
+    <div class="bar-row"><span class="lbl"><code>_extract_direction_label_numbers</code></span><div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--p0)"></div></div><span class="val">710 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>render_design</code></span><div class="bar-track"><div class="bar-fill" style="width:89%;background:var(--p0)"></div></div><span class="val">632 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_validate_and_fix_margins</code></span><div class="bar-track"><div class="bar-fill" style="width:55%;background:var(--p1)"></div></div><span class="val">392 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_7step_parse</code></span><div class="bar-track"><div class="bar-fill" style="width:49%;background:var(--p1)"></div></div><span class="val">348 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_9step_multi_hole_parse</code></span><div class="bar-track"><div class="bar-fill" style="width:47%;background:var(--p1)"></div></div><span class="val">334 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_build_multi_layer_corner_mask</code></span><div class="bar-track"><div class="bar-fill" style="width:46%;background:var(--p1)"></div></div><span class="val">326 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_classify_hole_layout</code></span><div class="bar-track"><div class="bar-fill" style="width:36%;background:var(--p2)"></div></div><span class="val">259 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_post_cleanup_gap_regions</code></span><div class="bar-track"><div class="bar-fill" style="width:35%;background:var(--p2)"></div></div><span class="val">247 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_extract_arrow_direction_numbers</code></span><div class="bar-track"><div class="bar-fill" style="width:35%;background:var(--p2)"></div></div><span class="val">246 行</span></div>
+    <div class="bar-row"><span class="lbl"><code>_divide_multi_hole_zones</code></span><div class="bar-track"><div class="bar-fill" style="width:32%;background:var(--p2)"></div></div><span class="val">224 行</span></div>
+    <p class="muted" style="margin-top:12px;font-size:13px">
+      阈值参考：单函数 &gt; 150 行即难以完整放入工作记忆，需拆分；&gt; 300 行基本无法安全修改。
+    </p>
+  </div>
+</section>
+
+<!-- ════ 3 架构地图 ════ -->
+<section id="s3">
+  <h2><span class="num">3</span>架构地图与分层健康度</h2>
+  <p class="sec-note">依赖关系是否守规矩，是判断架构能否长期演进的关键</p>
+
+  <div class="tscroll">
+  <table>
+    <thead><tr><th>分层约束</th><th>状态</th><th>证据与说明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>core 不反向依赖 gui</b></td>
+        <td><span class="tag t-ok">达标</span></td>
+        <td>全 <code>core/</code> 无任何 <code>from gui</code> 导入，业务层纯净。这是本项目最值得保持的优点。</td>
+      </tr>
+      <tr>
+        <td><b>无循环 import</b></td>
+        <td><span class="tag t-p2">脆弱达标</span></td>
+        <td><code>image_cropper.py:14</code> ↔ <code>image_ops.py</code> 互相需要，当前靠「<b>函数内延迟 import</b>」打破环。
+        全项目函数内局部 import 达 <b>11 处集中在 image_ops.py</b>，属于结构性脆弱 —— 任何一次导入顺序调整都可能引爆。</td>
+      </tr>
+      <tr>
+        <td><b>模块间不访问私有成员</b></td>
+        <td><span class="tag t-p0">严重违规</span></td>
+        <td><code>sketch_parser.py:49-53</code> 一次性 import <b>9 个下划线私有符号</b>；
+        <code>image_cropper_border.py:57-61</code> 连续 5 条；
+        <code>lshape_border.py:31-34</code> 2 条。<b>所谓"模块化拆分"实为物理切分，耦合未减</b>。</td>
+      </tr>
+      <tr>
+        <td><b>UI 与业务分离</b></td>
+        <td><span class="tag t-p1">部分违规</span></td>
+        <td><code>main.py:277-301</code> 有 <b>22 处</b>直读 <code>panel._sp_w</code> 等私有控件，
+        <code>_sync_panel_from_design</code> 本质是 PropertyPanel 的私有 UI 逻辑被搬到 main.py，是重构残留。</td>
+      </tr>
+      <tr>
+        <td><b>数据模型纯净</b></td>
+        <td><span class="tag t-p1">违规</span></td>
+        <td><code>geometry.py:191</code> 把 <code>_cached_outer_image: Image.Image</code> 作为 <b>CropDesign dataclass 正式字段</b>，
+        <code>clone()</code>(248-258) 注释「共享只读引用，不复制像素数据」。大对象混入数据模型 + 共享引用 =
+        <b>"素材残留" bug 的架构级根因</b>。</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout c-danger">
+    <span class="ct">架构层面的核心矛盾：伪模块化</span>
+    V2.1 把 <code>property_panel.py</code> 拆成 5 个 mixin、把 <code>sketch_parser.py</code> 拆成 6 个子模块，
+    但拆分方式是「<b>把大文件物理切开，再用 import 私有符号把切口粘回去</b>」。
+    结果是：文件数变多了，单文件行数下降了，<b>但任何一处改动的影响半径和拆分前完全一样</b>。
+    真正的模块化需要定义<b>模块间的公共契约</b>（哪些是 public API，哪些是内部实现），
+    而不是靠下划线命名约定。这是 V2.1.2 及之后最值得投入的架构改造。
+  </div>
+</section>
+
+<!-- ════ 4 P0 ════ -->
+<section id="s4">
+  <h2><span class="num">4</span>P0 严重项：必须在 V2.1.2 内止血</h2>
+  <p class="sec-note">4 项，涉及崩溃风险与工程纪律失守</p>
+
+  <div class="finding">
+    <div class="finding-h"><span class="tag t-p0">P0-1</span><span class="t">后台线程退役只覆盖 2/8，6 个 QThread 裸奔</span></div>
+    <p>项目共有 <b>8 个 QThread 子类</b>，但只有 <code>canvas_widget.py</code> 的 2 个走通了标准退役范式。
+    关闭窗口时，其余 6 个线程没有接管者，导出大图（38MP 需数秒）途中关窗必然触发
+    <code>QThread: Destroyed while thread is still running</code> 崩溃 —— 而这个 bug 在 9/2 已经修过一次（F16），只是<b>只修了 2 个</b>。</p>
+    <ul>
+      <li><code>main.py:454-465</code> closeEvent 只退役 <code>_save_worker</code> + <code>canvas.shutdown()</code></li>
+      <li>漏管：<code>cropper._worker</code>、<code>cropper._match_worker</code>、<code>panel._pool_worker</code>、
+      <code>panel._sketch_parse_worker</code>、<code>panel._warmup_worker</code>、<code>lshape_panel._lshape_parse_worker</code></li>
+      <li><code>property_panel_poolbox.py:301</code> 使用 <code>warmup.terminate()</code> —— QThread 的禁用手段，会在任意字节码处强杀</li>
+      <li><code>cropper_panel.py:971</code> 直接 <code>self._worker = None</code> 丢弃引用，无 wait、无 deleteLater</li>
+      <li><code>property_panel_generate.py:73</code> <code>warmup.wait(30 * 60 * 1000)</code> —— <b>主线程最长阻塞 30 分钟</b></li>
+    </ul>
+    <div class="evidence">
+      <b>main.py:454-465</b>  closeEvent 仅覆盖 2/8 线程<br>
+      <b>canvas_widget.py:231-252</b>  _retire_worker —— 唯一正确的范式（requestInterruption → wait → deleteLater）<br>
+      <b>全项目 deleteLater 调用</b>  仅 canvas_widget.py:247/250/252 三处，其余 Worker 零退役
+    </div>
+    <p style="margin-top:10px"><b>建议</b>：抽一个 <code>WorkerManager</code> 基类统一托管（注册 → 退役 → 超时降级），
+    8 个 Worker 全部接入，<code>main.closeEvent</code> 只调一次 <code>worker_manager.shutdown_all()</code>。
+    预计 1–2 天，可一次性消除"关闭崩溃"这一类投诉。</p>
+  </div>
+
+  <div class="finding">
+    <div class="finding-h"><span class="tag t-p0">P0-2</span><span class="t">测试契约失守：4 项红灯，3 项源于语义变更未同步</span></div>
+    <p>实测 <code>pytest tests/</code>：<b>280 collected，4 failed</b>。红灯本身不致命，致命的是<b>红灯亮了没人发现</b> ——
+    9 月 3 日 18 次提交全部未跑测试，也无文档归档。</p>
+    <ul>
+      <li><b>3 项是业务语义有意变更，测试未同步</b>（详见第 7 节）：挖角背景改白色、挖角损耗补偿取消、渲染语义调整</li>
+      <li><b>1 项是测试硬编码路径过时</b>：<code>test_f5_f14_fixes.py</code> 断言 <code>F:\SmartShapeCrop\packageV2.1.py</code> 存在，实际已移至 <code>package/</code></li>
+    </ul>
+    <div class="evidence">
+      <b>tests/integration/test_pool_lshape_flow.py:73</b>  期望挖角区显示材质，实际得到 array([255,255,255]) 纯白<br>
+      <b>tests/integration/test_pool_lshape_flow.py:179</b>  assert 100.0 == 101.0 ± 1.0e-04（1cm 损耗补偿未生效）<br>
+      <b>property_panel_layers.py:87</b>  注释明写"挖角值直接取草图识别的成品真值，<b>不做额外损耗补偿</b>"
+    </div>
+    <p style="margin-top:10px"><b>建议</b>：先<b>由业务拍板</b>（挖角到底该不该补 1cm 损耗 —— 印刷行业 1cm 误差是致命的），
+    再决定改测试还是改代码。无论哪种，都必须让 <code>pytest</code> 回到全绿，并把「提交前跑测试」固化为习惯。</p>
+  </div>
+
+  <div class="finding">
+    <div class="finding-h"><span class="tag t-p0">P0-3</span><span class="t">渲染层补丁叠加，缺少统一缓存失效契约</span></div>
+    <p><code>render_design</code>（<code>image_ops.py:548-1179</code>，<b>632 行</b>）内部串联了 5 个 Add-On 补丁：
+    Stale-Decor V1 / V2、接缝羽化、L 形边框补全、多洞 override。<b>每个补丁各自判定触发条件，没有版本化的 invalidation key</b>，
+    加上 <code>CropDesign</code> 数据模型里塞着 <code>_cached_outer_image</code>（<code>geometry.py:191</code>）并被多处共享引用。</p>
+    <p>这解释了为什么「<b>素材填充残留</b>」这一个 bug 在历史上被反复修了 <b>5 次以上</b>
+    （8.31 三次 commit、9.2 两次）：<b>每次都是在打地鼠，没有一次触及根因</b>。</p>
+    <div class="evidence">
+      <b>image_ops.py:632 / 683 / 746 / 823 / 872 / 897 / 1005 / 1022 / 1104 / 1190 / 1503</b>  11 处函数内局部 import<br>
+      <b>image_ops.py:576/579/627/633/681/702/723/800/806/1001</b>  10 个互相耦合的 flag 变量（is_pool / has_outer_img 二次赋值 / lshape_cut_done / _sd_done …）<br>
+      <b>geometry.py:191</b>  _cached_outer_image: Image.Image 作为 dataclass 正式字段
+    </div>
+    <p style="margin-top:10px"><b>建议</b>：把 5 个补丁收敛为 <code>render_pipeline/</code> 的显式步骤，
+    引入<b>渲染缓存 key</b>（design 指纹 + 素材路径 + mtime），失效判定集中到一处。
+    这是「一次投入、永久止血」的改造，建议作为 V2.1.2 的核心技术任务。</p>
+  </div>
+
+  <div class="finding">
+    <div class="finding-h"><span class="tag t-p0">P0-4</span><span class="t">主线程阻塞未根治，靠 processEvents 掩盖</span></div>
+    <p><code>property_panel_generate.py:162</code> 的 <code>_on_pool_finished_ok</code> 作为主线程的槽函数，
+    却跑完整的素材库流程：全库扫描 <code>scan_library</code>、<b>循环内</b>多次 <code>find_best_match</code>、
+    主线程 <code>load_image_rgb</code> 读全分辨率 JPG。4 处 <code>QApplication.processEvents()</code>（L71/329/386/418）
+    只是让界面「看起来没死」，实为<b>重入炸弹</b>。</p>
+    <p>叠加 <code>canvas_widget.py</code> 的 LOD 渲染（每次参数变更主线程同步渲染，29MP 画布约 <b>400ms/次</b>，
+    当前靠 200ms 防抖缓解），用户感知就是「改个数字卡一下」—— 9/3 的 SpinBox 卡顿修复（<code>fa23210</code>）也只是缓解。</p>
+    <div class="evidence">
+      <b>property_panel_generate.py:73</b>  warmup.wait(30 * 60 * 1000) —— 30 分钟阻塞上限<br>
+      <b>property_panel_generate.py:329/386</b>  循环内 processEvents，素材匹配 N 次全在主线程<br>
+      <b>canvas_widget.py 注释 L26-28</b>  自述「原 ~100ms → 新 ~400ms」LOD 渲染耗时
+    </div>
+    <p style="margin-top:10px"><b>建议</b>：素材匹配与库扫描整体移入 Worker；LOD 渲染改为异步 + 中间态占位。
+    配合 P0-1 的 WorkerManager 一起做，可同时消除「崩溃」与「卡顿」两类用户投诉。</p>
+  </div>
+</section>
+
+<!-- ════ 5 P1 ════ -->
+<section id="s5">
+  <h2><span class="num">5</span>P1 结构项：应在 V2.1.2 或 V2.2 内处理</h2>
+  <p class="sec-note">影响可维护性与可测试性的结构性欠账</p>
+
+  <div class="finding p1">
+    <div class="finding-h"><span class="tag t-p1">P1-1</span><span class="t">约 5,500 行核心代码零测试覆盖（占 core 约 36%）</span></div>
+    <p>完全无对应测试的核心模块：<code>lshape_border.py</code>(512 行，<b>9/3 刚新增</b>)、<code>image_cropper_mask.py</code>(1,021)、
+    <code>image_cropper_border.py</code>(454)、<code>corner/detection.py</code>(877)、<code>corner/sector_render.py</code>(422)、
+    <code>psd/loader.py</code>(194)、<code>app_settings.py</code>(434)、<code>sketch_parser_margins.py</code>(757)、
+    <code>sketch_parser_numbers.py</code>(983)。</p>
+    <div class="evidence">
+      grep -rn "lshape_border" tests/ → 唯一命中是 <b>compute_lshape_border_bands</b>（<b>同名子串误命中</b>），实际零覆盖
+    </div>
+    <p style="margin-top:10px"><b>风险</b>：<code>lshape_border</code> 是 9/3 新交付的边框补全功能，零测试 = 零回归保护。
+    <b>建议</b>：优先为它和 <code>corner/detection.py</code> 补断言（这两个是"改一处崩一片"的高危区）。</p>
+  </div>
+
+  <div class="finding p1">
+    <div class="finding-h"><span class="tag t-p1">P1-2</span><span class="t">打包配置 7 份并存，spec 存在漏收集风险</span></div>
+    <div class="tscroll" style="margin-top:8px">
+    <table style="font-size:13px">
+      <thead><tr><th>文件</th><th>状态</th><th>问题</th></tr></thead>
+      <tbody>
+        <tr><td><code>packageV2.1.2.py</code></td><td><span class="tag t-ok">有效入口</span></td><td>19KB，无 --exclude-module</td></tr>
+        <tr><td><code>智能裁剪设计器V2.1.2.spec</code></td><td><span class="tag t-p1">已失效待确认</span></td><td>缺 <code>core.lshape_border</code> 与 <code>gui.lshape_panel</code> 的 hiddenimport；硬编码 <code>D:/Programs/Tesseract-OCR</code></td></tr>
+        <tr><td><code>智能裁剪设计器V2.1.spec</code></td><td><span class="tag t-p0">应清理</span></td><td>路径指向 <code>D:\SmartShapeCrop</code> 与 <code>E:\Tesseract-OCR</code>，<b>驱动器已不存在</b></td></tr>
+        <tr><td><code>package/</code> 三份</td><td><span class="tag t-p3">历史归档</span></td><td>42KB 冗余</td></tr>
+        <tr><td><code>SmartShapeCrop/</code></td><td><span class="tag t-p3">空壳</span></td><td>8/13 遗留</td></tr>
+        <tr><td><code>dist/*.exe</code></td><td><span class="tag t-p2">234 MB</span></td><td>未排除 tests/scripts，内嵌整个 Tesseract 目录</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="evidence">
+      <b>image_ops.py:1022</b>  函数体内 from .lshape_border import apply_lshape_border_completion —— 静态分析易漏<br>
+      <b>gui.lshape_panel</b>  仅因 main.py:22 顶层静态导入才被侥幸收集，spec 列表里其实缺它
+    </div>
+    <p style="margin-top:10px"><b>建议</b>：执行 8/31 总结里<b>已列出但一直没做的 5 项整理中的 2 项</b> ——
+    删除 <code>智能裁剪设计器V2.1.spec</code>、把 <code>package/</code> 三份归档进 <code>packaging/</code>；
+    同时补全 hiddenimports 并加 <code>--exclude-module tests,scripts</code>（预计可显著削减 234MB 体积）。</p>
+  </div>
+
+  <div class="finding p1">
+    <div class="finding-h"><span class="tag t-p1">P1-3</span><span class="t">超长函数与复制粘贴并存</span></div>
+    <p>两个"教科书级"的复制粘贴案例：</p>
+    <ul>
+      <li><code>sketch_parser_margins.py:326-456</code>（横向）<b>vs</b> <code>:458-581</code>（纵向）——
+      <b>131 行 vs 124 行近乎逐行雷同</b>，仅 <code>ml/mr↔mt/mb</code>、<code>iw↔ih</code> 不同</li>
+      <li><code>sketch_parser_multihole.py:1288-1319</code> <b>vs</b> <code>:1321-1373</code> —— 同样的横纵各写一遍</li>
+      <li><code>_round_pref_bonus</code>(<code>sketch_parser.py:160-173</code>) <b>vs</b> <code>_round_pref_bonus_multi</code>(<code>multihole.py:1046-1059</code>) —— 14 行完全相同</li>
+    </ul>
+    <p style="margin-top:8px"><b>建议</b>：抽 <code>_fix_axis(...)</code> 统一横纵逻辑，可减约 250 行且消除"改了横向忘了纵向"的隐患。
+    超长函数按 2.2 节 Top 10 顺序拆分，<b>优先拆 710 行与 632 行这两个</b>。</p>
+  </div>
+
+  <div class="finding p1">
+    <div class="finding-h"><span class="tag t-p1">P1-4</span><span class="t">逐像素 Python 循环未被向量化</span></div>
+    <p><code>image_cropper_mask.py:434-457</code> 与 <code>:564-582</code> 两处 <code>for y…for x…img.getpixel((x,y))</code> 双循环，
+    四角各一段。在 38.6MP 印刷级大图下，<code>getpixel</code> 单像素调用代价极高。</p>
+    <div class="evidence">
+      <b>image_cropper_mask.py:434-457</b>  _analyze_corner_sector_content 内 getpixel 双循环<br>
+      <b>image_cropper_mask.py:564-582</b>  _corner_sector_has_content 同样结构<br>
+      <b>sketch_parser_cache.py:74-120</b>  每次 get / store 都 copy.deepcopy，双向各一次
+    </div>
+    <p style="margin-top:10px"><b>建议</b>：先 <code>np.array(img)</code> 再切片，改动小、收益大（与项目既有的"向量化连通分量 12.8s→毫秒级"是同类优化）。</p>
+  </div>
+</section>
+
+<!-- ════ 6 P2/P3 ════ -->
+<section id="s6">
+  <h2><span class="num">6</span>P2 / P3 卫生项：择机清理</h2>
+  <p class="sec-note">不影响运行，但持续增加认知负担</p>
+
+  <div class="finding p2">
+    <div class="finding-h"><span class="tag t-p2">P2-1</span><span class="t">配置阈值散落且与 config.py 冲突</span></div>
+    <p>最典型的一处<b>直接冲突</b>：<code>image_cropper.py:210</code> 的 <code>BG_SIMILARITY = 50.0</code>
+    <b>vs</b> <code>config.py:117</code> 的 <code>BORDER_BG_SIMILARITY_THRESHOLD = 30</code>。注释还写着"与 sector_render.py 的 GAP_COLOR_DIST 对齐"，实际并未对齐。</p>
+    <div class="evidence">
+      image_cropper.py:210   BG_SIMILARITY = 50.0<br>
+      config.py:117          BORDER_BG_SIMILARITY_THRESHOLD: int = 30   <b>← 冲突</b><br>
+      lshape_border.py:85/96/133/184/189   50.0 / 0.30 / 25.0 / max(30, 3%) / &gt;200 五个硬编码<br>
+      image_cropper_mask.py:478/485/591/600   unique≥8 / variance&gt;800 / &lt;0.20 / &gt;700 <b>两套数值不一致</b><br>
+      image_cropper_mask.py:729-730  CONTENT_COLOR_DIST=60.0 / BORDER_COLOR_DIST=20.0 <b>定义后从未使用</b>
+    </div>
+  </div>
+
+  <div class="finding p2">
+    <div class="finding-h"><span class="tag t-p2">P2-2</span><span class="t">死代码与兼容桩堆积（约 250 行可删）</span></div>
+    <ul>
+      <li><b>13 个死兼容桩</b>：<code>sketch_parser.py:607/612/624/628/632/636/640/644/648/652/656/660</code>，定义后 return 空值，仅被 <code>scripts/_archive</code> 引用</li>
+      <li><code>_clear_inner_arc_to_bg</code>（<code>image_cropper_mask.py:940-1021</code>，82 行）：调用处注释已明写"已移除/不再调用"，<b>死函数 + 死导入</b></li>
+      <li><code>_validate_geometric_constraints</code>：import 了但从未调用</li>
+      <li><code>sketch_parser.py:42-43</code> 定义 <code>_PARSE_TIMEOUT_SEC=20</code> / <code>_ALGO_VERSION=7</code>，随即被 <code>:49-50</code> 的同名 import 覆盖（cache 侧为 11）—— <b>死赋值 + 版本号不一致</b></li>
+      <li><code>sketch_parser_multihole.py:69</code> 字典键 <code>'↑':'margin_right'</code> 被 <code>:72</code> 覆盖</li>
+    </ul>
+  </div>
+
+  <div class="finding p2">
+    <div class="finding-h"><span class="tag t-p2">P2-3</span><span class="t">异常处理普遍"静默吞掉后无降级"</span></div>
+    <p>全项目<b>无裸 <code>except:</code></b>（这点很好），但 <code>except Exception</code> 达 <b>145 处</b>，
+    其中相当比例是"记一条 debug 日志然后什么都不做"。用户侧表现为<b>「点了没反应」</b>，比崩溃更难排查。</p>
+    <div class="evidence">
+      image_ops.py:1058-1059   L 形边框补全失败 → logger.debug("<b>静默跳过</b>")<br>
+      sketch_parser_vision.py:233/239/246/253   4 个二值化策略各吞一次<br>
+      template_matcher.py:260/293/337   pickle 缓存读写全静默<br>
+      psd/loader.py:68/101/106/140/148   psd-tools 缺失或解析失败
+    </div>
+    <p style="margin-top:10px"><b>建议</b>：不需要全部改，但对<b>用户可见的功能路径</b>（L 形边框补全、PSD 导入、素材匹配）应给出明确的状态提示，而不是静默。</p>
+  </div>
+
+  <div class="finding p3">
+    <div class="finding-h"><span class="tag t-p3">P3-1</span><span class="t">OCR 降级能力两条路径不对等</span></div>
+    <p><code>lshape_sketch_parser.py:536-546</code> 在 Tesseract 不可用时可降级为纯 CV 几何推断；
+    但 <code>sketch_parser.py:123-124</code> 单洞流程在 Step3 取不到 OCR 数值即<b>直接返回失败，无几何兜底</b>。</p>
+    <p style="margin-top:6px"><b>建议</b>：对齐 L 形的容错等级。这与既有规划 <b>F-2（纯 CV 无 OCR 识别，P1，1–2 周）</b>方向一致，
+    是"去掉 Tesseract 前置依赖"的高 ROI 改进 —— 也顺带化解已知软肋 SR-1（OCR 小字 D/C 归属错位）。</p>
+  </div>
+
+  <div class="finding p3">
+    <div class="finding-h"><span class="tag t-p3">P3-2</span><span class="t">compat 层是隐式魔法，需设退出期限</span></div>
+    <p><code>core/compat/__init__.py</code> 通过 <code>sys.modules</code> 注册 4 个别名（<code>core.rounded_corner</code> → <code>core.corner.algorithm</code> 等），
+    设计考究且同源性有校验，但<b>依赖"必须在 core/__init__.py 最开头导入"的时序要求</b>，属于隐式魔法。</p>
+    <div class="callout c-ok" style="margin:10px 0 0">
+      <span class="ct">✅ 重要澄清：这不是坏掉的导入</span>
+      实测 <code>import core.rounded_corner</code> <b>成功</b>（解析到 <code>core/corner/algorithm.py</code>），
+      <code>property_panel_layers.py:399</code> 的 <code>from core.psd_loader import ...</code> 也<b>能正常工作</b>，
+      PSD 导出功能未损坏。但调用方仍写着过时路径，建议逐步迁移到新路径，全部迁移完后删除 compat 子包。
+    </div>
+  </div>
+
+  <div class="finding p3">
+    <div class="finding-h"><span class="tag t-p3">P3-3</span><span class="t">工程卫生：脚本沉积与文档断档</span></div>
+    <ul>
+      <li><code>scripts/</code> 165 个 py / 22,140 行（<b>超过生产代码</b>），含 <code>_archive/old_tests/</code> 旧测试文件</li>
+      <li>根目录 <code>Test-multiplhole.py</code>：7 行一次性脚本，<b>文件名拼写错误</b>（应为 multiple_hole）、
+      硬编码占位路径 <code>"path/to/your_sketch.png"</code>、无断言，且 <code>pytest.ini</code> 的 <code>python_files = test_*.py</code> 不会收集它 —— 建议直接删除</li>
+      <li><b>9 月 3 日 18 次提交零文档归档</b>：ProductSummary 最新只到 20260902，与"每阶段留文档"的团队惯例脱节</li>
+      <li>8/31 总结 §10.5 明确列出 5 项待整理事项，<b>一项都未执行</b></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════ 7 测试实况 ════ -->
+<section id="s7">
+  <h2><span class="num">7</span>测试实况：实测数据与逐项归因</h2>
+  <p class="sec-note">本次体检真实执行了 pytest，以下为实测结果而非推断</p>
+
+  <div class="grid g4" style="margin-bottom:18px">
+    <div class="kpi blue"><div class="k">收集用例</div><div class="v">280</div><div class="d">29 个测试文件</div></div>
+    <div class="kpi green"><div class="k">通过</div><div class="v">276</div><div class="d">98.6%</div></div>
+    <div class="kpi red"><div class="k">失败</div><div class="v">4</div><div class="d">集中在 integration</div></div>
+    <div class="kpi orange"><div class="k">跳过</div><div class="v">5</div><div class="d">test_border_fix 整组</div></div>
+  </div>
+
+  <h3>7.1 4 项红灯逐条归因</h3>
+  <div class="tscroll">
+  <table>
+    <thead><tr><th>失败用例</th><th>现象</th><th>归因</th><th>定级</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>test_lshape_pool_render_cut_is_hole_material_in_body</code></td>
+        <td class="mono">assert array([255,255,255])</td>
+        <td>9/3 提交 <code>29584a6</code>「挖角背景白色渲染」<b>有意改变</b>渲染语义，测试仍期望显示水池材质</td>
+        <td><span class="tag t-p1">契约失同步</span></td>
+      </tr>
+      <tr>
+        <td><code>test_lshape_pool_render_all_corners</code></td>
+        <td class="mono">('tl', array([255,255,255]))</td>
+        <td>同上，四角全白</td>
+        <td><span class="tag t-p1">契约失同步</span></td>
+      </tr>
+      <tr>
+        <td><code>test_worker_lshape_params_builds_design</code></td>
+        <td class="mono">assert 100.0 == 101.0</td>
+        <td>期望挖角 +1cm 损耗补偿，实际未加。<code>property_panel_layers.py:87</code> 注释明写
+        「挖角值直接取成品真值，<b>不做额外损耗补偿</b>」—— 与 <code>25376b3</code> 损耗回传提交语义一致</td>
+        <td><span class="tag t-p0">需业务拍板</span></td>
+      </tr>
+      <tr>
+        <td><code>test_f5_no_misleading_geometry_fallback_docs</code></td>
+        <td class="mono">FileNotFoundError: packageV2.1.py</td>
+        <td>测试硬编码 <code>F:\SmartShapeCrop\packageV2.1.py</code>，文件已移至 <code>package/</code></td>
+        <td><span class="tag t-p2">路径过时</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout c-warn">
+    <span class="ct">这 4 个红灯的真正价值</span>
+    它们不是"代码坏了"，而是<b>一份精准的诊断书</b>：
+    <b>9 月 3 日那天，有人在改业务语义的同时，没有被要求同步更新测试，也没有人跑测试。</b>
+    <code>test_pool_lshape_flow.py</code> 在 9/3 被更新过（<code>23c83ef</code>），说明作者知道该改测试 —— 但改得不够完整。
+    这是流程缺口，不是能力问题。<b>「改代码 = 改测试」需要成为提交前的硬性动作。</b>
+  </div>
+
+  <h3>7.2 测试覆盖盲区</h3>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0;color:var(--p1)">零覆盖模块（按风险排序）</h3>
+      <ul class="plain" style="font-size:13.5px">
+        <li><code>lshape_border.py</code> — 512 行 · <b>9/3 新功能，零保护</b></li>
+        <li><code>corner/detection.py</code> — 877 行 · 边框检测核心</li>
+        <li><code>image_cropper_mask.py</code> — 1,021 行 · 圆角掩膜核心</li>
+        <li><code>sketch_parser_numbers.py</code> — 983 行 · 含 710 行巨函数</li>
+        <li><code>sketch_parser_margins.py</code> — 757 行</li>
+        <li><code>app_settings.py</code> — 434 行 · 历史记录持久化</li>
+        <li><code>image_cropper_border.py</code> — 454 行</li>
+        <li><code>corner/sector_render.py</code> — 422 行</li>
+        <li><code>psd/loader.py</code> — 194 行</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;color:var(--ok)">测试体系的优点</h3>
+      <ul class="plain" style="font-size:13.5px">
+        <li><b>无硬编码绝对路径</b>（已全量 grep 确认），具备 CI 可行性</li>
+        <li>11 个文件正确使用 <code>tmp_path</code> / <code>MagicMock</code> / <code>monkeypatch</code>，非纯 smoke test</li>
+        <li>604 条 assert，254 个 test 函数，密度合理</li>
+        <li><code>tests/conftest.py</code> 用 <code>collect_ignore</code> 隔离 6 个诊断脚本，避免污染收集 —— <b>设计得当</b></li>
+        <li>F1–F19 修复均有回归测试，具备"修一个补一个"的纪律基础</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════ 8 版本演进 ════ -->
+<section id="s8">
+  <h2><span class="num">8</span>版本演进脉络与反复出现的问题</h2>
+  <p class="sec-note">从 221 次提交与 94 份文档中提炼的模式</p>
+
+  <h3>8.1 反复出现的问题模式（架构未根治的证据）</h3>
+  <p>对 94 份文档做关键词统计，出现频次最高的主题是：</p>
+  <div class="card">
+    <div class="bar-row"><span class="lbl">圆角裁剪</span><div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--brand)"></div></div><span class="val">204 次</span></div>
+    <div class="bar-row"><span class="lbl">素材填充</span><div class="bar-track"><div class="bar-fill" style="width:37%;background:var(--p1)"></div></div><span class="val">76 次</span></div>
+    <div class="bar-row"><span class="lbl">残留</span><div class="bar-track"><div class="bar-fill" style="width:36%;background:var(--p1)"></div></div><span class="val">73 次</span></div>
+    <div class="bar-row"><span class="lbl">DLL / 环境</span><div class="bar-track"><div class="bar-fill" style="width:31%;background:var(--p2)"></div></div><span class="val">63 次</span></div>
+    <div class="bar-row"><span class="lbl">模板匹配</span><div class="bar-track"><div class="bar-fill" style="width:22%;background:var(--p2)"></div></div><span class="val">45 次</span></div>
+    <div class="bar-row"><span class="lbl">QThread</span><div class="bar-track"><div class="bar-fill" style="width:14%;background:var(--p0)"></div></div><span class="val">29 次</span></div>
+    <div class="bar-row"><span class="lbl">阻塞</span><div class="bar-track"><div class="bar-fill" style="width:11%;background:var(--p0)"></div></div><span class="val">22 次</span></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3 style="margin-top:0">「素材残留」被修了 5 次以上</h3>
+      <p style="font-size:13.5px">8.31 三个 commit 连修 V1→V2（<code>ff7b71f</code>/<code>05fcf3d</code>/<code>957748d</code>），
+      9.2 又修 Stale-Decor + 颜色漂移（<code>13405b9</code>/<code>7d5ae6c</code>），9.2 再修旧素材残留（<code>ed95d16</code>）。</p>
+      <p style="font-size:13.5px"><b>根因</b>：渲染层无统一缓存失效契约，且 <code>design</code> 对象被 UI / Worker / 缓存三处持有。</p>
+      <p style="font-size:13.5px;color:var(--p0)"><b>结论</b>：每一次都是在打地鼠。必须做 P0-3 的渲染管线改造才能闭环。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">「QThread / 阻塞」被修了 3 次</h3>
+      <p style="font-size:13.5px">8.28 cropper 阻塞修一次，9.2 导出阻塞修一次（F16），9.3 SpinBox 卡顿再修一次（<code>fa23210</code>）。</p>
+      <p style="font-size:13.5px"><b>根因</b>：没有统一的 Worker 生命周期管理基类，每个面板各写各的 retire 逻辑 —— 本次体检证实 <b>8 个线程 6 个漏管</b>。</p>
+      <p style="font-size:13.5px;color:var(--p0)"><b>结论</b>：F16 只修了 2 个。做 P0-1 的 WorkerManager 才能一次性收口。</p>
+    </div>
+  </div>
+
+  <h3>8.2 V2.1.2 已交付内容（22 次 V2.1.2- 前缀提交）</h3>
+  <div class="tl">
+    <div class="tl-item done">
+      <div class="tl-t">L 形挖角独立面板（阶段 4）</div>
+      <div class="tl-d">从水池设计器拆出独立 Tab，承载挖角方向/尺寸/外框设置；三源历史记录物理隔离（<code>TARGET_SRC_LSHAPE</code>）</div>
+    </div>
+    <div class="tl-item done">
+      <div class="tl-t">渲染质量三部曲</div>
+      <div class="tl-d">Stale-Decor 修复 + LOD 0.25→0.5 降采样 + 颜色漂移修正，消除高细节素材马赛克伪影</div>
+    </div>
+    <div class="tl-item done">
+      <div class="tl-t">导出异步化与进度显示</div>
+      <div class="tl-d">JPG 导出移入 QThread，防重复点击 + 可取消 + 状态栏进度（修复大图导出 UI 冻结 5–15 秒）</div>
+    </div>
+    <div class="tl-item done">
+      <div class="tl-t">环境治理</div>
+      <div class="tl-d">根除 <code>python-qt5</code> 黑包，重建 venv + 白名单 <code>requirements_clean.txt</code>；项目瘦身 1.4GB → 909MB</div>
+    </div>
+    <div class="tl-item next">
+      <div class="tl-t">9/3 冲刺（18 次提交，<b>零文档归档</b>）</div>
+      <div class="tl-d">L 形边框补全渲染、挖角背景白色、损耗设置参数回传、水池/L 形串台修复、SpinBox 卡顿、历史记录缺失修复 ——
+      <b>能力到位，但引入 3 项测试红灯且未同步文档</b></div>
+    </div>
+  </div>
+
+  <h3>8.3 L 形挖角的已知软肋与既有规划</h3>
+  <div class="tscroll">
+  <table>
+    <thead><tr><th>编号</th><th>内容</th><th>等级</th><th>化解方式</th></tr></thead>
+    <tbody>
+      <tr><td>SR-1</td><td>OCR 小字 D/C 归属错位，cut_h 误差 1–3%</td><td><span class="tag t-p3">P3</span></td><td>由 F-2 纯 CV 检测完全化解</td></tr>
+      <tr><td>SR-2</td><td>PyQt5 DLL 损坏风险</td><td><span class="tag t-ok">已固化</span></td><td>白名单 + 打包 DLL 三层防护</td></tr>
+      <tr><td>SR-3</td><td>不支持多 L 形挖角 + 中间洞复合</td><td><span class="tag t-p2">P2</span></td><td>由 F-1 化解</td></tr>
+      <tr><td>F-2</td><td>纯 CV corner/外框/cut 自动检测，去 OCR 依赖</td><td><span class="tag t-p1">P1 · 1–2 周</span></td><td>无依赖，可独立迭代</td></tr>
+      <tr><td>F-1</td><td>多 L 形 + 中间洞复合设计</td><td><span class="tag t-p2">P2 · 3–4 周</span></td><td>建议 F-2 之后</td></tr>
+      <tr><td>F-3</td><td>corner-aware 素材方向匹配</td><td><span class="tag t-p2">P2 · 1 周</span></td><td>可独立迭代</td></tr>
+      <tr><td>F-4</td><td>DXF 矢量导出对接切割机</td><td><span class="tag t-p3">P3 · 2+ 周</span></td><td>建议 F-1 之后</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ════ 9 方向 ════ -->
+<section id="s9">
+  <h2><span class="num">9</span>V2.1.2 剩余方向：四条主线</h2>
+  <p class="sec-note">按 ROI 排序，建议 V2.1.2 以主线 A+B 收口，主线 C/D 留待 V2.2</p>
+
+  <div class="callout c-danger">
+    <span class="ct">方向性建议：从「加功能」切换到「收敛质量」</span>
+    V2.1.2 的 L 形能力已经具备交付水准（阶段 4 自评 95%+）。
+    但 9/3 的 18 次提交暴露了一个信号：<b>能力的增长速度已经超过工程纪律的承载能力</b> ——
+    测试红灯、文档断档、线程漏管、脚本沉积，全部是同一件事的不同侧面。
+    <b>V2.1.2 剩余工作应当以「让这个版本敢交付、敢维护」为目标，而不是继续加功能。</b>
+  </div>
+
+  <div class="grid g2">
+    <div class="card" style="border-left:3px solid var(--p0)">
+      <h3 style="margin-top:0"><span class="tag t-p0">主线 A</span> 止血：让版本回到可控状态</h3>
+      <p style="font-size:13.5px"><b>目标</b>：pytest 全绿 + 关闭零崩溃 + 打包可复现</p>
+      <ul class="plain" style="font-size:13.5px">
+        <li><b>A1</b> 业务拍板「挖角是否补 1cm 损耗」，据此修测试或修代码（<b>P0-2</b>）</li>
+        <li><b>A2</b> 修正 <code>packageV2.1.py</code> 路径断言，并同步 <code>collect_ignore</code> 清单</li>
+        <li><b>A3</b> 抽 <code>WorkerManager</code> 基类，8 个 Worker 全接入，消除 6 个漏管线程（<b>P0-1</b>）</li>
+        <li><b>A4</b> 删除 <code>智能裁剪设计器V2.1.spec</code>，补全 <code>core.lshape_border</code> + <code>gui.lshape_panel</code> 的 hiddenimport（<b>P1-2</b>）</li>
+        <li><b>A5</b> 为 <code>lshape_border.py</code> 补第一批断言（9/3 新功能零保护）</li>
+      </ul>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:10px">工作量约 <b>3–5 天</b> · 收益：消除崩溃与"改了不敢发"的心理负担</p>
+    </div>
+
+    <div class="card" style="border-left:3px solid var(--p1)">
+      <h3 style="margin-top:0"><span class="tag t-p1">主线 B</span> 根治：消除反复发作的架构病灶</h3>
+      <p style="font-size:13.5px"><b>目标</b>：让"素材残留""卡顿"这两类 bug 不再复发</p>
+      <ul class="plain" style="font-size:13.5px">
+        <li><b>B1</b> 渲染管线重构：5 个 Add-On 补丁收敛为 <code>render_pipeline/</code> 显式步骤 + <b>统一缓存 key</b>（<b>P0-3</b>）</li>
+        <li><b>B2</b> <code>CropDesign</code> 剥离 <code>_cached_outer_image</code> 等大对象，数据模型回归纯净（<b>P1</b>）</li>
+        <li><b>B3</b> 素材匹配与库扫描移入 Worker，消灭循环内 processEvents（<b>P0-4</b>）</li>
+        <li><b>B4</b> 拆分 <code>render_design</code>(632) 与 <code>_extract_direction_label_numbers</code>(710)</li>
+        <li><b>B5</b> <code>getpixel</code> 双循环改 numpy 向量化</li>
+      </ul>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:10px">工作量约 <b>1–2 周</b> · 收益：一次性关闭历史上被修 5+ 次的复发类 bug</p>
+    </div>
+
+    <div class="card" style="border-left:3px solid var(--p2)">
+      <h3 style="margin-top:0"><span class="tag t-p2">主线 C</span> 能力：补齐 L 形与识别短板</h3>
+      <p style="font-size:13.5px"><b>目标</b>：兑现既有规划中 ROI 最高的两项</p>
+      <ul class="plain" style="font-size:13.5px">
+        <li><b>C1</b> <b>F-2 纯 CV 识别</b>（P1，1–2 周）：去掉 Tesseract 前置依赖，同时化解 SR-1</li>
+        <li><b>C2</b> 单洞 <code>sketch_parser</code> 补几何降级路径，对齐 L 形容错等级（<b>P3-1</b>）</li>
+        <li><b>C3</b> <b>F-3 corner-aware 素材方向匹配</b>（P2，1 周）：解决"素材方向对但花纹反了"</li>
+        <li><b>C4</b> <b>F-1 多 L 形复合</b>（P2，3–4 周）：覆盖 5% 超高阶案例，化解 SR-3</li>
+      </ul>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:10px">建议 <b>V2.2 启动</b> · 与主线 A/B 不冲突，但应在质量基线建立后再推进</p>
+    </div>
+
+    <div class="card" style="border-left:3px solid var(--p3)">
+      <h3 style="margin-top:0"><span class="tag t-p3">主线 D</span> 卫生：降低长期认知负担</h3>
+      <p style="font-size:13.5px"><b>目标</b>：让半年后的自己／接手的人看得懂</p>
+      <ul class="plain" style="font-size:13.5px">
+        <li><b>D1</b> 删除 13 个死兼容桩 + <code>_clear_inner_arc_to_bg</code>(82 行) + 死常量，约减 250 行</li>
+        <li><b>D2</b> 抽 <code>_fix_axis()</code> 消除横线/纵向 255 行复制粘贴</li>
+        <li><b>D3</b> 魔法数字入 <code>config.py</code>，<b>优先解决 50.0 vs 30 的阈值冲突</b></li>
+        <li><b>D4</b> <code>scripts/</code> 归档治理（22,140 行 &gt; 生产代码），删根目录 <code>Test-multiplhole.py</code></li>
+        <li><b>D5</b> 补齐 9/3 文档归档；执行 8/31 总结 §10.5 中<b>已列出未做的 5 项整理</b></li>
+        <li><b>D6</b> 迁移 compat 旧路径调用方，设 compat 层退出期限</li>
+      </ul>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:10px">可<b>穿插进行</b> · 单项 0.5–2 天，适合作为主线 A/B 之间的调剂</p>
+    </div>
+  </div>
+
+  <h3>9.1 优先级矩阵</h3>
+  <div class="tscroll">
+  <table>
+    <thead><tr><th>任务</th><th class="num">收益</th><th class="num">成本</th><th class="num">ROI</th><th>建议排期</th><th>依赖</th></tr></thead>
+    <tbody>
+      <tr><td><b>A3</b> WorkerManager 统一线程退役</td><td class="num">高</td><td class="num">1–2 天</td><td class="num"><span class="tag t-ok">极高</span></td><td>V2.1.2 · 立即</td><td>无</td></tr>
+      <tr><td><b>A1+A2</b> 测试红灯归因与修复</td><td class="num">高</td><td class="num">0.5 天</td><td class="num"><span class="tag t-ok">极高</span></td><td>V2.1.2 · 立即</td><td>业务拍板</td></tr>
+      <tr><td><b>A4</b> 打包配置整理 + hiddenimport 补全</td><td class="num">高</td><td class="num">0.5 天</td><td class="num"><span class="tag t-ok">极高</span></td><td>V2.1.2 · 立即</td><td>无</td></tr>
+      <tr><td><b>A5</b> lshape_border 首批断言</td><td class="num">中高</td><td class="num">1 天</td><td class="num"><span class="tag t-info">高</span></td><td>V2.1.2</td><td>无</td></tr>
+      <tr><td><b>B1</b> 渲染管线 + 统一缓存 key</td><td class="num">极高</td><td class="num">3–5 天</td><td class="num"><span class="tag t-info">高</span></td><td>V2.1.2 · 核心</td><td>A 完成后</td></tr>
+      <tr><td><b>B3</b> 素材匹配移入 Worker</td><td class="num">高</td><td class="num">1–2 天</td><td class="num"><span class="tag t-info">高</span></td><td>V2.1.2</td><td>A3</td></tr>
+      <tr><td><b>B5</b> getpixel 向量化</td><td class="num">中</td><td class="num">0.5 天</td><td class="num"><span class="tag t-info">高</span></td><td>V2.1.2</td><td>无</td></tr>
+      <tr><td><b>D1/D3</b> 死代码与阈值冲突</td><td class="num">中</td><td class="num">1 天</td><td class="num"><span class="tag t-p2">中</span></td><td>V2.1.2 穿插</td><td>无</td></tr>
+      <tr><td><b>C1</b> F-2 纯 CV 识别</td><td class="num">高</td><td class="num">1–2 周</td><td class="num"><span class="tag t-p2">中</span></td><td>V2.2</td><td>质量基线</td></tr>
+      <tr><td><b>B4</b> 拆 710/632 行巨函数</td><td class="num">中高</td><td class="num">2–3 天</td><td class="num"><span class="tag t-p2">中</span></td><td>V2.2</td><td>A5 测试保护</td></tr>
+      <tr><td><b>C4</b> F-1 多 L 形复合</td><td class="num">中</td><td class="num">3–4 周</td><td class="num"><span class="tag t-p3">低中</span></td><td>V2.3</td><td>C1</td></tr>
+      <tr><td><b>D4</b> scripts 归档治理</td><td class="num">中低</td><td class="num">1–2 天</td><td class="num"><span class="tag t-p3">低</span></td><td>择机</td><td>无</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ════ 10 路线图 ════ -->
+<section id="s10">
+  <h2><span class="num">10</span>V2.1.2 分期路线图建议</h2>
+  <p class="sec-note">建议分三批收口，每批结束都有一个可验证的完成标志</p>
+
+  <div class="tl">
+    <div class="tl-item next">
+      <div class="tl-t">第一批 · 止血（3–5 天）<span class="tag t-p0" style="margin-left:8px">必做</span></div>
+      <div class="tl-d">
+        A1 业务拍板挖角损耗语义 → A2 修路径断言 → A3 WorkerManager 接入 8 个 Worker → A4 打包配置整理与 hiddenimport 补全 → A5 lshape_border 首批断言<br>
+        <b>完成标志</b>：<code>pytest tests/</code> <b>280 passed 全绿</b>；大图导出途中关窗<b>零崩溃</b>；
+        <code>python packageV2.1.2.py</code> 产出的 exe 能正常启动 L 形面板。
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-t">第二批 · 根治（1–2 周）<span class="tag t-p1" style="margin-left:8px">核心</span></div>
+      <div class="tl-d">
+        B1 渲染管线重构 + 统一缓存 key → B2 CropDesign 剥离大对象 → B3 素材匹配移入 Worker → B5 getpixel 向量化<br>
+        <b>完成标志</b>：「素材残留」类 bug 在连续 20 次随机操作（切素材 / 改参数 / 重生预览）中<b>零复现</b>；
+        大图参数调整时界面<b>无可感知卡顿</b>。
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-t">第三批 · 卫生与文档（2–3 天）<span class="tag t-p3" style="margin-left:8px">建议</span></div>
+      <div class="tl-d">
+        D1 死代码清理 → D2 横纵复制粘贴合并 → D3 阈值入 config（先解决 50.0 vs 30 冲突）→ D5 补 9/3 文档归档 + 执行 8/31 未做的 5 项整理<br>
+        <b>完成标志</b>：源码减少约 250–500 行；ProductSummary 补齐 20260903 记录；
+        8/31 总结 §10.5 的 5 项待办清零。
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-t">V2.2 及以后 · 能力扩展</div>
+      <div class="tl-d">
+        C1 F-2 纯 CV 识别（1–2 周）→ C3 F-3 corner-aware 匹配（1 周）→ B4 拆巨函数 → C4 F-1 多 L 形复合（3–4 周）→ F-4 DXF 导出<br>
+        <b>前置条件</b>：第一批与第二批完成，测试覆盖提升至 core 的 60% 以上再动大手术。
+      </div>
+    </div>
+  </div>
+
+  <div class="callout c-ok">
+    <span class="ct">最后一个建议：把「改代码 = 改测试」变成硬习惯</span>
+    本次体检最有价值的发现不是任何一个技术债，而是这条因果链：
+    <b>18 次提交 → 3 项测试红灯 → 零文档 → 无人察觉</b>。
+    项目已经具备 604 条 assert 的测试基础，缺的不是能力，是<b>提交前跑一次 <code>pytest</code> 的动作</b>。
+    建议在 V2.1.2 收口时，把「提交前 <code>pytest tests/ -q</code> 必须全绿」写进团队惯例 —— 这比任何重构都更划算。
+  </div>
+</section>
+
+<footer>
+  <div>SmartShapeCrop 智能形状裁剪设计器 · 全面检测与方向报告</div>
+  <div>扫描方式：全量只读（源码零改动，<code>git status</code> 干净） · 检测日期 2026-09-03</div>
+  <div class="fv">版本 V2.1.2</div>
+</footer>
+
+</div>
+</body>
+</html>

@@ -42,7 +42,8 @@ def _read(rel: str) -> str:
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize('rel', [
     'README.md',
-    'packageV2.1.py',  # V2.0 打包脚本在 V2.1 已重命名为 packageV2.1.py
+    # V2.0 打包脚本在 V2.1 已重命名为 packageV2.1.py，后又归档至 package/ 子目录
+    'package/packageV2.1.py',
 ])
 def test_f5_no_misleading_geometry_fallback_docs(rel):
     text = _read(rel)
