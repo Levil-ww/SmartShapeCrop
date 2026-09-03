@@ -1007,6 +1007,41 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     if border_mask.any():
         canvas_arr[border_mask] = BLACK_RGB
 
+    # ===== [L-Shape Border Completion 2026-09-03] L 形挖角处的素材边框补全 =====
+    # 当素材图自带边框（如克罗印花的棕色+黑色双层边框、安妮森林的细黑边框），
+    # L 形挖角会在 cut 区产生两条新边缘，这些边缘原本只有 step 3.5 的统一黑框，
+    # 现在改为：从素材图自动检测边框层 → 向 cut 区内部延伸绘制，
+    # 使 cut 边缘的边框层次与素材外边缘一致，视觉上形成完整 L 形外框。
+    #
+    # 仅在 rect_lshape + 池素材 + 非 tile（tile 无边框）时触发。
+    if design.mode == 'rect_lshape' and is_pool_with_material and not _looks_like_tile(
+            design.pool_outer_material_image or ''):
+        try:
+            from .lshape_border import apply_lshape_border_completion
+
+            # 注意：l_shape_px().outer = inner_rect_px()，cut 区相对于 inner_rect 计算
+            # 但视觉上 cut 区位于 inner_rect 内部 → 应使用 inner_rect_px 作为外框参考
+            inner_rect = design.inner_rect_px()
+            lshape = design.l_shape_px()
+            cut_corner = lshape.corner
+            cut_w_px = lshape.cut_w
+            cut_h_px = lshape.cut_h
+
+            # 从已适配到画布的素材图（canvas）检测边框层
+            # 比从原始图检测再缩放更准确，因为 canvas 已经过 contain+边缘延展
+            _completion_ok = apply_lshape_border_completion(
+                canvas_arr=canvas_arr,
+                material_img=canvas,
+                outer_rect=inner_rect,  # cut 区相对于 inner_rect
+                cut_corner=cut_corner,
+                cut_w_px=cut_w_px,
+                cut_h_px=cut_h_px,
+                dpi=design.dpi,
+                bg_color=design.hole_bg_color,
+            )
+        except Exception as _bc_e:
+            logger.debug(f"[LShapeBorder] 补全过程异常（静默跳过）: {_bc_e}")
+
     # ===== [SINGLE-HOLE Add-On 2026-08-31 V2] Stale-Decor Universal Residual Cleaner =====
     # （仅 rect_hole 单洞素材填充模式，零侵入 try/except 静默失败）
     #
