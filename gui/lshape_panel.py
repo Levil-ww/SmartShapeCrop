@@ -76,6 +76,8 @@ class LShapePanel(QWidget):
         # —— L 形挖角参数（确认后写入：corner/cut_w_cm/cut_h_cm/outer_w_cm/outer_h_cm）——
         self._lshape_params = None
         self._lshape_parse_worker = None  # type: _LShapeParseWorker | None
+        # —— 参数来源标记：None=未识别 / 'recognize'=识别值 / 'manual'=用户手动修改 ——
+        self._params_source = None
         # —— 防止 target_changed 信号在 PropertyPanel 回填时触发递归 ——
         self._block_target_signal = False
         # —— 持久化设置（与水池设计器/圆角裁剪工具共用同一份 QSettings，但 source 隔离）——
@@ -195,11 +197,16 @@ class LShapePanel(QWidget):
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
         self._inner_layout.addWidget(self._gb_l)
 
-        # ===== 5) 外框尺寸（可编辑，与水池设计器画布尺寸联动） =====
+        # ===== 5) 外框尺寸（画布值，与水池设计器画布尺寸联动） =====
+        # 语义：SpinBox 显示 = 画布值 = 设计外框 + 1cm 损耗
+        #   - 用户改 SpinBox 画布值（如 144.0）
+        #   → _on_param_changed 回写 dict['outer_w_cm'] = 144 - 1 = 143.0（设计真值）
+        #   → PropertyPanel 桥接层同步 _pool_raw_outer_w = 143，_sp_w = 144
+        # 与水池设计器 _sp_w/_sp_h（画布值）语义完全一致。
         self._gb_outer = QGroupBox("外框尺寸（cm）")
         fo = QVBoxLayout(self._gb_outer)
-        self._sp_outer_w = self._dspin(1, 500, 0.0)
-        self._sp_outer_h = self._dspin(1, 500, 0.0)
+        self._sp_outer_w = self._dspin(5, 500, 5.0)
+        self._sp_outer_h = self._dspin(5, 500, 5.0)
         fo.addLayout(self._row("宽(cm)", self._sp_outer_w))
         fo.addLayout(self._row("高(cm)", self._sp_outer_h))
         self._inner_layout.addWidget(self._gb_outer)
@@ -317,23 +324,43 @@ class LShapePanel(QWidget):
     # L 形参数变化 → 通知 PropertyPanel 触发预览
     # ====================================================================
     def _on_param_changed(self, *_):
-        """参数变化（挖角 + 外框）→ 更新 _lshape_params + 发信号给 PropertyPanel 触发预览。"""
-        outer_w = max(0.0, self._sp_outer_w.value())
-        outer_h = max(0.0, self._sp_outer_h.value())
+        """参数变化（挖角 + 外框画布）→ 更新 _lshape_params 设计真值 + 发信号触发预览。
+
+        语义转换：
+          - 外框 SpinBox 存画布值（= 设计外框 + 1cm 损耗）
+          - dict['outer_w_cm'] 存设计真值（SpinBox - 1cm）
+          - 挖角 SpinBox 存设计值，dict['cut_w_cm'] 直接取 SpinBox
+        """
+        _TRIM = 1.0
+        # 外框：SpinBox 画布值 → dict 设计值
+        canvas_outer_w = max(0.0, self._sp_outer_w.value())
+        canvas_outer_h = max(0.0, self._sp_outer_h.value())
+        design_outer_w = max(0.0, canvas_outer_w - _TRIM)
+        design_outer_h = max(0.0, canvas_outer_h - _TRIM)
         if self._lshape_params is None:
             self._lshape_params = {
                 'corner': self._cb_lcorner.currentData(),
                 'cut_w_cm': max(0.0, self._sp_lw.value()),
                 'cut_h_cm': max(0.0, self._sp_lh.value()),
-                'outer_w_cm': outer_w,
-                'outer_h_cm': outer_h,
+                'outer_w_cm': design_outer_w,
+                'outer_h_cm': design_outer_h,
             }
         else:
             self._lshape_params['corner'] = self._cb_lcorner.currentData()
             self._lshape_params['cut_w_cm'] = max(0.0, self._sp_lw.value())
             self._lshape_params['cut_h_cm'] = max(0.0, self._sp_lh.value())
-            self._lshape_params['outer_w_cm'] = outer_w
-            self._lshape_params['outer_h_cm'] = outer_h
+            self._lshape_params['outer_w_cm'] = design_outer_w
+            self._lshape_params['outer_h_cm'] = design_outer_h
+        # 标记为用户手动修改（回填识别值时 blockSignals 已保护不会触发这里）
+        self._params_source = 'manual'
+        # 状态提示：手动修改标注，与识别值区分
+        if self._lshape_params is not None and self._lshape_params.get('outer_w_cm', 0) > 0:
+            dp = self._lshape_params
+            self._set_status(
+                f"✏️ 参数已手动修改：corner={dp.get('corner', '?')}，"
+                f"挖角 {dp.get('cut_w_cm', 0):.1f} × {dp.get('cut_h_cm', 0):.1f} cm，"
+                f"外框 {dp.get('outer_w_cm', 0):.1f} × {dp.get('outer_h_cm', 0):.1f} cm。\n"
+                f"（点击「匹配模板 → 解析草图 → 生成预览」完成素材匹配与渲染）")
         self.lshape_params_changed.emit()
 
     # ====================================================================
@@ -432,22 +459,24 @@ class LShapePanel(QWidget):
                     self._cb_lcorner.setCurrentIndex(ci)
                 self._sp_lw.setValue(max(0.0, cut_w_cm))
                 self._sp_lh.setValue(max(0.0, cut_h_cm))
-                # 外框尺寸也回填到 SpinBox
+                # 外框尺寸回填到 SpinBox（设计值 + 1cm = 画布值）
+                _TRIM = 1.0
                 if result.outer_w_cm > 0:
-                    self._sp_outer_w.setValue(max(0.0, float(result.outer_w_cm)))
+                    self._sp_outer_w.setValue(max(0.0, float(result.outer_w_cm) + _TRIM))
                 if result.outer_h_cm > 0:
-                    self._sp_outer_h.setValue(max(0.0, float(result.outer_h_cm)))
+                    self._sp_outer_h.setValue(max(0.0, float(result.outer_h_cm) + _TRIM))
             finally:
                 self._cb_lcorner.blockSignals(False)
                 self._sp_lw.blockSignals(False)
                 self._sp_lh.blockSignals(False)
                 self._sp_outer_w.blockSignals(False)
                 self._sp_outer_h.blockSignals(False)
-            # 3) 发信号给 PropertyPanel
+            # 3) 标记为识别值 + 状态提示
+            self._params_source = 'recognize'
             self._set_status(
-                f"✅ L 形挖角已确认：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm，"
+                f"✅ L 形挖角已识别：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm，"
                 f"外框 {result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm。\n"
-                f"点击下方「匹配模板 → 解析草图 → 生成预览」完成素材匹配。")
+                f"（可手动修改挖角/外框参数后重新生成）")
             self.lshape_applied.emit(self._lshape_params)
         except Exception as e:
             logger.exception(f"[LShapePanel] _apply_lshape_params 异常: {e}")
@@ -473,13 +502,14 @@ class LShapePanel(QWidget):
         return self._lshape_params
 
     def clear_lshape_params(self):
-        """清除 L 形参数（草图被清除时调用）"""
+        """清除 L 形参数（草图被清除时调用）。"""
         self._lshape_params = None
+        # SpinBox 重置为最小画布值（5cm = 设计值 4cm + 1cm 损耗，clip 到 5cm）
         self._sp_outer_w.blockSignals(True)
         self._sp_outer_h.blockSignals(True)
         try:
-            self._sp_outer_w.setValue(0.0)
-            self._sp_outer_h.setValue(0.0)
+            self._sp_outer_w.setValue(5.0)
+            self._sp_outer_h.setValue(5.0)
         finally:
             self._sp_outer_w.blockSignals(False)
             self._sp_outer_h.blockSignals(False)
@@ -501,12 +531,18 @@ class LShapePanel(QWidget):
             self._sp_lh.blockSignals(False)
 
     def set_outer_dims(self, outer_w_cm: float, outer_h_cm: float):
-        """外部回填外框尺寸到 SpinBox（blockSignals 避免触发预览）。"""
+        """外部回填外框设计真值到 SpinBox（设计值 + 1cm = 画布值）。
+
+        供 PropertyPanel（Worker 回填 / 画布 SpinBox 同步）调用。
+        """
+        _TRIM = 1.0
+        canvas_w = max(5.0, max(0.0, float(outer_w_cm)) + _TRIM)
+        canvas_h = max(5.0, max(0.0, float(outer_h_cm)) + _TRIM)
         self._sp_outer_w.blockSignals(True)
         self._sp_outer_h.blockSignals(True)
         try:
-            self._sp_outer_w.setValue(max(0.0, float(outer_w_cm)))
-            self._sp_outer_h.setValue(max(0.0, float(outer_h_cm)))
+            self._sp_outer_w.setValue(canvas_w)
+            self._sp_outer_h.setValue(canvas_h)
         finally:
             self._sp_outer_w.blockSignals(False)
             self._sp_outer_h.blockSignals(False)
@@ -516,12 +552,12 @@ class LShapePanel(QWidget):
             self._lshape_params['outer_h_cm'] = max(0.0, float(outer_h_cm))
 
     def get_outer_w_cm(self) -> float:
-        """读取外框宽度（供外部 PropertyPanel 桥接时使用）"""
-        return self._sp_outer_w.value()
+        """读取设计外框宽度（SpinBox画布值 - 1cm损耗）"""
+        return max(0.0, self._sp_outer_w.value() - 1.0)
 
     def get_outer_h_cm(self) -> float:
-        """读取外框高度（供外部 PropertyPanel 桥接时使用）"""
-        return self._sp_outer_h.value()
+        """读取设计外框高度（SpinBox画布值 - 1cm损耗）"""
+        return max(0.0, self._sp_outer_h.value() - 1.0)
 
     def cancel_running_parse(self):
         """取消正在运行的 L 形解析"""

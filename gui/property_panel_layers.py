@@ -82,6 +82,7 @@ class _LayersMixin:
         # 语义与原直读控件完全一致。
         if self._lshape_panel is not None:
             d.l_corner = self._lshape_panel.get_corner()
+            # 挖角值直接取草图识别的成品真值，不做额外损耗补偿
             d.l_cut_w_cm = self._lshape_panel.get_cut_w_cm()
             d.l_cut_h_cm = self._lshape_panel.get_cut_h_cm()
         else:

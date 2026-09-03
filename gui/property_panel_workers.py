@@ -254,11 +254,9 @@ class PoolRenderWorker(QThread):
                     design.canvas_h_cm = canvas_h_cm + TRIM_CM
                 design.mode = 'rect_lshape'
                 design.l_corner = lp.get('corner', 'tr')
-                # [2026-09-02 损耗补偿] 画布已 +TRIM_CM(1cm) 作为裁剪余料，
-                # cut 矩形的外边缘需延伸到画布余料区，保证成品挖角尺寸与草图一致。
-                # 补偿后：成品保留段 = 画布 - cut = (outer+1) - (cut_sketch+1) = outer - cut_sketch ✓
-                design.l_cut_w_cm = max(0.0, float(lp.get('cut_w_cm', 0)) + TRIM_CM)
-                design.l_cut_h_cm = max(0.0, float(lp.get('cut_h_cm', 0)) + TRIM_CM)
+                # 挖角值直接用草图识别的成品真值，不做额外损耗补偿
+                design.l_cut_w_cm = max(0.0, float(lp.get('cut_w_cm', 0)))
+                design.l_cut_h_cm = max(0.0, float(lp.get('cut_h_cm', 0)))
                 design.inner_margin_top_cm = 0.0
                 design.inner_margin_bottom_cm = 0.0
                 design.inner_margin_left_cm = 0.0
