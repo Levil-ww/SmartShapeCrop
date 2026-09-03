@@ -31,8 +31,6 @@ from PyQt5.QtWidgets import (
 from core.app_settings import get_app_settings
 from .property_panel_widgets import _SketchDropLabel
 from .property_panel_workers import _LShapeParseWorker
-from .property_panel_dialogs import _LShapeConfirmDialog
-
 logger = logging.getLogger(__name__)
 
 
@@ -493,25 +491,47 @@ class LShapePanel(QWidget):
             self._btn_lshape.setText("✂️ 识别L形挖角")
 
     def _on_lshape_parsed(self, result):
-        """L 形解析完成：成功 → 弹确认框；非 L 形 → 提示并保留矩形结果。"""
+        """L 形解析完成：
+        - 成功 → 无弹窗，直接把（corner/w/h/外框）写进面板 SpinBox + 状态栏内联摘要 +
+          发出 lshape_applied 切到 rect_lshape 模式并触发预览（等价于旧「确认并生成」）。
+        - 非 L 形 / 参数无效 / 异常 → 提示并 emit(False)，保证 PropertyPanel 清 auto-pending 标记。
+
+        [2026-09-03 UI 简化] 原流程：Worker→QDialog.exec_()→用户点确认→_apply_lshape_params
+                      新流程：Worker→验证→_apply_lshape_params，参数改由面板 SpinBox 就地编辑。
+        """
         try:
+            # S4 invariant: stale result（用户重新识别导致旧 Worker signal 到达）直接丢弃
+            # 不 emit finished，因为新 Worker 会在正确时间 emit。
             if self.sender() is not self._lshape_parse_worker:
                 logger.info("[LShapePanel] 忽略已过期的 L 形解析结果")
                 return
+            # S1 invariant 分支 1：解析层报告 success=False
             if not result.success:
                 self._set_status(
                     f"ℹ️ L 形识别未成功（已按矩形解析处理）：{result.message}", is_error=False)
                 self.lshape_recognize_finished.emit(False)
                 return
-            dlg = _LShapeConfirmDialog(result, self)
-            if dlg.exec_():
-                corner, cut_w_cm, cut_h_cm = dlg.values()
-                self._apply_lshape_params(corner, cut_w_cm, cut_h_cm, result)
-                self.lshape_recognize_finished.emit(True)
-            else:
+
+            # 提取参数（与旧 _LShapeConfirmDialog.__init__ 取值策略一致，fallback 安全值）
+            corner_raw = (result.corner or 'tl')
+            cut_w_cm = max(0.0, float(result.cut_w_cm or 0))
+            cut_h_cm = max(0.0, float(result.cut_h_cm or 0))
+
+            # S3 invariant：与旧 dialog _on_accept 校验同条件 —— 尺寸必须>0 且 corner 合法
+            VALID_CORNERS = {'tl', 'tr', 'bl', 'br'}
+            if (cut_w_cm <= 0 or cut_h_cm <= 0
+                    or corner_raw not in VALID_CORNERS):
                 self._set_status(
-                    "已取消 L 形挖角（保留矩形解析结果，可点「识别L形挖角」重新识别）")
+                    f"ℹ️ L 形识别结果无效（corner={corner_raw!r}，挖角 {cut_w_cm:.1f}×{cut_h_cm:.1f} cm），"
+                    f"已按矩形解析处理", is_error=False)
                 self.lshape_recognize_finished.emit(False)
+                return
+
+            # 成功分支：直接应用（效果 = 用户在旧弹窗点了「确认并生成」）
+            # _apply_lshape_params 内部会：填 SpinBox、写 _lshape_params、
+            # 状态栏内联摘要、emit lshape_applied → PropertyPanel 切模式 + 同步尺寸 + 预览。
+            self._apply_lshape_params(corner_raw, cut_w_cm, cut_h_cm, result)
+            self.lshape_recognize_finished.emit(True)
         except Exception as e:
             logger.exception(f"[LShapePanel] _on_lshape_parsed 异常: {e}")
             self._set_status(f"L 形识别回调异常：{e}", is_error=True)
@@ -524,7 +544,14 @@ class LShapePanel(QWidget):
         self.lshape_recognize_finished.emit(False)
 
     def _apply_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float, result):
-        """用户确认 L 形挖角：保存参数 → 回填 UI（含外框 SpinBox）→ 发信号给 PropertyPanel。"""
+        """L 形挖角参数应用：保存参数 → 回填 UI（含外框 SpinBox）→ 状态栏内联摘要
+        → 发出 lshape_applied 信号给 PropertyPanel（切换到 rect_lshape 模式 + 同步画布 + 预览）。
+
+        [2026-09-03 UI 简化] 调用方不再是旧 QDialog 的「确认并生成」按钮，而是：
+          - Worker 成功直接 auto-apply（_on_lshape_parsed）
+          - 未来其他程序化回填路径
+        因此参数来源使用统一的 `_params_source='recognize'` 标记。
+        """
         self._lshape_params = {
             'corner': corner,
             'cut_w_cm': max(0.0, cut_w_cm),
@@ -532,6 +559,10 @@ class LShapePanel(QWidget):
             'outer_w_cm': max(0.0, float(result.outer_w_cm or 0)),
             'outer_h_cm': max(0.0, float(result.outer_h_cm or 0)),
         }
+        # corner code → 中文显示名（与 _cb_lcorner addItem 顺序一致，defensive 兜底未知）
+        _corner_label = {
+            'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角',
+        }.get(corner, corner or '未知')
         try:
             # 1) L 形参数组回填（blockSignals 避免触发预览）
             self._cb_lcorner.blockSignals(True)
@@ -557,12 +588,21 @@ class LShapePanel(QWidget):
                 self._sp_lh.blockSignals(False)
                 self._sp_outer_w.blockSignals(False)
                 self._sp_outer_h.blockSignals(False)
-            # 3) 标记为识别值 + 状态提示
+            # 3) 标记为识别值 + 状态栏内联摘要（信息密度 ≥ 旧弹窗蓝色摘要块）
             self._params_source = 'recognize'
-            self._set_status(
-                f"✅ L 形挖角已识别：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm，"
-                f"外框 {result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm。\n"
-                f"（可手动修改挖角/外框参数后重新生成）")
+            lines = [
+                f"✅ 已识别到 L 形挖角草图：位置={_corner_label}（{corner}），"
+                f"挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm，"
+                f"外框 {result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm"
+            ]
+            _sc = float(getattr(result, 'self_consistency', 0) or 0)
+            if _sc > 0:
+                lines.append(f"　结构自洽度：{_sc * 100:.0f}%")
+            _msg = str(getattr(result, 'message', '') or '').strip()
+            if _msg:
+                lines.append(f"　{_msg}")
+            lines.append("（可直接修改下方「挖角参数 / 外框尺寸」，改动后自动触发软重绘预览；或点「生成预览」全量刷新）")
+            self._set_status("\n".join(lines))
             self.lshape_applied.emit(self._lshape_params)
         except Exception as e:
             logger.exception(f"[LShapePanel] _apply_lshape_params 异常: {e}")
