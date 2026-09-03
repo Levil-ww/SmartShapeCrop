@@ -131,6 +131,19 @@ class LShapePanel(QWidget):
         row_fn.addWidget(self._btn_target_history, 0)
         self._inner_layout.addWidget(self._gb_target)
 
+        # ===== 1.5) 输出文件名（默认跟随目标文件名，用于导出 JPG）=====
+        row_out = QHBoxLayout()
+        row_out.addWidget(QLabel("输出文件名:"), 0)
+        self._output_name = QLineEdit()
+        self._output_name.setPlaceholderText(
+            "导出 JPG 时使用的文件名（不含扩展名），默认跟随上方【目标文件】")
+        row_out.addWidget(self._output_name, 1)
+        btn_sync = QPushButton("同步目标名")
+        btn_sync.setFixedWidth(80)
+        btn_sync.clicked.connect(self._btn_sync_output_clicked)
+        row_out.addWidget(btn_sync, 0)
+        self._inner_layout.addLayout(row_out)
+
         # ===== 2) 尺寸草图上传 + 缩略预览 =====
         self._gb_sketch = QGroupBox("🖼 尺寸草图")
         row_sk = QHBoxLayout(self._gb_sketch)
@@ -284,13 +297,12 @@ class LShapePanel(QWidget):
     # 目标文件名处理
     # ====================================================================
     def _on_target_text_changed(self, text: str):
-        """用户修改目标文件名 → 去抖后发信号给 PropertyPanel。
-
-        block_target_signal 保护 PropertyPanel 回填时不触发递归。
-        """
+        """用户修改目标文件名 → 1) 去抖后发信号给 PropertyPanel；2) 自动同步输出文件名"""
         if self._block_target_signal:
             return
         self.target_changed.emit(text)
+        # 自动同步到输出文件名（与水池设计器行为一致：目标名变 → 输出名跟随）
+        self._sync_output_from_target()
 
     def sync_target_from_panel(self, name: str):
         """PropertyPanel 回填目标文件名（双向同步：水池设计器 → L形挖角设计）。
@@ -301,12 +313,51 @@ class LShapePanel(QWidget):
         try:
             if self._target_edit.text() != name:
                 self._target_edit.setText(name)
+            # 同时把输出文件名同步过去
+            self._sync_output_from_target()
         finally:
             self._block_target_signal = False
 
     def get_target_text(self) -> str:
         """读取当前目标文件名（供 PropertyPanel 读取回填前的值）。"""
         return self._target_edit.text().strip()
+
+    # —— 输出文件名：用于导出 JPG 的文件名，默认与目标文件名同步 ——
+    def _sync_output_from_target(self):
+        """把目标文件名（去掉扩展名 + 路径）同步到输出文件名框"""
+        t = self._target_edit.text().strip()
+        if not t:
+            return
+        base, ext = os.path.splitext(t)
+        if ext.lower() in {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.psd', '.psb', '.webp'}:
+            t = base
+        t = os.path.basename(t)
+        if t and t != self._output_name.text():
+            self._output_name.setText(t)
+
+    def _btn_sync_output_clicked(self):
+        """用户主动点击"同步目标名"按钮"""
+        self._sync_output_from_target()
+
+    def get_output_filename(self) -> str:
+        """返回本面板用于导出 JPG 的建议文件名（不含扩展名）。
+        优先取"输出文件名"框；若为空则回退到目标文件名（与 get_target_text 同处理）；
+        再空则返回空字符串，由调用方兜底。
+        """
+        out_s = self._output_name.text().strip()
+        if out_s:
+            base, ext = os.path.splitext(out_s)
+            if ext.lower() in {'.jpg', '.jpeg', '.png'}:
+                return base
+            return out_s
+        t = self._target_edit.text().strip()
+        if t:
+            base, ext = os.path.splitext(t)
+            if ext.lower() in {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.psd', '.psb', '.webp'}:
+                t = base
+            t = os.path.basename(t)
+            return t
+        return ""
 
     def set_generate_enabled(self, enabled: bool, text: str | None = None):
         """启用/禁用一键生成按钮 + 可选改文字（供 PropertyPanel 在运行时调用）。"""

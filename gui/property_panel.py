@@ -44,8 +44,21 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     pool_generate_succeeded = pyqtSignal()  # 水池模式生成成功后发出（供 LShapePanel 记录自己的历史）
 
     def get_output_filename(self) -> str:
-        """返回用于导出 JPG 的建议文件名（不含扩展名），水池模式优先用输出文件名框"""
-        # 水池模式输出文件名
+        """返回用于导出 JPG 的建议文件名（不含扩展名）。
+
+        [2026-09-03 LShapePanel 输出文件名联动]：
+        优先使用当前激活面板（水池设计器 / L形挖角设计）的输出文件名；
+        其次回退到本面板 _pool_output_name；
+        最后按尺寸兜底命名。
+        """
+        # 1) 尝试读 LShapePanel 的输出文件名（若 L形面板 当前是用户操作来源）
+        lp = getattr(self, '_lshape_panel', None)
+        if lp is not None:
+            s = lp.get_output_filename()
+            if s:
+                return s
+
+        # 2) 水池模式输出文件名
         pool_name = getattr(self, '_pool_output_name', None)
         if pool_name is not None:
             s = pool_name.text().strip()
