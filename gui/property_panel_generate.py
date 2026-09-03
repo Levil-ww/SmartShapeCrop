@@ -181,6 +181,10 @@ class _GenerateMixin:
             if design.mode == 'rect_lshape' and self._lshape_panel is not None:
                 self._lshape_panel.set_lshape_params(
                     design.l_corner, design.l_cut_w_cm, design.l_cut_h_cm)
+                # 外框 SpinBox 也需要回填（画布 = 外框 + 1cm 损耗 → 外框 = 画布 - 1cm）
+                self._lshape_panel.set_outer_dims(
+                    max(0.0, design.canvas_w_cm - 1.0),
+                    max(0.0, design.canvas_h_cm - 1.0))
             self._sp_outer_margin.setValue(max(0, design.outer_margin_cm))
             # [Fix 2026-09-02] blockSignals 保护：避免 Worker 回填 4 次 setValue 触发
             #   4 次冗余的 valueChanged → _apply_quiet 渲染。Worker 完成后最终会调

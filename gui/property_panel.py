@@ -376,10 +376,27 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             panel.sync_target_from_panel(self._pool_target.text())
 
     def _on_lshape_params_changed(self, *_):
-        """用户改动挖角参数（位置/宽/高）→ 触发即时预览。
+        """用户改动 L 形参数（挖角或外框尺寸）→ 同步外框到画布 SpinBox + 触发即时预览。
 
-        与原 _apply_quiet 链路一致：_collect 读取 LShapePanel 控件值 → design_changed。
+        外框尺寸（outer_w/outer_h）是 L 形画布的驱动值：画布 = 外框 + 1cm 损耗。
+        当用户在 LShapePanel 手动修改外框 SpinBox 时，需要同步到水池设计器的
+        _sp_w/_sp_h（+1cm）和 _pool_raw_outer_w/_pool_raw_outer_h（原值，供换算）。
         """
+        if self._lshape_panel is None:
+            self._apply_quiet()
+            return
+        outer_w = self._lshape_panel.get_outer_w_cm()
+        outer_h = self._lshape_panel.get_outer_h_cm()
+        # 外框 SpinBox 有有效值时才同步画布（避免初始化 0.0 把画布冲掉）
+        if outer_w > 0 and outer_h > 0:
+            self._pool_raw_outer_w = outer_w
+            self._pool_raw_outer_h = outer_h
+            gui_w = max(5.0, min(500.0, outer_w + 1.0))
+            gui_h = max(5.0, min(500.0, outer_h + 1.0))
+            if abs(self._sp_w.value() - gui_w) > 0.01:
+                self._sp_w.setValue(gui_w)
+            if abs(self._sp_h.value() - gui_h) > 0.01:
+                self._sp_h.setValue(gui_h)
         self._apply_quiet()
 
     def _on_lshape_applied(self, params: dict):

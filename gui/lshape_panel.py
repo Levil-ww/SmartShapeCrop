@@ -195,13 +195,14 @@ class LShapePanel(QWidget):
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
         self._inner_layout.addWidget(self._gb_l)
 
-        # ===== 5) 外框尺寸只读展示 =====
-        self._gb_outer_info = QGroupBox("外框尺寸（识别结果，只读）")
-        fo = QVBoxLayout(self._gb_outer_info)
-        self._lbl_outer = QLabel("（尚未识别）")
-        self._lbl_outer.setStyleSheet("font-weight:bold;font-size:14px;color:#555;")
-        fo.addWidget(self._lbl_outer)
-        self._inner_layout.addWidget(self._gb_outer_info)
+        # ===== 5) 外框尺寸（可编辑，与水池设计器画布尺寸联动） =====
+        self._gb_outer = QGroupBox("外框尺寸（cm）")
+        fo = QVBoxLayout(self._gb_outer)
+        self._sp_outer_w = self._dspin(1, 500, 0.0)
+        self._sp_outer_h = self._dspin(1, 500, 0.0)
+        fo.addLayout(self._row("宽(cm)", self._sp_outer_w))
+        fo.addLayout(self._row("高(cm)", self._sp_outer_h))
+        self._inner_layout.addWidget(self._gb_outer)
 
         # ===== 6) 一键生成预览 =====
         self._btn_generate = QPushButton("🔍 匹配模板 → 解析草图 → 生成预览")
@@ -219,6 +220,9 @@ class LShapePanel(QWidget):
         self._cb_lcorner.currentIndexChanged.connect(self._on_param_changed)
         self._sp_lw.valueChanged.connect(self._on_param_changed)
         self._sp_lh.valueChanged.connect(self._on_param_changed)
+        # 外框尺寸变化也触发即时预览（与水池设计器画布尺寸联动）
+        self._sp_outer_w.valueChanged.connect(self._on_param_changed)
+        self._sp_outer_h.valueChanged.connect(self._on_param_changed)
 
     def _dspin(self, mn, mx, val, decimals=2):
         s = QDoubleSpinBox()
@@ -313,19 +317,23 @@ class LShapePanel(QWidget):
     # L 形参数变化 → 通知 PropertyPanel 触发预览
     # ====================================================================
     def _on_param_changed(self, *_):
-        """挖角参数变化 → 更新 _lshape_params + 发信号给 PropertyPanel 触发预览。"""
+        """参数变化（挖角 + 外框）→ 更新 _lshape_params + 发信号给 PropertyPanel 触发预览。"""
+        outer_w = max(0.0, self._sp_outer_w.value())
+        outer_h = max(0.0, self._sp_outer_h.value())
         if self._lshape_params is None:
             self._lshape_params = {
                 'corner': self._cb_lcorner.currentData(),
                 'cut_w_cm': max(0.0, self._sp_lw.value()),
                 'cut_h_cm': max(0.0, self._sp_lh.value()),
-                'outer_w_cm': 0.0,
-                'outer_h_cm': 0.0,
+                'outer_w_cm': outer_w,
+                'outer_h_cm': outer_h,
             }
         else:
             self._lshape_params['corner'] = self._cb_lcorner.currentData()
             self._lshape_params['cut_w_cm'] = max(0.0, self._sp_lw.value())
             self._lshape_params['cut_h_cm'] = max(0.0, self._sp_lh.value())
+            self._lshape_params['outer_w_cm'] = outer_w
+            self._lshape_params['outer_h_cm'] = outer_h
         self.lshape_params_changed.emit()
 
     # ====================================================================
@@ -403,7 +411,7 @@ class LShapePanel(QWidget):
         self.lshape_recognize_finished.emit(False)
 
     def _apply_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float, result):
-        """用户确认 L 形挖角：保存参数 → 回填 UI → 发信号给 PropertyPanel。"""
+        """用户确认 L 形挖角：保存参数 → 回填 UI（含外框 SpinBox）→ 发信号给 PropertyPanel。"""
         self._lshape_params = {
             'corner': corner,
             'cut_w_cm': max(0.0, cut_w_cm),
@@ -416,21 +424,25 @@ class LShapePanel(QWidget):
             self._cb_lcorner.blockSignals(True)
             self._sp_lw.blockSignals(True)
             self._sp_lh.blockSignals(True)
+            self._sp_outer_w.blockSignals(True)
+            self._sp_outer_h.blockSignals(True)
             try:
                 ci = self._cb_lcorner.findData(corner)
                 if ci >= 0:
                     self._cb_lcorner.setCurrentIndex(ci)
                 self._sp_lw.setValue(max(0.0, cut_w_cm))
                 self._sp_lh.setValue(max(0.0, cut_h_cm))
+                # 外框尺寸也回填到 SpinBox
+                if result.outer_w_cm > 0:
+                    self._sp_outer_w.setValue(max(0.0, float(result.outer_w_cm)))
+                if result.outer_h_cm > 0:
+                    self._sp_outer_h.setValue(max(0.0, float(result.outer_h_cm)))
             finally:
                 self._cb_lcorner.blockSignals(False)
                 self._sp_lw.blockSignals(False)
                 self._sp_lh.blockSignals(False)
-            # 2) 外框尺寸只读展示
-            if result.outer_w_cm > 0 and result.outer_h_cm > 0:
-                self._lbl_outer.setText(
-                    f"{float(result.outer_w_cm):.1f} × {float(result.outer_h_cm):.1f} cm")
-                self._lbl_outer.setStyleSheet("font-weight:bold;font-size:14px;color:#388E3C;")
+                self._sp_outer_w.blockSignals(False)
+                self._sp_outer_h.blockSignals(False)
             # 3) 发信号给 PropertyPanel
             self._set_status(
                 f"✅ L 形挖角已确认：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm，"
@@ -463,8 +475,14 @@ class LShapePanel(QWidget):
     def clear_lshape_params(self):
         """清除 L 形参数（草图被清除时调用）"""
         self._lshape_params = None
-        self._lbl_outer.setText("（尚未识别）")
-        self._lbl_outer.setStyleSheet("font-weight:bold;font-size:14px;color:#555;")
+        self._sp_outer_w.blockSignals(True)
+        self._sp_outer_h.blockSignals(True)
+        try:
+            self._sp_outer_w.setValue(0.0)
+            self._sp_outer_h.setValue(0.0)
+        finally:
+            self._sp_outer_w.blockSignals(False)
+            self._sp_outer_h.blockSignals(False)
 
     def set_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
         """外部回填 L 形参数（blockSignals 避免触发预览）。"""
@@ -481,6 +499,29 @@ class LShapePanel(QWidget):
             self._cb_lcorner.blockSignals(False)
             self._sp_lw.blockSignals(False)
             self._sp_lh.blockSignals(False)
+
+    def set_outer_dims(self, outer_w_cm: float, outer_h_cm: float):
+        """外部回填外框尺寸到 SpinBox（blockSignals 避免触发预览）。"""
+        self._sp_outer_w.blockSignals(True)
+        self._sp_outer_h.blockSignals(True)
+        try:
+            self._sp_outer_w.setValue(max(0.0, float(outer_w_cm)))
+            self._sp_outer_h.setValue(max(0.0, float(outer_h_cm)))
+        finally:
+            self._sp_outer_w.blockSignals(False)
+            self._sp_outer_h.blockSignals(False)
+        # 同步到 _lshape_params dict（如果存在）
+        if self._lshape_params is not None:
+            self._lshape_params['outer_w_cm'] = max(0.0, float(outer_w_cm))
+            self._lshape_params['outer_h_cm'] = max(0.0, float(outer_h_cm))
+
+    def get_outer_w_cm(self) -> float:
+        """读取外框宽度（供外部 PropertyPanel 桥接时使用）"""
+        return self._sp_outer_w.value()
+
+    def get_outer_h_cm(self) -> float:
+        """读取外框高度（供外部 PropertyPanel 桥接时使用）"""
+        return self._sp_outer_h.value()
 
     def cancel_running_parse(self):
         """取消正在运行的 L 形解析"""
