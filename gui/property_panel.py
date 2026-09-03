@@ -74,6 +74,9 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.design = CropDesign()
+        # ===== [2026-09-03 SpinBox 卡顿优化] 构建 _apply_quiet 防抖 QTimer =====
+        # 必须在 _build_ui（连接 SpinBox valueChanged → _schedule_apply_quiet）前调用
+        self._init_apply_debouncer()
         # —— 智能水池：共享的 TemplateMatcher（独立缓存，不影响圆角裁剪工具）——
         self._matcher = TemplateMatcher()
         self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
@@ -154,11 +157,14 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._sp_mr = self._dspin(0, 450, self.design.inner_margin_right_cm)
         # [Fix 2026-09-02] 边距 SpinBox 改值即时预览（纯 Canvas 重渲染，不跑 PoolWorker）
         # 之前用户改边距后必须手动点大按钮或底部小按钮，体验不佳且容易漏触发生效。
-        # valueChanged → _apply_quiet → _collect + design_changed → Canvas 重渲染。
-        self._sp_mt.valueChanged.connect(self._apply_quiet)
-        self._sp_mb.valueChanged.connect(self._apply_quiet)
-        self._sp_ml.valueChanged.connect(self._apply_quiet)
-        self._sp_mr.valueChanged.connect(self._apply_quiet)
+        # ===== [2026-09-03 SpinBox 卡顿优化] 内挖 4 边距 SpinBox 连续步进防抖 =====
+        # 原来 valueChanged → _apply_quiet：每次步进同步跑 LOD 渲染（主线程 ~100-500ms），
+        # 连点 5 次就卡死 2~3s。现在改为 _schedule_apply_quiet：
+        # 200ms 无新值才真渲染，连续修改被合并，主线程始终可响应。
+        self._sp_mt.valueChanged.connect(self._schedule_apply_quiet)
+        self._sp_mb.valueChanged.connect(self._schedule_apply_quiet)
+        self._sp_ml.valueChanged.connect(self._schedule_apply_quiet)
+        self._sp_mr.valueChanged.connect(self._schedule_apply_quiet)
         fi.addLayout(self._row("上", self._sp_mt))
         fi.addLayout(self._row("下", self._sp_mb))
         fi.addLayout(self._row("左", self._sp_ml))
@@ -434,14 +440,18 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         panel.set_sketch_path_for_view(getattr(self, '_sketch_path', ''))
 
     def _on_lshape_params_changed(self, *_):
-        """用户改动 L 形参数（挖角或外框尺寸）→ 同步外框到画布 SpinBox + 触发即时预览。
+        """用户改动 L 形参数（挖角或外框尺寸）→ 同步外框到画布 SpinBox + [防抖] 触发预览。
 
         外框尺寸（outer_w/outer_h）是 L 形画布的驱动值：画布 = 外框 + 1cm 损耗。
         当用户在 LShapePanel 手动修改外框 SpinBox 时，需要同步到水池设计器的
         _sp_w/_sp_h（+1cm）和 _pool_raw_outer_w/_pool_raw_outer_h（原值，供换算）。
+
+        [2026-09-03 卡顿优化] 值写入（raw 同步 + _sp_w/_sp_h setValue）立即执行
+        （不抖 UI 值显示），仅末尾的 _apply_quiet（LOD 渲染）走 200ms 防抖。
+        用户连续点 5 次步进 → 5 次即时值更新 + 1 次合并渲染，不再主线程阻塞。
         """
         if self._lshape_panel is None:
-            self._apply_quiet()
+            self._schedule_apply_quiet()
             return
         outer_w = self._lshape_panel.get_outer_w_cm()
         outer_h = self._lshape_panel.get_outer_h_cm()
@@ -455,7 +465,8 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 self._sp_w.setValue(gui_w)
             if abs(self._sp_h.value() - gui_h) > 0.01:
                 self._sp_h.setValue(gui_h)
-        self._apply_quiet()
+        # [防抖] 值写入立即完成，渲染延迟合并（L 形面板 5 个 SpinBox 高频步进）
+        self._schedule_apply_quiet()
 
     def _on_lshape_applied(self, params: dict):
         """用户在确认框中确认 L 形挖角 → 切换模式 + 更新画布 + 触发预览。
