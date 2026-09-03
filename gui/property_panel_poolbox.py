@@ -486,18 +486,25 @@ class _PoolBoxMixin:
             self._set_pool_status(f"已选择目标文件名：{os.path.basename(p)}")
 
 
-    def _pool_pick_sketch(self):
+    def _pool_pick_sketch(self, source: str = 'pool'):
         p, _ = QFileDialog.getOpenFileName(
             self, "选择尺寸草图",
             "", "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
         )
         if not p:
             return
-        self._pool_load_sketch_from_path(p)
+        self._pool_load_sketch_from_path(p, source=source)
 
 
-    def _pool_load_sketch_from_path(self, p: str):
+    def _pool_load_sketch_from_path(self, p: str, source: str = 'pool'):
         """通用：加载草图路径 → 保存 + [立即] 显示缩略图与主画布 → [后台] 启动草图解析回填边距。
+
+        参数:
+            source: 触发面板，'pool'=水池设计器，'lshape'=L形挖角设计面板。
+                - source='pool':  更新水池面板缩略图 + 跑矩形7步解析 + 同步到L形面板
+                - source='lshape': **不**更新水池面板缩略图、**不**跑矩形解析，
+                    只设内部 _sketch_path + 主画布显示 + 更新L形面板缩略图
+                    + 尝试L形自动识别。[Safety S3 + S4 不变式]
 
         关键：图片显示（QPixmap + 主画布 PIL）在主线程立即完成，不等待 OCR/几何检测；
         解析操作放到 _SketchParseWorker 后台线程，避免阻塞 Qt 重绘事件，保证"上传即显示"。
@@ -509,21 +516,28 @@ class _PoolBoxMixin:
             self._set_pool_status(f"草图上传被拒：{reason}")
             return
         self._sketch_path = p
-        # —— 1) 立即显示：侧栏缩略图 ——
-        pm = QPixmap(p)
-        if not pm.isNull():
-            self._pool_sk_preview.setPixmap(pm.scaled(
-                self._pool_sk_preview.size(),
-                Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            self._pool_sk_preview.setStyleSheet(
-                "QLabel { border: 1px solid #888; background:#fff; border-radius: 6px; }")
-            self._pool_sk_preview.set_has_image(True)
-        else:
-            self._pool_sk_preview.clear()
-            self._pool_sk_preview.setText("（预览失败）\n或拖入图片")
-            self._pool_sk_preview.set_has_image(False)
-        self._set_pool_status(f"已上传草图：{os.path.basename(p)}（正在识别尺寸…）")
-        # —— 2) 立即显示：主画布大图（避免小缩略图悬浮在侧栏）——
+
+        # —— 1) 立即显示：侧栏缩略图（来源相关：Safety S3 不变式）——
+        if source == 'pool':
+            # 水池设计器：更新自己的缩略图
+            pm = QPixmap(p)
+            if not pm.isNull():
+                self._pool_sk_preview.setPixmap(pm.scaled(
+                    self._pool_sk_preview.size(),
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self._pool_sk_preview.setStyleSheet(
+                    "QLabel { border: 1px solid #888; background:#fff; border-radius: 6px; }")
+                self._pool_sk_preview.set_has_image(True)
+            else:
+                self._pool_sk_preview.clear()
+                self._pool_sk_preview.setText("（预览失败）\n或拖入图片")
+                self._pool_sk_preview.set_has_image(False)
+            self._set_pool_status(f"已上传草图：{os.path.basename(p)}（正在识别尺寸…）")
+        else:  # source='lshape'：水池状态条给一个低调提示；不动缩略图
+            self._set_pool_status(
+                f"L 形面板已载入草图：{os.path.basename(p)}（水池设计器缩略图保持不变）")
+
+        # —— 2) 立即显示：主画布大图（共享画布，总是显示最新草图）——
         try:
             pil_img = Image.open(p)
             if pil_img.mode not in ('RGB', 'RGBA'):
@@ -532,15 +546,19 @@ class _PoolBoxMixin:
         except Exception as e:
             logger.warning(f"草图加载为 PIL Image 失败: {e}")
             self.sketch_loaded.emit(None)
-        # —— 3) 后台异步解析草图（若目标尺寸已知）——
-        # 矩形解析：上传即跑，快速回填 4 边距（现有行为）
-        self._pool_auto_parse_sketch()
+
+        # —— 3) 后台异步解析草图（来源相关：Safety S4 不变式）——
+        # 矩形解析：仅 pool 来源触发（避免 L 形草图被误识别为矩形，闪烁错误边距）
+        if source == 'pool':
+            self._pool_auto_parse_sketch()
+
         # ===== [L-Shape Panel Refactor 2026-09-02] L 形解析委托给 LShapePanel =====
         # 草图上传后自动做 L 形几何预检测（~0.1s，纯 OpenCV 轮廓操作），
         # 检测到 L 形则自动触发 L 形识别 Worker（多尺度 OCR），识别成功弹确认框。
         # 矩形 7 步法仍会跑，但 _lshape_auto_pending 标记会 suppress 其 UI 回填，
         # 避免 L 形识别完成前闪一下错误的矩形预览。
         if self._lshape_panel is not None:
+            # 更新 L 形面板自己的缩略图（始终，无论来源：pool→双面板都能看，lshape→仅自己能看）
             self._lshape_panel.sync_sketch_preview(p)
             self._lshape_panel.set_sketch_path_for_view(p)
             try:
@@ -843,25 +861,39 @@ class _PoolBoxMixin:
     # _on_lshape_applied / _on_lshape_recognize_started）保持原功能逻辑不变。
     # 此处保留接口注释，避免误删调用点。
 
-    def _pool_clear_sketch(self):
+    def _pool_clear_sketch(self, source: str = 'pool'):
+        # ===== [2026-09-03 状态隔离 Safety S3] 清除操作按来源区分 =====
+        # source='pool':  清除全部（水池缩略图 + 内部状态 + L 形面板同步清除）
+        # source='lshape':仅清除 L 形面板缩略图 + 参数，不动水池面板缩略图。
+        #   内部 _sketch_path 仍会清空：避免 L 形清除后再点生成，误用"已清除"的草图解析；
+        #   主画布也同步清除 overlay（共享渲染层，L 形用户明确意图=去掉草图）。
         self._sketch_path = ""
         self._sketch_parse_result = None
-        # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数清理由 LShapePanel 承载 =====
-        # 原 self._lshape_params = None + 取消 _lshape_parse_worker 已迁移到
-        # LShapePanel.clear_lshape_params() + cancel_running_parse()。
-        if self._lshape_panel is not None:
-            self._lshape_panel.clear_lshape_params()
-            self._lshape_panel.cancel_running_parse()
-            self._lshape_panel.sync_sketch_preview("")
-        self._pool_sk_preview.clear()
-        # 恢复默认的拖拽提示样式和文字
-        self._pool_sk_preview.setText("（未上传）\n或拖入图片")
-        self._pool_sk_preview.setStyleSheet(
-            "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
-            " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
-        self._pool_sk_preview.set_has_image(False)
-        self._set_pool_status("草图已清除，将按默认 10% 短边距推断")
-        # 通知主画布清除草图显示
+
+        if source == 'pool':
+            # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数清理由 LShapePanel 承载 =====
+            # 原 self._lshape_params = None + 取消 _lshape_parse_worker 已迁移到
+            # LShapePanel.clear_lshape_params() + cancel_running_parse()。
+            if self._lshape_panel is not None:
+                self._lshape_panel.clear_lshape_params()
+                self._lshape_panel.cancel_running_parse()
+                self._lshape_panel.sync_sketch_preview("")
+            # 水池面板缩略图：清除 + 恢复拖拽提示样式
+            self._pool_sk_preview.clear()
+            self._pool_sk_preview.setText("（未上传）\n或拖入图片")
+            self._pool_sk_preview.setStyleSheet(
+                "QLabel { border: 2px dashed #4A90E2; color: #4A90E2; background:#EFF6FF;"
+                " qproperty-alignment: AlignCenter; border-radius: 6px; font-size: 11px; }")
+            self._pool_sk_preview.set_has_image(False)
+            self._set_pool_status("草图已清除，将按默认 10% 短边距推断")
+        else:  # source='lshape'
+            if self._lshape_panel is not None:
+                self._lshape_panel.clear_lshape_params()
+                self._lshape_panel.cancel_running_parse()
+                self._lshape_panel.sync_sketch_preview("")
+            self._set_pool_status("L 形面板草图已清除（水池设计器缩略图保持不变）")
+
+        # 通知主画布清除草图显示（共享层，来源无关：用户想"清除草图"就是要隐藏）
         self.sketch_loaded.emit(None)
 
 

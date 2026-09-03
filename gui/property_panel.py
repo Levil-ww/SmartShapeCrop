@@ -380,10 +380,15 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         panel.lshape_recognize_finished.connect(self._on_lshape_recognize_finished)
 
         # —— 新增：草图上传/清除/查看/拖入（LShapePanel → PropertyPanel，委托同一套方法）——
-        panel.sketch_pick_requested.connect(self._pool_pick_sketch)
-        panel.sketch_clear_requested.connect(self._pool_clear_sketch)
+        # [2026-09-03 状态隔离 Safety S3/S4] 所有 L 形面板来源的草图操作都传 source='lshape'，
+        # 让 PropertyPanel 内部跳过水池缩略图更新、跳过矩形 7 步解析，仅做：
+        #   内部 _sketch_path 设置、主画布 overlay、L 形面板缩略图更新、L 形自动识别。
+        # 注意：sketch_view_requested 无需 source，因为读的是最新 _sketch_path（两边共享
+        # 最新值即可，不会改变 UI 状态）。
+        panel.sketch_pick_requested.connect(lambda: self._pool_pick_sketch(source='lshape'))
+        panel.sketch_clear_requested.connect(lambda: self._pool_clear_sketch(source='lshape'))
         panel.sketch_view_requested.connect(self._pool_view_sketch)
-        panel.sketch_load_requested.connect(self._pool_load_sketch_from_path)
+        panel.sketch_load_requested.connect(lambda p: self._pool_load_sketch_from_path(p, source='lshape'))
 
         # —— 目标文件名变更/选文件/清空（LShapePanel → 仅改 LShape 自己的 LineEdit）——
         # [2026-09-03 状态隔离] 每个面板的 LineEdit 独立持有自己的 target 文本。

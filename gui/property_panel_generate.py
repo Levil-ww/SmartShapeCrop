@@ -107,6 +107,10 @@ class _GenerateMixin:
         # 单洞场景（GroupBox 隐藏，active_count==0）→ 返回 None → Worker 零影响。
         user_multihole_params = self._detect_multihole_edits()
 
+        # ===== [2026-09-03 状态隔离 Safety 2] 记录来源面板，供回调 _on_pool_finished_ok
+        # 判断历史记录写入哪个 TARGET_SRC_* 键。必须在 worker.start() 前写，
+        # 因为 Worker 在子线程发射 finished_ok 信号（排队到主线程），写/读都在主线程无竞争。
+        self._last_generate_source = source
         # 启动 Worker
         self._pool_btn_generate.setEnabled(False)
         self._pool_btn_generate.setText("处理中…请稍候")
@@ -397,9 +401,12 @@ class _GenerateMixin:
             # source='pool'  → 仅调 _pool_record_target_name_history（读 _pool_target，写 TARGET_SRC_POOL）
             # source='lshape' → 仅调 LShapePanel._record_target_name_history（读自己的 LineEdit，写 TARGET_SRC_LSHAPE）
             # 两边都从各自的 LineEdit 读值，所以即使两个面板 target 文本不同也互不串台。
-            if source == 'pool':
+            # 【关键】从 _last_generate_source 读取，而不是参数：Worker.finished_ok 只发 3 个参数，
+            # 没有把 source 带过来；默认值 'pool' 保证旧代码路径（无 source 标记的调用）不会崩。
+            _src = getattr(self, '_last_generate_source', 'pool')
+            if _src == 'pool':
                 self._pool_record_target_name_history()
-            elif source == 'lshape' and self._lshape_panel is not None:
+            elif _src == 'lshape' and self._lshape_panel is not None:
                 self._lshape_panel._record_target_name_history()
 
             # 保留信号（不再用于历史记录；未来可挂接状态灯/埋点等副作用）
