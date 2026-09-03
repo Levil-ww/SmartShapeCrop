@@ -113,7 +113,7 @@ class _GenerateMixin:
             self._pool_btn_generate.setEnabled(True),
             self._pool_btn_generate.setText("🔍 匹配模板 → 解析草图 → 生成预览"),
             # ===== [L-Shape Panel Refactor] 恢复 LShapePanel 一键生成按钮 =====
-            self._lshape_panel.set_generate_enabled(True, "🔍 匹配模板 → 解析草图 → 生成预览") if self._lshape_panel is not None else None,
+            self._lshape_panel.set_generate_enabled(True, "🔍 生成预览") if self._lshape_panel is not None else None,
         ))
         self._pool_worker = worker
         worker.start()

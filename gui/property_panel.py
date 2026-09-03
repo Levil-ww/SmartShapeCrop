@@ -295,12 +295,23 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         gb_psd.hide()  # 显式隐藏，避免父widget样式导致边框/文字残留
         # self._inner_layout.addWidget(gb_psd)  # PSD素材导入 - 智能匹配后不再需要
 
-        # 10) 底部按钮
+        # 10) 底部按钮（与 L 形挖角设计器底部按钮布局/样式保持一致：蓝 生成预览 + 绿 导出 JPG）
         row_btns = QHBoxLayout()
-        self._btn_apply = QPushButton("生成预览")
-        self._btn_apply.setStyleSheet("padding:8px 12px; font-weight:bold;")
-        self._btn_save = QPushButton("导出 JPG")
-        self._btn_save.setStyleSheet("padding:8px 12px;")
+        row_btns.setSpacing(8)
+        self._btn_apply = QPushButton("🔍 生成预览")
+        self._btn_apply.setToolTip("按当前参数生成画布预览")
+        self._btn_apply.setStyleSheet(
+            "QPushButton { padding: 10px 12px; font-weight: bold; font-size: 14px;"
+            " background: #4A90E2; color: white; border: none; border-radius: 5px; }"
+            "QPushButton:hover { background: #357ABD; }"
+            "QPushButton:disabled { background: #A0BFE0; color: #eee; }")
+        self._btn_save = QPushButton("💾 导出 JPG")
+        self._btn_save.setToolTip("把当前画布设计渲染为全分辨率 JPG 并保存到本地文件")
+        self._btn_save.setStyleSheet(
+            "QPushButton { padding: 10px 12px; font-weight: bold; font-size: 14px;"
+            " background: #27AE60; color: white; border: none; border-radius: 5px; }"
+            "QPushButton:hover { background: #1F8B4C; }"
+            "QPushButton:disabled { background: #A8D8B9; color: #eee; }")
         row_btns.addWidget(self._btn_apply, 1); row_btns.addWidget(self._btn_save, 1)
         root.addLayout(row_btns)
 
@@ -365,6 +376,11 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
 
         # —— 新增：一键生成（LShapePanel → PropertyPanel，委托同一套方法）——
         panel.generate_requested.connect(self._pool_run_generate)
+
+        # —— 新增：导出 JPG（LShapePanel → PropertyPanel，委托同一套保存流程）——
+        # LShapePanel.save_requested 转发到 PropertyPanel.save_requested，
+        # 后者在 main.py 中已连接到 MainWindow._on_save，保证两个面板导出逻辑完全一致。
+        panel.save_requested.connect(self.save_requested.emit)
 
         # —— 反向同步：生成成功后通知 LShapePanel 记录自己的历史 ——
         self.pool_generate_succeeded.connect(panel._record_target_name_history)

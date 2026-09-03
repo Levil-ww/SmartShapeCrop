@@ -49,6 +49,7 @@ class LShapePanel(QWidget):
         target_clear_requested()   —— 用户点"清空"按钮
         target_history_pick(str)    —— 用户从历史菜单选中一条记录
         generate_requested()        —— 用户点"匹配模板 → 解析草图 → 生成预览"
+        save_requested()             —— 用户点"导出 JPG"（委托 PropertyPanel.save_requested → main._on_save）
         lshape_params_changed()     —— 用户改动挖角参数（替代原 _apply_quiet）
         lshape_applied(dict)        —— 用户确认 L 形挖角 → 切换模式 + 更新画布 + 预览
         lshape_recognize_started()  —— 用户点"识别 L 形挖角" → 启动后台解析
@@ -63,6 +64,7 @@ class LShapePanel(QWidget):
     target_pick_requested = pyqtSignal()
     target_clear_requested = pyqtSignal()
     generate_requested = pyqtSignal()
+    save_requested = pyqtSignal()          # 用户点"导出 JPG" → 委托 PropertyPanel → main._on_save
     # —— L 形挖角原有信号 ——
     lshape_params_changed = pyqtSignal()
     lshape_applied = pyqtSignal(dict)
@@ -183,8 +185,10 @@ class LShapePanel(QWidget):
         self._inner_layout.addWidget(self._gb_lshape_recog)
 
         # ===== 4) L 形参数 GroupBox =====
-        self._gb_l = QGroupBox("L形挖角参数")
+        self._gb_l = QGroupBox("📐 L 形挖角参数")
+        self._gb_l.setStyleSheet(self._param_group_style("#5B6CFF"))
         fl = QVBoxLayout(self._gb_l)
+        fl.setSpacing(6)
         self._cb_lcorner = QComboBox()
         self._cb_lcorner.addItem("左上角", "tl")
         self._cb_lcorner.addItem("右上角", "tr")
@@ -203,23 +207,41 @@ class LShapePanel(QWidget):
         #   → _on_param_changed 回写 dict['outer_w_cm'] = 144 - 1 = 143.0（设计真值）
         #   → PropertyPanel 桥接层同步 _pool_raw_outer_w = 143，_sp_w = 144
         # 与水池设计器 _sp_w/_sp_h（画布值）语义完全一致。
-        self._gb_outer = QGroupBox("外框尺寸（cm）")
+        self._gb_outer = QGroupBox("📐 外框尺寸（cm）")
+        self._gb_outer.setStyleSheet(self._param_group_style("#5B6CFF"))
         fo = QVBoxLayout(self._gb_outer)
+        fo.setSpacing(6)
         self._sp_outer_w = self._dspin(5, 500, 5.0)
         self._sp_outer_h = self._dspin(5, 500, 5.0)
         fo.addLayout(self._row("宽(cm)", self._sp_outer_w))
         fo.addLayout(self._row("高(cm)", self._sp_outer_h))
         self._inner_layout.addWidget(self._gb_outer)
 
-        # ===== 6) 一键生成预览 =====
-        self._btn_generate = QPushButton("🔍 匹配模板 → 解析草图 → 生成预览")
+        # ===== 6) 一键生成预览 + 导出 JPG（底部主操作行，与水池设计器一致）=====
+        row_action = QHBoxLayout()
+        row_action.setSpacing(8)
+        self._btn_generate = QPushButton("🔍 生成预览")
+        self._btn_generate.setToolTip(
+            "匹配模板 → 解析草图 → 生成预览（在水池设计器画布上实时渲染）")
         self._btn_generate.setStyleSheet(
             "QPushButton { padding: 10px 12px; font-weight: bold; font-size: 14px;"
             " background: #4A90E2; color: white; border: none; border-radius: 5px; }"
             "QPushButton:hover { background: #357ABD; }"
             "QPushButton:disabled { background: #A0BFE0; color: #eee; }")
         self._btn_generate.clicked.connect(self.generate_requested.emit)
-        self._inner_layout.addWidget(self._btn_generate)
+        self._btn_save = QPushButton("💾 导出 JPG")
+        self._btn_save.setToolTip(
+            "把当前画布设计渲染为全分辨率 JPG 并保存到本地文件。\n"
+            "导出文件名优先取上方“目标文件名”，未填写则按画布尺寸自动生成。")
+        self._btn_save.setStyleSheet(
+            "QPushButton { padding: 10px 12px; font-weight: bold; font-size: 14px;"
+            " background: #27AE60; color: white; border: none; border-radius: 5px; }"
+            "QPushButton:hover { background: #1F8B4C; }"
+            "QPushButton:disabled { background: #A8D8B9; color: #eee; }")
+        self._btn_save.clicked.connect(self.save_requested.emit)
+        row_action.addWidget(self._btn_generate, 1)
+        row_action.addWidget(self._btn_save, 1)
+        self._inner_layout.addLayout(row_action)
 
         self._inner_layout.addStretch(1)
 
@@ -244,6 +266,19 @@ class LShapePanel(QWidget):
         lay.addWidget(QLabel(label), 0)
         lay.addWidget(widget, 1)
         return lay
+
+    def _param_group_style(self, accent: str) -> str:
+        """参数 GroupBox 统一样式：浅色边框 + 标题着色，比识别区（橙色）弱，保持视觉层级。
+
+        accent 为标题/边框主色，默认靛蓝（与生成预览按钮蓝呼应）。
+        """
+        return (
+            "QGroupBox { font-weight: bold; border: 1px solid #C9D0E5;"
+            " border-radius: 6px; margin-top: 12px; padding-top: 8px;"
+            f" background: #FBFCFF; }} "
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left;"
+            " left: 10px; top: 0px; padding: 0 6px;"
+            f" color: {accent}; background: #FBFCFF; }}")
 
     # ====================================================================
     # 目标文件名处理
