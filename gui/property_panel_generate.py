@@ -43,6 +43,13 @@ class _GenerateMixin:
                 这保证了 LShape 面板即使持有与 Pool 面板不同的 target 文本，
                 生成逻辑仍用来源面板的有效值（Safety 1 不变式）。
         """
+        # [防御性加固] 规范 source 参数类型。
+        # 某些 Qt 信号（如 QPushButton.clicked(bool checked)）的第一个参数会被
+        # 作为 source 传入，导致 bool=False 覆盖默认值 'pool'。这里把非字符串
+        # 类型统一回退到 'pool'，保证下游 _last_generate_source 永远是合法值。
+        if not isinstance(source, str) or source not in ('pool', 'lshape'):
+            source = 'pool'
+
         if self._pool_worker is not None and self._pool_worker.isRunning():
             QMessageBox.information(self, "提示", "正在处理中，请稍候…")
             return

@@ -139,7 +139,12 @@ class _PoolBoxMixin:
             " background: #4A90E2; color: white; border: none; border-radius: 5px; }"
             "QPushButton:hover { background: #357ABD; }"
             "QPushButton:disabled { background: #A0BFE0; color: #eee; }")
-        self._pool_btn_generate.clicked.connect(self._pool_run_generate)
+        # 显式吞掉 clicked(bool checked) 的参数污染，确保 source='pool' 正确传递
+        # （QPushButton.clicked 会发送 checked:bool，直接连到 _pool_run_generate
+        #  会把 bool=False 作为 source 参数，导致 _last_generate_source=False
+        #  → 后续历史记录保存分支全部跳过）
+        self._pool_btn_generate.clicked.connect(
+            lambda _checked=False: self._pool_run_generate(source='pool'))
         f.addWidget(self._pool_btn_generate)
 
         # F) 提示信息
