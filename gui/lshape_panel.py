@@ -603,7 +603,14 @@ class LShapePanel(QWidget):
                 lines.append(f"　{_msg}")
             lines.append("（可直接修改下方「挖角参数 / 外框尺寸」，改动后自动触发软重绘预览；或点「生成预览」全量刷新）")
             self._set_status("\n".join(lines))
+            # 切换模式 + 同步画布尺寸（单一入口：PropertyPanel._on_lshape_applied）
             self.lshape_applied.emit(self._lshape_params)
+            # ===== [2026-09-03 一键化] 识别成功 → 自动启动素材库匹配 + 完整预览渲染 =====
+            # 等价于用户手动点 L 形面板「生成预览」按钮：
+            #   generate_requested → PropertyPanel._lshape_run_generate →
+            #   _pool_run_generate(source='lshape', target_name_override=<面板当前target>)
+            # Safety：内部有 isRunning 去重 + target 空值早返回，不会重复启动 / 崩溃。
+            self.generate_requested.emit()
         except Exception as e:
             logger.exception(f"[LShapePanel] _apply_lshape_params 异常: {e}")
             self._set_status(f"L 形参数回填异常：{e}", is_error=True)

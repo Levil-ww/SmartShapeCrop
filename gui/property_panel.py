@@ -477,13 +477,15 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 self._pool_raw_outer_h = outer_h
                 self._sp_w.setValue(outer_w + 1.0)
                 self._sp_h.setValue(outer_h + 1.0)
-            # 3) 触发预览渲染
+            # 3) 触发模式切换后的软预览；【识别成功时 LShapePanel 会自动 emit generate_requested，
+            #    立即启动 PoolRenderWorker 做素材库匹配 + 完整预览，无需用户再点「生成预览」】。
+            #    若手动设置 L 形参数（非自动识别路径）后续也可随时点生成预览按钮。
             self._set_pool_status(
                 f"✅ L 形挖角已确认：corner={params.get('corner', '?')}，"
                 f"挖角 {float(params.get('cut_w_cm', 0)):.1f} × "
                 f"{float(params.get('cut_h_cm', 0)):.1f} cm，"
                 f"外框 {outer_w:.1f} × {outer_h:.1f} cm。\n"
-                f"点击下方「匹配模板 → 解析草图 → 生成预览」完成素材匹配与渲染。")
+                f"（已触发软预览；识别路径将自动开始素材匹配与全量渲染…）")
             self._apply_quiet()
         except Exception as e:
             logger.exception(f"[PropertyPanel] _on_lshape_applied 异常: {e}")
