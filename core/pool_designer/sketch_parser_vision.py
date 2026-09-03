@@ -138,11 +138,22 @@ def _load_image(image_path: str):
         return None, "未安装 OpenCV"
     if not image_path or not os.path.isfile(image_path):
         return None, f"文件不存在: {image_path}"
+    # 修复 Windows 中文路径：cv2.imread 对含中文/特殊字符的路径返回 None，
+    # 优先用 imdecode(np.fromfile(...))，失败再走 PIL fallback
+    img = None
     try:
-        img = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        data = np.fromfile(image_path, dtype=np.uint8)
+        if data is not None and data.size > 0:
+            img = cv2.imdecode(data, cv2.IMREAD_COLOR)
     except Exception as e:
-        logger.warning(f"cv2.imread 失败: {e}")
+        logger.debug(f"[vision] imdecode 路径失败: {e}")
         img = None
+    if img is None:
+        try:
+            img = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        except Exception as e:
+            logger.warning(f"cv2.imread 失败: {e}")
+            img = None
     if img is None:
         try:
             from PIL import Image as PILImage

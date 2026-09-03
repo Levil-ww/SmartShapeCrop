@@ -537,12 +537,56 @@ class _PoolBoxMixin:
         # 矩形解析：上传即跑，快速回填 4 边距（现有行为）
         self._pool_auto_parse_sketch()
         # ===== [L-Shape Panel Refactor 2026-09-02] L 形解析委托给 LShapePanel =====
-        # 原 _pool_try_lshape_parse 已迁移到 LShapePanel.try_lshape_parse；
-        # 水池设计器仅同步草图/缩略图到 LShapePanel，不再自动触发 L 形识别弹窗
-        # （用户需切换到 L 形面板手动点「识别L形挖角」，两个面板职责单一化）。
+        # 草图上传后自动做 L 形几何预检测（~0.1s，纯 OpenCV 轮廓操作），
+        # 检测到 L 形则自动触发 L 形识别 Worker（多尺度 OCR），识别成功弹确认框。
+        # 矩形 7 步法仍会跑，但 _lshape_auto_pending 标记会 suppress 其 UI 回填，
+        # 避免 L 形识别完成前闪一下错误的矩形预览。
         if self._lshape_panel is not None:
             self._lshape_panel.sync_sketch_preview(p)
             self._lshape_panel.set_sketch_path_for_view(p)
+            try:
+                self._pool_auto_try_lshape(p)
+            except Exception as e:
+                logger.debug(f"[PropertyPanel] 自动 L 形预检测跳过: {e}")
+
+    def _pool_auto_try_lshape(self, sketch_path: str):
+        """轻量几何预检测：判断草图是否是 L 形挖角轮廓，是则自动触发 L 形识别。
+
+        仅做 OpenCV 轮廓操作（无 OCR，<0.1s），不阻塞 UI。
+        检测到 L 形 → 设置 _lshape_auto_pending=True，然后调 LShapePanel.try_lshape_parse()。
+        """
+        raw_w = getattr(self, '_pool_raw_outer_w', 0.0)
+        raw_h = getattr(self, '_pool_raw_outer_h', 0.0)
+        if raw_w <= 0 or raw_h <= 0:
+            return  # 目标尺寸未知，跳过自动识别
+        try:
+            import cv2 as _cv2
+            import numpy as _np
+            # [2026-09-02 修复] cv2.imread 对 Windows 中文路径返回 None
+            # 改用 imdecode + np.fromfile 绕过
+            img = _cv2.imdecode(_np.fromfile(sketch_path, dtype=_np.uint8), _cv2.IMREAD_COLOR)
+            if img is None:
+                logger.debug(f"[PropertyPanel] L 形预检测 imdecode 失败: {sketch_path}")
+                return
+            gray = _cv2.cvtColor(img, _cv2.COLOR_BGR2GRAY)
+        except Exception as e:
+            logger.debug(f"[PropertyPanel] L 形预检测图像加载失败: {e}")
+            return
+        try:
+            from core.pool_designer.lshape_sketch_parser import _detect_lshape_geometry
+            geo = _detect_lshape_geometry(_cv2, gray)
+        except Exception as e:
+            logger.debug(f"[PropertyPanel] L 形几何检测异常: {e}")
+            return
+        if geo is None or geo.get('corner') is None:
+            logger.debug("[PropertyPanel] L 形预检测：非 L 形轮廓，跳过自动识别")
+            return
+        # L 形！自动触发识别 Worker
+        logger.info(
+            f"[PropertyPanel] L 形预检测 ✅ corner={geo['corner']} "
+            f"(挖角像素 {geo['cut_w_px']:.0f}x{geo['cut_h_px']:.0f}) → 自动触发 L 形识别")
+        self._lshape_auto_pending = True
+        self._lshape_panel.try_lshape_parse(sketch_path, raw_w, raw_h)
 
 
     def _pool_auto_parse_sketch(self):
@@ -590,6 +634,15 @@ class _PoolBoxMixin:
                 logger.info("[PropertyPanel] 忽略已过期的草图解析结果")
                 return
             self._sketch_parse_result = result
+
+            # [2026-09-02 自动 L 形检测] L 形识别正在进行 → 不回填矩形 7 步法的 UI，
+            # 避免 L 形识别完成前闪一下错误的矩形预览。
+            # 等 L 形识别结果出来后，成功会弹确认框让用户确认应用，失败会清除 pending 标记
+            # 然后让矩形结果生效。
+            if getattr(self, '_lshape_auto_pending', False):
+                logger.info("[PropertyPanel] L 形识别进行中 → 跳过矩形 7 步法边距回填")
+                return
+
             if result.success:
                 # —— 回填 4 个边距（核心需求）——
                 # [契约变更 2026-08-27] 水池模式下 UI 直接显示草图识别到的边距值，

@@ -103,7 +103,8 @@ def _detect_lshape_geometry(cv2, gray):
     """
     h, w = gray.shape[:2]
 
-    # 多策略二值化（覆盖不同草图风格），选"最大轮廓面积"最优的一张
+    # 多策略二值化（覆盖不同草图风格），选"最大轮廓面积"最优的一张。
+    # 注：不能用全局 MORPH_OPEN 细 L 形笔画只有 3-5px，会被直接腐蚀掉。
     masks = []
     try:
         _, m = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -117,11 +118,12 @@ def _detect_lshape_geometry(cv2, gray):
     except Exception:
         logger.debug("[lshape] 自适应二值化失败", exc_info=True)
 
+    k3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+
     best = None
     for m in masks:
         try:
-            k = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-            mm = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k, iterations=2)
+            mm = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k3, iterations=2)
             cnts, _ = cv2.findContours(mm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         except Exception:
             logger.debug("[lshape] findContours 失败", exc_info=True)
@@ -139,59 +141,72 @@ def _detect_lshape_geometry(cv2, gray):
         # 面积过小，排除噪点
         return None
 
-    # 多边形简化：epsilon 取较小值，确保用户草图中 2cm 的小缺口（凹角）不被平滑掉。
-    # 两遍回退：先用 0.003*周长，找不到凹角再降到 0.0015*周长（最小 1.2px）。
+    # 多边形简化：从小到大 epsilon 扫描。
+    # 核心洞察：
+    #  - 5~8 顶点且恰好 1 个凹角的变体 = 纯 L 形（最稳定）。
+    #    真实带标注数字（"50"/"88"等嵌入轮廓）的草图，在 6 vert 变体上
+    #    凹角位置会被数字"拖偏"，脱离 bbox 角 30% 阈值，但 corner 方向仍对。
+    #  - 策略：先抓所有 5~8 顶点 + 1 凹角的变体（首选池）；
+    #    空了再抓 5~10 顶点 + 1~2 凹角的（次选池）；
+    #    最后兜底全部。池内部按 best_score 降序选凹角最清晰的。
     peri = cv2.arcLength(cnt, True)
-    _approx_variants = []
-    for eps_f in (0.003, 0.0015):
-        eps = max(1.2, eps_f * peri)
-        a = cv2.approxPolyDP(cnt, eps, True)
-        _approx_variants.append(a.reshape(-1, 2))
-    # 优先用顶点数更多（更保真）的近似做凹角判定
-    verts = None
-    for a in sorted(_approx_variants, key=lambda v: -len(v)):
-        if len(a) >= 5:
-            verts = a
-            break
-    if verts is None:
-        # 少于 5 顶点（矩形/三角形等）→ 不是 L 形
-        return None
+    eps_range = (0.0012, 0.0015, 0.002, 0.003, 0.005, 0.008, 0.012, 0.02, 0.03)
 
-    # 有向面积（判定多边形绕向：CCW 为正 / CW 为负）
     def _signed_area(v):
         a = 0.0
-        n = len(v)
-        for i in range(n):
+        n2 = len(v)
+        for i in range(n2):
             x1, y1 = v[i]
-            x2, y2 = v[(i + 1) % n]
+            x2, y2 = v[(i + 1) % n2]
             a += x1 * y2 - x2 * y1
         return a / 2.0
 
-    sa = _signed_area(verts)
-    sa_sign = 1 if sa > 0 else -1
-    n = len(verts)
+    _tier1 = []  # 5~8 verts + 1 凹角（首选）
+    _tier2 = []  # 5~10 verts + 1~2 凹角（次选）
+    _tier3 = []  # 兜底
 
-    # 找凹角：可能存在多个（草图文字/噪点造成的伪凹角）。
-    # 评分 = 归一化叉积（越接近 1 越接近 90° 缺口）× 两侧直行长度之和。
-    # 关键：真实缺口角的一侧是整段长边（缺口宽 E / 缺口深 D 对应的边），
-    # 文字伪凹角两侧都只有字形尺度（10~90px），综合得分天然远低于真实角。
-    reflex = []
-    for i in range(n):
-        a = verts[i] - verts[(i - 1) % n]
-        b = verts[(i + 1) % n] - verts[i]
-        cross = a[0] * b[1] - a[1] * b[0]
-        csign = 1 if cross > 0 else -1
-        if csign != sa_sign:
-            cn = abs(cross) / (np.hypot(a[0], a[1]) * np.hypot(b[0], b[1]) + 1e-6)
-            r1 = _run_len(verts, i, -1)
-            r2 = _run_len(verts, i, +1)
-            reflex.append((cn * (r1 + r2), i))
-    if not reflex:
-        # 没有内凹顶点 → 不是 L 形（可能是矩形）
+    for eps_f in eps_range:
+        eps = max(0.5, eps_f * peri)
+        approx = cv2.approxPolyDP(cnt, eps, True)
+        v = approx.reshape(-1, 2)
+        n = len(v)
+        if n < 5 or n > 20:
+            continue
+
+        sa = _signed_area(v)
+        sa_sign = 1 if sa > 0 else -1
+        reflex = []
+        for i in range(n):
+            a_vec = v[i] - v[(i - 1) % n]
+            b_vec = v[(i + 1) % n] - v[i]
+            cross = a_vec[0] * b_vec[1] - a_vec[1] * b_vec[0]
+            csign = 1 if cross > 0 else -1
+            if csign != sa_sign:
+                cn = abs(cross) / (np.hypot(a_vec[0], a_vec[1]) * np.hypot(b_vec[0], b_vec[1]) + 1e-6)
+                r1 = _run_len(v, i, -1)
+                r2 = _run_len(v, i, +1)
+                reflex.append((cn * (r1 + r2), i))
+        if not reflex:
+            continue
+
+        best_score, best_idx = max(reflex, key=lambda t: t[0])
+        n_conc = len(reflex)
+        entry = (best_score, v, reflex)
+
+        if 5 <= n <= 8 and n_conc == 1:
+            _tier1.append(entry)
+        elif 5 <= n <= 10 and n_conc <= 2:
+            _tier2.append(entry)
+        else:
+            _tier3.append(entry)
+
+    chosen_list = _tier1 or _tier2 or _tier3
+    if not chosen_list:
         return None
-    # 综合得分最高的顶点即为真实缺口角
+    chosen_list.sort(key=lambda t: -t[0])
+    _, verts, reflex = chosen_list[0]
+    n = len(verts)
     _, concave_idx = max(reflex, key=lambda t: t[0])
-
     conc = verts[concave_idx]
     p_prev = verts[(concave_idx - 1) % n]
     p_next = verts[(concave_idx + 1) % n]
@@ -302,28 +317,53 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
         同一侧若有多个候选（如多尺度 OCR 重复或邻近文字误入），
         取**离凹角最近**的那个——缺口尺寸标注总是紧贴缺口绘制，
         比单纯按置信度更符合真实草图语义。
+
+        [Fix 2026-09-02] 多候选改进：
+          - 先做位置重叠去重：若两候选中心距离 < 15px 且数值相同（5%内），
+            保留高置信度的（过滤 Tesseract 重复识别）
+          - 每侧按 proximity 升序排，取离凹角最近的一个
         """
-        near, far = None, None
-        best_near, best_far = 1e18, 1e18
-        for val, nx, ny, dmin, conf in items:
+        # 去重：先按置信度降序排，再逐个判断是否与已有项位置重叠
+        # 两种重叠都要处理：
+        #   1. 同位置+同数值 → 保留一个（多尺度 OCR 重复）
+        #   2. 同位置+不同数值 → 高置信度优先（Tesseract 同一文字误识别）
+        sorted_items = sorted(items, key=lambda x: -x[4])  # conf desc
+        deduped = []
+        for val, nx, ny, dmin, conf in sorted_items:
+            is_dup = False
+            for i, (ev, ex, ey, _, ec) in enumerate(deduped):
+                dx, dy = abs(nx - ex), abs(ny - ey)
+                if dx < 20 and dy < 20:
+                    # 位置极近 → 保留已有的（置信度更高，因为 sorted）
+                    is_dup = True
+                    break
+            if not is_dup:
+                deduped.append((val, nx, ny, dmin, conf))
+
+        near_list, far_list = [], []
+        for val, nx, ny, dmin, conf in deduped:
             prox = proximity(nx, ny)
             if is_near(nx, ny):
-                if prox < best_near:
-                    best_near = prox
-                    near = val
+                near_list.append((prox, -conf, val))
             else:
-                if prox < best_far:
-                    best_far = prox
-                    far = val
-        return near, far
+                far_list.append((prox, -conf, val))
 
+        # 每侧先按 proximity 升序，再按 -conf 升序（离凹角近优先，同距离高置信度优先）
+        near_list.sort()
+        far_list.sort()
+        near_val = near_list[0][2] if near_list else None
+        far_val = far_list[0][2] if far_list else None
+        return near_val, far_val
+
+    # [Fix 2026-09-02] 边界用 >= / <= 防止标注恰好在凹角坐标时被误分
+    #   例：tr 角 cy=66，标注 ny=66 描述 cut_h → 应归 near 侧
     cut_w, top_w = _split_cut(
         cut_h_items,
-        is_near=(lambda nx, ny: (nx > cx) if cut_right else (nx < cx)),
+        is_near=(lambda nx, ny: (nx >= cx) if cut_right else (nx <= cx)),
         proximity=(lambda nx, ny: abs(nx - cx)))
     cut_h, right_h = _split_cut(
         cut_v_items,
-        is_near=(lambda nx, ny: (ny < cy) if cut_top else (ny > cy)),
+        is_near=(lambda nx, ny: (ny <= cy) if cut_top else (ny >= cy)),
         proximity=(lambda nx, ny: abs(ny - cy)))
 
     roles = {}

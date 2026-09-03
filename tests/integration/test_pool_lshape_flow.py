@@ -175,10 +175,12 @@ def test_worker_lshape_params_builds_design(tmp_path, material_path):
     )
     assert design.mode == 'rect_lshape'
     assert design.l_corner == 'tr'
-    assert design.l_cut_w_cm == pytest.approx(100.0)
-    assert design.l_cut_h_cm == pytest.approx(2.0)
+    # cut 尺寸也 +1cm 损耗补偿：画布已 +1cm，cut 外边缘延伸到余料区才能保证成品尺寸不变
+    assert design.l_cut_w_cm == pytest.approx(101.0)  # 100 草图 + 1cm 损耗
+    assert design.l_cut_h_cm == pytest.approx(3.0)   # 2 草图 + 1cm 损耗
     assert design.canvas_w_cm == pytest.approx(451.0)  # 外框 + 1cm 损耗
     assert design.canvas_h_cm == pytest.approx(34.0)
+    # 成品保留段 = 画布 - cut = (451-101)=350 = 450-100 ✓; (34-3)=31 = 33-2 ✓
     assert design.inner_margin_top_cm == 0.0
     assert design.inner_margin_bottom_cm == 0.0
     assert design.inner_margin_left_cm == 0.0

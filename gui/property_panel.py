@@ -68,6 +68,9 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._sketch_parse_worker = None  # type: _SketchParseWorker | None
         self._sketch_path = ""
         self._sketch_parse_result = None  # 草图解析缓存，供实时回填 UI
+        # [2026-09-02 自动 L 形检测] L 形识别进行中标记：矩形 7 步法跑完时 suppress 其 UI 回填，
+        # 等 L 形识别结果出来再决定最终模式。L 形识别结束（成功或失败）后必须重置。
+        self._lshape_auto_pending = False
         # ===== [L-Shape Panel Refactor 2026-09-02] L 形挖角逻辑已迁移到 LShapePanel =====
         # _lshape_parse_worker 与 _lshape_params 现由 LShapePanel 持有；PropertyPanel 通过
         # self._lshape_panel 间接访问。保留 _lshape_panel 引用以便 _collect / _detect_* 等链路读取。
@@ -343,6 +346,9 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         panel.lshape_params_changed.connect(self._on_lshape_params_changed)
         panel.lshape_applied.connect(self._on_lshape_applied)
         panel.lshape_recognize_started.connect(self._on_lshape_recognize_started)
+        # [2026-09-02 自动 L 形检测] L 形识别结束信号（成功/失败/取消）
+        # PropertyPanel 用来清除 _lshape_auto_pending 标记
+        panel.lshape_recognize_finished.connect(self._on_lshape_recognize_finished)
 
         # —— 新增：草图上传/清除/查看/拖入（LShapePanel → PropertyPanel，委托同一套方法）——
         panel.sketch_pick_requested.connect(self._pool_pick_sketch)
@@ -431,6 +437,47 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 "请先在水池设计器填写目标尺寸，再进行 L 形挖角识别", is_error=True)
             return
         self._lshape_panel.try_lshape_parse(self._sketch_path, raw_w, raw_h)
+
+    def _on_lshape_recognize_finished(self, success: bool):
+        """L 形识别结束（成功/失败/取消）→ 清除 _lshape_auto_pending 标记。
+
+        成功（用户点了确认）→ 已经通过 _on_lshape_applied 切到 L 形模式，无需额外处理。
+        失败/取消 → 需要把矩形 7 步法的结果应用到 UI（之前 suppress 了）。
+        """
+        self._lshape_auto_pending = False
+        if success:
+            return  # _on_lshape_applied 会处理 L 形参数回填 + 渲染
+        # 失败/取消：回退矩形结果。之前因为 pending 标记 suppress 了矩形 7 步法的 UI 回填，
+        # 这里手动重跑一次 _pool_auto_parse_sketch，让矩形结果生效。
+        # 如果 _sketch_parse_worker 还在跑（没结果），等它 finish 后会正常回填。
+        if self._sketch_parse_worker is not None and self._sketch_parse_worker.isRunning():
+            # Worker 还没完成，等它 finish 时已经过了 pending 标记，会正常回填
+            logger.info("[PropertyPanel] L 形识别失败/取消 → 矩形解析 Worker 仍在跑，等完成后自动回填")
+            return
+        # Worker 已完成（矩形 7 步法结果已在 _sketch_parse_result 里），手动回填 UI
+        if getattr(self, '_sketch_parse_result', None) is not None:
+            logger.info("[PropertyPanel] L 形识别失败/取消 → 手动回填矩形草图解析结果")
+            try:
+                # 直接复用 _on_sketch_parsed 的回填逻辑（绕开 sender 检查）
+                r = self._sketch_parse_result
+                self._pool_raw_outer_w = r.outer_w_cm
+                self._pool_raw_outer_h = r.outer_h_cm
+                self._sp_mt.blockSignals(True)
+                self._sp_mb.blockSignals(True)
+                self._sp_ml.blockSignals(True)
+                self._sp_mr.blockSignals(True)
+                try:
+                    self._sp_mt.setValue(max(0.0, r.margin_top_cm))
+                    self._sp_mb.setValue(max(0.0, r.margin_bottom_cm))
+                    self._sp_ml.setValue(max(0.0, r.margin_left_cm))
+                    self._sp_mr.setValue(max(0.0, r.margin_right_cm))
+                finally:
+                    self._sp_mt.blockSignals(False)
+                    self._sp_mb.blockSignals(False)
+                    self._sp_ml.blockSignals(False)
+                    self._sp_mr.blockSignals(False)
+            except Exception as e:
+                logger.warning(f"[PropertyPanel] 矩形结果手动回填异常: {e}")
 
     def _get_lshape_params(self):
         """读取 LShapePanel._lshape_params（替代原 self._lshape_params）。

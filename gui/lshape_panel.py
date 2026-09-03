@@ -67,6 +67,9 @@ class LShapePanel(QWidget):
     lshape_params_changed = pyqtSignal()
     lshape_applied = pyqtSignal(dict)
     lshape_recognize_started = pyqtSignal()
+    # [2026-09-02 自动 L 形检测] L 形识别结束（成功/失败/取消）：bool=True 成功，False 失败
+    # PropertyPanel 用来清除 _lshape_auto_pending 标记，失败时回退到矩形结果
+    lshape_recognize_finished = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -377,22 +380,27 @@ class LShapePanel(QWidget):
             if not result.success:
                 self._set_status(
                     f"ℹ️ L 形识别未成功（已按矩形解析处理）：{result.message}", is_error=False)
+                self.lshape_recognize_finished.emit(False)
                 return
             dlg = _LShapeConfirmDialog(result, self)
             if dlg.exec_():
                 corner, cut_w_cm, cut_h_cm = dlg.values()
                 self._apply_lshape_params(corner, cut_w_cm, cut_h_cm, result)
+                self.lshape_recognize_finished.emit(True)
             else:
                 self._set_status(
                     "已取消 L 形挖角（保留矩形解析结果，可点「识别L形挖角」重新识别）")
+                self.lshape_recognize_finished.emit(False)
         except Exception as e:
             logger.exception(f"[LShapePanel] _on_lshape_parsed 异常: {e}")
             self._set_status(f"L 形识别回调异常：{e}", is_error=True)
+            self.lshape_recognize_finished.emit(False)
 
     def _on_lshape_parse_err(self, err_msg: str):
         """L 形解析异常：忽略（矩形结果不受影响）"""
         logger.warning(f"[LShapePanel] L 形解析异常（忽略）: {err_msg}")
         self._set_status(f"L 形识别异常（已忽略，保留矩形结果）：{err_msg}")
+        self.lshape_recognize_finished.emit(False)
 
     def _apply_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float, result):
         """用户确认 L 形挖角：保存参数 → 回填 UI → 发信号给 PropertyPanel。"""
