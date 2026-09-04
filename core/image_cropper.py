@@ -185,47 +185,6 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     return result
 
 
-def _filter_gap_layers(
-    border_layers: list[tuple[tuple[int, int, int], int]],
-    bg_color: tuple[int, int, int] = (255, 255, 255),
-) -> list[tuple[tuple[int, int, int], int]]:
-    """
-    [Fix G/S7] 过滤"间隙层"——位于深色边框层之间的内容色/背景色层。
-
-    通过与背景色比较，过滤掉与背景色相似的层：
-      典型场景：「塞纳时光」双层边框 (黑-间隙-棕)
-        检测返回: [(25,22,20):17, (245,235,220):15, (150,95,65):45]
-        其中 (245,235,220) 是"间隙层"：
-          - 与背景色 CREAM (245,235,220) 几乎相同
-          - 不是独立的边框色，而是图片内容/底色
-        过滤后: [(25,22,20):17, (150,95,65):45]
-
-    Args:
-        border_layers: 原始边框层列表
-        bg_color: 背景色参考（通常是图片底色）
-
-    Returns:
-        过滤后的边框层列表（不含间隙层）
-    """
-    # [Fix 2026-09-04] 修正腐烂注释。
-    #   原注释声称"与 sector_render.py 的 GAP_COLOR_DIST 对齐"，但该常量
-    #   已不存在（全项目检索无结果），属失效引用。
-    #   本阈值与 config.BORDER_BG_SIMILARITY_THRESHOLD（当前=30，detection.py 使用）
-    #   **有意不同**：本函数处理完整素材图，detection 处理局部扇区，图像特性不同。
-    #   如需统一，务必先用真实素材回归验证，切勿直接合并。
-    CROP_BG_SIMILARITY = 50.0
-    BG_SIMILARITY = CROP_BG_SIMILARITY  # 向后兼容别名
-
-    filtered: list[tuple[tuple[int, int, int], int]] = []
-    for color, thickness in border_layers:
-        dist_to_bg = float(np.sqrt(sum((a - b) ** 2 for a, b in zip(color, bg_color))))
-        if dist_to_bg < BG_SIMILARITY:
-            # 与背景色相似，视为间隙层，跳过
-            continue
-        filtered.append((color, thickness))
-    return filtered
-
-
 def _smart_crop(src: Image.Image, target_w_px: int, target_h_px: int,
                 max_crop_ratio: float = 0.15, bg_color: tuple = (255, 255, 255)) -> Image.Image:
     """

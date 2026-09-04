@@ -230,9 +230,9 @@
       <td><span class="tag p1">高</span></td>
     </tr>
     <tr>
-      <td>P2-1</td><td>阈值数值冲突</td>
-      <td><code>image_cropper.py</code> 的 <code>CROP_BG_SIMILARITY=50</code> 与 <code>config.py</code> 的 <code>BORDER_BG_SIMILARITY_THRESHOLD=30</code> 数值不一致。注释已修正说明，但数值未统一——需业务确认两条路径差异是有意还是历史遗留。</td>
-      <td><span class="tag p2">中</span></td>
+      <td>P2-1</td><td>死代码 <code>_filter_gap_layers</code></td>
+      <td>深挖确认：<code>CROP_BG_SIMILARITY=50</code> 所在的 <code>_filter_gap_layers</code>（image_cropper.py:188）在生产代码中零调用，只被 scripts 归档脚本引用。生产路径实际只用 <code>detection.py</code> 的 <code>_detect_border_layers</code> / <code>_get_border_layers_robust</code>（统一用 config 的 30）。故 50 vs 30 并非「活跃参数冲突」，而是死代码里的孤立参数，应随死代码一并清理。</td>
+      <td><span class="tag p2">低</span></td>
     </tr>
     <tr>
       <td>P2-2</td><td>伪模块化</td>
@@ -252,7 +252,7 @@
   <h2><span class="no">7</span>建议路线图</h2>
   <h3>本周（收尾）</h3>
   <ul>
-    <li><strong>定阈值</strong>：P2-1 找业务确认 <code>50</code> vs <code>30</code> 是有意差异还是历史遗留，定论后统一数值或加注释固化。</li>
+    <li><strong>清死代码</strong>：P2-1 深挖确认 <code>_filter_gap_layers</code>（含 <code>CROP_BG_SIMILARITY=50</code>）生产零调用，应随死代码一并清理，无需业务确认阈值。</li>
     <li><strong>packaging 标注</strong>：已在 <code>packaging/README.md</code> 说明唯一入口，避免误用旧脚本。✅ 本次已完成</li>
   </ul>
   <h3>下周（固本）</h3>
