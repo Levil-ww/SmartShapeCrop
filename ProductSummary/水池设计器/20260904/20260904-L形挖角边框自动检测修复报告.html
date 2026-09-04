@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop V2.2 · L形挖角边框自动检测修复报告</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --ink: #1f2430; --muted: #6b7280;
+    --line: #e5e7eb; --brand: #4a6cf7; --green: #16a34a; --red: #dc2626;
+    --amber: #d97706; --code-bg: #f3f4f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    line-height: 1.7; font-size: 15px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+  header { border-bottom: 2px solid var(--brand); padding-bottom: 16px; margin-bottom: 24px; }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .5px; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  .version-tag {
+    display: inline-block; background: var(--brand); color: #fff;
+    padding: 2px 10px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-left: 8px;
+  }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px 24px; margin-bottom: 20px; }
+  h2 { font-size: 19px; margin: 0 0 12px; color: var(--brand); }
+  h3 { font-size: 16px; margin: 16px 0 8px; }
+  p { margin: 8px 0; }
+  code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px;
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 8px;
+    overflow-x: auto; font-size: 13px; line-height: 1.6; }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; }
+  th { background: #f9fafb; font-weight: 600; white-space: nowrap; }
+  .bad { color: var(--red); font-weight: 600; }
+  .good { color: var(--green); font-weight: 600; }
+  .warn { color: var(--amber); font-weight: 600; }
+  .img-full { width: 100%; border: 1px solid var(--line); border-radius: 8px; display: block; }
+  .figcap { text-align: center; color: var(--muted); font-size: 13px; margin: 8px 0 16px; }
+  .callout { border-left: 4px solid var(--brand); background: #eef2ff; padding: 12px 16px;
+    border-radius: 6px; margin: 12px 0; }
+  .callout.warn { border-left-color: var(--amber); background: #fff7ed; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 32px;
+    border-top: 1px solid var(--line); padding-top: 16px; }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>L 形挖角边框自动检测修复报告<span class="version-tag">V2.2</span></h1>
+    <div class="sub">SmartShapeCrop · 水池设计器 / L 形挖角设计器 · 2026-09-04</div>
+  </header>
+
+  <section>
+    <h2>一、背景与诉求</h2>
+    <p>用户将 V13 版 L 形挖角脚本（<code>lshape_crop.py</code> / <code>lshape_border_module.py</code>）整合进本程序后，遇到三个问题：</p>
+    <ul>
+      <li><strong>输出缺边框</strong>：程序渲染的成品图，L 形缺口边缘的边框带缺失，与 V13 脚本期望输出（棕外框 + 白底花纹 + 完整 L 形轮廓）不一致。</li>
+      <li><strong>GUI 出现手动面板</strong>：界面多出「🎨 边框参数（V13 手动覆盖）」模块——本应纯自动检测，不应让用户手动填黑边宽 / 主带宽 / 主带色。</li>
+      <li><strong>描边方向错误（V2.1 首轮修复后暴露）</strong>：黑描边跑进了缺口内侧（里层），而正确效果应为<strong>黑描边贴切边、在最外层</strong>，粗细与原素材自动检测一致，缺口内侧（洞底）无描边。</li>
+    </ul>
+    <p>诉求：<strong>纯自动检测 + 按 V13 交付模块的正确方向补边。</strong></p>
+  </section>
+
+  <section>
+    <h2>二、根因诊断</h2>
+    <p>用真实素材「双面格-定制-定制尺寸-克罗印花;47.5×167cm.jpg」（像素 9921×2864，横版）跑通端到端后，定位到根因是<strong>边框检测「假阳性」</strong>：</p>
+    <table>
+      <tr><th>检测路径</th><th>实测返回值</th><th>判定</th></tr>
+      <tr><td><code>_get_border_layers_robust</code></td><td>1 层 <code>(27,23,22)</code> 2px</td><td class="bad">❌ 只抓到最外 2px 近黑细线</td></tr>
+      <tr><td><code>detect_pool_material_borders</code>（含守卫）</td><td><code>[(27,23,22), 2]</code></td><td class="bad">❌ 假阳性，<code>_is_real_border</code> 误判为真</td></tr>
+      <tr><td><code>detect_border_v13</code></td><td><code>(9, 172, (120,75,46))</code></td><td class="good">✅ 黑描边 9px + 棕主带 172px</td></tr>
+    </table>
+    <div class="callout">
+      问题链条：旧检测器对「黑描边 + 棕主带」结构<strong>只返回一条 2px 细线</strong>，而
+      <code>_is_real_border</code> 又把这条细线放行 → 程序以为「有边框」，画 2px 细线就收工；
+      真正能正确检出的 <code>detect_border_v13</code> 因为只在「检测返回<strong>空</strong>」时才兜底，<strong>根本没机会执行</strong>。
+    </div>
+  </section>
+
+  <section>
+    <h2>三、修复方案</h2>
+    <p>两处独立改动，均严格限定在 L 形挖角链路内：</p>
+
+    <h3>改动 1 · 检测路由改为 V13 优先（核心）</h3>
+    <p>文件：<code>core/lshape_border.py</code> 的 <code>apply_lshape_border_completion</code>。自动路径由「先旧检测，空则 V13 兜底」改为「<strong>先试 V13，检测不到黑描边（返回 None）再回退旧检测</strong>」。</p>
+    <pre><code># 改动前：先 detect_pool_material_borders，返回空才兜底走 V13
+border_layers_src = detect_pool_material_borders(detect_img, bg_color)
+if not border_layers_src:
+    v13 = detect_border_v13(detect_img)  # ← 假阳性时永远到不了这里
+
+# 改动后：V13 优先，检测不到黑描边才回退旧检测
+v13 = detect_border_v13(detect_img)
+if v13 is not None:
+    return _apply_v13_path(..., manual_edge_px=v13[0],
+                           manual_band_px=v13[1], manual_band_color=v13[2])
+border_layers_src = detect_pool_material_borders(detect_img, bg_color)</code></pre>
+    <p class="good">✓ V13 对「黑描边 + 主带」结构可靠（1D 段分析），对纯黑框素材返回 <code>band=0</code> 仍兼容旧用例。</p>
+
+    <h3>改动 2 · 移除手动边框参数面板</h3>
+    <p>文件：<code>gui/lshape_panel.py</code>。删除「🎨 边框参数（V13 手动覆盖）」GroupBox 及 6 个方法（<code>_set_v13_fields_enabled</code> / <code>_on_v13_enable_toggled</code> / <code>_on_v13_color_clicked</code> / <code>_update_v13_color_button</code> / <code>get_v13_manual_params</code> / <code>set_v13_manual_params</code>）；<code>_on_param_changed</code> 与 <code>_apply_lshape_params</code> 不再写 <code>manual_*</code> 字段。</p>
+    <p class="good">✓ 用户操作链路退化为<strong>纯自动</strong>；worker 读取的 <code>manual_*</code> 恒为 <code>None</code>。</p>
+    <p class="warn">注：<code>core/geometry.py</code> 的 <code>lshape_manual_*</code> 字段保留——它们是 V13 路径的数据通道，改名/删除会引入无谓风险，故不动。</p>
+
+    <h3>改动 3 · 补边方向修正：移植交付版 <code>patch_lshape_cut</code>（V2.2）</h3>
+    <p>首轮修复（V2.1）沿用项目原有的 <code>draw_border_layers_on_cut_edges</code>，把边框带<strong>向缺口区内侧</strong>延伸——方向反了：正确效果应为<strong>沿切边在保留区一侧补「黑描边 + 主色带」</strong>（黑描边贴切边、在最外层；缺口区保持洞底色，无描边）。</p>
+    <p>V2.2 按 <code>E:\ima-测试L型挖角输出\确认V13\lshape_border_module.py</code>（用户交付版）原样移植：</p>
+    <ul>
+      <li><code>patch_lshape_cut()</code> / <code>_fill_vertical_horizontal()</code>：切边补齐核心——垂直切边黑带全高（与素材顶边黑描边衔接）、主带不压顶边黑；水平切边黑带全宽（覆盖外缘防白缝）、主带避外缘黑；内凹角按 <code>d = max(dx, dy)</code> 几何分层，黑带沿 L 形轮廓连续。</li>
+      <li><code>detect_border()</code>：交付版公开 API（失败抛 <code>ValueError</code>）；项目内部路由仍用 <code>detect_border_v13</code>（返回 <code>None</code> 便于回退）。</li>
+      <li><code>_apply_v13_path()</code> 重写绘制段：在 <code>outer_rect</code> 子图上操作（缺口贴子图角落，<strong>与渲染 mask 同源</strong>），翻转统一到 tr 由 <code>patch_lshape_cut</code> 内部处理；厚度按 <code>scale</code> 换算（预览 LOD 自动适配）。删除自研的 <code>apply_v13_concave_corner_layer</code>。</li>
+    </ul>
+    <pre><code># V2.2 _apply_v13_path 绘制段（节选）
+sub = canvas_arr[oy:obottom, ox:oright, :]     # outer_rect 子图（与 mask 同源）
+patched = patch_lshape_cut(sub, cut_corner, bx0, by0, cw_r, ch_r,
+                           edge_canvas, band_canvas, color_src)
+canvas_arr[oy:obottom, ox:oright, :] = patched</code></pre>
+  </section>
+
+  <section>
+    <h2>四、改动前后效果对比</h2>
+    <p>用真实克罗印花素材（双面格-定制-定制尺寸-克罗印花;47.5×167cm.jpg，像素 9921×2864 横版，tr 挖角 32.5×34.03cm）端到端渲染，沿垂直/水平切边密集采样：</p>
+    <table>
+      <tr><th>指标</th><th>修复前（旧路径）</th><th>V2.1 首轮修复</th><th>V2.2 方向修正</th></tr>
+      <tr><td>检测日志</td><td class="bad"><code>1 层边框 2.0px [(27,23,22)]</code></td><td class="good"><code>V13 命中 edge=9 band=172</code></td><td class="good"><code>V13 命中 edge=9 band=172</code></td></tr>
+      <tr><td>黑描边带宽</td><td class="bad">≈ 2px（不可见）</td><td class="good">≈ 9px</td><td class="good">9px（自动检测=素材原宽）</td></tr>
+      <tr><td>棕主带带宽</td><td class="bad">0px</td><td class="good">≈ 170px</td><td class="good">170px</td></tr>
+      <tr><td>黑描边位置</td><td>—</td><td class="bad">❌ 缺口内侧（里层）</td><td class="good">✅ 贴切边·最外层</td></tr>
+      <tr><td>缺口区（洞底）</td><td>—</td><td class="bad">被边框带覆盖</td><td class="good">✅ 纯白，无描边</td></tr>
+      <tr><td>内凹角连续性</td><td>—</td><td>—</td><td class="good">✅ 256/256 = 100%</td></tr>
+    </table>
+    <p>V2.2 垂直切边实测采样（从切边向两侧）：保留区侧 <code>黑9px → 棕170px → 素材内容</code>；缺口区侧 <code>纯白 120px+</code>——完全对应期望效果「红色标注处有描边、蓝色区域无描边」。</p>
+    <p>整图并排对比（左＝V2.1 首轮修复·描边在缺口内侧，右＝V2.2 修正·描边贴切边最外层）：</p>
+    <img class="img-full" src="compare_v21_vs_v22.png" alt="V2.1 与 V2.2 整图对比">
+    <div class="figcap">V2.1 → V2.2：黑描边从缺口内侧移回切边最外层，缺口区恢复纯白洞底。</div>
+    <p>内凹角局部放大对比（左＝V2.1，右＝V2.2）：</p>
+    <img class="img-full" src="corner_closeup_v22.png" alt="内凹角放大对比">
+    <div class="figcap">内凹角放大：V2.2 黑带沿 L 形轮廓连续、主带直角衔接，与原素材边框层次一致。</div>
+  </section>
+
+  <section>
+    <h2>五、回归验证</h2>
+    <ul>
+      <li><code>tests/core/test_lshape_border.py</code>：<span class="good">23 passed</span>——其中端到端用例 <code>test_bordered_material_paints_cut_edges_only</code> 已按 V2.2 方向更新断言：黑带采样点改到切边<strong>保留区一侧</strong>，并新增「缺口区不被涂色」「内凹角黑带连续」两类断言。</li>
+      <li>全量测试：<span class="good">299 passed, 5 skipped, 0 failed</span>，无回归。</li>
+      <li>真实素材端到端：见上表 V2.2 列——黑 9px（=素材原宽）+ 棕 170px 贴切边最外层，缺口纯白，凹角分层 100% 符合。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>六、遗留说明</h2>
+    <ul>
+      <li>本次改动涉及 <code>core/lshape_border.py</code>、<code>gui/lshape_panel.py</code> 与 <code>tests/core/test_lshape_border.py</code> 三个文件，未触碰 <code>render_design</code> 其他路径及裁剪主逻辑；<code>core/image_ops.py</code> 调用点无需改动（patch 在 <code>border_mask</code> 涂黑之后执行，自动覆盖切边旁区域）。</li>
+      <li><code>detect_pool_material_borders</code>（旧检测器）保留为 V13 检测失败时的回退路径，未删除——它仍是纯黑框等结构的兼容通道；<code>compute_cut_edge_bboxes</code> / <code>draw_border_layers_on_cut_edges</code> 随旧路径保留。</li>
+      <li>V13 交付模块的 <code>crop_tr_standalone</code>（独立对照版）未移植——项目侧已由 pytest 端到端用例覆盖同等契约。</li>
+      <li>诊断脚本与中间产物已归档至 <code>scripts/_archive/</code>，产品源码零污染。</li>
+    </ul>
+  </section>
+
+  <footer>
+    SmartShapeCrop · L 形挖角边框自动检测修复报告 · <strong>V2.2</strong> · 2026-09-04
+  </footer>
+</div>
+</body>
+</html>

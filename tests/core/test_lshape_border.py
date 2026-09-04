@@ -232,7 +232,16 @@ class TestApplyLshapeBorderCompletion:
         np.testing.assert_array_equal(canvas, before), '无边框素材不应修改画布'
 
     def test_bordered_material_paints_cut_edges_only(self):
-        """带边框素材 → 返回 True，cut 新边缘被涂色，其余区域保持不变。"""
+        """带边框素材 → 返回 True，cut 新边缘的**保留区一侧**被涂色。
+
+        [2026-09-04 V2.2 方向修正] V13 patch_lshape_cut 沿切边向保留区内侧补边：
+          - 黑描边在最外层（贴切边），粗细 = 素材黑边 × scale
+          - 缺口区（cut 内部）保持原样（hole 底色），不被涂色
+        本用例：素材黑边 20px，scale=2 → 画布黑带宽 40px。
+        tl 挖角：cut 区 x∈[0,200], y∈[0,100] →
+          垂直切边 x=200：黑带 x∈[200,240]，y∈[0,100]
+          水平切边 y=100：黑带 y∈[100,140]，x∈[0,200]
+        """
         canvas = self._canvas()
         src = _make_bordered_material(size=(400, 300), border=20)
 
@@ -248,9 +257,21 @@ class TestApplyLshapeBorderCompletion:
         )
         assert ok is True
 
-        # cut 区两条新边缘上应被涂成深色
-        assert canvas[80, 100].max() <= 60, f'水平边缘未涂色: {canvas[80, 100]}'
-        assert canvas[50, 180].max() <= 60, f'垂直边缘未涂色: {canvas[50, 180]}'
+        # 垂直切边 x=200 的保留区一侧：黑带 x∈[200,240]（20px 素材黑边 × 2.0 scale）
+        assert canvas[50, 220].max() <= 60, \
+            f'垂直边缘保留区侧未涂黑: {canvas[50, 220]}'
+        # 水平切边 y=100 的保留区一侧：黑带 y∈[100,140]
+        assert canvas[120, 100].max() <= 60, \
+            f'水平边缘保留区侧未涂黑: {canvas[120, 100]}'
+        # 内凹角 (200, 100) 附近：黑带沿 L 形轮廓连续（d=max(dx,dy)≤40 → 黑）
+        assert canvas[115, 215].max() <= 60, \
+            f'内凹角黑带断头: {canvas[115, 215]}'
+
+        # 缺口区（cut 内部）必须保持原样 —— patch 不碰缺口区
+        np.testing.assert_array_equal(canvas[50, 180], [255, 255, 255],
+                                      err_msg='垂直边缘向缺口区内涂色了')
+        np.testing.assert_array_equal(canvas[80, 100], [255, 255, 255],
+                                      err_msg='水平边缘向缺口区内涂色了')
 
         # 远离边缘的区域（保留区中心）必须保持未涂色
         np.testing.assert_array_equal(canvas[300, 400], [255, 255, 255])

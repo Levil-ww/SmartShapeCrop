@@ -21,12 +21,12 @@ import logging
 import os
 from datetime import date, datetime, timedelta
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QPixmap, QColor
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
-    QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox, QPushButton,
+    QDoubleSpinBox, QComboBox, QPushButton,
     QScrollArea, QMessageBox,
-    QLineEdit, QToolButton, QMenu, QAction, QFileDialog, QColorDialog,
+    QLineEdit, QToolButton, QMenu, QAction, QFileDialog,
 )
 
 from core.app_settings import get_app_settings
@@ -213,67 +213,6 @@ class LShapePanel(QWidget):
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
         self._inner_layout.addWidget(self._gb_l)
 
-        # ===== 4.5) [V13 集成 2026-09-04] 边框手动覆盖 =====
-        # V13 CLI 的 --edge / --band / --band-color GUI 等价物。
-        # 关闭时（默认）：design.lshape_manual_* 全 None → 走原有自动检测路径
-        #   → 输出与基线像素一致（向后兼容）。
-        # 开启时：design.lshape_manual_* 写入 SpinBox/色卡值 → 走 V13 路径
-        #   → 跳过 detect_pool_material_borders，用 V13 detect_border_v13 补缺失项
-        #   → draw_border_layers_on_cut_edges 后追加凹角几何分层补全。
-        # 已实测素材推荐参数（自动检测可能偏差，按此手动指定最稳；详见
-        # E:\ima-测试L型挖角输出\确认V13\README_lshape_crop.md）：
-        #   克罗印花 26x66    : edge=8,  band=119, color=120,76,47
-        #   凯特玫瑰 30x100   : edge=14, band=88,  color=166,135,104
-        #   中古大花 26x80    : edge=120, band=0
-        #   庄园秘境 39x89    : edge=150, band=0
-        #   巴洛克之星 53x138 : edge=148, band=40, color=158,115,81
-        #   戏蝶 54.5x86      : edge=145, band=0
-        #   奥斯汀 57x89      : edge=170, band=0
-        #   中古雨林 40x120   : edge=7,  band=119, color=254,254,254
-        self._gb_v13 = QGroupBox("🎨 边框参数（V13 手动覆盖）")
-        self._gb_v13.setStyleSheet(self._param_group_style("#7B1FA2"))
-        vl = QVBoxLayout(self._gb_v13)
-        vl.setSpacing(6)
-
-        self._cb_v13_enable = QCheckBox("手动指定边框参数（关闭=自动检测）")
-        self._cb_v13_enable.setToolTip(
-            "勾选后用下方手动值覆盖自动检测。\n"
-            "适合 V13 README 列出的 8 种已实测素材（克罗印花/凯特玫瑰/巴洛克之星等）。\n"
-            "关闭时走原有 detect_pool_material_borders 路径，输出与未集成前一致。")
-        self._cb_v13_enable.stateChanged.connect(self._on_v13_enable_toggled)
-        vl.addWidget(self._cb_v13_enable)
-
-        # edge 宽度（px）—— 0 表示无黑边（极少见）
-        self._sp_v13_edge = QSpinBox()
-        self._sp_v13_edge.setRange(0, 500)
-        self._sp_v13_edge.setValue(0)
-        self._sp_v13_edge.setSuffix(" px")
-        self._sp_v13_edge.setToolTip("黑描边宽度（像素），如 克罗印花=8 / 庄园秘境=150")
-        vl.addLayout(self._row("黑边宽", self._sp_v13_edge))
-
-        # band 宽度（px）—— 0 表示无主色带（如 庄园秘境/戏蝶/中古大花 纯黑宽边素材）
-        self._sp_v13_band = QSpinBox()
-        self._sp_v13_band.setRange(0, 500)
-        self._sp_v13_band.setValue(0)
-        self._sp_v13_band.setSuffix(" px")
-        self._sp_v13_band.setToolTip("主色带宽度（像素），0=无主带。\n"
-                                     "克罗印花=119 / 凯特玫瑰=88 / 巴洛克之星=40")
-        vl.addLayout(self._row("主带宽", self._sp_v13_band))
-
-        # 主带颜色（RGB）—— QColorDialog 选择
-        self._btn_v13_color = QPushButton()
-        self._btn_v13_color.setText("● 主带颜色")
-        self._btn_v13_color.setToolTip("点击选择主色带颜色（RGB）。\n"
-                                       "band=0 时此项不生效。")
-        self._btn_v13_color.clicked.connect(self._on_v13_color_clicked)
-        self._v13_band_color = (0, 0, 0)  # 当前选中的颜色，默认黑色
-        self._update_v13_color_button()
-        vl.addLayout(self._row("主带颜色", self._btn_v13_color))
-
-        self._inner_layout.addWidget(self._gb_v13)
-        # 初始禁用手动字段（checkbox 默认未勾选）
-        self._set_v13_fields_enabled(False)
-
         # ===== 5) 外框尺寸（画布值，与水池设计器画布尺寸联动） =====
         # 语义：SpinBox 显示 = 画布值 = 设计外框 + 1cm 损耗
         #   - 用户改 SpinBox 画布值（如 144.0）
@@ -325,96 +264,6 @@ class LShapePanel(QWidget):
         # 外框尺寸变化也触发即时预览（与水池设计器画布尺寸联动）
         self._sp_outer_w.valueChanged.connect(self._on_param_changed)
         self._sp_outer_h.valueChanged.connect(self._on_param_changed)
-        # [V13 集成] 手动覆盖字段值变化 → 触发预览（与外框 SpinBox 一致）
-        # 注意：_cb_v13_enable 已在 _on_v13_enable_toggled 内部调 _on_param_changed，
-        #       这里不再重复挂；edge/band SpinBox + color 按钮变化也走同一通道。
-        self._sp_v13_edge.valueChanged.connect(self._on_param_changed)
-        self._sp_v13_band.valueChanged.connect(self._on_param_changed)
-
-    # ===== [V13 集成] 手动覆盖 UI 行为 =====
-
-    def _set_v13_fields_enabled(self, enabled: bool):
-        """启用/禁用 V13 手动字段（checkbox 关闭时禁用）。"""
-        self._sp_v13_edge.setEnabled(enabled)
-        self._sp_v13_band.setEnabled(enabled)
-        self._btn_v13_color.setEnabled(enabled)
-
-    def _on_v13_enable_toggled(self, state: int):
-        """checkbox 切换 → 启用/禁用字段 + 触发预览（参数变化）。"""
-        enabled = bool(state)
-        self._set_v13_fields_enabled(enabled)
-        # 同步到 _lshape_params + 触发预览
-        self._on_param_changed()
-
-    def _on_v13_color_clicked(self):
-        """点击颜色按钮 → QColorDialog 选择主带颜色。"""
-        initial = QColor(*self._v13_band_color)
-        c = QColorDialog.getColor(initial, self, "选择主色带颜色")
-        if c.isValid():
-            self._v13_band_color = (c.red(), c.green(), c.blue())
-            self._update_v13_color_button()
-            # 颜色变化也触发预览
-            self._on_param_changed()
-
-    def _update_v13_color_button(self):
-        """根据 self._v13_band_color 更新颜色按钮样式（色块 + RGB 文本）。"""
-        r, g, b = self._v13_band_color
-        # 按钮文字色与背景色取反，保证可读
-        text_color = "#000" if (r + g + b) / 3 > 128 else "#fff"
-        self._btn_v13_color.setText(f"●  RGB({r}, {g}, {b})")
-        self._btn_v13_color.setStyleSheet(
-            f"QPushButton {{ background: rgb({r}, {g}, {b}); "
-            f"color: {text_color}; padding: 6px 10px; border: 1px solid #888;"
-            " border-radius: 4px; font-weight: bold; }"
-            "QPushButton:disabled { background: #ddd; color: #999; }")
-
-    def get_v13_manual_params(self):
-        """读取 V13 手动覆盖参数（供 PropertyPanel / PoolRenderWorker 调用）。
-
-        返回 dict：
-          - 未勾选 → None（走原有自动检测路径，向后兼容）
-          - 已勾选 → {'edge': int|None, 'band': int|None, 'color': tuple|None}
-            edge=0 在勾选状态下视为"已显式指定 0"（极少见，仅纯主带素材），
-            Worker 转换为 design.lshape_manual_edge_px = 0（V13 路径检测后修正）。
-        """
-        if not self._cb_v13_enable.isChecked():
-            return None
-        return {
-            'edge': int(self._sp_v13_edge.value()),
-            'band': int(self._sp_v13_band.value()),
-            'color': self._v13_band_color,
-        }
-
-    def set_v13_manual_params(self, params):
-        """外部回填 V13 手动覆盖参数（blockSignals 避免触发预览）。
-
-        供 PropertyPanel 在设计状态恢复/同步时调用。
-        params=None 或缺字段 → 关闭勾选 + 字段归零。
-        """
-        self._cb_v13_enable.blockSignals(True)
-        self._sp_v13_edge.blockSignals(True)
-        self._sp_v13_band.blockSignals(True)
-        try:
-            if not params:
-                self._cb_v13_enable.setChecked(False)
-                self._sp_v13_edge.setValue(0)
-                self._sp_v13_band.setValue(0)
-                self._v13_band_color = (0, 0, 0)
-                self._set_v13_fields_enabled(False)
-            else:
-                self._cb_v13_enable.setChecked(True)
-                self._sp_v13_edge.setValue(int(params.get('edge', 0) or 0))
-                self._sp_v13_band.setValue(int(params.get('band', 0) or 0))
-                color = params.get('color') or (0, 0, 0)
-                if isinstance(color, (list, tuple)) and len(color) == 3:
-                    self._v13_band_color = tuple(int(c) for c in color)
-                self._set_v13_fields_enabled(True)
-            self._update_v13_color_button()
-        finally:
-            self._cb_v13_enable.blockSignals(False)
-            self._sp_v13_edge.blockSignals(False)
-            self._sp_v13_band.blockSignals(False)
-
     def _dspin(self, mn, mx, val, decimals=2):
         s = QDoubleSpinBox()
         s.setRange(mn, mx)
@@ -572,8 +421,6 @@ class LShapePanel(QWidget):
         canvas_outer_h = max(0.0, self._sp_outer_h.value())
         design_outer_w = max(0.0, canvas_outer_w - _TRIM)
         design_outer_h = max(0.0, canvas_outer_h - _TRIM)
-        # V13 手动覆盖参数（未勾选 → None，走原有自动检测路径）
-        v13_params = self.get_v13_manual_params() if hasattr(self, '_cb_v13_enable') else None
         if self._lshape_params is None:
             self._lshape_params = {
                 'corner': self._cb_lcorner.currentData(),
@@ -581,10 +428,6 @@ class LShapePanel(QWidget):
                 'cut_h_cm': max(0.0, self._sp_lh.value()),
                 'outer_w_cm': design_outer_w,
                 'outer_h_cm': design_outer_h,
-                # [V13 集成] 手动边框覆盖字段（None=原有路径，dict 含 key=V13 路径）
-                'manual_edge_px': v13_params.get('edge') if v13_params else None,
-                'manual_band_px': v13_params.get('band') if v13_params else None,
-                'manual_band_color': v13_params.get('color') if v13_params else None,
             }
         else:
             self._lshape_params['corner'] = self._cb_lcorner.currentData()
@@ -592,10 +435,6 @@ class LShapePanel(QWidget):
             self._lshape_params['cut_h_cm'] = max(0.0, self._sp_lh.value())
             self._lshape_params['outer_w_cm'] = design_outer_w
             self._lshape_params['outer_h_cm'] = design_outer_h
-            # [V13 集成] 总是覆盖 V13 字段（用户勾选/取消勾选时同步）
-            self._lshape_params['manual_edge_px'] = v13_params.get('edge') if v13_params else None
-            self._lshape_params['manual_band_px'] = v13_params.get('band') if v13_params else None
-            self._lshape_params['manual_band_color'] = v13_params.get('color') if v13_params else None
         # 标记为用户手动修改（回填识别值时 blockSignals 已保护不会触发这里）
         self._params_source = 'manual'
         # 状态提示：手动修改标注，与识别值区分
@@ -719,15 +558,6 @@ class LShapePanel(QWidget):
             'cut_h_cm': max(0.0, cut_h_cm),
             'outer_w_cm': max(0.0, float(result.outer_w_cm or 0)),
             'outer_h_cm': max(0.0, float(result.outer_h_cm or 0)),
-            # [V13 集成] 识别成功时保留用户已设的手动覆盖（不强制覆盖）。
-            # 语义：草图识别只产出 corner/挖角/外框尺寸，不应清空边框参数。
-            # 用户若勾选了 V13 手动覆盖，识别后仍生效；未勾选则全 None 走自动检测。
-            'manual_edge_px': self.get_v13_manual_params().get('edge')
-                              if self.get_v13_manual_params() else None,
-            'manual_band_px': self.get_v13_manual_params().get('band')
-                              if self.get_v13_manual_params() else None,
-            'manual_band_color': self.get_v13_manual_params().get('color')
-                                  if self.get_v13_manual_params() else None,
         }
         # corner code → 中文显示名（与 _cb_lcorner addItem 顺序一致，defensive 兜底未知）
         _corner_label = {
