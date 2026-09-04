@@ -588,20 +588,19 @@ class LShapePanel(QWidget):
                 self._sp_lh.blockSignals(False)
                 self._sp_outer_w.blockSignals(False)
                 self._sp_outer_h.blockSignals(False)
-            # 3) 标记为识别值 + 状态栏内联摘要（信息密度 ≥ 旧弹窗蓝色摘要块）
+            # 3) 标记为识别值 + 状态栏内联摘要（格式对齐池面板图1风格）
             self._params_source = 'recognize'
+            # 画布尺寸 = 外框设计值 + 1cm 损耗
+            _canvas_w = float(result.outer_w_cm or 0) + 1.0
+            _canvas_h = float(result.outer_h_cm or 0) + 1.0
             lines = [
-                f"✅ 已识别到 L 形挖角草图：位置={_corner_label}（{corner}），"
-                f"挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm，"
-                f"外框 {result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm"
+                f"✅ 成功！",
+                f"画布：{_canvas_w:.1f} × {_canvas_h:.1f} cm",
+                f"L形挖角：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm",
+                f"外框尺寸：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm"
+                f"（画布含 1cm 裁剪损耗）",
+                f"L形草图识别：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm",
             ]
-            _sc = float(getattr(result, 'self_consistency', 0) or 0)
-            if _sc > 0:
-                lines.append(f"　结构自洽度：{_sc * 100:.0f}%")
-            _msg = str(getattr(result, 'message', '') or '').strip()
-            if _msg:
-                lines.append(f"　{_msg}")
-            lines.append("（可直接修改下方「挖角参数 / 外框尺寸」，改动后自动触发软重绘预览；或点「生成预览」全量刷新）")
             self._set_status("\n".join(lines))
             # 切换模式 + 同步画布尺寸（单一入口：PropertyPanel._on_lshape_applied）
             self.lshape_applied.emit(self._lshape_params)

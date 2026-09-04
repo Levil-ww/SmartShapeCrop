@@ -491,12 +491,13 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             # 3) 触发模式切换后的软预览；【识别成功时 LShapePanel 会自动 emit generate_requested，
             #    立即启动 PoolRenderWorker 做素材库匹配 + 完整预览，无需用户再点「生成预览」】。
             #    若手动设置 L 形参数（非自动识别路径）后续也可随时点生成预览按钮。
+            # [2026-09-04 Fix B] 水池面板只写简洁状态，详细识别结果由 L 面板自己显示
+            # （LShapePanel._apply_lshape_params 已写完整状态到 _lshape_status）
+            corner_label_map = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
+            corner_label = corner_label_map.get(str(params.get('corner', '')), str(params.get('corner', '')))
             self._set_pool_status(
-                f"✅ L 形挖角已确认：corner={params.get('corner', '?')}，"
-                f"挖角 {float(params.get('cut_w_cm', 0)):.1f} × "
-                f"{float(params.get('cut_h_cm', 0)):.1f} cm，"
-                f"外框 {outer_w:.1f} × {outer_h:.1f} cm。\n"
-                f"（已触发软预览；识别路径将自动开始素材匹配与全量渲染…）")
+                f"L 形挖角模式：{corner_label}角挖角已激活 "
+                f"（画布 {outer_w + 1:.1f} × {outer_h + 1:.1f} cm）")
             self._apply_quiet()
         except Exception as e:
             logger.exception(f"[PropertyPanel] _on_lshape_applied 异常: {e}")
@@ -577,17 +578,18 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         return self._lshape_panel.get_lshape_params()
 
     def _on_lshape_target_changed(self, text: str):
-        """LShapePanel 目标文件名变更 → 仅触发共享的尺寸解析/草图识别逻辑，不改写 Pool LineEdit。
+        """LShapePanel 目标文件名变更 → 仅触发共享的尺寸解析逻辑，不改写 Pool LineEdit。
+
+        [2026-09-04 双向隔离 Bug B 修复]：显式传 source='lshape'，
+        让 _on_pool_target_changed 跳过矩形 7 步草图解析（L 面板换 target 不应
+        覆盖已完成的 L 形识别结果，S1/S2 invariant）。
 
         [2026-09-03 状态隔离]：LShape 面板的 target 文本与 Pool 面板 _pool_target 彼此独立。
-        _on_pool_target_changed(text) 的尺寸解析 + 画布回填 + 草图自动识别 完全基于入参 text，
-        内部不依赖 _pool_target 文本（除历史记录外，而历史记录在 _pool_run_generate 中按
-        source 值调用各自面板的记录函数，两者都从各自 LineEdit 读值，互不干扰）。
         """
         if self._lshape_panel is None:
             return
-        # 触发统一处理（解析尺寸 + 回填画布 + 自动识别草图边距）
-        self._on_pool_target_changed(text)
+        # 触发统一处理（解析尺寸 + 回填画布 + 跳过矩形草图解析）
+        self._on_pool_target_changed(text, source='lshape')
 
 
     # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 UI 辅助函数 =====

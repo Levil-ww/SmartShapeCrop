@@ -189,15 +189,22 @@ class _PoolBoxMixin:
                 self._ed_hole_img.setText("")
 
 
-    def _on_pool_target_changed(self, text: str):
+    def _on_pool_target_changed(self, text: str, source: str = 'pool'):
         """目标文件名变更：1) 自动同步输出文件名；2) 解析尺寸回填到画布宽高；3) 若有草图则自动识别边距。
 
-        注意 [2026-09-03 状态隔离]：
+        注意 [2026-09-04 双向隔离 Bug B 修复]：
+        source 参数决定是否触发矩形 7 步草图解析：
+          - source='pool'  → 有草图时正常触发矩形解析（水池面板自己操作）
+          - source='lshape' → 跳过矩形解析，避免覆盖已完成的 L 形识别结果
+                              （L 面板换 target 只做尺寸解析 + 画布同步）
+
+        同时 [2026-09-03 状态隔离]：
         目标文件名文本不再同步到 LShapePanel。两个面板的 LineEdit 独立持有值，
-        仅共享尺寸解析/草图识别等"解析结果"（不变式 Safety 1）。
+        仅共享尺寸解析等"解析结果"。
         """
-        # 1) 默认同步输出文件名
-        self._pool_sync_output_from_target()
+        # 1) 默认同步输出文件名（仅 pool 面板自己的输出名；L 面板有独立的输出名控件）
+        if source == 'pool':
+            self._pool_sync_output_from_target()
 
         # 2) 解析尺寸并回填
         name = text.strip()
@@ -228,9 +235,11 @@ class _PoolBoxMixin:
                     self._pool_raw_outer_h = raw_outer_h
                     self._sp_w.setValue(gui_w)
                     self._sp_h.setValue(gui_h)
-                    self._set_pool_status(
-                        f"已自动识别尺寸：画布 {gui_w:.1f} × {gui_h:.1f} cm"
-                        f"（含1cm损耗，目标外框 {raw_outer_w:.1f}×{raw_outer_h:.1f} cm，可在画布尺寸中微调）")
+                    # 状态提示只在 pool 面板自己操作时写（L 面板有自己的状态区）
+                    if source == 'pool':
+                        self._set_pool_status(
+                            f"已自动识别尺寸：画布 {gui_w:.1f} × {gui_h:.1f} cm"
+                            f"（含1cm损耗，目标外框 {raw_outer_w:.1f}×{raw_outer_h:.1f} cm，可在画布尺寸中微调）")
                 else:
                     # 普通模式：直接使用解析结果，无 +1cm
                     w = max(5.0, min(500.0, float(w)))
@@ -239,10 +248,11 @@ class _PoolBoxMixin:
                     self._pool_raw_outer_h = h
                     self._sp_w.setValue(w)
                     self._sp_h.setValue(h)
-                    self._set_pool_status(
-                        f"已自动识别尺寸：{w:.1f} × {h:.1f} cm（可在画布尺寸中微调）")
-                # 3) 如果有草图，自动解析边距
-                if self._sketch_path and os.path.isfile(self._sketch_path):
+                    if source == 'pool':
+                        self._set_pool_status(
+                            f"已自动识别尺寸：{w:.1f} × {h:.1f} cm（可在画布尺寸中微调）")
+                # 3) 矩形草图解析（仅 pool 面板自己操作时触发；lshape 来源跳过，S1 invariant）
+                if source == 'pool' and self._sketch_path and os.path.isfile(self._sketch_path):
                     self._pool_auto_parse_sketch()
         except Exception:
             pass

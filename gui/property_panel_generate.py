@@ -538,6 +538,10 @@ class _GenerateMixin:
                 if self.design.pool_outer_material_image:
                     info += f"匹配素材：{os.path.basename(self.design.pool_outer_material_image)}\n"
                 self._set_pool_status(info)
+                # [2026-09-04 Fix] source='lshape' 时也把完整状态（含匹配素材）写到 L 面板状态栏
+                # 让两个面板的用户都能看到完整结果；source='pool' 时不写 L 面板（那是 pool 面板独立操作）
+                if _src == 'lshape' and self._lshape_panel is not None:
+                    self._lshape_panel._set_status(info.strip())
             except Exception as e:
                 logger.exception(f"[PropertyPanel] 状态消息构造失败: {e}")
                 self._set_pool_status(f"✅ 生成成功！（预览已生成，状态消息解析失败：{e}）")
