@@ -33,12 +33,12 @@ from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
 
 class _PoolBoxMixin:
     def _build_pool_box(self):
-        gb = QGroupBox("🏊 智能水池模式（文件名匹配 + 草图解析 → 一键生成）")
-        # 调整：提高 margin-top（原10→14）、title left（原12→14），避免标题与边框重叠
+        gb = QGroupBox("智能水池模式（文件名匹配 + 草图解析 → 一键生成）")
+        # 调整：去掉 emoji 图标（Windows 上高字形易顶线）；margin-top 收回，让标题浮在线框之上
         gb.setStyleSheet("QGroupBox { font-weight: bold; border: 2px solid #4A90E2; "
-                         "border-radius: 6px; margin-top: 14px; padding-top: 8px; }"
-                         "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; "
-                         "left: 14px; top: 0px; padding: 0 6px; color: #4A90E2; }")
+                         "border-radius: 6px; margin-top: 14px; padding-top: 12px; }"
+                         "QGroupBox::title { subcontrol-origin: border; subcontrol-position: top left; "
+                         "left: 14px; top: -2px; padding: 0 6px; color: #4A90E2; }")
         f = QVBoxLayout(gb)
         f.setSpacing(6)
 
