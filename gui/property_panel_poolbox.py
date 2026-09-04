@@ -101,9 +101,13 @@ class _PoolBoxMixin:
         self._pool_sk_preview.clicked.connect(self._pool_view_sketch)               # 点击查看大图
         sk_btns = QVBoxLayout()
         btn_sk1 = QPushButton("上传草图…")
-        btn_sk1.clicked.connect(self._pool_pick_sketch)
+        # [2026-09-04 修复] QPushButton.clicked 会发 checked:bool；直接连 _pool_pick_sketch
+        # 会把 False 当作 source 参数 → source != 'pool' → 走 lshape 分支，池面板缩略图不更新/
+        # 不显示。用 lambda 吞掉 checked 并显式传 source='pool'（与生成大按钮同款参数污染修复）。
+        btn_sk1.clicked.connect(lambda _checked=False: self._pool_pick_sketch(source='pool'))
         btn_sk2 = QPushButton("清除草图")
-        btn_sk2.clicked.connect(self._pool_clear_sketch)
+        # 同上：修复池面板"清除草图"点击后缩略图不消失的问题（clicked 的 bool 被当作 source）
+        btn_sk2.clicked.connect(lambda _checked=False: self._pool_clear_sketch(source='pool'))
         # ===== [L-Shape Panel Refactor 2026-09-02] L 形挖角识别按钮已迁移到 LShapePanel =====
         # 原 btn_sk3（✂️ 识别L形挖角）现位于独立的【L形挖角设计】面板；
         # 本面板仅保留上传/清除草图按钮，L 形识别由 LShapePanel 通过
@@ -867,23 +871,16 @@ class _PoolBoxMixin:
     # 此处保留接口注释，避免误删调用点。
 
     def _pool_clear_sketch(self, source: str = 'pool'):
-        # ===== [2026-09-03 状态隔离 Safety S3] 清除操作按来源区分 =====
-        # source='pool':  清除全部（水池缩略图 + 内部状态 + L 形面板同步清除）
-        # source='lshape':仅清除 L 形面板缩略图 + 参数，不动水池面板缩略图。
-        #   内部 _sketch_path 仍会清空：避免 L 形清除后再点生成，误用"已清除"的草图解析；
-        #   主画布也同步清除 overlay（共享渲染层，L 形用户明确意图=去掉草图）。
+        # ===== [2026-09-04 面板间隔离] 清除操作严格按来源隔离，各自只清自己的面板 =====
+        # source='pool':  仅清水池面板缩略图（不动 L 形面板的缩略图/参数/worker）
+        # source='lshape':仅清 L 形面板缩略图 + 参数（不动水池面板缩略图）
+        # 共享层（_sketch_path / 主画布 overlay）仍按共享语义在两个分支都清空：
+        # 生成/识别/主画布共用同一份草图，用户点"清除草图"就是要让草图从画布上消失。
         self._sketch_path = ""
         self._sketch_parse_result = None
 
         if source == 'pool':
-            # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数清理由 LShapePanel 承载 =====
-            # 原 self._lshape_params = None + 取消 _lshape_parse_worker 已迁移到
-            # LShapePanel.clear_lshape_params() + cancel_running_parse()。
-            if self._lshape_panel is not None:
-                self._lshape_panel.clear_lshape_params()
-                self._lshape_panel.cancel_running_parse()
-                self._lshape_panel.sync_sketch_preview("")
-            # 水池面板缩略图：清除 + 恢复拖拽提示样式
+            # 水池面板缩略图：清除 + 恢复拖拽提示样式（L 形面板缩略图/参数不受影响）
             self._pool_sk_preview.clear()
             self._pool_sk_preview.setText("（未上传）\n或拖入图片")
             self._pool_sk_preview.setStyleSheet(
