@@ -622,6 +622,7 @@ class _PoolBoxMixin:
             f"[PropertyPanel] L 形预检测 ✅ corner={geo['corner']} "
             f"(挖角像素 {geo['cut_w_px']:.0f}x{geo['cut_h_px']:.0f}) → 自动触发 L 形识别")
         self._lshape_auto_pending = True
+        # 不做画布预处理：Worker 运行期间画布保持草图 overlay，完成后自动渲染 L 形
         self._lshape_panel.try_lshape_parse(sketch_path, raw_w, raw_h)
 
 

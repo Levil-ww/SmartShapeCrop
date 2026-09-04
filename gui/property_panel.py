@@ -508,6 +508,10 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
 
         迁移自原 _pool_try_lshape_parse 中"准备参数"部分；
         实际的 Worker 启动/确认框/参数回填由 LShapePanel.try_lshape_parse 承载。
+
+        [2026-09-04 简化] 不做画布预处理，Worker 运行期间画布保持草图 overlay
+        （canvas_widget 已在 sketch_loaded 时显示草图），Worker 完成后
+        _apply_lshape_params → _on_lshape_applied → 自动渲染正确的 L 形预览。
         """
         if self._lshape_panel is None:
             return

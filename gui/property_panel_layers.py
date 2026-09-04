@@ -113,16 +113,23 @@ class _LayersMixin:
             d.border_text = None
         # —— 水池模式字段同步 ——
         try:
-            hm = self._pool_hole_mode.currentData()
-            if hm == "blank":
+            # [2026-09-04 Fix] L 形挖角模式：cut 区域语义就是"挖空/白色"，
+            # 强制 pool_hole_transparent=True，跳过 UI 控件覆盖。
+            # 否则 PoolWorker 正确设置的 True 会被 _pool_hole_mode=="image" 覆盖为 False，
+            # 导致 cut 区域显示米色 hole_bg_color(250,245,230) 而非纯白。
+            if d.mode == 'rect_lshape':
                 d.pool_hole_transparent = True
-                # 空白模式：清空内挖素材相关字段（与 _on_pool_hole_mode_change 保持一致）
-                if getattr(d, 'pool_inner_material_image', None) is not None:
-                    d.pool_inner_material_image = None
-                if d.hole_bg_image is not None:
-                    d.hole_bg_image = None
-            elif hm == "image":
-                d.pool_hole_transparent = False
+            else:
+                hm = self._pool_hole_mode.currentData()
+                if hm == "blank":
+                    d.pool_hole_transparent = True
+                    # 空白模式：清空内挖素材相关字段（与 _on_pool_hole_mode_change 保持一致）
+                    if getattr(d, 'pool_inner_material_image', None) is not None:
+                        d.pool_inner_material_image = None
+                    if d.hole_bg_image is not None:
+                        d.hole_bg_image = None
+                elif hm == "image":
+                    d.pool_hole_transparent = False
         except Exception:
             # 控件未初始化（_build_ui 中途），忽略
             pass
