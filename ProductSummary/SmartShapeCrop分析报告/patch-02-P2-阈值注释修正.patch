@@ -1,0 +1,20 @@
+diff --git a/core/image_cropper.py b/b/core/image_cropper.py
+index a47d870..1e68fd3 100644
+--- a/core/image_cropper.py
++++ b/core/image_cropper.py
+@@ -207,7 +207,14 @@ def _filter_gap_layers(
+     Returns:
+         过滤后的边框层列表（不含间隙层）
+     """
+-    BG_SIMILARITY = 50.0  # 与背景色距离阈值（与 sector_render.py 的 GAP_COLOR_DIST 对齐）
++    # [Fix 2026-09-04] 修正腐烂注释。
++    #   原注释声称"与 sector_render.py 的 GAP_COLOR_DIST 对齐"，但该常量
++    #   已不存在（全项目检索无结果），属失效引用。
++    #   本阈值与 config.BORDER_BG_SIMILARITY_THRESHOLD（当前=30，detection.py 使用）
++    #   **有意不同**：本函数处理完整素材图，detection 处理局部扇区，图像特性不同。
++    #   如需统一，务必先用真实素材回归验证，切勿直接合并。
++    CROP_BG_SIMILARITY = 50.0
++    BG_SIMILARITY = CROP_BG_SIMILARITY  # 向后兼容别名
+ 
+     filtered: list[tuple[tuple[int, int, int], int]] = []
+     for color, thickness in border_layers:

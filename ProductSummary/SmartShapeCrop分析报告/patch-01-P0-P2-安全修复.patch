@@ -1,0 +1,187 @@
+diff --git a/core/geometry.py b/b/core/geometry.py
+index 571488f..2da63b8 100644
+--- a/core/geometry.py
++++ b/core/geometry.py
+@@ -188,7 +188,13 @@ class CropDesign:
+     pool_holes_gaps_cm: list = field(default_factory=list)
+ 
+     # —— 渲染加速：Worker 预加载的模板图缓存 ——
++    # [Fix 2026-09-04] _cached_outer_src 记录缓存图对应的素材路径。
++    #   此前缓存一经写入便永不失效：用户更换素材时主线程只改标量字段
++    #   （见 canvas_widget.py:195 的设计说明），渲染仍取到旧图，
++    #   表现为"素材残留"——该问题被修复 5 次以上仍反复复发。
++    #   现在渲染时校验来源，路径不符即视为缓存失效，回退从磁盘加载。
+     _cached_outer_image: Image.Image | None = None
++    _cached_outer_src: str | None = None
+ 
+     # —— 辅助：像素级尺寸换算 ——
+     def cm2px(self, cm: float) -> float:
+@@ -251,10 +257,12 @@ class CropDesign:
+         - 标量字段：值拷贝（天然独立）
+         - borders / border_text 等可变字段：深拷贝，互不影响
+         - _cached_outer_image：共享只读引用（避免每次渲染复制大图）
++        - _cached_outer_src：来源路径，随缓存一同共享，用于渲染时校验失效
+         """
+         c = copy.deepcopy(self)
+         # 大图模板缓存只读共享，不复制像素数据
+         c._cached_outer_image = self._cached_outer_image
++        c._cached_outer_src = self._cached_outer_src
+         return c
+ 
+ 
+diff --git a/core/image_cropper.py b/b/core/image_cropper.py
+index a47d870..0247a56 100644
+--- a/core/image_cropper.py
++++ b/core/image_cropper.py
+@@ -94,7 +94,7 @@ class CropConfig:
+ # 内部统一使用 core.config 的定义，此处只是重导出。
+ _DEFAULT_BORDER_WIDTH_CM = DEFAULT_BORDER_WIDTH_CM
+ 
+-from .image_cropper_mask import (_analyze_corner_sector_content, _build_border_paint_mask, _build_multi_layer_corner_mask, _clear_inner_arc_to_bg, _corner_sector_has_content, _estimate_outer_background, _post_cleanup_gap_regions)
++from .image_cropper_mask import (_analyze_corner_sector_content, _build_border_paint_mask, _build_multi_layer_corner_mask, _corner_sector_has_content, _estimate_outer_background, _post_cleanup_gap_regions)
+ from .image_cropper_border import (_DEFAULT_BORDER_WIDTH_CM, _redraw_outer_border_on_corners, apply_border_only_corners)
+ 
+ def load_source_image(path: str) -> Image.Image:
+diff --git a/core/image_cropper_mask.py b/b/core/image_cropper_mask.py
+index 260222c..c541c62 100644
+--- a/core/image_cropper_mask.py
++++ b/core/image_cropper_mask.py
+@@ -934,88 +934,3 @@ def _post_cleanup_gap_regions(
+                 # （文字、花纹等非间隙色元素）
+ 
+     result_img.paste(Image.fromarray(arr, 'RGB'))
+-
+-
+-
+-def _clear_inner_arc_to_bg(
+-    result_img: Image.Image,
+-    corners_px: dict[str, int],
+-    outermost_border_thickness: int,
+-    validity_mask: Image.Image,
+-    bg_color: tuple = (255, 255, 255),
+-) -> None:
+-    """
+-    清除每个角弧内区域（最外层边框以内）为背景色。
+-
+-    这确保圆角弧线上只有最外层边框线条可见，内层间隙、装饰、花纹等
+-    全部被清除为背景色，与 Photoshop 人工效果一致（图二）。
+-
+-    算法：
+-      对每个角，在弧线区域内，将距离圆心 < (R - T_outermost) 的像素
+-      全部设为 bg_color。T_outermost 是最外层边框厚度。
+-
+-    Args:
+-        result_img: 结果图（原地修改）
+-        corners_px: 四角圆角半径（像素）
+-        outermost_border_thickness: 最外层边框厚度（像素）
+-        validity_mask: 有效性遮罩（只清理 mask 允许的区域）
+-        bg_color: 背景色
+-    """
+-    w, h = result_img.size
+-    arr = np.array(result_img, dtype=np.uint8)
+-
+-    for corner_key, r in corners_px.items():
+-        if r <= 0:
+-            continue
+-        r = min(r, max(1, min(w, h) // 2))
+-        if r <= 0:
+-            continue
+-
+-        if corner_key == 'tl':
+-            cx, cy = r, r
+-        elif corner_key == 'tr':
+-            cx, cy = w - r, r
+-        elif corner_key == 'bl':
+-            cx, cy = r, h - r
+-        else:
+-            cx, cy = w - r, h - r
+-
+-        inner_r = max(0, r - outermost_border_thickness)
+-
+-        roi_x1 = max(0, cx - r)
+-        roi_y1 = max(0, cy - r)
+-        roi_x2 = min(w, cx + r + 1)
+-        roi_y2 = min(h, cy + r + 1)
+-
+-        if roi_x2 <= roi_x1 or roi_y2 <= roi_y1:
+-            continue
+-
+-        yy, xx = np.mgrid[roi_y1:roi_y2, roi_x1:roi_x2].astype(np.float64)
+-        dx = xx - float(cx)
+-        dy = yy - float(cy)
+-        dist = np.sqrt(dx * dx + dy * dy)
+-        angle = np.degrees(np.arctan2(dy, dx))
+-        angle = np.mod(angle, 360.0)
+-
+-        ang_min, ang_max = CORNER_ANGLES[corner_key]
+-
+-        if ang_max == 360:
+-            valid_angle = (angle >= ang_min) | (angle < 1)
+-        else:
+-            valid_angle = (angle >= ang_min) & (angle <= ang_max)
+-
+-        clear_region = valid_angle & (dist <= float(inner_r))
+-
+-        if validity_mask is not None:
+-            mask_arr = np.array(validity_mask, dtype=bool)
+-            local_validity = mask_arr[roi_y1:roi_y2, roi_x1:roi_x2]
+-            clear_region = clear_region & local_validity
+-
+-        if np.any(clear_region):
+-            yy_c, xx_c = np.where(clear_region)
+-            global_y = yy_c + roi_y1
+-            global_x = xx_c + roi_x1
+-            arr[global_y, global_x, :] = np.array(bg_color, dtype=np.uint8).reshape(1, 3)
+-
+-    result_img.paste(Image.fromarray(arr, 'RGB'))
+-
+diff --git a/core/image_ops.py b/b/core/image_ops.py
+index f882c4e..feddc00 100644
+--- a/core/image_ops.py
++++ b/core/image_ops.py
+@@ -573,6 +573,16 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
+     #     08-26 stretch → cover：解决变形，但 cover 过度裁剪边框花纹完整性（用户投诉2）
+     #     08-26 当前方案：方向校正+contain等比+边缘延展 → 图案完整不变形，边缘无白边
+     cached_img = getattr(design, '_cached_outer_image', None)
++    # [Fix 2026-09-04] 缓存来源校验：素材路径已变则缓存作废，回退从磁盘加载。
++    #   根治"更换素材后画面仍是旧素材"（素材残留）反复复发的架构级根因。
++    #   _cached_outer_src 为 None 时（旧 design / 手工构造）保持原行为，不影响现有流程。
++    if cached_img is not None and getattr(design, '_cached_outer_src', None) is not None:
++        if design._cached_outer_src != design.pool_outer_material_image:
++            logger.info(
++                f"[render_design] 模板图缓存失效（素材已更换）: "
++                f"{design._cached_outer_src!r} -> {design.pool_outer_material_image!r}"
++            )
++            cached_img = None
+     is_pool = bool(design.pool_outer_material_image and (cached_img is not None or os.path.isfile(design.pool_outer_material_image)))
+     # [Fix 2026-08-26] L 形 + 外背景图特性：边框带应显示外背景图，
+     # 挖角(cut)区域应显示 outer_bg_color。此标志控制跳过"边框带着色"与"cut 区填白"。
+@@ -697,7 +707,15 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
+             inner_corners, fill_value=255)
+         cut_area_mask = np.array(full_inner_img, dtype=bool) & ~inner_mask
+         if cut_area_mask.any():
+-            canvas_arr[cut_area_mask] = 255  # 纯白
++            # [Fix 2026-09-04] 尊重 pool_hole_transparent 开关：
++            #   True  -> 纯白（JPG 模式表达"挖空/透明"的行业惯例）
++            #   False -> 使用用户在 UI 配置的 hole_bg_color。
++            #   此前无论开关如何都无条件填 255，导致该配置项在 L 形挖角下静默失效。
++            if design.pool_hole_transparent:
++                canvas_arr[cut_area_mask] = 255
++            else:
++                canvas_arr[cut_area_mask] = np.array(
++                    design.hole_bg_color, dtype=np.uint8).reshape(1, 3)
+         # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
+         lshape_cut_done = True
+     # ===== [SINGLE-HOLE Add-On 2026-08-31] Stale Decor Black Border Invalidation =====
+diff --git a/gui/property_panel_workers.py b/b/gui/property_panel_workers.py
+index 40b25a9..fa37ab7 100644
+--- a/gui/property_panel_workers.py
++++ b/gui/property_panel_workers.py
+@@ -608,6 +608,7 @@ class PoolRenderWorker(QThread):
+                 from core.image_ops import load_image_rgb
+                 cached_img = load_image_rgb(best.path)
+                 design._cached_outer_image = cached_img
++                design._cached_outer_src = best.path
+                 self._log(f"素材预加载完成: {cached_img.size[0]}x{cached_img.size[1]}px")
+             except Exception as e:
+                 self._log(f"素材预加载失败（渲染时重试）: {e}")

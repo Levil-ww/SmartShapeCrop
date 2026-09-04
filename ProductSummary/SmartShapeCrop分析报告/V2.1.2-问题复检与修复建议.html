@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop V2.1.2 问题复检与修复建议</title>
+<style>
+:root{
+  --bg:#f7f8fa; --card:#ffffff; --ink:#1a1d21; --ink-2:#4a5058; --ink-3:#767d87;
+  --line:#e3e6ea; --line-2:#eef0f3;
+  --red:#c0392b; --red-bg:#fdf0ee; --red-line:#f2c9c2;
+  --amber:#b7791f; --amber-bg:#fdf6e7; --amber-line:#f0ddb0;
+  --green:#1e7e46; --green-bg:#eef8f1; --green-line:#c3e3ce;
+  --blue:#1f5f9e; --blue-bg:#eef4fa; --blue-line:#c8dcee;
+  --code-bg:#f4f5f7;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  line-height:1.75;font-size:15px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px 80px}
+header{background:linear-gradient(135deg,#1f2d3d 0%,#2c3e50 100%);color:#fff;
+  padding:44px 0 38px;margin-bottom:32px}
+header .wrap{padding-bottom:0}
+h1{margin:0 0 10px;font-size:27px;font-weight:650;letter-spacing:.3px}
+.sub{color:#b8c4d0;font-size:14px;margin:0}
+.meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:10px}
+.chip{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.2);
+  padding:4px 12px;border-radius:20px;font-size:12.5px;color:#e4ebf2}
+h2{font-size:20px;margin:44px 0 16px;padding-bottom:10px;border-bottom:2px solid var(--line);
+  font-weight:640;color:var(--ink)}
+h2 .n{display:inline-block;background:var(--ink);color:#fff;width:26px;height:26px;
+  line-height:26px;text-align:center;border-radius:5px;font-size:13px;margin-right:10px;
+  vertical-align:2px;font-weight:600}
+h3{font-size:16px;margin:26px 0 10px;font-weight:620;color:var(--ink)}
+p{margin:10px 0;color:var(--ink-2)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:9px;
+  padding:20px 22px;margin:16px 0}
+.card.p0{border-left:4px solid var(--red)}
+.card.p1{border-left:4px solid var(--amber)}
+.card.p2{border-left:4px solid var(--blue)}
+.card.ok{border-left:4px solid var(--green)}
+.tag{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11.5px;
+  font-weight:600;letter-spacing:.3px;vertical-align:1px}
+.t-p0{background:var(--red-bg);color:var(--red);border:1px solid var(--red-line)}
+.t-p1{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line)}
+.t-p2{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-line)}
+.t-ok{background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)}
+.t-new{background:#f3ebfa;color:#6b3fa0;border:1px solid #ddc9ef}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;background:var(--card)}
+th{background:#eef1f4;text-align:left;padding:10px 12px;font-weight:620;
+  border:1px solid var(--line);color:var(--ink);font-size:13.5px}
+td{padding:10px 12px;border:1px solid var(--line);color:var(--ink-2);vertical-align:top}
+tr:nth-child(even) td{background:#fafbfc}
+code{background:var(--code-bg);padding:1.5px 6px;border-radius:4px;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;font-size:13px;color:#c0392b}
+pre{background:var(--code-bg);border:1px solid var(--line);border-radius:7px;
+  padding:14px 16px;overflow-x:auto;font-size:12.8px;line-height:1.65;margin:12px 0;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;color:var(--ink)}
+pre .c{color:#7a828c}
+pre .k{color:#1f5f9e}
+pre .s{color:#1e7e46}
+pre .x{color:#c0392b}
+ul,ol{margin:10px 0;padding-left:24px;color:var(--ink-2)}
+li{margin:5px 0}
+.stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0}
+.stat div{background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:14px 16px;text-align:center}
+.stat .v{font-size:23px;font-weight:660;color:var(--ink);display:block;line-height:1.3}
+.stat .l{font-size:12px;color:var(--ink-3);margin-top:4px;display:block}
+.stat .v.r{color:var(--red)} .stat .v.g{color:var(--green)} .stat .v.a{color:var(--amber)}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+.vs>div{border:1px solid var(--line);border-radius:7px;padding:14px 16px;background:var(--card)}
+.vs .h{font-size:12px;font-weight:640;letter-spacing:.4px;margin-bottom:8px}
+.vs .old .h{color:var(--ink-3)} .vs .new .h{color:var(--green)}
+.vs .new{background:var(--green-bg);border-color:var(--green-line)}
+.note{background:var(--blue-bg);border:1px solid var(--blue-line);border-radius:7px;
+  padding:13px 16px;margin:14px 0;font-size:14px;color:#1a4a75}
+.warn{background:var(--red-bg);border:1px solid var(--red-line);border-radius:7px;
+  padding:13px 16px;margin:14px 0;font-size:14px;color:#8f2d22}
+.good{background:var(--green-bg);border:1px solid var(--green-line);border-radius:7px;
+  padding:13px 16px;margin:14px 0;font-size:14px;color:#17603a}
+.eff{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px}
+.eff span{background:#eef1f4;border:1px solid var(--line);border-radius:5px;
+  padding:3px 10px;font-size:12px;color:var(--ink-2)}
+.eff span b{color:var(--ink);font-weight:620}
+footer{margin-top:56px;padding:26px 0;border-top:1px solid var(--line);
+  color:var(--ink-3);font-size:12.5px;text-align:center;line-height:2}
+.fnum{font-weight:600;color:var(--ink-2)}
+@media(max-width:720px){.vs{grid-template-columns:1fr}.wrap{padding:0 16px 60px}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>SmartShapeCrop V2.1.2 问题复检与修复建议</h1>
+    <p class="sub">针对 2026-09-03 工作日志所汇报问题的逐条实测复核 · 全量只读检测</p>
+    <div class="meta">
+      <span class="chip">检测日期 2026-09-04</span>
+      <span class="chip">基线提交 de66fe8</span>
+      <span class="chip">累计 224 次提交</span>
+      <span class="chip">源码零改动</span>
+      <span class="chip">3 个补丁已就绪（工作树实测全绿）</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<h2><span class="n">0</span>执行摘要</h2>
+
+<p>本次对 9/3 日志汇报的全部问题做了<b>实测复核</b>（而非复述结论）。总体判断：9/3 日志的归因方向正确，
+但存在 <b>3 处需要修正</b>、<b>1 项重大遗漏</b>。测试红灯已从 4 项降到 2 项，但剩下的 2 项<b>不全是"测试没同步"</b>——
+其中潜藏着一个真实的功能缺陷。</p>
+
+<div class="stat">
+  <div><span class="v g">2 / 4</span><span class="l">测试红灯已修复</span></div>
+  <div><span class="v r">2</span><span class="l">测试红灯仍在</span></div>
+  <div><span class="v r">1</span><span class="l">隐藏真 Bug（新发现）</span></div>
+  <div><span class="v a">3,965</span><span class="l">零测试覆盖行数</span></div>
+  <div><span class="v a">8</span><span class="l">渲染层补丁块</span></div>
+  <div><span class="v g">3</span><span class="l">补丁已就绪（§7）</span></div>
+</div>
+
+<div class="good">
+<b>补丁已备好，等你点头</b>：§3.2 的缓存根因与 §2 的洞色失效，已做成三个补丁并在独立工作树中
+跑通全量测试（<b>299 passed / 0 failed</b>）。主项目源码至今零改动，见 <a href="#s7" style="color:#17603a;font-weight:600">§7</a>。
+</div>
+
+<div class="warn">
+<b>最重要的一条新发现</b>：模板图缓存 <code>_cached_outer_image</code> 在全项目<b>只有写入、没有失效逻辑</b>。
+这是「素材残留」类 bug 被反复修复 5 次以上（8.31 三次 + 9.2 两次）却始终复发的架构级根因。
+9/3 日志虽指出了该缓存，但归因有误（详见 §3.2）。
+</div>
+
+<h3>与 9/3 日志的结论差异</h3>
+<table>
+<thead><tr><th style="width:22%">议题</th><th style="width:16%">9/3 日志结论</th><th style="width:22%">本次实测</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>测试红灯数量</td><td>4 项</td><td><b>2 项</b></td><td>提交 <code>db139b1</code> 已修复其中 2 项</td></tr>
+<tr><td>挖角渲染纯白</td><td>语义变更，不是 bug</td><td><b>半对半错</b></td><td>透明场景正确；非透明场景 <code>hole_bg_color</code> 被忽略 → 真 bug</td></tr>
+<tr><td><code>lshape_border</code> 零覆盖</td><td>512 行零覆盖</td><td><b>已有测试</b></td><td><code>tests/core/test_lshape_border.py</code> 已补齐</td></tr>
+<tr><td>渲染补丁块数量</td><td>5 个</td><td><b>8 个</b></td><td>实际比记录更多</td></tr>
+<tr><td>缓存共享引用</td><td>是素材残留根因</td><td><b>归因有误</b></td><td>共享引用本身安全；真正的根因是<b>缓存永不失效</b></td></tr>
+<tr><td>阈值注释</td><td>谎称已对齐</td><td><b>更严重</b></td><td>注释所指向的 <code>GAP_COLOR_DIST</code> 根本不存在</td></tr>
+<tr><td>伪模块化</td><td>import 9 个私有符号</td><td><b>39 个</b></td><td>实际耦合远高于记录</td></tr>
+<tr><td>素材残留根因</td><td>未定位</td><td><b class="t-new tag">新发现</b></td><td>缓存零失效逻辑（详见 §3.2）</td></tr>
+</tbody>
+</table>
+
+<h2><span class="n">1</span>测试红灯：4 项 → 2 项</h2>
+
+<h3>1.1 实测结果</h3>
+<pre><span class="c">$ pytest tests/ -q</span>
+2 failed, 296 passed, 5 skipped, 17 warnings in 66.42s</pre>
+
+<p>对比 9/3 记录的 <code>4 failed, 276 passed, 5 skipped</code>：用例总数从 280 增至 303，失败从 4 降至 2。</p>
+
+<table>
+<thead><tr><th style="width:6%">#</th><th style="width:30%">红灯项</th><th style="width:14%">当前状态</th><th>修复方式</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>test_pool_lshape_flow.py:73</code><br>挖角区渲染纯白</td><td><span class="tag t-p0">仍在</span></td><td rowspan="2">见 §2，同一根因</td></tr>
+<tr><td>2</td><td><code>test_pool_lshape_flow.py:105</code><br>四角均渲染纯白</td><td><span class="tag t-p0">仍在</span></td></tr>
+<tr><td>3</td><td><code>test_pool_lshape_flow.py:179</code><br><code>assert 100.0 == 101.0</code></td><td><span class="tag t-ok">已修复</span></td><td>业务已拍板："外框补 1cm，挖角不补"。测试已改为 <code>approx(100.0)</code>，并在 178-181 行写入裁决依据</td></tr>
+<tr><td>4</td><td><code>test_f5_f14_fixes.py</code><br>FileNotFoundError</td><td><span class="tag t-ok">已修复</span></td><td>路径改为 <code>package/packageV2.1.py</code>，该测试文件现 15 项全绿</td></tr>
+</tbody>
+</table>
+
+<div class="good">
+<b>值得肯定</b>：第 3 项的修复质量很高——不是简单把 <code>101.0</code> 改成 <code>100.0</code> 了事，
+而是把业务裁决（"外框补 1cm 损耗、挖角存成品真值"）连同代码出处
+（<code>property_panel_layers.py:87</code>、<code>lshape_panel.py:414-416</code>）一并写入注释。
+后来者能看懂为什么，而不仅仅是看到结果。<b>这个做法建议推广为团队规范。</b>
+</div>
+
+<h2><span class="n">2</span>剩余 2 项红灯：一半过时、一半真 Bug</h2>
+
+<h3>2.1 根因定位</h3>
+<p>两处失败都是同一个断言：期望挖角区等于洞色 <code>(250,245,230)</code>，实测 <code>(255,255,255)</code>。
+代码在 <code>core/image_ops.py:678-700</code>：</p>
+
+<pre><span class="c"># [Fix 2026-09-03] cut 区强制填纯白(255,255,255)：用户反馈原 hole_bg_color</span>
+<span class="c">#   (250,245,230 米色) 与素材底色过于接近，挖角视觉上不够明显。</span>
+<span class="c">#   白色也是 JPG 模式下表达"挖空/透明"的行业惯例（与 pool_hole_transparent=True 一致）。</span>
+cut_area_mask = np.array(full_inner_img, dtype=bool) &amp; ~inner_mask
+<span class="k">if</span> cut_area_mask.any():
+    canvas_arr[cut_area_mask] = <span class="s">255</span>   <span class="x"># ← 无条件硬编码</span></pre>
+
+<p>9/3 日志判定"这是有意的语义变更，测试未同步，不是 bug"。<b>这个判断只对了一半。</b>
+关键问题在于：这行代码既没有读 <code>design.hole_bg_color</code>，也没有判断 <code>design.pool_hole_transparent</code>。</p>
+
+<h3>2.2 实测验证</h3>
+<p>构造同一份设计，只切换 <code>pool_hole_transparent</code> 开关，实测挖角区渲染结果：</p>
+
+<table>
+<thead><tr><th style="width:26%">场景</th><th style="width:18%">期望</th><th style="width:18%">实测</th><th style="width:12%">判定</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>transparent=True</code><br>（JPG 透明惯例）</td><td>纯白</td><td><code>(255,255,255)</code></td><td><span class="tag t-ok">正确</span></td><td>语义变更合理，<b>测试期望过时</b></td></tr>
+<tr><td><code>transparent=False</code><br>（用户指定不透明）</td><td>洞色<br><code>(250,245,230)</code></td><td><code>(255,255,255)</code></td><td><span class="tag t-p0">真 Bug</span></td><td><b><code>hole_bg_color</code> 配置项被完全忽略</b></td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<b>结论</b>：<code>pool_hole_transparent=False</code> 时，用户在 UI 上设置的洞色<b>对 L 形挖角完全失效</b>。
+这不是测试问题，是功能缺陷——一个用户可配置项在 L 形模式下静默无效，用户无从察觉。
+</div>
+
+<h3>2.3 反证：测试文件内部自相矛盾</h3>
+<p>同一个测试文件里，<code>rect_hole</code> 的用例（109-114 行）注释明确写着：</p>
+<pre><span class="c">注：pool_hole_transparent=True 时内洞按设计渲染为纯白（JPG 透明表示），</span>
+<span class="c">故本用例用 False 锁定"洞色"语义，同时验证环形带保留素材花纹。</span></pre>
+<p>而 <code>rect_lshape</code> 的两个失败用例，同样设了 <code>pool_hole_transparent=True</code>，却期望洞色。
+<b>同一个文件里两套互相打架的语义预期</b>，这正是红灯迟迟未决的原因。</p>
+
+<h3>2.4 修复建议</h3>
+
+<p><b>第一步：修代码（约 5 行，让洞色开关真正生效）</b></p>
+<pre><span class="c"># core/image_ops.py 第 699-700 行</span>
+<span class="k">if</span> cut_area_mask.any():
+    <span class="k">if</span> design.pool_hole_transparent:
+        <span class="c"># JPG 透明惯例：纯白表示"挖空"</span>
+        canvas_arr[cut_area_mask] = <span class="s">255</span>
+    <span class="k">else</span>:
+        <span class="c"># 非透明：尊重用户在 UI 上配置的洞色</span>
+        canvas_arr[cut_area_mask] = np.array(design.hole_bg_color, dtype=np.uint8)</pre>
+
+<p><b>第二步：修测试（让两个用例各自守住一半语义）</b></p>
+<pre><span class="c"># tests/integration/test_pool_lshape_flow.py</span>
+
+<span class="c"># 用例 1&2：transparent=True → 期望纯白（跟随新语义）</span>
+design = _lshape_design(material_path, pool_hole_transparent=<span class="k">True</span>)
+<span class="x">- assert all(abs(int(cut_px[k]) - hb[k]) &lt;= 3 ...)</span>
+<span class="s">+ assert tuple(int(v) for v in cut_px) == (255, 255, 255)</span>
+
+<span class="c"># 用例 3（新增）：transparent=False → 期望洞色（防回归）</span>
+<span class="k">def</span> test_lshape_cut_respects_hole_bg_color_when_not_transparent(material_path):
+    design = _lshape_design(material_path, pool_hole_transparent=<span class="k">False</span>)
+    ...
+    <span class="k">assert</span> all(abs(int(cut_px[k]) - hb[k]) &lt;= 3 <span class="k">for</span> k <span class="k">in</span> range(3)), cut_px</pre>
+
+<div class="eff">
+  <span>改动量 <b>约 15 行</b></span>
+  <span>风险 <b>低</b></span>
+  <span>收益 <b>修复 2 项红灯 + 恢复 1 项失效配置</b></span>
+</div>
+
+<div class="note">
+<b>建议</b>：修复时把「透明白 / 非透明洞色」这组语义写进 <code>_lshape_design()</code> 的 docstring，
+避免第三个用例再次理解偏差。这类"两个布尔量相乘出四种语义"的地方，最容易出现无人察觉的静默失效。
+</div>
+
+<h2><span class="n">3</span>P0 技术债复核</h2>
+
+<h3>3.1 线程漏管：6/8 确认</h3>
+<p>实测 8 个 QThread 子类：<code>CropWorker</code>、<code>AutoMatchWorker</code>、<code>_WarmupScanWorker</code>、
+<code>PoolRenderWorker</code>、<code>_SketchParseWorker</code>、<code>_LShapeParseWorker</code>、
+<code>PreviewRenderWorker</code>、<code>ExportSaveWorker</code>。</p>
+
+<table>
+<thead><tr><th style="width:28%">位置</th><th style="width:20%">退役方式</th><th>评价</th></tr></thead>
+<tbody>
+<tr><td><code>canvas_widget.py:231</code><br><code>_retire_worker()</code></td><td>requestInterruption →<br>finished → deleteLater</td><td><span class="tag t-ok">正确范式</span> 全项目唯一，应作为模板推广</td></tr>
+<tr><td><code>main.py:454</code><br><code>closeEvent</code></td><td>只管 save worker<br>+ canvas.shutdown</td><td>覆盖 2 个，其余 6 个无人接管</td></tr>
+<tr><td><code>property_panel_generate.py:73</code></td><td><code>warmup.wait(30*60*1000)</code></td><td><span class="tag t-p0">主线程阻塞 30 分钟</span></td></tr>
+<tr><td><code>property_panel_poolbox.py:301</code></td><td><code>terminate()</code></td><td><span class="tag t-p0">强制终止</span> 可能留下半成品状态</td></tr>
+<tr><td><code>lshape_panel.py:476/700</code><br><code>poolbox.py:641</code></td><td><code>wait(2000)</code></td><td>比 9/3 记录略好——有等待，但<b>无 deleteLater</b>，对象不会释放</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<code>property_panel_generate.py:73</code> 的一处注释与实际行为不符：
+注释称"极端超时也允许继续"，但 <code>QApplication.processEvents()</code> 只在 71 行调用了<b>一次</b>，
+随后 <code>wait()</code> 会<b>持续冻结 UI</b> 直至预热结束或 30 分钟超时。模板库较大时用户会看到程序"卡死"。
+</div>
+
+<p><b>修复建议</b>：把 <code>canvas_widget._retire_worker()</code> 提升为公共工具（如 <code>core/qt_thread_utils.py</code>），
+供 8 个线程统一调用；<code>property_panel_generate.py:73</code> 改为<b>异步等待</b>——
+连接 <code>warmup.finished</code> 信号后再启动渲染，而非阻塞主线程。</p>
+
+<h3>3.2 模板图缓存：素材残留的真根因 <span class="tag t-new">新发现</span></h3>
+
+<div class="vs">
+<div class="old">
+<div class="h">9/3 日志归因</div>
+<code>geometry.py:191</code> 把 <code>_cached_outer_image</code> 塞进 dataclass，
+且 <code>clone()</code> 共享引用 → 改动影响半径大 → 素材残留根因。
+</div>
+<div class="new">
+<div class="h">本次实测结论</div>
+共享引用本身<b>是安全的</b>：<code>adapt_pool_material</code> 只读源图，PIL 操作返回新对象，
+<code>np.array(canvas)</code> 也是副本。真正的根因是<b>缓存永不失效</b>。
+</div>
+</div>
+
+<p><b>实测证据</b>——全项目对 <code>_cached_outer_image</code> 的全部引用：</p>
+<pre><span class="c"># 写入（生产代码仅此 1 处）</span>
+gui/property_panel_workers.py:610   design._cached_outer_image = cached_img
+<span class="c"># 读取（生产代码仅此 1 处）</span>
+core/image_ops.py:575       cached_img = getattr(design, '_cached_outer_image', None)
+<span class="c"># 声明与传递</span>
+core/geometry.py:191 / 253 / 257
+
+<span class="x"># 失效/清除逻辑：生产代码中 0 处</span>
+<span class="c">（唯一的 = None 出现在 tests/integration/test_f4_concurrency_clone.py:44）</span></pre>
+
+<p>配合 <code>canvas_widget.py:195</code> 的设计说明——"主线程原地修改 self.design 的<b>标量</b>，
+并共享只读的 <code>_cached_outer_image</code>"——可以推导出完整的故障链：</p>
+
+<ol>
+<li>Worker 用素材 A 构建 design，写入缓存图 A</li>
+<li>用户换素材 B，主线程只改 <code>design.pool_outer_material_image = B</code>（标量）</li>
+<li>触发渲染 → <code>image_ops.py:575</code> 取到缓存的<b>图 A</b></li>
+<li>渲染出旧素材 A → 用户看到"素材残留"</li>
+</ol>
+
+<p>这解释了为什么该 bug 被修了 5 次以上仍会复发：历次修复都在清理<b>症状</b>
+（清 mask、清边框、清中间图），而没有触及<b>缓存永不失效</b>这个源头。</p>
+
+<p><b>修复建议</b>（低风险，约 10 行）：给缓存加上<b>来源校验</b>，让它在素材变化时自动失效。</p>
+<pre><span class="c"># core/geometry.py —— 缓存改为 (路径, 图像) 二元组</span>
+<span class="k">class</span> CropDesign:
+    _cached_outer_image: Image.Image | <span class="k">None</span> = <span class="k">None</span>
+    _cached_outer_src: <span class="k">str</span> | <span class="k">None</span> = <span class="k">None</span>   <span class="c"># 新增：记录缓存来源路径</span>
+
+<span class="c"># core/image_ops.py:575 —— 取值时校验来源</span>
+cached_img = getattr(design, <span class="s">'_cached_outer_image'</span>, <span class="k">None</span>)
+<span class="k">if</span> cached_img <span class="k">is</span> <span class="k">not</span> <span class="k">None</span>:
+    src = getattr(design, <span class="s">'_cached_outer_src'</span>, <span class="k">None</span>)
+    <span class="k">if</span> src != design.pool_outer_material_image:
+        cached_img = <span class="k">None</span>   <span class="c"># 素材已更换 → 缓存作废，回退到从磁盘加载</span></pre>
+
+<div class="eff">
+  <span>改动量 <b>约 10 行</b></span>
+  <span>风险 <b>低</b>（缓存失效即自动回退磁盘加载，行为等价）</span>
+  <span>收益 <b>根治反复复发的素材残留</b></span>
+</div>
+
+<h3>3.3 渲染层补丁叠加：实际 8 个块，多于记录</h3>
+<p>9/3 日志记录 5 个 Add-On，实测 <code>render_design</code>（<code>image_ops.py:548-1181</code>，<b>634 行</b>）内含 <b>8 个</b>补丁块：</p>
+
+<table>
+<thead><tr><th style="width:8%">序号</th><th style="width:34%">补丁块</th><th style="width:12%">日期</th><th>行范围</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Stale Decor Black Border Invalidation</td><td>08-31</td><td>703–807（<b>104 行</b>）</td></tr>
+<tr><td>2</td><td>接缝羽化 SEAM-FEATHER</td><td>09-02</td><td>809–</td></tr>
+<tr><td>3</td><td>多洞 PRE-COMPUTE 每洞独立 4 边边框</td><td>08-29</td><td>900–</td></tr>
+<tr><td>4</td><td>多洞 APPLY 边框 override</td><td>08-29</td><td>998–</td></tr>
+<tr><td>5</td><td>Stale-Decor Universal Residual Cleaner <b>V2</b></td><td>08-31</td><td>1061–</td></tr>
+<tr><td>6</td><td>PURE ADD-ON GUARD</td><td>08-29</td><td>1196–</td></tr>
+<tr><td>7</td><td>多洞独立素材填充</td><td>08-29</td><td>1256–1319（63 行）</td></tr>
+<tr><td>8</td><td>对齐多洞内填（非平铺改 adapt）</td><td>08-31</td><td>1330–1360（30 行）</td></tr>
+</tbody>
+</table>
+
+<p>注意第 1 项与第 5 项：同名问题（Stale Decor）在 <b>08-31 当天修了两次</b>（V1 + V2），
+说明第一次修复不彻底。这类"补丁打补丁"的模式，正是 §3.2 缓存根因未被触及的直接后果。</p>
+
+<p><b>修复建议</b>：<b>不要在 V2.1.2 内做重构</b>。634 行的函数在无测试保护下重构风险极高。
+正确顺序是：先按 §4.1 补齐 <code>image_ops</code> 的渲染回归测试（尤其是 8 个补丁各自的触发场景），
+把现有行为<b>钉死</b>；等 V2.2 再拆分为 <code>_compose_base</code> / <code>_apply_decor_fix</code> /
+<code>_apply_multi_hole</code> / <code>_apply_border</code> 四段管线，每段有独立缓存 key。</p>
+
+<h2><span class="n">4</span>P1 / P2 技术债复核</h2>
+
+<h3>4.1 测试覆盖盲区：实测 3,965 行</h3>
+<p>9/3 日志记录 ≈5,500 行零覆盖。实测口径（模块名在 <code>tests/</code> 中零引用）如下：</p>
+
+<table>
+<thead><tr><th>模块</th><th style="width:14%">行数</th><th>风险说明</th></tr></thead>
+<tbody>
+<tr><td><code>core/image_cropper_mask.py</code></td><td>1,021</td><td>蒙版生成，渲染正确性的核心依赖</td></tr>
+<tr><td><code>core/corner/detection.py</code></td><td>877</td><td>圆角检测，且<b>唯一</b>消费 config 阈值</td></tr>
+<tr><td><code>core/pool_designer/sketch_parser_margins.py</code></td><td>757</td><td>边距推断，印刷尺寸精度的关键路径</td></tr>
+<tr><td><code>core/image_cropper_border.py</code></td><td>454</td><td>边框渲染</td></tr>
+<tr><td><code>core/app_settings.py</code></td><td>434</td><td>用户配置持久化</td></tr>
+<tr><td><code>core/corner/sector_render.py</code></td><td>422</td><td>扇区渲染</td></tr>
+<tr><td colspan="2"><b>合计 3,965 行</b></td><td>占 core 总量（15,432 行）约 <b>26%</b></td></tr>
+</tbody>
+</table>
+
+<div class="good">
+<b>已改善项</b>：<code>core/lshape_border.py</code>（512 行，9/3 新增）在 9/3 日志中被记为"零覆盖"，
+实测已有 <code>tests/core/test_lshape_border.py</code> 专门覆盖，包含端到端入口测试。此项已闭环。
+</div>
+
+<h3>4.2 复制粘贴：确认，约 255 行</h3>
+<p><code>sketch_parser_margins.py</code> 中横向修正（326–456）与纵向修正（458–581）<b>逐行同构</b>，
+仅变量名不同（<code>iw/ml/mr</code> ↔ <code>ih/mt/mb</code>，<code>_trigger</code> ↔ <code>_trigger_v</code>）。</p>
+
+<pre><span class="c"># 横向（326-350）</span>
+_ml_lock = <span class="s">'margin_left'</span>  <span class="k">in</span> dir_locked_fields
+_derived_iw = tw - ml - mr
+_trigger = ((iw &lt; max(ml, mr, 0.01)) <span class="k">or</span> (_ml_lock <span class="k">and</span> _mr_lock) <span class="k">or</span> (...))
+
+<span class="c"># 纵向（469-477）—— 结构完全一致</span>
+_mt_lock = <span class="s">'margin_top'</span>   <span class="k">in</span> dir_locked_fields
+_derived_ih = th - mt - mb
+_trigger_v = ((ih &lt; max(mt, mb, 0.01)) <span class="k">or</span> (_mt_lock <span class="k">and</span> _mb_lock) <span class="k">or</span> (...))</pre>
+
+<p><b>修复建议</b>：抽象为单函数 <code>_reconcile_axis(total, inner, m_a, m_b, lock_a, lock_b, axis)</code>，
+横纵各调一次。但请注意——<b>必须先补测试再重构</b>：该模块当前零覆盖，
+无保护下重构成 260 行公共逻辑，一旦横纵语义有细微差异（例如 cap 系数、日志文案），
+会引入难以察觉的尺寸错误，对印刷行业是致命的。</p>
+
+<h3>4.3 阈值冲突：比记录更严重 <span class="tag t-p2">P2</span></h3>
+<pre>core/image_cropper.py:210   BG_SIMILARITY = 50.0
+    <span class="c"># 与背景色距离阈值（与 sector_render.py 的 GAP_COLOR_DIST 对齐）</span>
+
+core/config.py:117          BORDER_BG_SIMILARITY_THRESHOLD = 30</pre>
+
+<p>实测发现 <b>三重问题</b>：</p>
+<ol>
+<li><b>数值冲突</b>：<code>50.0</code> vs <code>30</code>，同一概念两个标准</li>
+<li><b>注释指向不存在的常量</b>：<code>sector_render.py</code> 中<b>根本没有</b> <code>GAP_COLOR_DIST</code>
+（全文件 grep 结果为空）——这是一条<b>腐烂注释</b>，对齐目标早已被重命名或删除</li>
+<li><b>并行体系</b>：<code>detection.py</code> 三处（449/524/535）统一引用 config 的 <code>30</code>；
+而 <code>image_cropper.py</code> 硬编码 <code>50.0</code>，完全不引用 config</li>
+</ol>
+
+<p><b>修复建议</b>（约 3 行，零风险）：</p>
+<pre><span class="c"># core/image_cropper.py:210</span>
+<span class="x">- BG_SIMILARITY = 50.0  # 与 sector_render.py 的 GAP_COLOR_DIST 对齐</span>
+<span class="s">+ from .config import BORDER_BG_SIMILARITY_THRESHOLD</span>
+<span class="s">+ BG_SIMILARITY = float(BORDER_BG_SIMILARITY_THRESHOLD)</span></pre>
+
+<div class="warn">
+<b>但需先做业务确认</b>：若 50 与 30 的差异是<b>有意</b>的（两条路径处理的图像特性不同），
+则不应强行统一，而应<b>拆成两个命名清晰的常量</b>（如 <code>CROP_BG_THRESHOLD</code> 与
+<code>BORDER_BG_THRESHOLD</code>），并注明差异原因。盲目统一会让其中一条路径的判定质量下降。
+</div>
+
+<h3>4.4 死代码：僵尸 import 确认</h3>
+<p><code>_clear_inner_arc_to_bg</code>（<code>image_cropper_mask.py:940</code>，82 行）的状态：</p>
+<pre>core/image_cropper_mask.py:940    <span class="k">def</span> _clear_inner_arc_to_bg(...)   <span class="c"># 仍存在，82 行</span>
+core/image_cropper.py:97          <span class="k">from</span> .image_cropper_mask <span class="k">import</span> (..., _clear_inner_arc_to_bg, ...)  <span class="x"># 仍被导入</span>
+core/image_cropper.py:164         <span class="c"># 修复: 1) 移除 _clear_inner_arc_to_bg；...</span>
+core/image_cropper_border.py:403  <span class="c"># 新策略：完全移除"清空弧内"这一步骤 (_clear_inner_arc_to_bg 不再调用)</span></pre>
+
+<p><b>确认为僵尸 import</b>：函数体仍在、仍被导入，但两处注释均声明已停止调用，且grep 全项目<b>无实际调用点</b>。
+建议删除函数定义 + 移除 import 项（共 83 行）。</p>
+
+<h2><span class="n">5</span>架构判断复核：伪模块化属实，且更严重</h2>
+
+<p><code>sketch_parser.py:49-53</code> 五行导入实测共 <b>41 个符号，其中 39 个是私有符号</b>
+（日志记录为"9 个"，实际远超）：</p>
+
+<pre><span class="k">from</span> .sketch_parser_base    <span class="k">import</span> (7 个，6 私有)
+<span class="k">from</span> .sketch_parser_cache   <span class="k">import</span> (11 个，<span class="x">全部私有</span>)
+<span class="k">from</span> .sketch_parser_vision  <span class="k">import</span> (14 个，13 私有)
+<span class="k">from</span> .sketch_parser_numbers <span class="k">import</span> (4 个，<span class="x">全部私有</span>)
+<span class="k">from</span> .sketch_parser_margins <span class="k">import</span> (5 个，<span class="x">全部私有</span>)</pre>
+
+<p>导出 39 个私有符号意味着子模块边界<b>形同虚设</b>——改动任一子模块的内部实现，
+主模块都可能受影响，改动影响半径与拆分前<b>完全一样</b>。日志"伪模块化"的判断<b>成立</b>。</p>
+
+<div class="note">
+<b>但请不要据此回退拆分</b>。文件变小对导航、code review、并行开发仍有实际价值。
+真正需要补的是<b>公共契约</b>：为每个子模块定义 <code>__all__</code>，只导出真正需要跨模块使用的符号，
+私有实现（<code>_</code> 开头）一律不导出。这样拆分才从"物理切开"升级为"逻辑隔离"。
+</div>
+
+<h3>5.1 compat 层：设计良好，但有一处需纠正</h3>
+<p><code>core/compat/__init__.py</code> 用 <code>sys.modules</code> 注册 4 个旧路径别名，
+含同源校验，注释完备——这是个<b>考究的兼容层</b>，日志判断正确（此前子代理的两个误判也确实被推翻了）。</p>
+
+<p>实测现状：生产代码中仅剩 <b>1 处</b>旧路径调用（<code>property_panel_layers.py:399</code> 的
+<code>from core.psd_loader import ...</code>）。但<b>测试侧仍有 3 处</b>：</p>
+<pre>tests/core/test_rounded_corner.py:14    <span class="k">from</span> core.rounded_corner <span class="k">import</span> (...)
+tests/core/test_name_parser.py         <span class="c"># 引用 core.name_parser</span>
+tests/core/test_template_matcher.py     <span class="c"># 引用 core.template_matcher</span></pre>
+
+<p>因此 <code>compat/__init__.py</code> 中"所有调用方迁移到新路径后，删除本子包即可"的说法<b>目前不成立</b>——
+还需先迁移这 3 个测试文件。</p>
+
+<h2><span class="n">6</span>修复优先级建议</h2>
+
+<table>
+<thead><tr><th style="width:7%">优先级</th><th style="width:27%">事项</th><th style="width:9%">工作量</th><th style="width:9%">风险</th><th>说明</th></tr></thead>
+<tbody>
+<tr>
+<td><span class="tag t-p0">P0-1</span></td>
+<td>修复 <code>hole_bg_color</code> 静默失效（§2.4）</td><td>15 行</td><td>低</td>
+<td>修复 2 项红灯 + 恢复一项用户可配功能</td>
+</tr>
+<tr>
+<td><span class="tag t-p0">P0-2</span></td>
+<td>缓存来源校验，根治素材残留（§3.2）</td><td>10 行</td><td>低</td>
+<td><b>本次检测最高价值项</b>，终结反复复发</td>
+</tr>
+<tr>
+<td><span class="tag t-p0">P0-3</span></td>
+<td>主线程 30 分钟阻塞改异步（§3.1）</td><td>约 30 行</td><td>中</td>
+<td>涉及渲染启动时序，需回归验证</td>
+</tr>
+<tr>
+<td><span class="tag t-p1">P1-1</span></td>
+<td>补 <code>image_ops</code> 渲染回归测试</td><td>2–3 天</td><td>低</td>
+<td><b>所有重构的前置条件</b>，先钉死 8 个补丁的行为</td>
+</tr>
+<tr>
+<td><span class="tag t-p1">P1-2</span></td>
+<td>线程退役统一到 <code>_retire_worker</code> 范式</td><td>约 1 天</td><td>中</td>
+<td>需逐个验证 6 个线程</td>
+</tr>
+<tr>
+<td><span class="tag t-p1">P1-3</span></td>
+<td>边距模块横纵合并</td><td>约 1 天</td><td>中</td>
+<td><b>须在 P1-1 之后</b>，当前零覆盖</td>
+</tr>
+<tr>
+<td><span class="tag t-p2">P2-1</span></td>
+<td>阈值统一或拆分命名（§4.3）</td><td>3 行</td><td>低</td><td>需先做业务确认</td>
+</tr>
+<tr>
+<td><span class="tag t-p2">P2-2</span></td>
+<td>删除 <code>_clear_inner_arc_to_bg</code> 僵尸 import</td><td>83 行</td><td>低</td><td>纯删除</td>
+</tr>
+<tr>
+<td><span class="tag t-p2">P2-3</span></td>
+<td>迁移 3 个测试的旧导入路径</td><td>约 20 行</td><td>低</td><td>为后续删除 compat 层做准备</td>
+</tr>
+</tbody>
+</table>
+
+<h3>建议的执行顺序</h3>
+<p><b>本周（止血）</b>：P0-1 → P0-2 → P2-1 → P2-2。这四项合计不到 120 行改动、风险都很低，
+能一次性清掉 2 项红灯 + 1 个反复复发的顽疾 + 2 处卫生问题。</p>
+
+<p><b>下周（固本）</b>：P1-1 补测试。这是后续所有重构的地基——
+8 个补丁块、634 行函数、3,965 行零覆盖代码，在没有测试网的情况下动刀，
+对印刷行业这种"1cm 误差即致命"的场景是不可接受的。</p>
+
+<p><b>V2.2（根治）</b>：P1-2、P1-3，以及 <code>render_design</code> 的管线化拆分。</p>
+
+<div class="note">
+<b>一句总评</b>：9/3 日志的核心判断——"能力增长超过工程纪律承载力，V2.1.2 应从加功能切换到敛质量"——
+本次复检<b>依然成立，且更加紧迫</b>。9/3 之后的 3 次提交（<code>db139b1</code>、<code>be185a2</code>、<code>de66fe8</code>）
+全部是文档与测试，生产代码一行未动（21,649 行，与 9/3 完全一致），
+说明团队已经在往"敛质量"的方向转。建议保持这个节奏，把 P0 两项做掉后再开新功能。
+</div>
+
+<h2><span class="n">7</span>附：可直接应用的补丁（已实测验证）</h2>
+
+<p>上述建议已做成三个补丁，放在本报告同目录下。
+它们<b>不是手写</b>的——是用 <code>git diff --no-index</code> 从真实文件差异生成的，
+并在<b>独立的临时工作树</b>（<code>git worktree</code>）中真实应用、真实跑过全量测试，
+验证完毕后工作树已销毁，<b>主项目源码至今零改动</b>。</p>
+
+<table>
+<thead><tr><th style="width:30%">补丁</th><th style="width:22%">内容</th><th style="width:11%">改动</th><th>说明</th></tr></thead>
+<tbody>
+<tr>
+<td><code>patch-01-P0-P2-安全修复.patch</code></td>
+<td>P0-1 洞色生效<br>P0-2 缓存来源校验<br>P2-2 删死代码</td>
+<td>+44 / −89</td>
+<td><b>建议优先应用</b>。三项均无争议，不依赖业务裁决</td>
+</tr>
+<tr>
+<td><code>patch-02-P2-阈值注释修正.patch</code></td>
+<td>P2-1 修正腐烂注释</td>
+<td>+10 / −1</td>
+<td><b>零行为变化</b>，仅消除误导性注释并补上差异原因</td>
+</tr>
+<tr>
+<td><code>patch-03-测试语义同步.patch</code></td>
+<td>同步 2 个用例<br>+ 新增 1 个回归用例</td>
+<td>+42 / −10</td>
+<td>与 patch-01 配套，<b>单独应用会失败</b>（测试会期望旧语义）</td>
+</tr>
+</tbody>
+</table>
+
+<h3>应用方式</h3>
+<pre><span class="c"># 在项目根目录执行（F:\SmartShapeCrop）</span>
+git apply patch-01-P0-P2-安全修复.patch
+git apply patch-02-P2-阈值注释修正.patch
+git apply patch-03-测试语义同步.patch
+
+<span class="c"># 验证</span>
+.venv/Scripts/python.exe -m pytest tests/ -q
+<span class="c"># 期望输出：299 passed, 5 skipped</span>
+
+<span class="c"># 如需回滚</span>
+git checkout -- core gui tests</pre>
+
+<h3>实测验证结果</h3>
+<table>
+<thead><tr><th style="width:34%">验证项</th><th style="width:22%">补丁前</th><th style="width:22%">补丁后</th><th>结论</th></tr></thead>
+<tbody>
+<tr><td>cut 区 <code>transparent=True</code></td><td>纯白 ✅</td><td>纯白 ✅</td><td>行为保持</td></tr>
+<tr><td>cut 区 <code>transparent=False</code></td><td><b>纯白 ❌</b></td><td>洞色 (250,245,230) ✅</td><td><b>已修复</b></td></tr>
+<tr><td>更换素材后画面</td><td><b>残留旧图 ❌</b></td><td>随之更新 ✅</td><td><b>已修复</b></td></tr>
+<tr><td>全量测试</td><td>2 failed / 296 passed</td><td><b>0 failed / 299 passed</b></td><td>红灯清零，无回归</td></tr>
+</tbody>
+</table>
+
+<div class="good">
+三个补丁均已通过 <code>git apply --check</code>。若你希望我直接应用，说一声即可——
+应用后我会立即跑全量测试并把结果贴给你，不通过就自动回滚。
+</div>
+
+<footer>
+  SmartShapeCrop V2.1.2 问题复检与修复建议 · 版本 <span class="fnum">V1.1</span><br>
+  生成日期 2026-09-04 · 基线提交 de66fe8 · 全量只读检测，源码零改动<br>
+  验证方式：pytest 实测 + 代码静态核查 + 渲染探针 + 独立工作树试应用<br>
+  补丁文件：patch-01 / patch-02 / patch-03（同目录）
+</footer>
+
+</div>
+</body>
+</html>
