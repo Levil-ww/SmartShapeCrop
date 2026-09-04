@@ -47,7 +47,8 @@ import sys
 from pathlib import Path
 
 # ==================== 配置 ====================
-PROJECT_ROOT = Path(__file__).resolve().parent
+# 脚本位于 packaging/ 子目录，项目根目录是上一级
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENTRY_SCRIPT = PROJECT_ROOT / "main.py"
 APP_NAME = "智能裁剪设计器V2.1.2"
 ICON_FILE = PROJECT_ROOT / "images" / "SmartShapeCrop.ico"
