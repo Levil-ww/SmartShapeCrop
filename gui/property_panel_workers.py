@@ -608,6 +608,7 @@ class PoolRenderWorker(QThread):
                 from core.image_ops import load_image_rgb
                 cached_img = load_image_rgb(best.path)
                 design._cached_outer_image = cached_img
+                design._cached_outer_src = best.path
                 self._log(f"素材预加载完成: {cached_img.size[0]}x{cached_img.size[1]}px")
             except Exception as e:
                 self._log(f"素材预加载失败（渲染时重试）: {e}")

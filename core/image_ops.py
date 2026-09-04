@@ -573,6 +573,16 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     #     08-26 stretch → cover：解决变形，但 cover 过度裁剪边框花纹完整性（用户投诉2）
     #     08-26 当前方案：方向校正+contain等比+边缘延展 → 图案完整不变形，边缘无白边
     cached_img = getattr(design, '_cached_outer_image', None)
+    # [Fix 2026-09-04] 缓存来源校验：素材路径已变则缓存作废，回退从磁盘加载。
+    #   根治"更换素材后画面仍是旧素材"（素材残留）反复复发的架构级根因。
+    #   _cached_outer_src 为 None 时（旧 design / 手工构造）保持原行为，不影响现有流程。
+    if cached_img is not None and getattr(design, '_cached_outer_src', None) is not None:
+        if design._cached_outer_src != design.pool_outer_material_image:
+            logger.info(
+                f"[render_design] 模板图缓存失效（素材已更换）: "
+                f"{design._cached_outer_src!r} -> {design.pool_outer_material_image!r}"
+            )
+            cached_img = None
     is_pool = bool(design.pool_outer_material_image and (cached_img is not None or os.path.isfile(design.pool_outer_material_image)))
     # [Fix 2026-08-26] L 形 + 外背景图特性：边框带应显示外背景图，
     # 挖角(cut)区域应显示 outer_bg_color。此标志控制跳过"边框带着色"与"cut 区填白"。
@@ -697,7 +707,15 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             inner_corners, fill_value=255)
         cut_area_mask = np.array(full_inner_img, dtype=bool) & ~inner_mask
         if cut_area_mask.any():
-            canvas_arr[cut_area_mask] = 255  # 纯白
+            # [Fix 2026-09-04] 尊重 pool_hole_transparent 开关：
+            #   True  -> 纯白（JPG 模式表达"挖空/透明"的行业惯例）
+            #   False -> 使用用户在 UI 配置的 hole_bg_color。
+            #   此前无论开关如何都无条件填 255，导致该配置项在 L 形挖角下静默失效。
+            if design.pool_hole_transparent:
+                canvas_arr[cut_area_mask] = 255
+            else:
+                canvas_arr[cut_area_mask] = np.array(
+                    design.hole_bg_color, dtype=np.uint8).reshape(1, 3)
         # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
         lshape_cut_done = True
     # ===== [SINGLE-HOLE Add-On 2026-08-31] Stale Decor Black Border Invalidation =====

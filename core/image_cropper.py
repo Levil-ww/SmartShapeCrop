@@ -94,7 +94,7 @@ class CropConfig:
 # 内部统一使用 core.config 的定义，此处只是重导出。
 _DEFAULT_BORDER_WIDTH_CM = DEFAULT_BORDER_WIDTH_CM
 
-from .image_cropper_mask import (_analyze_corner_sector_content, _build_border_paint_mask, _build_multi_layer_corner_mask, _clear_inner_arc_to_bg, _corner_sector_has_content, _estimate_outer_background, _post_cleanup_gap_regions)
+from .image_cropper_mask import (_analyze_corner_sector_content, _build_border_paint_mask, _build_multi_layer_corner_mask, _corner_sector_has_content, _estimate_outer_background, _post_cleanup_gap_regions)
 from .image_cropper_border import (_DEFAULT_BORDER_WIDTH_CM, _redraw_outer_border_on_corners, apply_border_only_corners)
 
 def load_source_image(path: str) -> Image.Image:
@@ -207,7 +207,14 @@ def _filter_gap_layers(
     Returns:
         过滤后的边框层列表（不含间隙层）
     """
-    BG_SIMILARITY = 50.0  # 与背景色距离阈值（与 sector_render.py 的 GAP_COLOR_DIST 对齐）
+    # [Fix 2026-09-04] 修正腐烂注释。
+    #   原注释声称"与 sector_render.py 的 GAP_COLOR_DIST 对齐"，但该常量
+    #   已不存在（全项目检索无结果），属失效引用。
+    #   本阈值与 config.BORDER_BG_SIMILARITY_THRESHOLD（当前=30，detection.py 使用）
+    #   **有意不同**：本函数处理完整素材图，detection 处理局部扇区，图像特性不同。
+    #   如需统一，务必先用真实素材回归验证，切勿直接合并。
+    CROP_BG_SIMILARITY = 50.0
+    BG_SIMILARITY = CROP_BG_SIMILARITY  # 向后兼容别名
 
     filtered: list[tuple[tuple[int, int, int], int]] = []
     for color, thickness in border_layers:

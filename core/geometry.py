@@ -188,7 +188,13 @@ class CropDesign:
     pool_holes_gaps_cm: list = field(default_factory=list)
 
     # —— 渲染加速：Worker 预加载的模板图缓存 ——
+    # [Fix 2026-09-04] _cached_outer_src 记录缓存图对应的素材路径。
+    #   此前缓存一经写入便永不失效：用户更换素材时主线程只改标量字段
+    #   （见 canvas_widget.py:195 的设计说明），渲染仍取到旧图，
+    #   表现为"素材残留"——该问题被修复 5 次以上仍反复复发。
+    #   现在渲染时校验来源，路径不符即视为缓存失效，回退从磁盘加载。
     _cached_outer_image: Image.Image | None = None
+    _cached_outer_src: str | None = None
 
     # —— 辅助：像素级尺寸换算 ——
     def cm2px(self, cm: float) -> float:
@@ -251,10 +257,12 @@ class CropDesign:
         - 标量字段：值拷贝（天然独立）
         - borders / border_text 等可变字段：深拷贝，互不影响
         - _cached_outer_image：共享只读引用（避免每次渲染复制大图）
+        - _cached_outer_src：来源路径，随缓存一同共享，用于渲染时校验失效
         """
         c = copy.deepcopy(self)
         # 大图模板缓存只读共享，不复制像素数据
         c._cached_outer_image = self._cached_outer_image
+        c._cached_outer_src = self._cached_outer_src
         return c
 
 

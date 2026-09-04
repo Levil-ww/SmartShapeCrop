@@ -54,8 +54,14 @@ def _lshape_design(material: str, **kw):
 # ---------------------------------------------------------------- render
 
 def test_lshape_pool_render_cut_is_hole_material_in_body(material_path):
-    """裁剪有图语义：L 形区域保留花纹素材，挖掉的角显示洞色。"""
-    design = _lshape_design(material_path)
+    """裁剪有图语义：L 形区域保留花纹素材，挖掉的角显示"挖空"标记。
+
+    [2026-09-04] pool_hole_transparent=True 时，cut 区按 JPG 透明惯例渲染为
+    纯白(255,255,255)，而非 hole_bg_color——依据 2026-09-03 的语义变更
+    （用户反馈米色洞色与素材底色过于接近，挖角视觉上不够明显）。
+    洞色语义由 test_lshape_cut_uses_hole_bg_color_when_not_transparent 覆盖。
+    """
+    design = _lshape_design(material_path, pool_hole_transparent=True)
     out = render_design(design, quality='preview')
     a = np.array(out)
     ir = design.inner_rect_px()
@@ -68,17 +74,16 @@ def test_lshape_pool_render_cut_is_hole_material_in_body(material_path):
     lx, ly = int(ir.x + ir.w * 0.1), int(ir.y + ir.h * 0.9)
     cut_px = a[cy, cx]
     body_px = a[ly, lx]
-    hb = design.hole_bg_color
-    # cut = 洞色
-    assert all(abs(int(cut_px[k]) - hb[k]) <= 3 for k in range(3)), cut_px
-    # body = 花纹（非洞色、非纯白）
-    assert not all(abs(int(body_px[k]) - hb[k]) <= 3 for k in range(3)), body_px
+    # cut = 纯白（JPG 模式下表达"挖空/透明"的行业惯例）
+    assert tuple(int(v) for v in cut_px) == (255, 255, 255), cut_px
+    # body = 花纹（非纯白）
+    assert not all(int(body_px[k]) == 255 for k in range(3)), body_px
 
 
 def test_lshape_pool_render_all_corners(material_path):
-    """四个挖角位置都满足：L 形区域花纹 + cut 洞色。"""
+    """四个挖角位置都满足：L 形区域花纹 + cut 区挖空（纯白）。"""
     for corner in ('tl', 'tr', 'bl', 'br'):
-        design = _lshape_design(material_path, l_corner=corner)
+        design = _lshape_design(material_path, l_corner=corner, pool_hole_transparent=True)
         out = render_design(design, quality='preview')
         a = np.array(out)
         ir = design.inner_rect_px()
@@ -101,9 +106,36 @@ def test_lshape_pool_render_all_corners(material_path):
             by = int(ir.bottom - ir.h * 0.1)
         else:
             by = int(ir.y + ir.h * 0.1)
+        # cut 区 = 纯白（挖空标记）
+        assert tuple(int(v) for v in a[cy, cx]) == (255, 255, 255), (corner, a[cy, cx])
+        # L 形保留区 = 花纹（非纯白）
+        assert not all(int(a[by, bx][k]) == 255 for k in range(3)), (corner, a[by, bx])
+
+
+def test_lshape_cut_uses_hole_bg_color_when_not_transparent(material_path):
+    """回归：pool_hole_transparent=False 时，cut 区应使用 hole_bg_color。
+
+    [2026-09-04 修复] 此前 cut 区无条件填 255，既未读取 hole_bg_color，
+    也未判断 pool_hole_transparent，导致用户在 UI 上配置的洞色
+    在 L 形挖角下静默失效。本用例锁定修复后的行为。
+    """
+    for corner in ('tl', 'tr', 'bl', 'br'):
+        design = _lshape_design(material_path, l_corner=corner, pool_hole_transparent=False)
+        out = render_design(design, quality='preview')
+        a = np.array(out)
+        ir = design.inner_rect_px()
+        cw = design.cm2px(design.l_cut_w_cm)
+        ch = design.cm2px(design.l_cut_h_cm)
+        if corner in ('tr', 'br'):
+            cx = int(ir.right - cw / 2)
+        else:
+            cx = int(ir.x + cw / 2)
+        if corner in ('tr', 'tl'):
+            cy = int(ir.y + ch / 2)
+        else:
+            cy = int(ir.bottom - ch / 2)
         hb = design.hole_bg_color
         assert all(abs(int(a[cy, cx][k]) - hb[k]) <= 3 for k in range(3)), (corner, a[cy, cx])
-        assert not all(abs(int(a[by, bx][k]) - hb[k]) <= 3 for k in range(3)), (corner, a[by, bx])
 
 
 def test_rect_hole_pool_render_unchanged(material_path):
