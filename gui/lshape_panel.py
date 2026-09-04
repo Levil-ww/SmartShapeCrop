@@ -167,12 +167,16 @@ class LShapePanel(QWidget):
         self._inner_layout.addWidget(self._gb_sketch)
 
         # ===== 3) L 形挖角识别区 =====
-        self._gb_lshape_recog = QGroupBox("✂️ L 形挖角识别")
+        # 标题只保留文字，去掉底部白色背景渲染，避免背景块遮挡内容。
+        # 用 subcontrol-origin: border + 给足 margin-top，让含 emoji 图标的
+        # 标题完整浮在边框线上方（与「尺寸草图」观感一致，不被裁切）。
+        self._gb_lshape_recog = QGroupBox("L 形挖角识别")
         self._gb_lshape_recog.setStyleSheet(
             "QGroupBox { font-weight: bold; border: 2px solid #E6A23C; "
-            "border-radius: 6px; margin-top: 14px; padding-top: 8px; }"
-            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; "
-            "left: 14px; top: 0px; padding: 0 6px; color: #B26A00; }")
+            "border-radius: 6px; margin-top: 14px; padding-top: 12px; "
+            "background: #FFFFFF; }"
+            "QGroupBox::title { subcontrol-origin: border; subcontrol-position: top left; "
+            "left: 12px; top: -2px; padding: 0 6px; color: #B26A00; }")
         fr = QVBoxLayout(self._gb_lshape_recog)
         fr.setSpacing(6)
 
@@ -196,8 +200,32 @@ class LShapePanel(QWidget):
         fr.addWidget(self._lshape_status)
         self._inner_layout.addWidget(self._gb_lshape_recog)
 
-        # ===== 4) L 形参数 GroupBox =====
-        self._gb_l = QGroupBox("📐 L 形挖角参数")
+        # ===== 4+5) 参数组同行并排：外框尺寸(左) + L 形挖角参数(右) =====
+        # v2.1 布局调整：把原本上下堆叠的两个 GroupBox 改为同一行并排，
+        # 减少纵向滚动；外框尺寸（与画布强相关）放左侧优先视线位置。
+        # 仅改布局，控件创建 / 信号连接 / 样式全部保持原状。
+        params_row = QHBoxLayout()
+        params_row.setSpacing(8)
+        params_row.setContentsMargins(0, 0, 0, 0)
+
+        # ===== 5) 外框尺寸 GroupBox (左侧：先 add → 左) =====
+        # 语义：SpinBox 显示 = 画布值 = 设计外框 + 1cm 损耗
+        #   - 用户改 SpinBox 画布值（如 144.0）
+        #   → _on_param_changed 回写 dict['outer_w_cm'] = 144 - 1 = 143.0（设计真值）
+        #   → PropertyPanel 桥接层同步 _pool_raw_outer_w = 143，_sp_w = 144
+        # 与水池设计器 _sp_w/_sp_h（画布值）语义完全一致。
+        self._gb_outer = QGroupBox("外框尺寸（cm）")
+        self._gb_outer.setStyleSheet(self._param_group_style("#5B6CFF"))
+        fo = QVBoxLayout(self._gb_outer)
+        fo.setSpacing(6)
+        self._sp_outer_w = self._dspin(5, 500, 5.0)
+        self._sp_outer_h = self._dspin(5, 500, 5.0)
+        fo.addLayout(self._row("宽(cm)", self._sp_outer_w))
+        fo.addLayout(self._row("高(cm)", self._sp_outer_h))
+        params_row.addWidget(self._gb_outer, 1)  # 外框尺寸 → 左
+
+        # ===== 4) L 形挖角参数 GroupBox (右侧：后 add → 右) =====
+        self._gb_l = QGroupBox("L 形挖角参数")
         self._gb_l.setStyleSheet(self._param_group_style("#5B6CFF"))
         fl = QVBoxLayout(self._gb_l)
         fl.setSpacing(6)
@@ -211,23 +239,9 @@ class LShapePanel(QWidget):
         fl.addLayout(self._row("挖角位置", self._cb_lcorner))
         fl.addLayout(self._row("挖角宽度(cm)", self._sp_lw))
         fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
-        self._inner_layout.addWidget(self._gb_l)
+        params_row.addWidget(self._gb_l, 1)  # L 形挖角参数 → 右
 
-        # ===== 5) 外框尺寸（画布值，与水池设计器画布尺寸联动） =====
-        # 语义：SpinBox 显示 = 画布值 = 设计外框 + 1cm 损耗
-        #   - 用户改 SpinBox 画布值（如 144.0）
-        #   → _on_param_changed 回写 dict['outer_w_cm'] = 144 - 1 = 143.0（设计真值）
-        #   → PropertyPanel 桥接层同步 _pool_raw_outer_w = 143，_sp_w = 144
-        # 与水池设计器 _sp_w/_sp_h（画布值）语义完全一致。
-        self._gb_outer = QGroupBox("📐 外框尺寸（cm）")
-        self._gb_outer.setStyleSheet(self._param_group_style("#5B6CFF"))
-        fo = QVBoxLayout(self._gb_outer)
-        fo.setSpacing(6)
-        self._sp_outer_w = self._dspin(5, 500, 5.0)
-        self._sp_outer_h = self._dspin(5, 500, 5.0)
-        fo.addLayout(self._row("宽(cm)", self._sp_outer_w))
-        fo.addLayout(self._row("高(cm)", self._sp_outer_h))
-        self._inner_layout.addWidget(self._gb_outer)
+        self._inner_layout.addLayout(params_row)
 
         # ===== 6) 一键生成预览 + 导出 JPG（底部主操作行，与水池设计器一致）=====
         row_action = QHBoxLayout()
@@ -285,11 +299,11 @@ class LShapePanel(QWidget):
         """
         return (
             "QGroupBox { font-weight: bold; border: 1px solid #C9D0E5;"
-            " border-radius: 6px; margin-top: 12px; padding-top: 8px;"
+            " border-radius: 6px; margin-top: 14px; padding-top: 12px;"
             f" background: #FBFCFF; }} "
-            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left;"
-            " left: 10px; top: 0px; padding: 0 6px;"
-            f" color: {accent}; background: #FBFCFF; }}")
+            "QGroupBox::title { subcontrol-origin: border; subcontrol-position: top left;"
+            " left: 10px; top: -2px; padding: 0 6px;"
+            f" color: {accent}; }}")
 
     # ====================================================================
     # 目标文件名处理
