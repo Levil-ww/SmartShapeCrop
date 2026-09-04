@@ -54,6 +54,12 @@ L 形挖角功能是 SmartShapeCrop V2.x 系列最复杂的单体功能，覆盖
 | `阶段4-20260902-L形挖角独立面板重构与数据流解耦.md` | LShapeDesign 独立数据类（不与 CropDesign 共享字段）；gui/lshape_panel.py 520行内聚 3Worker+1Dialog；顶层 Tab 并列第三名（水池/圆角/L形） | 切模式 10 次交叉验证零字段污染 |
 | `阶段4-20260902-历史记录TARGET_SRC_LSHAPE第三源物理隔离设计.md` | app_settings 三源（CROPPER/POOL/LSHAPE）；QSettings 三独立 group + JSON 三独立文件；3 天保留+50条上限策略不变；原 poolbox 中 L 形 8 行历史代码删除 | 5+5+5 条三源交叉写入验证零混列 |
 
+### 阶段 5：三链路质量闭环期（2026.09.03）
+
+| 文件名 | 核心内容 | 关键产出 |
+|---|---|---|
+| `阶段5-20260903-L形挖角识别精度+渲染边框+GUI防抖三重闭环.md` | T1 识别精度：双锚点 corner 四象限投票 12/12、外框取完整外包、损耗统一转换层 +1cm；T2 渲染：挖角纯白(255,255,255)、边框原素材图检测+外→内绘制+corner自适应 12/12 边还原；T3 交互：_LayersMixin debounce 200/800ms，滚轮 10 步 5-10× 流畅度提升 | 识别 12/12 + 渲染 12/12 + 交互 5/5 主观满分，三大高频投诉一次性归零 |
+
 ### 跨阶段汇总文档
 
 | 文件名 | 内容 |
@@ -63,18 +69,23 @@ L 形挖角功能是 SmartShapeCrop V2.x 系列最复杂的单体功能，覆盖
 
 ---
 
-## 核心文件调用关系总览（跨阶段）
+## 核心文件调用关系总览（跨阶段，标注阶段 5 修改）
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                                   GUI 层                                      │
-│  gui/lshape_panel.py（阶段4，NEW 520行）←────────── 主入口（独立 Tab）      │
-│  ├─ _LShapeParseWorker (内嵌)               │
-│  ├─ _LShapeRenderWorker (内嵌)              │
-│  └─ _LShapeConfirmDialog (内嵌)             │
+│  gui/lshape_panel.py（阶段4 NEW 520行 + 阶段5 T3 修改）←────── 主入口       │
+│  ├─ _LShapeParseWorker (内嵌)  ·阶段5 T1: 回填_validate_lshape_geometry守卫│
+│  ├─ _LShapeRenderWorker (内嵌) ·阶段5 T3: 5 SpinBox→_schedule_apply_quiet │
+│  └─ _LShapeConfirmDialog (内嵌)                                              │
+│                                                                              │
+│  gui/property_panel_layers.py（阶段5 T3: 新增 debounce 基础设施）            │
+│  ├─ _init_debounce() + 2 QTimer                                              │
+│  ├─ _schedule_apply_quiet()   （19个SpinBox统一调度入口）                    │
+│  └─ _do_debounced_render()    （合并渲染实际出口）                           │
 │                                                                              │
 │  ── 阶段1/2/3 旧路径（仍保留，L形内联水池用） ──                                │
-│  gui/property_panel_poolbox.py（阶段2/3，阶段4 删除194行L形内联）            │
+│  gui/property_panel_poolbox.py（阶段4删194行 · 阶段5 T1: 回填校验+T3:12个SpinBox防抖）
 │  gui/property_panel_dialogs.py::_LShapeConfirmDialog（阶段2，阶段4 迁移内嵌）│
 │  gui/property_panel_workers.py::_LShapeParseWorker（阶段2，阶段4 迁移内嵌） │
 └──────────────────────────────────────────┬───────────────────────────────────┘
@@ -82,8 +93,8 @@ L 形挖角功能是 SmartShapeCrop V2.x 系列最复杂的单体功能，覆盖
                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                                 数据模型层                                    │
-│  LShapeDesign（阶段4 NEW：独立dataclass，7字段）                              │
-│    ↓ 单向转为 CropDesign(mode='rect_lshape') 传给渲染                        │
+│  LShapeDesign（阶段4 NEW）                                                   │
+│    ↓ 单向转为 CropDesign（阶段5 T1: 强化_effective = cut+1cm 为唯一官方入口）│
 │  CropDesign（阶段1/2/3：mode+l_corner+l_cut_w_cm+l_cut_h_cm 四字段扩展）     │
 │    ↓ 打包为结构化对象                                                         │
 │  LShape（geometry.py dataclass：阶段1设计，贯穿始终不变）                     │
@@ -91,35 +102,41 @@ L 形挖角功能是 SmartShapeCrop V2.x 系列最复杂的单体功能，覆盖
                                            │
                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                                草图识别层（阶段2 新建）                       │
+│                                草图识别层（阶段5 T1 精度三重修复）           │
 │  core/pool_designer/lshape_sketch_parser.py                                  │
-│  ├─ parse_lshape_sketch() ← 两矩形减法推断法（阶段1设计，阶段2实现）         │
-│  └─ LSketchParseResult dataclass + 几何降级路径（无Tesseract时走像素比例）   │
+│  ├─ parse_lshape_sketch() ← 两矩形减法（阶段1/2 原设计）                     │
+│  ├─ _detect_corner() ← 阶段5 T1: 单重心→双锚点四象限投票（挖角中心×2+空穴×1）│
+│  ├─ Step7终态赋值 ← 阶段5 T1: outer直接取外包（零减法，不再total-cut）       │
+│  └─ _validate_lshape_geometry() ← 阶段5 T1: 新增自洽守卫 cut<outer-2cm 降级 │
 └──────────────────────────────────────────┬───────────────────────────────────┘
                                            │
                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                              几何计算 + 渲染引擎层                            │
+│                        几何计算 + 渲染引擎层（阶段5 T2 两项分离）            │
 │  core/geometry.py                                                             │
-│  ├─ build_lshape_mask()              ← 外框矩形 - 挖角矩形（两矩形减法几何）  │
-│  └─ compute_lshape_border_bands()    ← L凹角形态学腐蚀+中心线拟合 10px均匀   │
+│  ├─ build_lshape_mask()              ← 两矩形减法几何（不变）                │
+│  └─ compute_lshape_border_bands()    ← 阶段5 T2: 不再调用，改走 lshape_border│
 │                                                                              │
 │  core/image_ops.py::render_design()                                           │
-│  └─ if mode=='rect_lshape' and is_pool_with_material ← 阶段2 新增分支        │
-│     L 保留区 = 外框素材（不覆盖inner_fill）                                   │
-│     cut 挖角区 = hole_bg_color（洞色）                                       │
+│  ├─ L形挖角区填充 ← 阶段5 T2: 从 hole_bg_color → 强制纯白(255,255,255)     │
+│  ├─ cut_w/h -1cm 双层减 ← 阶段5 T1: 删除（损耗只在转换层统一加）            │
+│  └─ L形/水池分支完全分离（阶段5 T2 语义修正）                                │
+│                                                                              │
+│  core/lshape_border.py（阶段5 T2 大修）                                      │
+│  ├─ detect_border_bands() ← 改源为原素材图 + scale_factor 画布坐标转换       │
+│  ├─ _is_content_layer() ← max(dRGB)<25 排除内容色（修正阈值25）              │
+│  └─ render_lshape_borders() ← 外→内分层绘制 + corner四向(tl/tr/bl/br)方向调整
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                               
-                             存储层（阶段4 NEW）
+                             存储层（阶段4 NEW，阶段5 零修改）
                   core/app_settings.py（TARGET_SRC_LSHAPE 第三源）
                   ├─ QSettings group: /SmartShapeCrop/history/lshape/
                   └─ JSON 文件: history_lshape.json
-                  （与 CROPPER/POOL 物理隔离）
 ```
 
 ---
 
-## L 形挖角里程碑（13 天四阶段关键节点）
+## L 形挖角里程碑（14 天五阶段关键节点）
 
 | 日期 | 里程碑 | 完成度/测试数 | 一句话结论 |
 |---|---|---|---|
@@ -129,6 +146,10 @@ L 形挖角功能是 SmartShapeCrop V2.x 系列最复杂的单体功能，覆盖
 | 8.28 P3 | 端到端：合成草图（tr/450×33/挖角100×2cm）跑全链路 | corner=tr / UI 回填正确 / 渲染 cut 中心=洞色 ✅ | 10 层链路首闭环 |
 | 8.28 当日 | 新增测试：test_lshape_*（7+10+5=22 条） | 228 → **240 passed / 5 skipped / 0 failed** | 测试基线 +12 |
 | 9.1 | very-thorough 代码审计 + 22 条分级分析 | 代码 15/15，环境 7 条全部定位；降级 4/4 corner 正确 | 代码完整度确认 + 环境问题锁定 → 触发阶段4 |
-| 9.2 P1 | 独立面板 lshape_panel.py 520 行落地 | 16/16 视觉（4向×圆角×素材）+ 10 次交叉零污染 | 用户体验 50 分 → 80 分 |
+| 9.2 P1 | 独立面板 lshape_panel.py 520 行落地 | 16/16 视觉（4向×圆角×素材）+ 10 次交叉零污染 | 用户体验 50 分 → 80 分（架构达标） |
 | 9.2 P2 | 历史记录第三源 TARGET_SRC_LSHAPE 物理隔离 | 5+5+5 三源交叉测试 0 混列 | 数据完整性闭环 |
-| 9.2 当日 | venv 重建（根除 python-qt5 黑包）后全量 pytest | **275 passed / 0 failed / 5 skipped** | 13 天努力最终全绿 |
+| 9.2 当日 | venv 重建（根除 python-qt5 黑包）后全量 pytest | **275 passed / 0 failed / 5 skipped** | 13 天努力全绿 |
+| 9.3 T1 | 识别精度三重修复（双锚点corner+外框外包+统一+1cm损耗） | corner 12/12 正确 + 外框 6/6 ≤0.2cm + cut+1cm ≤1mm | 识别从 6/12→12/12 100% |
+| 9.3 T2 | 渲染两项修复（挖角纯白RGB255+原素材图原生边框两带检测+方向自适应） | 3 种色系挖角区纯白 + 4方向×3素材 12/12 边完整还原黑12棕46px | 渲染从 0/12→12/12 视觉达标 |
+| 9.3 T3 | GUI 防抖 _LayersMixin debounce 200ms+800ms | SpinBox 滚轮10步卡顿 4.27s→0.43s（5–10×），主观 2分→5分 | 交互流畅 19 个 SpinBox 全覆 |
+| 9.3 当日 | 方向报告 V2.1.2 体检 + 4 红灯归因（2 语义+1 业务+1 路径） | pytest 280 收集 → 276/5/4，4 红灯零代码 bug | 工程纪律拐点：从加功能→敛质量 |
