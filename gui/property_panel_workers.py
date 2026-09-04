@@ -267,6 +267,20 @@ class PoolRenderWorker(QThread):
                 design.pool_outer_material_image = best.path
                 design.outer_bg_image = best.path
                 design.pool_inner_material_image = best.path
+                # [V13 集成 2026-09-04] 手动边框覆盖参数透传到 design
+                # 缺失字段（None）→ design 字段保留默认 None → 走原有自动检测路径
+                # 已设值（int / tuple）→ design 字段写入 → 走 V13 路径
+                _me = lp.get('manual_edge_px', None)
+                _mb = lp.get('manual_band_px', None)
+                _mc = lp.get('manual_band_color', None)
+                design.lshape_manual_edge_px = (
+                    int(_me) if _me is not None else None)
+                design.lshape_manual_band_px = (
+                    int(_mb) if _mb is not None else None)
+                if _mc is not None:
+                    design.lshape_manual_band_color = tuple(int(c) for c in _mc)
+                else:
+                    design.lshape_manual_band_color = None
                 self._log(
                     f"L 形挖角模式：corner={design.l_corner}, "
                     f"挖角 {design.l_cut_w_cm:.1f}x{design.l_cut_h_cm:.1f} cm, "

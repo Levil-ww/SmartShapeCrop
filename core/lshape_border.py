@@ -453,6 +453,10 @@ def apply_lshape_border_completion(
     src_material_img: Image.Image | None = None,
     scale_x: float = 1.0,
     scale_y: float = 1.0,
+    # [V13 集成 2026-09-04 新增] 手动边框参数覆盖（None=自动检测/原有路径）
+    manual_edge_px: int | None = None,
+    manual_band_px: int | None = None,
+    manual_band_color: tuple[int, int, int] | None = None,
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
@@ -467,10 +471,47 @@ def apply_lshape_border_completion(
         bg_color: 背景色参考（用于边框检测过滤；白色为佳）
         src_material_img: 原始素材图（未拉伸），优先用它检测边框以获得更精确结果
         scale_x, scale_y: 原始图到画布的缩放比例（canvas_w / src_w）
+        manual_edge_px: [V13] 手动指定黑描边宽（素材原始像素坐标）。
+                       None=自动；与 manual_band_*/color 任一非 None 即走 V13 路径。
+        manual_band_px: [V13] 手动指定主色带宽（0=无主带，None=自动）。
+        manual_band_color: [V13] 手动指定主色带 RGB（band>0 时必须）。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
+
+    路径选择（向后兼容）：
+        - 全部 manual_* = None：
+            * 原有 detect_pool_material_borders 路径（pixel-identical 与基线一致）
+            * 若原有检测返回空 → 兜底走 V13 detect_border_v13
+            * 不追加凹角补全（保持原有输出不变）
+        - 任一 manual_* 非 None：
+            * 跳过 detect_pool_material_borders，直接用 V13 路径
+            * 缺失项用 detect_border_v13 自动补齐
+            * draw_border_layers_on_cut_edges 后追加 apply_v13_concave_corner_layer
+              凹角几何分层（黑带沿 L 形轮廓连续 + 主带直角衔接 + 杜绝白色竖线）
     """
+    # ===== [V13 集成] 手动覆盖路径：任一 manual_* 非 None → 走 V13 路径 =====
+    manual_active = (
+        manual_edge_px is not None
+        or manual_band_px is not None
+        or manual_band_color is not None
+    )
+    if manual_active:
+        return _apply_v13_path(
+            canvas_arr=canvas_arr,
+            material_img=material_img,
+            outer_rect=outer_rect,
+            cut_corner=cut_corner,
+            cut_w_px=cut_w_px,
+            cut_h_px=cut_h_px,
+            src_material_img=src_material_img,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            manual_edge_px=manual_edge_px,
+            manual_band_px=manual_band_px,
+            manual_band_color=manual_band_color,
+        )
+
     # Step 1: 边框检测
     # 优先使用原始素材图（未拉伸）→ 更精确，不会受 adapt_pool_material 畸变影响
     detect_img = src_material_img if src_material_img is not None else material_img
@@ -479,6 +520,28 @@ def apply_lshape_border_completion(
 
     border_layers_src = detect_pool_material_borders(detect_img, bg_color)
     if not border_layers_src:
+        # ===== [V13 集成] 兜底：原有检测返回空 → 走 V13 detect_border_v13 =====
+        # 不修改原有 logger.info / return False 行为；新增 V13 兜底分支。
+        v13 = detect_border_v13(detect_img)
+        if v13 is not None:
+            logger.info(
+                "[LShapeBorder] 原有检测返回空，兜底走 V13 detect_border_v13: "
+                "edge=%dpx band=%dpx color=%s", v13[0], v13[1], v13[2],
+            )
+            return _apply_v13_path(
+                canvas_arr=canvas_arr,
+                material_img=material_img,
+                outer_rect=outer_rect,
+                cut_corner=cut_corner,
+                cut_w_px=cut_w_px,
+                cut_h_px=cut_h_px,
+                src_material_img=src_material_img,
+                scale_x=scale_x,
+                scale_y=scale_y,
+                manual_edge_px=v13[0],
+                manual_band_px=v13[1],
+                manual_band_color=v13[2],
+            )
         logger.info("[LShapeBorder] 素材无边框层，跳过补全")
         return False
 
@@ -510,3 +573,330 @@ def apply_lshape_border_completion(
         canvas_arr, edge_bboxes, border_layers_canvas, cut_corner=cut_corner,
     )
     return True
+
+
+# ===========================================================================
+# [V13 集成 2026-09-04] V13 路径辅助函数
+# ===========================================================================
+
+def _apply_v13_path(
+    *,
+    canvas_arr: np.ndarray,
+    material_img: Image.Image,
+    outer_rect: RectShape,
+    cut_corner: str,
+    cut_w_px: float,
+    cut_h_px: float,
+    src_material_img: Image.Image | None,
+    scale_x: float,
+    scale_y: float,
+    manual_edge_px: int | None,
+    manual_band_px: int | None,
+    manual_band_color: tuple[int, int, int] | None,
+) -> bool:
+    """V13 路径：手动覆盖或原检测兜底时使用。
+
+    流程：
+      1. 用 manual_* 优先，缺失项用 detect_border_v13 自动补齐
+      2. 厚度按 scale 换算到画布坐标系
+      3. 构造 border_layers（黑边 + 主带）= [(black, edge_canvas), (main_color, band_canvas)]
+         band=0 时只有黑边一层
+      4. compute_cut_edge_bboxes + draw_border_layers_on_cut_edges 绘制直边
+      5. apply_v13_concave_corner_layer 修凹角几何（band>0 时才需要）
+    """
+    detect_img = src_material_img if src_material_img is not None else material_img
+    if detect_img is None:
+        return False
+
+    # —— 1) 解析边框参数（手动优先，缺失用 V13 自动检测）——
+    edge_src: int | None = manual_edge_px
+    band_src: int | None = manual_band_px
+    color_src: tuple[int, int, int] | None = manual_band_color
+
+    need_auto = (edge_src is None) or (band_src is None) or (
+        band_src > 0 and color_src is None
+    )
+    if need_auto:
+        v13 = detect_border_v13(detect_img)
+        if v13 is not None:
+            if edge_src is None:
+                edge_src = v13[0]
+            if band_src is None:
+                band_src = v13[1]
+            if color_src is None and band_src and band_src > 0:
+                color_src = v13[2]
+        # V13 检测失败时保留手动值（若仅有 manual_band_color 缺失则用黑色兜底）
+
+    # 兜底：edge 仍 None → 视为无边框，跳过
+    if edge_src is None or edge_src <= 0:
+        logger.info("[LShapeBorder/V13] edge 缺失或 ≤0，跳过 V13 路径")
+        return False
+    # band 缺失视为 0（无主带）；color 缺失但 band>0 → 用黑色兜底（视觉上接近"无主带"）
+    if band_src is None:
+        band_src = 0
+    if band_src > 0 and color_src is None:
+        color_src = (0, 0, 0)
+    elif band_src == 0:
+        color_src = (0, 0, 0)  # 占位，不会被绘制
+
+    # —— 2) 厚度换算到画布坐标系 ——
+    scale_avg = (scale_x + scale_y) / 2.0 if (scale_x > 0 and scale_y > 0) else 1.0
+    scale_avg = max(scale_avg, 0.1)
+
+    edge_canvas = float(edge_src) * scale_avg
+    band_canvas = float(band_src) * scale_avg
+    total_t = edge_canvas + band_canvas
+
+    # —— 3) 构造 border_layers（外到内：黑边 → 主带）——
+    border_layers_canvas: list[tuple[tuple[int, int, int], float]] = [
+        ((0, 0, 0), edge_canvas),
+    ]
+    if band_canvas > 0:
+        border_layers_canvas.append((color_src, band_canvas))
+
+    logger.info(
+        "[LShapeBorder/V13] edge=%.1fpx band=%.1fpx color=%s "
+        "(scale=%.2f×, canvas total=%.1fpx)",
+        edge_canvas, band_canvas, color_src, scale_avg, total_t,
+    )
+
+    # —— 4) 绘制直边（复用既有几何/绘制函数，保持凹角以外的视觉一致）——
+    edge_bboxes = compute_cut_edge_bboxes(
+        outer_rect, cut_corner, cut_w_px, cut_h_px, total_t,
+    )
+    if not edge_bboxes:
+        return False
+    draw_border_layers_on_cut_edges(
+        canvas_arr, edge_bboxes, border_layers_canvas, cut_corner=cut_corner,
+    )
+
+    # —— 5) V13 凹角几何分层补全 ——
+    # 仅 band>0 时才需要（band=0 时只有黑边，draw_border_layers_on_cut_edges 已连续）；
+    # 实际 V13 crop_tr 对 band=0 也做了内凹角分层（黑带沿 L 形轮廓连续），保险起见始终调用。
+    try:
+        apply_v13_concave_corner_layer(
+            canvas_arr=canvas_arr,
+            outer_rect=outer_rect,
+            cut_corner=cut_corner,
+            cut_w_px=cut_w_px,
+            cut_h_px=cut_h_px,
+            edge_px=int(round(edge_canvas)),
+            band_px=int(round(band_canvas)),
+            main_color=color_src,
+        )
+    except Exception as e:
+        logger.debug(f"[LShapeBorder/V13] 凹角补全异常（跳过）: {e}")
+    return True
+
+
+# ===========================================================================
+# [V13 集成 2026-09-04] —— Additive V13 L 形挖角功能（不修改上面任何原有函数）
+#
+# 来源：E:\ima-测试L型挖角输出\确认V13\lshape_crop.py（v13 固化版）
+# 集成方式：纯加性新增
+#   - detect_border_v13(): V13 的 1D 段分析边框检测，对"黑描边 + 主色带"结构素材
+#     （克罗印花/凯特玫瑰/巴洛克之星/中古雨林等）比 _get_border_layers_robust 更可靠
+#   - apply_v13_concave_corner_layer(): V13 的 per-pixel 几何分层凹角补全
+#     （max(dx,dy) 距离分层 → 黑带沿 L 形轮廓连续 + 主带直角衔接 + 杜绝白色竖线）
+#
+# 触发条件（在 apply_lshape_border_completion 内部新增分支，未修改原 if 链）：
+#   - 手动覆盖启用（design.lshape_manual_edge_px / _band_px / _band_color 任一非 None）
+#     → 跳过 detect_pool_material_borders，直接用 V13 检测/手动值
+#   - 自动检测返回空且无手动覆盖 → 兜底走 V13 检测
+#   - 始终在 draw_border_layers_on_cut_edges 之后追加 apply_v13_concave_corner_layer
+#     修凹角几何衔接（band>0 时才需要）
+#
+# 向后兼容：design 默认无 lshape_manual_* 字段 → 全部走原有路径，输出与基线一致。
+# ===========================================================================
+
+
+def _v13_segv(arr: np.ndarray, tol: int = 12):
+    """V13 的 1D 段切分：相邻像素 L1 距离 > tol 即断段。
+
+    返回 [(start_idx, end_idx, representative_color_tuple), ...]。
+    representative_color 取该段起始像素的 RGB（与 V13 原版一致）。
+    """
+    out = []
+    prev = tuple(int(v) for v in arr[0])
+    s = 0
+    for i in range(1, len(arr)):
+        c = tuple(int(v) for v in arr[i])
+        if abs(c[0] - prev[0]) + abs(c[1] - prev[1]) + abs(c[2] - prev[2]) > tol:
+            out.append((s, i - 1, prev))
+            s, prev = i, c
+    out.append((s, len(arr) - 1, prev))
+    return out
+
+
+def _v13_pick(segs):
+    """V13 段选择：最外暗色段=黑描边，其后第一个 ≥40px 彩色段=主色带。
+
+    返回 (black_width, band_width, band_color) 或 None。
+    band_width=0 表示只有黑边无主带（如 庄园秘境/戏蝶/中古大花 纯黑宽边素材）。
+    """
+    MIN_BAND = 40
+    i = 0
+    while i < len(segs) and (segs[i][1] - segs[i][0] + 1) <= 2:
+        i += 1
+    if i >= len(segs):
+        return None
+    if max(segs[i][2]) < 90:
+        bw = segs[i][1] - segs[i][0] + 1
+        i += 1
+    else:
+        return None
+    for j in range(i, len(segs)):
+        w = segs[j][1] - segs[j][0] + 1
+        c = segs[j][2]
+        if w >= MIN_BAND and max(c) >= 60 and max(c) <= 235:
+            return (bw, w, c)
+    return (bw, 0, (0, 0, 0))
+
+
+def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, int]] | None:
+    """V13 自动边框检测：返回 (黑描边宽 px, 主带宽 px, 主带色 RGB) 或 None。
+
+    规则（V13 原版）：
+      - 检测以素材顶边（中心列）为准；左剖面仅校正黑边宽度
+      - 最外暗色段 = 黑描边（宽度自动）
+      - 黑描边后第一个 ≥40px 的彩色段（排除近白/近黑的花纹底色）= 主色带
+      - 黑边后只有窄浅色过渡（≤30px）→ 视为无主带（BW=0）
+
+    Args:
+        src_img: 原始素材 PIL Image（建议未拉伸，避免 adapt_pool_material 畸变）
+
+    Returns:
+        (edge_px, band_px, (r, g, b)) 或 None（未检测到黑描边）
+    """
+    if src_img is None:
+        return None
+    arr = np.array(src_img.convert('RGB') if src_img.mode != 'RGB' else src_img)
+    H, W = arr.shape[:2]
+    if H < 20 or W < 20:
+        return None
+
+    # 顶边：取上 1/3 中心列；左边：取左 1/3 中心行（仅用于校正黑边宽）
+    pt = _v13_pick(_v13_segv(arr[:min(H // 3, 400), W // 2]))
+    pl = _v13_pick(_v13_segv(arr[H // 2, :min(W // 3, 400)]))
+    if pt is None:
+        return None
+    edge = round((pt[0] + (pl[0] if pl else pt[0])) / 2)
+    return (edge, pt[1], pt[2])
+
+
+def apply_v13_concave_corner_layer(
+    canvas_arr: np.ndarray,
+    outer_rect: RectShape,
+    cut_corner: str,
+    cut_w_px: float,
+    cut_h_px: float,
+    edge_px: int,
+    band_px: int,
+    main_color: tuple[int, int, int],
+    black_color: tuple[int, int, int] = (0, 0, 0),
+) -> None:
+    """V13 凹角几何分层补全：在内凹角点周围按 max(dx, dy) 距离分层绘制黑带 + 主带。
+
+    修复 `draw_border_layers_on_cut_edges` 在内凹角处可能出现的：
+      - 黑带在角部断头（不连续）
+      - 主带直角衔接错位
+      - 白色竖线（水平黑带未全宽覆盖时）
+
+    算法（V13 crop_tr 原版，四角通用化）：
+      - 凹角点 (cx, cy) = L 形保留区与 cut 区的交界点
+      - 对凹角周围 T = edge + band 像素的方形区域，按 d = max(|dx|, |dy|) 分层：
+          d <= edge            → 黑色
+          edge < d <= T        → 主色（band > 0 时）
+      - 通过把目标角统一翻转到 tr 处理，再翻回（保持花纹方向不变）
+
+    Args:
+        canvas_arr: 画布 numpy 数组 (H, W, 3) uint8，原地修改
+        outer_rect: L 形外框（= inner_rect_px）
+        cut_corner: 'tl' | 'tr' | 'bl' | 'br'
+        cut_w_px, cut_h_px: 挖角像素尺寸
+        edge_px: 黑描边宽（像素）
+        band_px: 主带宽（像素，0 = 无主带 → 只补黑带连续性）
+        main_color: 主带颜色 RGB
+        black_color: 黑描边颜色，默认 (0, 0, 0)
+    """
+    if edge_px <= 0 or cut_w_px <= 0 or cut_h_px <= 0:
+        return
+    T = edge_px + max(0, band_px)
+    if T <= 0:
+        return
+
+    H, W = canvas_arr.shape[:2]
+    ox, oy = int(round(outer_rect.x)), int(round(outer_rect.y))
+    oright = int(round(outer_rect.right))
+    obottom = int(round(outer_rect.bottom))
+    cw = int(round(cut_w_px))
+    ch = int(round(cut_h_px))
+
+    # 凹角点（保留区与 cut 区的内凹交界）—— 与 cut_corner 对应
+    # tl: 凹角在 (ox+cw, oy+ch) —— cut 区右下角
+    # tr: 凹角在 (oright-cw, oy+ch) —— cut 区左下角
+    # bl: 凹角在 (ox+cw, obottom-ch) —— cut 区右上角
+    # br: 凹角在 (oright-cw, obottom-ch) —— cut 区左上角
+    # V13 crop_tr 处理的是 tr：凹角在 (x0, ch) = (oright-cw, oy+ch)
+    # 翻转策略：把目标角转到 tr 处理，再翻回（与 V13 crop_corner 一致）
+    sub_x0 = max(0, oright - cw - T - 2)
+    sub_x1 = min(W, oright + 2)
+    sub_y0 = max(0, oy - 2)
+    sub_y1 = min(H, oy + ch + T + 2)
+    if sub_x1 <= sub_x0 or sub_y1 <= sub_y0:
+        return
+
+    sub = canvas_arr[sub_y0:sub_y1, sub_x0:sub_x1, :].copy()
+    # 翻转到 tr 处理：tl → fliplr, bl → flipud, br → flipud+fliplr, tr → 不翻
+    if cut_corner == 'tl':
+        sub = np.fliplr(sub).copy()
+    elif cut_corner == 'bl':
+        sub = np.flipud(sub).copy()
+    elif cut_corner == 'br':
+        sub = np.flipud(np.fliplr(sub).copy()).copy()
+    # else tr: 不翻
+
+    # 在翻转后的子图中，凹角局部坐标（相对 sub 左上）
+    # 原 tr 凹角的全局坐标 (oright-cw, oy+ch) → sub 内 ((oright-cw) - sub_x0, (oy+ch) - sub_y0)
+    cx_local = (oright - cw) - sub_x0
+    cy_local = (oy + ch) - sub_y0
+    sh, sw = sub.shape[:2]
+
+    # V13 内凹角区域：x ∈ [cx_local - T, cx_local], y ∈ [cy_local, cy_local + T]
+    # 等价于 crop_tr 的 for yy in range(ch, ch+T): for xx in range(x0-T, x0)
+    x_lo = max(0, cx_local - T)
+    x_hi = min(sw, cx_local)
+    y_lo = max(0, cy_local)
+    y_hi = min(sh, cy_local + T)
+    if x_hi <= x_lo or y_hi <= y_lo:
+        # 翻回前直接返回（无操作）
+        return
+
+    # 几何分层：d = max(cx_local - xx, yy - cy_local)
+    # 与 V13 crop_tr 一致：d <= EDGE → 黑；EDGE < d <= T → 主带
+    xs = np.arange(x_lo, x_hi)
+    ys = np.arange(y_lo, y_hi)
+    XX, YY = np.meshgrid(xs, ys)  # shape (len(ys), len(xs))
+    D = np.maximum(cx_local - XX, YY - cy_local)
+
+    black_mask = D <= edge_px
+    if band_px > 0:
+        main_mask = (D > edge_px) & (D <= T)
+    else:
+        main_mask = np.zeros_like(D, dtype=bool)
+
+    # 应用到子图（先主带后黑，黑带覆盖最外圈，保证黑带连续）
+    if main_mask.any():
+        sub[main_mask] = np.array(main_color, dtype=sub.dtype)
+    if black_mask.any():
+        sub[black_mask] = np.array(black_color, dtype=sub.dtype)
+
+    # 翻回
+    if cut_corner == 'tl':
+        sub = np.fliplr(sub).copy()
+    elif cut_corner == 'bl':
+        sub = np.flipud(sub).copy()
+    elif cut_corner == 'br':
+        sub = np.fliplr(np.flipud(sub).copy()).copy()
+
+    canvas_arr[sub_y0:sub_y1, sub_x0:sub_x1, :] = sub

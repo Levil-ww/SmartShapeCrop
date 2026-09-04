@@ -1072,6 +1072,12 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                 cut_h_px=cut_h_px,
                 dpi=design.dpi,
                 bg_color=(255, 255, 255),            # 白色作为 bg 参考，避免误判米色/棕色为 bg
+                # [V13 集成 2026-09-04] 手动边框覆盖参数透传
+                # 默认 None → 走原有 detect_pool_material_borders 路径（向后兼容）
+                # 任一非 None → 走 V13 路径（手动值优先，缺失项用 V13 detect_border_v13 补齐）
+                manual_edge_px=getattr(design, 'lshape_manual_edge_px', None),
+                manual_band_px=getattr(design, 'lshape_manual_band_px', None),
+                manual_band_color=getattr(design, 'lshape_manual_band_color', None),
             )
         except Exception as _bc_e:
             logger.debug(f"[LShapeBorder] 补全过程异常（静默跳过）: {_bc_e}")

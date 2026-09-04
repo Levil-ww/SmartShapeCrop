@@ -187,6 +187,24 @@ class CropDesign:
     pool_holes_cm: list = field(default_factory=list)
     pool_holes_gaps_cm: list = field(default_factory=list)
 
+    # ===== [V13 集成 2026-09-04] L 形挖角手动边框覆盖（纯加性，默认 None 保留旧行为）=====
+    # 来源：E:\ima-测试L型挖角输出\确认V13\lshape_crop.py 的 --edge / --band / --band-color
+    # 触发逻辑（在 lshape_border.apply_lshape_border_completion 内部新增分支，未修改原有 if 链）：
+    #   - 任一字段非 None → 走 V13 路径（手动值优先，缺失项用 V13 detect_border_v13 自动检测补齐）
+    #   - 全部 None → 走原有 detect_pool_material_borders 路径（向后兼容）
+    # 字段语义：
+    #   lshape_manual_edge_px:    黑描边宽（像素，原始素材坐标系）。
+    #                             None=自动检测；0=无黑描边（极少见，仅纯主带素材）。
+    #   lshape_manual_band_px:     主色带宽（像素，原始素材坐标系）。
+    #                             None=自动检测；0=无主色带（如 庄园秘境/戏蝶/中古大花 纯黑宽边）。
+    #   lshape_manual_band_color:  主色带颜色 RGB。
+    #                             None=自动检测；band_px>0 时必须能拿到颜色（手动或自动）。
+    # 厚度换算：V13 检测值基于原始素材图，渲染时按 scale_x/scale_y 换算到画布坐标系
+    #          （与现有 detect_pool_material_borders 同一处理路径）。
+    lshape_manual_edge_px: int | None = None
+    lshape_manual_band_px: int | None = None
+    lshape_manual_band_color: tuple[int, int, int] | None = None
+
     # —— 渲染加速：Worker 预加载的模板图缓存 ——
     # [Fix 2026-09-04] _cached_outer_src 记录缓存图对应的素材路径。
     #   此前缓存一经写入便永不失效：用户更换素材时主线程只改标量字段
