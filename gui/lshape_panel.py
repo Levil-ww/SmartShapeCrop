@@ -459,7 +459,9 @@ class LShapePanel(QWidget):
                 f"挖角 {dp.get('cut_w_cm', 0):.1f} × {dp.get('cut_h_cm', 0):.1f} cm，"
                 f"外框 {dp.get('outer_w_cm', 0):.1f} × {dp.get('outer_h_cm', 0):.1f} cm。\n"
                 f"（点击「匹配模板 → 解析草图 → 生成预览」完成素材匹配与渲染）")
-        self.lshape_params_changed.emit()
+        # [2026-09-05 交互范式切换] 不再 emit lshape_params_changed 触发实时渲染
+        # SpinBox 修改 → 只更新 _lshape_params dict（参数真值），渲染由显式生成按钮驱动
+        # self.lshape_params_changed.emit()
 
     # ====================================================================
     # L 形挖角识别（Worker 调度 + 确认框，逻辑与原实现一致）
