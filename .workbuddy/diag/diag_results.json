@@ -1,0 +1,97 @@
+[
+  {
+    "name": "1_complex_pattern_with_gaps",
+    "errors": 879,
+    "radius_px": 177,
+    "img": "F:\\SmartShapeCrop\\.workbuddy\\diag\\1_complex_pattern_with_gaps.png"
+  },
+  {
+    "name": "2_multilayer_border",
+    "failed_corners": {
+      "tr": 225,
+      "br": 225
+    },
+    "total_errors": 450,
+    "img": "F:\\SmartShapeCrop\\.workbuddy\\diag\\2_multilayer_border.png"
+  },
+  {
+    "name": "3_extreme_colors",
+    "gap_errors": 385,
+    "arc_errors": 133,
+    "img": "F:\\SmartShapeCrop\\.workbuddy\\diag\\3_extreme_colors.png"
+  },
+  {
+    "name": "4_corner_smoothness_no_gap_fill",
+    "black_in_gap": 241,
+    "white_in_gap": 0,
+    "img": "F:\\SmartShapeCrop\\.workbuddy\\diag\\4_corner_smoothness_no_gap_fill.png"
+  },
+  {
+    "name": "5_border_smoothness",
+    "gap_count": 24,
+    "total_checks": 30,
+    "gap_ratio": 80.0,
+    "img": "F:\\SmartShapeCrop\\.workbuddy\\diag\\5_border_smoothness.png"
+  },
+  {
+    "name": "6_no_wrong_gap_fill",
+    "black_count": 174,
+    "total": 306,
+    "black_ratio": 56.86274509803921,
+    "img": "F:\\SmartShapeCrop\\.workbuddy\\diag\\6_no_wrong_gap_fill.png"
+  },
+  {
+    "name": "7_name_parser",
+    "rows": [
+      {
+        "fname": "model_60.5x133CM水池",
+        "expected": "133.0x60.5 (横版)",
+        "got": "133.0x60.5 (横版)",
+        "pool_mode": false,
+        "is_pool": true,
+        "ok": true
+      },
+      {
+        "fname": "model_133x60.5CM水池",
+        "expected": "133.0x60.5 (横版)",
+        "got": "133.0x60.5 (横版)",
+        "pool_mode": false,
+        "is_pool": true,
+        "ok": true
+      },
+      {
+        "fname": "model_45x45CM水池",
+        "expected": "45.0x45.0 (横版)",
+        "got": "45.0x45.0 (横版)",
+        "pool_mode": false,
+        "is_pool": true,
+        "ok": true
+      },
+      {
+        "fname": "model_100x50CM水池",
+        "expected": "100.0x50.0 (横版)",
+        "got": "100.0x50.0 (横版)",
+        "pool_mode": false,
+        "is_pool": true,
+        "ok": true
+      },
+      {
+        "fname": "model_50x100CM水池",
+        "expected": "100.0x50.0 (横版)",
+        "got": "100.0x50.0 (横版)",
+        "pool_mode": false,
+        "is_pool": true,
+        "ok": true
+      },
+      {
+        "fname": "model_100x200CM裁剪有图",
+        "expected": "200.0x100.0 (横版)",
+        "got": "200.0x100.0 (横版)",
+        "pool_mode": true,
+        "is_pool": true,
+        "ok": true
+      }
+    ],
+    "img": "F:\\SmartShapeCrop\\.workbuddy\\diag\\7_name_parser.png"
+  }
+]

@@ -78,7 +78,7 @@ def test_border_smoothness():
     else:
         print("  ⚠️  警告: 边框上可能存在较多缺口")
     
-    return passed
+    assert passed, "边框圆角平滑性检查未通过，详见上方逐条输出"
 
 
 def test_no_wrong_gap_fill():
@@ -152,7 +152,7 @@ def test_no_wrong_gap_fill():
     else:
         print("  ⚠️  警告: 间隙区域可能存在错误填充")
     
-    return passed
+    assert passed, "间隙区域填充验证未通过，详见上方逐条输出"
 
 
 def test_internal_content_preserved():
@@ -216,7 +216,7 @@ def test_internal_content_preserved():
     else:
         print("  ❌ 失败: 内部花纹被破坏")
     
-    return passed
+    assert passed, "内部花纹完整性检查未通过，详见上方逐条输出"
 
 
 def test_original_functionality_unchanged():
@@ -281,7 +281,16 @@ def test_original_functionality_unchanged():
         print("  ❌ 四角圆角测试失败")
         all_passed = False
     
-    return all_passed
+    assert all_passed, "原有功能兼容性检查未通过，详见上方逐条输出"
+
+
+def _run_as_script(fn):
+    """脚本入口辅助：把断言型测试函数转成布尔结果（pytest 走 assert 路径）。"""
+    try:
+        fn()
+        return True
+    except AssertionError:
+        return False
 
 
 def main():
@@ -297,10 +306,10 @@ def main():
     
     results = []
     
-    results.append(("边框圆角平滑性", test_border_smoothness()))
-    results.append(("间隙区域填充验证", test_no_wrong_gap_fill()))
-    results.append(("内部花纹完整性", test_internal_content_preserved()))
-    results.append(("原有功能兼容性", test_original_functionality_unchanged()))
+    results.append(("边框圆角平滑性", _run_as_script(test_border_smoothness)))
+    results.append(("间隙区域填充验证", _run_as_script(test_no_wrong_gap_fill)))
+    results.append(("内部花纹完整性", _run_as_script(test_internal_content_preserved)))
+    results.append(("原有功能兼容性", _run_as_script(test_original_functionality_unchanged)))
     
     print("\n" + "=" * 60)
     print("最终测试总结")

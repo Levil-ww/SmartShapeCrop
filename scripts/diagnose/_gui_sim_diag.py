@@ -1,6 +1,20 @@
-"""模拟GUI调用草图解析 - 用于诊断实际运行结果"""
+"""模拟GUI调用草图解析 - 用于诊断实际运行结果（开发诊断脚本，非 pytest 用例）。
+
+历史说明：
+  本文件原位于 tests/gui/test_gui_sim.py。因文件名匹配 pytest 的 test_*.py 规则会被收集，
+  而其顶层代码在 import 阶段即执行真实 OCR 解析（且依赖已丢失的 _test_sketch1.png），
+  既污染测试环境，又存在"未来若改为抛异常会导致整个测试套件无法收集"的风险。
+  2026-09-05 移出 tests/ 并改为下划线前缀，确保不再被 pytest 收集。
+
+运行方式（项目根目录）：
+  python scripts/diagnose/_gui_sim_diag.py
+"""
 import sys
-sys.path.insert(0, '.')
+from pathlib import Path
+
+# 以文件位置定位项目根，避免依赖当前工作目录
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
 import logging
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s %(message)s')
 

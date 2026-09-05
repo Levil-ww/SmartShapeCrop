@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="zh-CN" data-page-node-id="YEwJ1fyMG6c5GBemIAfcdy">
+<head data-page-node-id="sArrLuVyLG3TIDsv0Gs1o4">
+<meta charset="UTF-8" data-page-node-id="Gy1AliLA6XwMnpVxX2eOLc">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="EKlqKgcRJEEnLxIGaz4vsX">
 <title>SmartShapeCrop V2.2 · L形挖角边框自动检测修复报告</title>
 <style>
   :root {
@@ -51,48 +51,48 @@
   li { margin: 4px 0; }
 </style>
 </head>
-<body>
-<div class="wrap">
+<body data-page-node-id="A3YOESHHUv1GpjMwQM5am9">
+<div class="wrap" data-page-node-id="AnQXHNhTI9ByWAQqoOBApB">
 
-  <header>
-    <h1>L 形挖角边框自动检测修复报告<span class="version-tag">V2.2</span></h1>
-    <div class="sub">SmartShapeCrop · 水池设计器 / L 形挖角设计器 · 2026-09-04</div>
+  <header data-page-node-id="AOJVJT5Idf26vS6GxrMwEf">
+    <h1 data-page-node-id="n9oL7TbCE6AqkKBcCmIBdg">L 形挖角边框自动检测修复报告<span class="version-tag" data-page-node-id="5yobFmvG9iy8IhXf0a98v3">V2.2</span></h1>
+    <div class="sub" data-page-node-id="VN4CbmayNnnrKUi04S7hoP">SmartShapeCrop · 水池设计器 / L 形挖角设计器 · 2026-09-04</div>
   </header>
 
-  <section>
-    <h2>一、背景与诉求</h2>
-    <p>用户将 V13 版 L 形挖角脚本（<code>lshape_crop.py</code> / <code>lshape_border_module.py</code>）整合进本程序后，遇到三个问题：</p>
-    <ul>
-      <li><strong>输出缺边框</strong>：程序渲染的成品图，L 形缺口边缘的边框带缺失，与 V13 脚本期望输出（棕外框 + 白底花纹 + 完整 L 形轮廓）不一致。</li>
-      <li><strong>GUI 出现手动面板</strong>：界面多出「🎨 边框参数（V13 手动覆盖）」模块——本应纯自动检测，不应让用户手动填黑边宽 / 主带宽 / 主带色。</li>
-      <li><strong>描边方向错误（V2.1 首轮修复后暴露）</strong>：黑描边跑进了缺口内侧（里层），而正确效果应为<strong>黑描边贴切边、在最外层</strong>，粗细与原素材自动检测一致，缺口内侧（洞底）无描边。</li>
+  <section data-page-node-id="QPUWD1svWgOnZT6BZygPjC">
+    <h2 data-page-node-id="LNgJ2ALjo9TZtw7PVsDihh">一、背景与诉求</h2>
+    <p data-page-node-id="cKWD7KHhBkbsYDiD7o4KuI">用户将 V13 版 L 形挖角脚本（<code data-page-node-id="1KPKMHQnFMD7bGeVr4UhGt">lshape_crop.py</code> / <code data-page-node-id="9hyf6YHlYbpJPeejGkcUmq">lshape_border_module.py</code>）整合进本程序后，遇到三个问题：</p>
+    <ul data-page-node-id="DEixhpQgMcoEQn0kg6fFRv">
+      <li data-page-node-id="hP5G6PpfNHMjqJVlWzOS66"><strong data-page-node-id="gOG3MPSGEM7wvMUsOTDODV">输出缺边框</strong>：程序渲染的成品图，L 形缺口边缘的边框带缺失，与 V13 脚本期望输出（棕外框 + 白底花纹 + 完整 L 形轮廓）不一致。</li>
+      <li data-page-node-id="WNl4txNaFS2uu7vYN13FIh"><strong data-page-node-id="kpvxCVeUFOQlCAaKYn3coD">GUI 出现手动面板</strong>：界面多出「🎨 边框参数（V13 手动覆盖）」模块——本应纯自动检测，不应让用户手动填黑边宽 / 主带宽 / 主带色。</li>
+      <li data-page-node-id="JlDbjokvmn7wwlm3bqCWO3"><strong data-page-node-id="3U90MqRrBQvvZAb7F03f1J">描边方向错误（V2.1 首轮修复后暴露）</strong>：黑描边跑进了缺口内侧（里层），而正确效果应为<strong data-page-node-id="JQoczJ9pGNOYfwrJkupw1B">黑描边贴切边、在最外层</strong>，粗细与原素材自动检测一致，缺口内侧（洞底）无描边。</li>
     </ul>
-    <p>诉求：<strong>纯自动检测 + 按 V13 交付模块的正确方向补边。</strong></p>
+    <p data-page-node-id="MEMXaVdDY6tXPkN8F8kZbw">诉求：<strong data-page-node-id="mo4yOAJHPNYPaMrAYzGDDC">纯自动检测 + 按 V13 交付模块的正确方向补边。</strong></p>
   </section>
 
-  <section>
-    <h2>二、根因诊断</h2>
-    <p>用真实素材「双面格-定制-定制尺寸-克罗印花;47.5×167cm.jpg」（像素 9921×2864，横版）跑通端到端后，定位到根因是<strong>边框检测「假阳性」</strong>：</p>
-    <table>
-      <tr><th>检测路径</th><th>实测返回值</th><th>判定</th></tr>
-      <tr><td><code>_get_border_layers_robust</code></td><td>1 层 <code>(27,23,22)</code> 2px</td><td class="bad">❌ 只抓到最外 2px 近黑细线</td></tr>
-      <tr><td><code>detect_pool_material_borders</code>（含守卫）</td><td><code>[(27,23,22), 2]</code></td><td class="bad">❌ 假阳性，<code>_is_real_border</code> 误判为真</td></tr>
-      <tr><td><code>detect_border_v13</code></td><td><code>(9, 172, (120,75,46))</code></td><td class="good">✅ 黑描边 9px + 棕主带 172px</td></tr>
+  <section data-page-node-id="MshHJ7ME41FEwoWiB6GLCl">
+    <h2 data-page-node-id="iYGfLB8GrbfEcM5XYCbMp3">二、根因诊断</h2>
+    <p data-page-node-id="zVAZM5b2YG5PCGNROia6JY">用真实素材「双面格-定制-定制尺寸-克罗印花;47.5×167cm.jpg」（像素 9921×2864，横版）跑通端到端后，定位到根因是<strong data-page-node-id="B3FoWtxepiHVvMhFW0Tjf9">边框检测「假阳性」</strong>：</p>
+    <table data-page-node-id="nZHCzz7D8UXESX0OslHRt4">
+      <tr data-page-node-id="BsX0NZh15GGpaEjoEIuTf5"><th data-page-node-id="YaAMBW4B3XLDP4nno8m18A">检测路径</th><th data-page-node-id="uJfKC0SJ88rB13XVmLq4kF">实测返回值</th><th data-page-node-id="H6VizTcbxxvzsoIMpNG7mB">判定</th></tr>
+      <tr data-page-node-id="njLEaCF5adIQYV3Ou7hyRG"><td data-page-node-id="jqZojULuoQan1IFRe194WV"><code data-page-node-id="5NNP7cl8UyLBdZznjpXFoH">_get_border_layers_robust</code></td><td data-page-node-id="krxT6nflLmCv2ZLtRiGg8w">1 层 <code data-page-node-id="Tnv4QggtDnvFSE9xU58gbg">(27,23,22)</code> 2px</td><td class="bad" data-page-node-id="opYHhf7KQMGGCPHbvcY5II">❌ 只抓到最外 2px 近黑细线</td></tr>
+      <tr data-page-node-id="U9XOtPDDdN0J43nqNZiDBZ"><td data-page-node-id="8uIFlFZtK0KFCrObblFFGQ"><code data-page-node-id="Gc9BLtShpn9ymR8TU7k7Gr">detect_pool_material_borders</code>（含守卫）</td><td data-page-node-id="Bi8GmH0Za88RnwpXU84vRZ"><code data-page-node-id="qV1KqMbg1BTygf1gv4MEEz">[(27,23,22), 2]</code></td><td class="bad" data-page-node-id="aA4ES0b8U8UYCfU8wZip8U">❌ 假阳性，<code data-page-node-id="I5JyPdLw52CQi96QIWbNQF">_is_real_border</code> 误判为真</td></tr>
+      <tr data-page-node-id="FUSBMHdljuZ0er5Z3ASDyA"><td data-page-node-id="QHFWkOHkuN9msnEDjGeXZa"><code data-page-node-id="FxqL6q9Iz45K97QRUT3bXQ">detect_border_v13</code></td><td data-page-node-id="s3UckQvx1PjgeW9Pg6EHek"><code data-page-node-id="Vrx4lrgI0HfAuOwjVQjV8W">(9, 172, (120,75,46))</code></td><td class="good" data-page-node-id="0QHOuz0DH0FyzAmhDdSyng">✅ 黑描边 9px + 棕主带 172px</td></tr>
     </table>
-    <div class="callout">
-      问题链条：旧检测器对「黑描边 + 棕主带」结构<strong>只返回一条 2px 细线</strong>，而
-      <code>_is_real_border</code> 又把这条细线放行 → 程序以为「有边框」，画 2px 细线就收工；
-      真正能正确检出的 <code>detect_border_v13</code> 因为只在「检测返回<strong>空</strong>」时才兜底，<strong>根本没机会执行</strong>。
+    <div class="callout" data-page-node-id="J9fLtT96UF8aVKnAq3O449">
+      问题链条：旧检测器对「黑描边 + 棕主带」结构<strong data-page-node-id="lFATQyOIQ7OolGkgVDQjz2">只返回一条 2px 细线</strong>，而
+      <code data-page-node-id="UQ3mqbbpoTqw6ka0XVLcHE">_is_real_border</code> 又把这条细线放行 → 程序以为「有边框」，画 2px 细线就收工；
+      真正能正确检出的 <code data-page-node-id="OZjJrnjTo0VbmJuPEqPb02">detect_border_v13</code> 因为只在「检测返回<strong data-page-node-id="WZ0v52SPOjKHDzPCVS0Enb">空</strong>」时才兜底，<strong data-page-node-id="uUI1l23awgAcHWsHN0jyfR">根本没机会执行</strong>。
     </div>
   </section>
 
-  <section>
-    <h2>三、修复方案</h2>
-    <p>两处独立改动，均严格限定在 L 形挖角链路内：</p>
+  <section data-page-node-id="Qq7sH08Qu2DmQt8AFcFaMa">
+    <h2 data-page-node-id="OwfZ7vLF3UiZdZ4xKtKqgV">三、修复方案</h2>
+    <p data-page-node-id="ZuHiaQxY7fozwi6gFdC8S9">两处独立改动，均严格限定在 L 形挖角链路内：</p>
 
-    <h3>改动 1 · 检测路由改为 V13 优先（核心）</h3>
-    <p>文件：<code>core/lshape_border.py</code> 的 <code>apply_lshape_border_completion</code>。自动路径由「先旧检测，空则 V13 兜底」改为「<strong>先试 V13，检测不到黑描边（返回 None）再回退旧检测</strong>」。</p>
-    <pre><code># 改动前：先 detect_pool_material_borders，返回空才兜底走 V13
+    <h3 data-page-node-id="4o2svmXgXyghAkCmdml3EM">改动 1 · 检测路由改为 V13 优先（核心）</h3>
+    <p data-page-node-id="52BlVvWCQ45nAmY11K6tHh">文件：<code data-page-node-id="8MIUIGsVAn0O8a9CVbJu9o">core/lshape_border.py</code> 的 <code data-page-node-id="lnXdOn40Hpobo7EgNGbi1V">apply_lshape_border_completion</code>。自动路径由「先旧检测，空则 V13 兜底」改为「<strong data-page-node-id="QVxHMBueb7TjDnFQJAu2rk">先试 V13，检测不到黑描边（返回 None）再回退旧检测</strong>」。</p>
+    <pre data-page-node-id="cFQ9CSU5IwVhhH76tdWzoI"><code data-page-node-id="SNv4P59JZ9lnuVBnrRJkoq"># 改动前：先 detect_pool_material_borders，返回空才兜底走 V13
 border_layers_src = detect_pool_material_borders(detect_img, bg_color)
 if not border_layers_src:
     v13 = detect_border_v13(detect_img)  # ← 假阳性时永远到不了这里
@@ -103,70 +103,70 @@ if v13 is not None:
     return _apply_v13_path(..., manual_edge_px=v13[0],
                            manual_band_px=v13[1], manual_band_color=v13[2])
 border_layers_src = detect_pool_material_borders(detect_img, bg_color)</code></pre>
-    <p class="good">✓ V13 对「黑描边 + 主带」结构可靠（1D 段分析），对纯黑框素材返回 <code>band=0</code> 仍兼容旧用例。</p>
+    <p class="good" data-page-node-id="NdULxr2PxAWDTqfrzZgUTn">✓ V13 对「黑描边 + 主带」结构可靠（1D 段分析），对纯黑框素材返回 <code data-page-node-id="mBnSZmhbEEC6v1InuitjCB">band=0</code> 仍兼容旧用例。</p>
 
-    <h3>改动 2 · 移除手动边框参数面板</h3>
-    <p>文件：<code>gui/lshape_panel.py</code>。删除「🎨 边框参数（V13 手动覆盖）」GroupBox 及 6 个方法（<code>_set_v13_fields_enabled</code> / <code>_on_v13_enable_toggled</code> / <code>_on_v13_color_clicked</code> / <code>_update_v13_color_button</code> / <code>get_v13_manual_params</code> / <code>set_v13_manual_params</code>）；<code>_on_param_changed</code> 与 <code>_apply_lshape_params</code> 不再写 <code>manual_*</code> 字段。</p>
-    <p class="good">✓ 用户操作链路退化为<strong>纯自动</strong>；worker 读取的 <code>manual_*</code> 恒为 <code>None</code>。</p>
-    <p class="warn">注：<code>core/geometry.py</code> 的 <code>lshape_manual_*</code> 字段保留——它们是 V13 路径的数据通道，改名/删除会引入无谓风险，故不动。</p>
+    <h3 data-page-node-id="9brUsfASq3ObDq1YD70tcn">改动 2 · 移除手动边框参数面板</h3>
+    <p data-page-node-id="VNNtn6ZF5glKQQuQi9GeDe">文件：<code data-page-node-id="YVn66N20hgcaDHApN4qKzQ">gui/lshape_panel.py</code>。删除「🎨 边框参数（V13 手动覆盖）」GroupBox 及 6 个方法（<code data-page-node-id="SC9mGq4ABO7enKdzjitKaL">_set_v13_fields_enabled</code> / <code data-page-node-id="CzYNdlqZHq9yqy47UqmQMp">_on_v13_enable_toggled</code> / <code data-page-node-id="LzFqLIfFE7H7ANpZkF8mfe">_on_v13_color_clicked</code> / <code data-page-node-id="reSYmXty3CziVCAyg2g83J">_update_v13_color_button</code> / <code data-page-node-id="y4yw0uGfczMt6WC8VTkTxb">get_v13_manual_params</code> / <code data-page-node-id="XFRynv8Gl42Ol7Yy2JfgdD">set_v13_manual_params</code>）；<code data-page-node-id="8l29ao0FbYcCRvizeZniOP">_on_param_changed</code> 与 <code data-page-node-id="bh30FgfiiHURhn0863sm1a">_apply_lshape_params</code> 不再写 <code data-page-node-id="zCKRUSkm7sQhzIyfHbhGdU">manual_*</code> 字段。</p>
+    <p class="good" data-page-node-id="lMM5DaU4fE4r2mn3CkYldc">✓ 用户操作链路退化为<strong data-page-node-id="u3LIIfoZxxXi8w2XnZGQAC">纯自动</strong>；worker 读取的 <code data-page-node-id="fF2l67XtQlroeR79jlzK0E">manual_*</code> 恒为 <code data-page-node-id="xVKg3W2aFkAnTnKxW6ftul">None</code>。</p>
+    <p class="warn" data-page-node-id="t1o5iDVzizSplXCLGnO1ns">注：<code data-page-node-id="MU2HHFx1vrUSgvVYUUHZ5n">core/geometry.py</code> 的 <code data-page-node-id="fZUERU4qMUON0sA0cGnbZK">lshape_manual_*</code> 字段保留——它们是 V13 路径的数据通道，改名/删除会引入无谓风险，故不动。</p>
 
-    <h3>改动 3 · 补边方向修正：移植交付版 <code>patch_lshape_cut</code>（V2.2）</h3>
-    <p>首轮修复（V2.1）沿用项目原有的 <code>draw_border_layers_on_cut_edges</code>，把边框带<strong>向缺口区内侧</strong>延伸——方向反了：正确效果应为<strong>沿切边在保留区一侧补「黑描边 + 主色带」</strong>（黑描边贴切边、在最外层；缺口区保持洞底色，无描边）。</p>
-    <p>V2.2 按 <code>E:\ima-测试L型挖角输出\确认V13\lshape_border_module.py</code>（用户交付版）原样移植：</p>
-    <ul>
-      <li><code>patch_lshape_cut()</code> / <code>_fill_vertical_horizontal()</code>：切边补齐核心——垂直切边黑带全高（与素材顶边黑描边衔接）、主带不压顶边黑；水平切边黑带全宽（覆盖外缘防白缝）、主带避外缘黑；内凹角按 <code>d = max(dx, dy)</code> 几何分层，黑带沿 L 形轮廓连续。</li>
-      <li><code>detect_border()</code>：交付版公开 API（失败抛 <code>ValueError</code>）；项目内部路由仍用 <code>detect_border_v13</code>（返回 <code>None</code> 便于回退）。</li>
-      <li><code>_apply_v13_path()</code> 重写绘制段：在 <code>outer_rect</code> 子图上操作（缺口贴子图角落，<strong>与渲染 mask 同源</strong>），翻转统一到 tr 由 <code>patch_lshape_cut</code> 内部处理；厚度按 <code>scale</code> 换算（预览 LOD 自动适配）。删除自研的 <code>apply_v13_concave_corner_layer</code>。</li>
+    <h3 data-page-node-id="PoRLBVebdfPm7MDNCZR2NS">改动 3 · 补边方向修正：移植交付版 <code data-page-node-id="qPPJIwgeawqs4rMtRAYqQs">patch_lshape_cut</code>（V2.2）</h3>
+    <p data-page-node-id="Y47ReSZlc4YKRCD6zROEMP">首轮修复（V2.1）沿用项目原有的 <code data-page-node-id="q1BtjOrX3HagAR0HAAcDOY">draw_border_layers_on_cut_edges</code>，把边框带<strong data-page-node-id="oTayFjGSu38yazkScVFZsQ">向缺口区内侧</strong>延伸——方向反了：正确效果应为<strong data-page-node-id="qSoXOoEkgT4nTyEOWtYyim">沿切边在保留区一侧补「黑描边 + 主色带」</strong>（黑描边贴切边、在最外层；缺口区保持洞底色，无描边）。</p>
+    <p data-page-node-id="YAUA51CtCLOzctOpILBkBR">V2.2 按 <code data-page-node-id="6BIC8ACydv2kCTE5LQbhIH">E:\ima-测试L型挖角输出\确认V13\lshape_border_module.py</code>（用户交付版）原样移植：</p>
+    <ul data-page-node-id="u4DCaqIccdbgJesCEUNCYm">
+      <li data-page-node-id="OsCsQGmHJVHQWVoWwXOxjC"><code data-page-node-id="7wxyXEct6zpOG5mEKghY0o">patch_lshape_cut()</code> / <code data-page-node-id="7mNEq9UJIWITjgro8sTnkT">_fill_vertical_horizontal()</code>：切边补齐核心——垂直切边黑带全高（与素材顶边黑描边衔接）、主带不压顶边黑；水平切边黑带全宽（覆盖外缘防白缝）、主带避外缘黑；内凹角按 <code data-page-node-id="KCZqeFX6XWdOEDZFbY2DG7">d = max(dx, dy)</code> 几何分层，黑带沿 L 形轮廓连续。</li>
+      <li data-page-node-id="roGhgkBcP3pue6mv6iwT70"><code data-page-node-id="RQK0JDnC7JQzNc4jXHp56w">detect_border()</code>：交付版公开 API（失败抛 <code data-page-node-id="yt3BhAM5723M9LU6K08Wrw">ValueError</code>）；项目内部路由仍用 <code data-page-node-id="cd1QECnzIAgAwywqWCL9r8">detect_border_v13</code>（返回 <code data-page-node-id="QEEKXvXnuGo6l35wD7ygHO">None</code> 便于回退）。</li>
+      <li data-page-node-id="Esv5UrHrqJSl9TukfSoe5M"><code data-page-node-id="5dCxD4RdBQ36KicVCPDHpv">_apply_v13_path()</code> 重写绘制段：在 <code data-page-node-id="4oneBBP2c0DzqfXesw8CTs">outer_rect</code> 子图上操作（缺口贴子图角落，<strong data-page-node-id="sOENhaMZVBfU9zjCuNQyRL">与渲染 mask 同源</strong>），翻转统一到 tr 由 <code data-page-node-id="G5LpAXxwZbGl9URbj2T6yt">patch_lshape_cut</code> 内部处理；厚度按 <code data-page-node-id="ElPfXVDMl2pYnzot0lQ6wq">scale</code> 换算（预览 LOD 自动适配）。删除自研的 <code data-page-node-id="x5I54dLqyi0ZmWUChoDHqZ">apply_v13_concave_corner_layer</code>。</li>
     </ul>
-    <pre><code># V2.2 _apply_v13_path 绘制段（节选）
+    <pre data-page-node-id="yBXaEDC9zGzS4vODUyDVof"><code data-page-node-id="lWzBrYqxSGl96MoTDI1TeA"># V2.2 _apply_v13_path 绘制段（节选）
 sub = canvas_arr[oy:obottom, ox:oright, :]     # outer_rect 子图（与 mask 同源）
 patched = patch_lshape_cut(sub, cut_corner, bx0, by0, cw_r, ch_r,
                            edge_canvas, band_canvas, color_src)
 canvas_arr[oy:obottom, ox:oright, :] = patched</code></pre>
   </section>
 
-  <section>
-    <h2>四、改动前后效果对比</h2>
-    <p>用真实克罗印花素材（双面格-定制-定制尺寸-克罗印花;47.5×167cm.jpg，像素 9921×2864 横版，tr 挖角 32.5×34.03cm）端到端渲染，沿垂直/水平切边密集采样：</p>
-    <table>
-      <tr><th>指标</th><th>修复前（旧路径）</th><th>V2.1 首轮修复</th><th>V2.2 方向修正</th></tr>
-      <tr><td>检测日志</td><td class="bad"><code>1 层边框 2.0px [(27,23,22)]</code></td><td class="good"><code>V13 命中 edge=9 band=172</code></td><td class="good"><code>V13 命中 edge=9 band=172</code></td></tr>
-      <tr><td>黑描边带宽</td><td class="bad">≈ 2px（不可见）</td><td class="good">≈ 9px</td><td class="good">9px（自动检测=素材原宽）</td></tr>
-      <tr><td>棕主带带宽</td><td class="bad">0px</td><td class="good">≈ 170px</td><td class="good">170px</td></tr>
-      <tr><td>黑描边位置</td><td>—</td><td class="bad">❌ 缺口内侧（里层）</td><td class="good">✅ 贴切边·最外层</td></tr>
-      <tr><td>缺口区（洞底）</td><td>—</td><td class="bad">被边框带覆盖</td><td class="good">✅ 纯白，无描边</td></tr>
-      <tr><td>内凹角连续性</td><td>—</td><td>—</td><td class="good">✅ 256/256 = 100%</td></tr>
+  <section data-page-node-id="sWKf61Em8daqfIiRPZL15z">
+    <h2 data-page-node-id="kkjO7jesk9v38AM4GR0G4F">四、改动前后效果对比</h2>
+    <p data-page-node-id="tBwnerFnFuQ61SQrc9pekx">用真实克罗印花素材（双面格-定制-定制尺寸-克罗印花;47.5×167cm.jpg，像素 9921×2864 横版，tr 挖角 32.5×34.03cm）端到端渲染，沿垂直/水平切边密集采样：</p>
+    <table data-page-node-id="lhxvbxxSujyLBEy7JtwUrG">
+      <tr data-page-node-id="Ra4z2zpngYX4wf71Oho7HL"><th data-page-node-id="m02WJAO4wUXEtVTlu9AbCo">指标</th><th data-page-node-id="JF9nzObPZJ3pOOg80HyIKf">修复前（旧路径）</th><th data-page-node-id="9DOYDgsneY9g3zOK9lmVAl">V2.1 首轮修复</th><th data-page-node-id="dZC6mQykf0UDaonRpxZgio">V2.2 方向修正</th></tr>
+      <tr data-page-node-id="HFvlyRWItI2oyCFs7ltgWp"><td data-page-node-id="zHlpEji9ZQJvjGHghdS201">检测日志</td><td class="bad" data-page-node-id="OG7emiTfVYrEOwNIPv1rjL"><code data-page-node-id="zCRBdFbOJAh3zecO4jynjl">1 层边框 2.0px [(27,23,22)]</code></td><td class="good" data-page-node-id="sI164FZeGtSuVl7SV4dFYy"><code data-page-node-id="pEGJxCnNlNUEALjFdySijH">V13 命中 edge=9 band=172</code></td><td class="good" data-page-node-id="qV67gB8wlZr3nob8mF9uPJ"><code data-page-node-id="E2ArJpAR5GxoWMPD8YY4fI">V13 命中 edge=9 band=172</code></td></tr>
+      <tr data-page-node-id="9xlsVFn1QwVkr8OunDY1XF"><td data-page-node-id="JGgkRhct3HYRpEK6q5Dinh">黑描边带宽</td><td class="bad" data-page-node-id="qFI3uUFcGJwMJXig5QC4oq">≈ 2px（不可见）</td><td class="good" data-page-node-id="sSJQvfKiWR1gyrF43xlX4v">≈ 9px</td><td class="good" data-page-node-id="ZPiTONrG0Hczsq1L1ZhhOo">9px（自动检测=素材原宽）</td></tr>
+      <tr data-page-node-id="LTlOJaxFKZKpb6k2f5NABx"><td data-page-node-id="SRbArEmOAa3Nd33NpUUD99">棕主带带宽</td><td class="bad" data-page-node-id="iwj4RVDCQTUBMqCdqz2AwL">0px</td><td class="good" data-page-node-id="qu08hgy7Zqs2f7pNMKkMDV">≈ 170px</td><td class="good" data-page-node-id="ngW6poI8nGKpjijOporoz1">170px</td></tr>
+      <tr data-page-node-id="21os65rDdvhCGx6iBBELia"><td data-page-node-id="eLGBGJtkmnjKH9h0GXKFwR">黑描边位置</td><td data-page-node-id="579QgsheICI3jKldn0NJP9">—</td><td class="bad" data-page-node-id="6QBDzhpbTZKX76gO1yimzt">❌ 缺口内侧（里层）</td><td class="good" data-page-node-id="M1Y6pQCyf2hMzlDUDPX0g5">✅ 贴切边·最外层</td></tr>
+      <tr data-page-node-id="DUAUOGGnhcqwjHufeB6tuy"><td data-page-node-id="wPqeLDhYinu0Ta41uBvhzx">缺口区（洞底）</td><td data-page-node-id="P4kDXy73FP8HwRyqfcrhom">—</td><td class="bad" data-page-node-id="vnOfCDNePyx4iVHD1EcXLZ">被边框带覆盖</td><td class="good" data-page-node-id="HOGi5gF1hKXKvenaS2y2oY">✅ 纯白，无描边</td></tr>
+      <tr data-page-node-id="ut7HIkcQsEVHP5zn5X4ie7"><td data-page-node-id="httHL7JUsTEOYLfHNnLCjS">内凹角连续性</td><td data-page-node-id="hwInEWo035A5Bt6KRHuMRy">—</td><td data-page-node-id="GqEI3WUwrLCZUATBOKfhLX">—</td><td class="good" data-page-node-id="xtr8ovNpUsgTOTrxhRmnQA">✅ 256/256 = 100%</td></tr>
     </table>
-    <p>V2.2 垂直切边实测采样（从切边向两侧）：保留区侧 <code>黑9px → 棕170px → 素材内容</code>；缺口区侧 <code>纯白 120px+</code>——完全对应期望效果「红色标注处有描边、蓝色区域无描边」。</p>
-    <p>整图并排对比（左＝V2.1 首轮修复·描边在缺口内侧，右＝V2.2 修正·描边贴切边最外层）：</p>
-    <img class="img-full" src="compare_v21_vs_v22.png" alt="V2.1 与 V2.2 整图对比">
-    <div class="figcap">V2.1 → V2.2：黑描边从缺口内侧移回切边最外层，缺口区恢复纯白洞底。</div>
-    <p>内凹角局部放大对比（左＝V2.1，右＝V2.2）：</p>
-    <img class="img-full" src="corner_closeup_v22.png" alt="内凹角放大对比">
-    <div class="figcap">内凹角放大：V2.2 黑带沿 L 形轮廓连续、主带直角衔接，与原素材边框层次一致。</div>
+    <p data-page-node-id="V9XuAEhsjmsex1FBvQqe9V">V2.2 垂直切边实测采样（从切边向两侧）：保留区侧 <code data-page-node-id="ouSf5UGYartKK1B8GgbZYB">黑9px → 棕170px → 素材内容</code>；缺口区侧 <code data-page-node-id="E16oQsQWP5plRyVu2KEQAj">纯白 120px+</code>——完全对应期望效果「红色标注处有描边、蓝色区域无描边」。</p>
+    <p data-page-node-id="FRDxnAwrVxNURE1UjYX2Qb">整图并排对比（左＝V2.1 首轮修复·描边在缺口内侧，右＝V2.2 修正·描边贴切边最外层）：</p>
+    <img class="img-full" src="compare_v21_vs_v22.png" alt="V2.1 与 V2.2 整图对比" data-page-node-id="GuvTncHafl5ttmZs3rJCpU">
+    <div class="figcap" data-page-node-id="hahaTDLS0BAgkuZ1FPh7VF">V2.1 → V2.2：黑描边从缺口内侧移回切边最外层，缺口区恢复纯白洞底。</div>
+    <p data-page-node-id="TBZtbxmT8LB8xLXn5nebc4">内凹角局部放大对比（左＝V2.1，右＝V2.2）：</p>
+    <img class="img-full" src="corner_closeup_v22.png" alt="内凹角放大对比" data-page-node-id="hlk09qIXl4IoWvGFfLzXOG">
+    <div class="figcap" data-page-node-id="QzSNqwhomAlDMA1H9coPwK">内凹角放大：V2.2 黑带沿 L 形轮廓连续、主带直角衔接，与原素材边框层次一致。</div>
   </section>
 
-  <section>
-    <h2>五、回归验证</h2>
-    <ul>
-      <li><code>tests/core/test_lshape_border.py</code>：<span class="good">23 passed</span>——其中端到端用例 <code>test_bordered_material_paints_cut_edges_only</code> 已按 V2.2 方向更新断言：黑带采样点改到切边<strong>保留区一侧</strong>，并新增「缺口区不被涂色」「内凹角黑带连续」两类断言。</li>
-      <li>全量测试：<span class="good">299 passed, 5 skipped, 0 failed</span>，无回归。</li>
-      <li>真实素材端到端：见上表 V2.2 列——黑 9px（=素材原宽）+ 棕 170px 贴切边最外层，缺口纯白，凹角分层 100% 符合。</li>
+  <section data-page-node-id="gQZgvw4E5uGpeU5BhbFi8Q">
+    <h2 data-page-node-id="yVTXzcEJ56jXl7dCdftK4l">五、回归验证</h2>
+    <ul data-page-node-id="6HQzdGqejaGvsC9wrL9HW7">
+      <li data-page-node-id="IRqC1uLjFJ1nHSmBKkVefL"><code data-page-node-id="cU7KyXJ8CW3x9sb5w2gbnL">tests/core/test_lshape_border.py</code>：<span class="good" data-page-node-id="9w806nt1xp2pNPWR1D3mlq">23 passed</span>——其中端到端用例 <code data-page-node-id="2oN5hEGf2Xw4D3G6IeyDX8">test_bordered_material_paints_cut_edges_only</code> 已按 V2.2 方向更新断言：黑带采样点改到切边<strong data-page-node-id="zEeCF99WqM14QBpV0uHKkM">保留区一侧</strong>，并新增「缺口区不被涂色」「内凹角黑带连续」两类断言。</li>
+      <li data-page-node-id="SV1KH1V3IKzgddwU7p3lkT">全量测试：<span class="good" data-page-node-id="95vsUjXpZSqGGxYsenOzne">299 passed, 5 skipped, 0 failed</span>，无回归。</li>
+      <li data-page-node-id="STxl42FXoDa22CV85VZ82Y">真实素材端到端：见上表 V2.2 列——黑 9px（=素材原宽）+ 棕 170px 贴切边最外层，缺口纯白，凹角分层 100% 符合。</li>
     </ul>
   </section>
 
-  <section>
-    <h2>六、遗留说明</h2>
-    <ul>
-      <li>本次改动涉及 <code>core/lshape_border.py</code>、<code>gui/lshape_panel.py</code> 与 <code>tests/core/test_lshape_border.py</code> 三个文件，未触碰 <code>render_design</code> 其他路径及裁剪主逻辑；<code>core/image_ops.py</code> 调用点无需改动（patch 在 <code>border_mask</code> 涂黑之后执行，自动覆盖切边旁区域）。</li>
-      <li><code>detect_pool_material_borders</code>（旧检测器）保留为 V13 检测失败时的回退路径，未删除——它仍是纯黑框等结构的兼容通道；<code>compute_cut_edge_bboxes</code> / <code>draw_border_layers_on_cut_edges</code> 随旧路径保留。</li>
-      <li>V13 交付模块的 <code>crop_tr_standalone</code>（独立对照版）未移植——项目侧已由 pytest 端到端用例覆盖同等契约。</li>
-      <li>诊断脚本与中间产物已归档至 <code>scripts/_archive/</code>，产品源码零污染。</li>
+  <section data-page-node-id="3Z8nYNwgASNCCZdClx5PTm">
+    <h2 data-page-node-id="v8bcMu9pBzjXWE450teN1E">六、遗留说明</h2>
+    <ul data-page-node-id="Hb0rdbZ2ejQSvGGNU3kuUC">
+      <li data-page-node-id="CREFisxoijSwu1VmcQh9zN">本次改动涉及 <code data-page-node-id="uSfU3nvm0l9YqMqMW0W3vq">core/lshape_border.py</code>、<code data-page-node-id="lFpSEmRoGbELfqrAfYsKTE">gui/lshape_panel.py</code> 与 <code data-page-node-id="WBs1al3qHNipk7E3ksYXyo">tests/core/test_lshape_border.py</code> 三个文件，未触碰 <code data-page-node-id="fFF9wOiZuxH10fQM3fiUIM">render_design</code> 其他路径及裁剪主逻辑；<code data-page-node-id="DgwgIJugMtIpOBXOYGP2ea">core/image_ops.py</code> 调用点无需改动（patch 在 <code data-page-node-id="I8YHDz05C4nprAlRafYfsR">border_mask</code> 涂黑之后执行，自动覆盖切边旁区域）。</li>
+      <li data-page-node-id="OMH7kBqbcpEEixVjGX9jpJ"><code data-page-node-id="zgbjR1PxPBDVtrxiABGVr6">detect_pool_material_borders</code>（旧检测器）保留为 V13 检测失败时的回退路径，未删除——它仍是纯黑框等结构的兼容通道；<code data-page-node-id="g1ucsqLKPsbxPyIHA7JRTc">compute_cut_edge_bboxes</code> / <code data-page-node-id="HRCFcU9dOm1kTLmspuCTRA">draw_border_layers_on_cut_edges</code> 随旧路径保留。</li>
+      <li data-page-node-id="6qBdl62iJvaCFjGPaWkspU">V13 交付模块的 <code data-page-node-id="LYXVmtdFzJ23AsPhGzIHOX">crop_tr_standalone</code>（独立对照版）未移植——项目侧已由 pytest 端到端用例覆盖同等契约。</li>
+      <li data-page-node-id="FeeshYAXqSdeSvF3eygQna">诊断脚本与中间产物已归档至 <code data-page-node-id="irq2pQQkmBibw0EcyVilvv">scripts/_archive/</code>，产品源码零污染。</li>
     </ul>
   </section>
 
-  <footer>
-    SmartShapeCrop · L 形挖角边框自动检测修复报告 · <strong>V2.2</strong> · 2026-09-04
+  <footer data-page-node-id="UTG4kkLvDOpyRAMSE00Ce0">
+    SmartShapeCrop · L 形挖角边框自动检测修复报告 · <strong data-page-node-id="d4D2orUUPrFOBeZ3RqC19Y">V2.2</strong> · 2026-09-04
   </footer>
 </div>
 </body>

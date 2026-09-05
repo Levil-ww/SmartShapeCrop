@@ -8,12 +8,16 @@ tests/conftest.py
 - 这些脚本没有 def test_ / class Test，本就不该被当作测试用例收集。
 - 用 collect_ignore 排除后，它们仍可用 `python tests/xxx.py` 直接运行，
   同时满足"测试套件不收集、不导入诊断脚本"的隔离要求。
+
+2026-09-05 更新：
+- test_gui_sim.py 已通过 git mv 移至 scripts/diagnose/_gui_sim_diag.py
+  （双保险：1. 文件不在 tests/ 下；2. 下划线前缀不匹配 test_*.py 规则），
+  故从本忽略列表中移除。
 """
 collect_ignore = [
     "test_corner_analysis_simple.py",
     "test_diagnose.py",
     "test_gap_detail_analysis.py",
-    "test_gui_sim.py",
     "test_sketch_fix.py",
     "test_verify.py",
 ]

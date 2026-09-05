@@ -68,7 +68,6 @@ def test_maliya_rose_content_preserved():
         p = _content_changed_pct(orig, result_arr, cy0, cy0 + 40, cx0, cx0 + 40)
         assert p < 0.05, f"CASE1 FAIL: {ck} 角花纹被修改 {p:.4f}"
     print("  CASE1 (玛利亚玫瑰): PASS")
-    return True
 
 
 def test_fugu_border_thickness_preserved():
@@ -107,7 +106,6 @@ def test_fugu_border_thickness_preserved():
         assert start == 0, f"CASE3 FAIL: x={x} 外边框不从顶部开始 (start={start})"
         assert 6 <= length <= 10, f"CASE3 FAIL: x={x} 外层黑边框厚度 {length}px, 应为 ~8px"
     print("  CASE3 (复古花丛): PASS")
-    return True
 
 
 def test_wanhui_no_extra_white():
@@ -139,7 +137,6 @@ def test_wanhui_no_extra_white():
         ratio = float(np.mean(kept))
         assert ratio >= 0.95, f"CASE4 FAIL: 内容保留率 {ratio:.4f}"
     print("  CASE4 (婉卉): PASS")
-    return True
 
 
 def test_xianxu_corner_clean():
@@ -172,7 +169,6 @@ def test_xianxu_corner_clean():
         ratio = float(np.mean(not_allowed))
         assert ratio < 0.01, f"CASE2 FAIL: 弧外侧非预期像素 {ratio:.4f}"
     print("  CASE2 (闲叙青釉): PASS")
-    return True
 
 
 def main():

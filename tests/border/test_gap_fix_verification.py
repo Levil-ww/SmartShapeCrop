@@ -129,7 +129,7 @@ def test_corner_smoothness_no_gap_fill():
     else:
         print("  ⚠️  警告: 边框上可能存在缺口")
     
-    return all_passed
+    assert all_passed, "圆角平滑性（间隙不填充错误颜色）检查未通过，详见上方逐条输出"
 
 
 def test_different_border_colors():
@@ -225,7 +225,7 @@ def test_different_border_colors():
         else:
             print(f"  ✅ 通过")
     
-    return all_passed
+    assert all_passed, "不同边框颜色检查未通过，详见上方逐条输出"
 
 
 def test_small_radius_preserves_content():
@@ -288,7 +288,18 @@ def test_small_radius_preserves_content():
     else:
         print(f"  ⚠️  警告: 部分内容可能被裁剪")
     
-    return True  # 小圆角测试总是通过，不影响其他
+    # 观察型检查（沿用原语义：小圆角测试不参与成败判定）：
+    # 小半径下内容裁剪容忍度因素材而异，此处仅输出提示、不做硬断言，
+    # 避免历史案例以外的新素材产生误报失败。
+
+
+def _run_as_script(fn):
+    """脚本入口辅助：把断言型测试函数转成布尔结果（pytest 走 assert 路径）。"""
+    try:
+        fn()
+        return True
+    except AssertionError:
+        return False
 
 
 def main():
@@ -298,9 +309,9 @@ def main():
     
     results = []
     
-    results.append(("测试1: 间隙不填充错误颜色", test_corner_smoothness_no_gap_fill()))
-    results.append(("测试2: 不同边框颜色", test_different_border_colors()))
-    results.append(("测试3: 小半径保持内容", test_small_radius_preserves_content()))
+    results.append(("测试1: 间隙不填充错误颜色", _run_as_script(test_corner_smoothness_no_gap_fill)))
+    results.append(("测试2: 不同边框颜色", _run_as_script(test_different_border_colors)))
+    results.append(("测试3: 小半径保持内容", _run_as_script(test_small_radius_preserves_content)))
     
     print("\n" + "=" * 60)
     print("测试总结")

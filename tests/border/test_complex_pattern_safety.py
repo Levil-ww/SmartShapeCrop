@@ -143,7 +143,10 @@ def test_complex_pattern_with_gaps():
     else:
         print(f"[检查 3] 警告: 共发现 {gap_count} 个可能的缺口位置")
     
-    return gap_is_correct and blue_count > 5000 and not border_gaps_found
+    assert (gap_is_correct and blue_count > 5000 and not border_gaps_found), (
+        f"复杂花纹安全检查未通过: gap_is_correct={gap_is_correct}, "
+        f"blue_count={blue_count}(需>5000), border_gaps_found={border_gaps_found}"
+    )
 
 
 def test_multilayer_border_with_mixed_colors():
@@ -270,7 +273,10 @@ def test_multilayer_border_with_mixed_colors():
     else:
         print(f"\n[检查 3] 所有角落边框连续性检查: 通过")
     
-    return gap_regions_ok and len(corners_with_issues) == 0
+    assert (gap_regions_ok and len(corners_with_issues) == 0), (
+        f"多层混合色边框检查未通过: gap_regions_ok={gap_regions_ok}, "
+        f"存在问题的角落={corners_with_issues}"
+    )
 
 
 def test_extreme_colors_and_anti_aliasing():
@@ -384,7 +390,10 @@ def test_extreme_colors_and_anti_aliasing():
     else:
         print(f"\n[检查 3] 边框颜色准确性检查: 通过")
     
-    return all_white and border_color_ok
+    assert (all_white and border_color_ok), (
+        f"极端颜色与抗锯齿检查未通过: all_white={all_white}, "
+        f"border_color_ok={border_color_ok}"
+    )
 
 
 if __name__ == '__main__':

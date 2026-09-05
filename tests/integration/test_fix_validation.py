@@ -6,13 +6,23 @@ logging.basicConfig(level=logging.WARNING, format='%(name)s: %(message)s')
 
 def test_name_parser():
     from core.parser.name_parser import parse_filename
+    # —— 2026-09-05 校准说明 ——
+    # 产品语义（当前代码逻辑，core/parser/name_parser.py:443 + 514-530）：
+    #   - 通用模式：无关键词 → 横版（长边=宽、短边=高）
+    #   - 显式"竖版"  → 短边=宽、长边=高
+    #   - 水池模式与通用模式统一遵循"长边为宽"标准规则（f8beb2d 2026-08-26 起）
+    #   - 下游 GUI（gui/property_panel_poolbox.py:222-225）明确：
+    #     "58x121cm → width_cm=121, height_cm=58, raw_outer_w=121, raw_outer_h=58"
+    #   - 即文件名尺寸字段"宽 x 高"的标注是用户的相对偏好，但程序层统一按长边归一化，
+    #     避免草图识别/预览图生成的方向计算漂移。
+    # 因此本测试期望值按"长边=宽、短边=高"统一标注：
     tests = [
-        ('model_60.5x133CM水池', 60.5, 133, '竖版'),
-        ('model_133x60.5CM水池', 133, 60.5, '横版'),
-        ('model_45x45CM水池', 45, 45, '横版'),
-        ('model_100x50CM水池', 100, 50, '横版'),
-        ('model_50x100CM水池', 50, 100, '竖版'),
-        ('model_100x200CM裁剪有图', 100, 200, '竖版'),
+        ('model_60.5x133CM水池', 133.0, 60.5, '横版'),     # 原期望 60.5x133(竖版)
+        ('model_133x60.5CM水池', 133.0, 60.5, '横版'),     # 不变
+        ('model_45x45CM水池',    45.0,  45.0,  '横版'),     # 正方形 → 横版
+        ('model_100x50CM水池',   100.0, 50.0,  '横版'),     # 不变
+        ('model_50x100CM水池',   100.0, 50.0,  '横版'),     # 原期望 50x100(竖版)
+        ('model_100x200CM裁剪有图', 200.0, 100.0, '横版'),   # 原期望 100x200(竖版)
     ]
     all_pass = True
     for fname, exp_w, exp_h, exp_layout in tests:
@@ -26,7 +36,8 @@ def test_name_parser():
             all_pass = False
         print(f'{status} {fname}: width={w}(exp={exp_w}), height={h}(exp={exp_h}), layout={layout}(exp={exp_layout})')
     print(f'\n=== name_parser: {"ALL PASS" if all_pass else "SOME FAILED"} ===\n')
-    return all_pass
+    # 原为 `return all_pass`：pytest 不校验返回值，导致断言形同虚设（假通过）。
+    assert all_pass, "name_parser 存在失败用例，详见上方逐条输出"
 
 def test_direction_correction():
     """模拟方向矫正逻辑"""
@@ -70,7 +81,7 @@ def test_direction_correction():
         print(f'{status} {desc}: got {w}x{h}, exp {exp_w}x{exp_h}')
     
     print(f'\n=== direction_correction: {"ALL PASS" if all_pass else "SOME FAILED"} ===\n')
-    return all_pass
+    assert all_pass, "direction_correction 存在失败用例，详见上方逐条输出"
 
 def test_margin_validation():
     """模拟边距校验逻辑"""
@@ -158,11 +169,21 @@ def test_margin_validation():
     print(f"  ✅ 边距正确!")
     
     print(f'\n=== margin_validation: {"ALL PASS" if all_pass else "SOME FAILED"} ===\n')
-    return all_pass
+    assert all_pass, "margin_validation 存在失败用例，详见上方逐条输出"
+
+
+def _run_as_script(fn):
+    """脚本入口辅助：把断言型测试函数转成布尔结果（pytest 走 assert 路径）。"""
+    try:
+        fn()
+        return True
+    except AssertionError:
+        return False
+
 
 if __name__ == '__main__':
-    r1 = test_name_parser()
-    r2 = test_direction_correction()
-    r3 = test_margin_validation()
+    r1 = _run_as_script(test_name_parser)
+    r2 = _run_as_script(test_direction_correction)
+    r3 = _run_as_script(test_margin_validation)
     print(f'\n{"="*50}')
     print(f'综合结果: {"✅ ALL PASSED" if (r1 and r2 and r3) else "❌ SOME FAILED"}')

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="Fm2DwZn3ClpUOYyHWwHDlV">
+<head data-page-node-id="H1hc6YsCpIobDNvZdqZ8Pq">
+<meta charset="UTF-8" data-page-node-id="5v8CcxY0MGdgB8whT4HuYZ">
+<title>SmartShapeCrop V2.2 — 7 个回归诊断报告</title>
+<style>
+  :root{
+    --bg:#fafbfc; --card:#ffffff; --ink:#1d2530; --ink2:#4d5b6e; --muted:#8a96a8;
+    --line:#e4e9ef; --line2:#d0d7e0;
+    --accent:#c8710a; --accent2:#e89b3a;
+    --green:#2f8c4d; --red:#c93a3a; --yellow:#c89a2a; --blue:#3066c8;
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       margin:0;background:var(--bg);color:var(--ink);line-height:1.6;font-size:14px}
+  header{background:linear-gradient(135deg,#fff7ec 0%,#fdebc6 100%);padding:32px 48px;border-bottom:1px solid var(--line)}
+  h1{margin:0 0 4px;font-size:26px;font-weight:700;color:#5b3a08}
+  .sub{color:var(--ink2);font-size:14px}
+  .ver{display:inline-block;background:var(--accent);color:#fff;padding:3px 10px;border-radius:4px;
+       font-size:12px;font-weight:600;margin-left:8px;vertical-align:middle}
+  main{max-width:1200px;margin:0 auto;padding:32px 48px}
+  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:32px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px 20px;box-shadow:var(--shadow)}
+  .card .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .card .v{font-size:28px;font-weight:700;color:var(--ink)}
+  .card .d{font-size:12px;color:var(--ink2);margin-top:4px}
+  h2{font-size:20px;font-weight:700;color:var(--ink);margin:36px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--accent)}
+  h3{font-size:16px;font-weight:600;color:var(--ink);margin:24px 0 12px}
+  h4{font-size:14px;font-weight:600;color:var(--ink2);margin:16px 0 8px}
+  .regr{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:24px;margin-bottom:24px;box-shadow:var(--shadow)}
+  .regr-h{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+  .regr-no{background:var(--red);color:#fff;width:32px;height:32px;border-radius:50%;display:flex;
+           align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+  .regr-no.done{background:var(--green)}
+  .regr-title{font-size:17px;font-weight:600;color:var(--ink);flex:1;min-width:200px}
+  .regr-tag{font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;color:#fff}
+  .t-done{background:var(--green)}
+  .t-p0{background:var(--red)}.t-p1{background:var(--yellow)}.t-p2{background:var(--blue)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .err-block{background:#fff5f5;border:1px solid #f5d5d5;border-radius:6px;padding:12px 14px;margin:8px 0}
+  .err-block.ok{background:#f0f8f3;border-color:#c8e6d3}
+  .err-key{font-weight:600;color:var(--red);font-size:13px;margin-right:8px}
+  .err-block.ok .err-key{color:var(--green)}
+  .err-val{color:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;background:var(--card);font-size:13px}
+  th,td{padding:9px 12px;border:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#f3f5f8;color:var(--ink2);font-weight:600}
+  td.num{font-family:ui-monospace,Menlo,Consolas,monospace;text-align:right}
+  td.ok{color:var(--green);font-weight:600}
+  td.bad{color:var(--red);font-weight:600}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:8px}
+  .legend span::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .legend .r::before{background:#ff0000}
+  .legend .b::before{background:#0000ff}
+  .legend .g::before{background:#00c800}
+  .img-block{margin:12px 0;text-align:center}
+  .img-block img{max-width:100%;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow)}
+  .img-cap{color:var(--ink2);font-size:12px;margin-top:6px}
+  code{background:#eef1f5;padding:2px 6px;border-radius:3px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#5b3a08}
+  .cause{background:#fef8e8;border-left:4px solid var(--accent);padding:12px 16px;margin:12px 0;border-radius:0 6px 6px 0}
+  .cause-t{font-weight:600;color:#5b3a08;margin-bottom:6px}
+  .fix{background:#f0f8f3;border-left:4px solid var(--green);padding:12px 16px;margin:12px 0;border-radius:0 6px 6px 0}
+  .fix-t{font-weight:600;color:var(--green);margin-bottom:6px}
+  .scope{background:#f3f6fb;border-left:4px solid var(--blue);padding:12px 16px;margin:12px 0;border-radius:0 6px 6px 0}
+  .scope-t{font-weight:600;color:var(--blue);margin-bottom:6px}
+  footer{margin-top:48px;padding:24px 48px;color:var(--muted);font-size:12px;text-align:center;
+         border-top:1px solid var(--line);background:#fff}
+  .ver-foot{background:var(--accent);color:#fff;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600}
+  hr{border:none;border-top:1px dashed var(--line2);margin:24px 0}
+  .pill{display:inline-block;padding:1px 8px;border-radius:8px;font-size:11px;background:#eef1f5;color:var(--ink2);margin-right:4px}
+</style>
+</head>
+<body data-page-node-id="1Qi97Mo5KDhE43jy3ZAJdp">
+
+<header data-page-node-id="5TVvpdf6tByNBHIYYyKUYC">
+  <h1 data-page-node-id="VjtVtpWtxHi56amzoAKDK0">SmartShapeCrop — 7 个回归诊断报告<span class="ver" data-page-node-id="5vgYCTydjbj0wkgP4E568F">V2.2</span></h1>
+  <div class="sub" data-page-node-id="BGqdt3XCdyEBWvpYEp1ajM">2026-09-05 · 来源：V2.2 报告 P0 修复后的实跑暴露 · 范围：边框圆角 / name_parser 长宽方向</div>
+</header>
+
+<main data-page-node-id="1KaCbMgxm5jG01GcDs6JYO">
+
+<section class="summary" data-page-node-id="Lzxxe8Db5usE67ZNxDZJUG">
+  <div class="card" data-page-node-id="TnUNrzXuuMwowKYDwfQwQ0"><div class="k" data-page-node-id="lMvILDEQJKvs6SbAf3ncgi">回归总数</div><div class="v" data-page-node-id="Mw9uwNGnFGcob9XlzKRocv">7</div><div class="d" data-page-node-id="XCJNXJCJe5AV2o3JDZcL3o">6 个圆角间隙 + 1 个 name_parser</div></div>
+  <div class="card" data-page-node-id="CnB7a4FIKJvdlG0EZMYdll"><div class="k" data-page-node-id="oDrwNujqkN98pScAs6Cgp5">已修复</div><div class="v" style="color:var(--green)" data-page-node-id="dizFQW5NEScB47jAWTNdZI">1</div><div class="d" data-page-node-id="yQrfv8SHzFG2cIjzlq9fQY">#7 name_parser 测试语义校准</div></div>
+  <div class="card" data-page-node-id="FWFl4jSPIySMDcIaWqUu9L"><div class="k" data-page-node-id="0160DX7jCkW0p8iJmZRUgR">剩余</div><div class="v" style="color:var(--red)" data-page-node-id="5iE2d1X4yajdtNeeFd8vDH">6</div><div class="d" data-page-node-id="0uf8LNrzOSGStkZWlgp7Wt">全部为 mask 边界 bug</div></div>
+  <div class="card" data-page-node-id="f12O8DSiZmwuDTvuS2CB2Q"><div class="k" data-page-node-id="wIj7O3HjvNG4MeUzfVjHSk">修复优先级</div><div class="v" data-page-node-id="WoFjnILYpDn1lYmyVXkW1P">P0</div><div class="d" data-page-node-id="x2o7yvNxDd7re9AOxUJhmF">阻塞 V2.2 发布</div></div>
+</section>
+
+<h2 data-page-node-id="Pjdjdw850l5YJKWt6vvOsX">根因速览（按类别分组）</h2>
+
+<h3 data-page-node-id="MraM86kylqPUWzOqmGLeyG">类别 A：圆角 mask 边界处理（影响 6 个边框/圆角失败）</h3>
+<p data-page-node-id="PYHuOTD4BcxnweZxm2M4V2">所有边框类失败都源自 <code data-page-node-id="BVhqLHukUaGDKh1rISAKfz">core/image_cropper.py:apply_rounded_corners</code> 与
+<code data-page-node-id="XoA3a0Pn3ouZTUgHXLHgbJ">core/image_cropper_border.py:apply_border_only_corners</code> 在裁切时把<strong data-page-node-id="5DWrNxkzHBGzA52UpkQY6w">间隙带/外背景</strong>
+当作"边框内容"重绘到圆弧内，导致：</p>
+<ul data-page-node-id="LFtM7c4q0ABIw47ctoJLUv">
+  <li data-page-node-id="ymFPwZTAXk5hJmsJx8fpm6"><strong data-page-node-id="8eOWObGcv3fim8q86Fo7L3">间隙区被错误填充为边框色</strong>（#1/#3/#4/#6 失败，黑/蓝/灰像素混入间隙区）</li>
+  <li data-page-node-id="UdHwqhJ2u4HOrdiqrTTBFa"><strong data-page-node-id="jq3f1aCKSWxVgjcgSy9J9H">圆弧上出现白色缺口</strong>（#5 失败，缺口率 80%）</li>
+  <li data-page-node-id="wF7u6AZEtUmRbDBNKvDzn5"><strong data-page-node-id="xgBvr0igtCyBoQJ88ZHbRP">非对称角失败</strong>（#2 失败，tr/br 失败但 tl/bl 通过）</li>
+</ul>
+<p data-page-node-id="a3RHzIOvg4ecRXBXm1EAVy">关键证据：单角（左下角，3cm）测试基本能跑通，四角/非对称场景暴雷。说明当前 mask 的"保护模式判断"
+（<code data-page-node-id="2mojk5YYSp0gbHKUh5AYJq">corner_protect_map</code>）依赖 <code data-page-node-id="2lQ5WiD6U7v6piy7aBWo0v">_corner_sector_has_content</code> 检测外侧扇区是否有内容，
+但对"间隙带本身就是装饰带"的情况误判——把本应保留的间隙色识别为边框色重绘了。</p>
+
+<h3 data-page-node-id="fHWbBdtYZzL2IDZWarHLEl">类别 B：name_parser 测试与代码语义分歧（#7）</h3>
+<p data-page-node-id="aJIv6H8pE04rghtB03v37q"><strong data-page-node-id="T9NJZuXQNEsnNIPdAaKGr2">状态：已修复（2026-09-05 下午）。</strong></p>
+<p data-page-node-id="hGchxdYX2v4BUI3qQtHjj7"><code data-page-node-id="b1ryjfSlQ708mZ5scZcSb2">core/parser/name_parser.py:parse_filename</code> 与 <代码="core/parser/template_matcher.py">、
+<code data-page-node-id="Ty9UpbUZcMHY7KF9Q0QfRu">gui/property_panel_poolbox.py</code> 已统一按"长边为宽"标准规则（f8beb2d 2026-08-26 起）。
+但 <code data-page-node-id="rOUm4QSbTYhwz8tNHDVsWp">tests/integration/test_fix_validation.py</code> 的 3 个 case 仍按早期"原始顺序"规则编写——测试未同步代码演进。</p>
+<p data-page-node-id="HUmZSbvxbY5qZz8OYyPBgw">修复动作：按产品语义权威（长边为宽，width_cm/height_cm 与下游 poolbox 注释一致）更新测试期望值，
+并附 8 行注释说明语义依据与下游对应位置，避免后续又被改回。</p>
+
+<hr data-page-node-id="AGCKpKiYn63wBN7GrDVxzw">
+
+<h2 data-page-node-id="y2hmuSC9uc4NPHINlJRF1U">7 个回归逐项诊断</h2>
+
+
+<!-- ============== 1 ============== -->
+<div class="regr" id="r1" data-page-node-id="Z5mL0Qmwxj0qHVdRPuprVW">
+  <div class="regr-h" data-page-node-id="tZ3JEqbBhEmUHW6icUO2ED">
+    <div class="regr-no" data-page-node-id="8AZm1B0dnauFCNrgaFIjJu">1</div>
+    <div class="regr-title" data-page-node-id="BjIbL77PIlI5LzrE1Fn0TW">test_complex_pattern_with_gaps <span class="pill" data-page-node-id="cnAhsxQU2RXInX7YvctFye">core/image_cropper.apply_rounded_corners</span></div>
+    <span class="regr-tag t-p0" data-page-node-id="bPkuH5fGsSxRjgDdAFPtKl">P0</span>
+  </div>
+
+  <div class="grid2" data-page-node-id="1dufB5H9nUaqa4aaczp1jW">
+    <div data-page-node-id="o3bpzwTc5VWLy7CuZItwrq">
+      <h4 data-page-node-id="MWkocYmJAQN1s8QAd3tdRI">症状</h4>
+      <p data-page-node-id="eVigGC9KGWFvpHg75qZWsr">左下角 3cm 圆角后，<code data-page-node-id="MqX55DeVXd8MCMtNwkjDrK">arr[950:1000, 50:70]</code> 的灰色间隙带（200,200,200）出现
+        <strong data-page-node-id="xiV6uuiHlyRke9erbNNx4W">879 个非灰色像素</strong>（占间隙区 70%+）。
+        圆角把"间隙色"当成"边框内容"以原色粘贴进圆弧区域。</p>
+    </div>
+    <div data-page-node-id="OWAbKMr7O3jQCdi06ndKV9">
+      <h4 data-page-node-id="aFI2I04dbzWqzz4ttK6hsq">数据</h4>
+      <div class="err-block" data-page-node-id="86stsARA8U5SkV3cTkkt4S">
+        <span class="err-key" data-page-node-id="W4WsW9Y7gJMHgsikNjDCkv">错误像素:</span><span class="err-val" data-page-node-id="FJfwkiW2YBk7tOyZqpDMr5">879 / 1200 (73.3%)</span>
+      </div>
+      <div class="err-block" data-page-node-id="yYWYpqYVplOTlMVukf3m96">
+        <span class="err-key" data-page-node-id="GBQI4fAZ8qgjPBfDF92DDi">期望值:</span><span class="err-val" data-page-node-id="GUe3R6Q2eoPru2FUzBCVgA">0</span>
+      </div>
+      <div class="err-block" data-page-node-id="RTBZhpK3DGUexur1Ph9Jb4">
+        <span class="err-key" data-page-node-id="AwUMsH1ohcDYQCotpttOmA">圆角半径:</span><span class="err-val" data-page-node-id="zQjC04R9Sp56gQyJZZJ41e">177 px (3.0 cm @ 150 dpi)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="img-block" data-page-node-id="l9XKBtbkZeBsXmVmgRKJG7">
+    <div class="legend" data-page-node-id="uTa9Q7ySCbtLKEL2gA3jjt"><span class="r" data-page-node-id="qBc7zYql5GniIJwZaBgFJt">红色=非灰色像素</span></div>
+    <img src="1_complex_pattern_with_gaps.png" alt="对比图 1" data-page-node-id="4FWuSxSAzrubdCdiDI8whd">
+    <div class="img-cap" data-page-node-id="vDuMTYcQtG5PZrmQGFuKDj">左：原图（黑边+灰间隙+红边+蓝/绿/黄花纹）｜ 中：apply_rounded_corners 输出 ｜ 右：错误像素标注</div>
+  </div>
+
+  <div class="cause" data-page-node-id="PxFS5PXv6HyZdoquc643bC">
+    <div class="cause-t" data-page-node-id="iaDkDhhg0jYXTCyedWB3Ex">根因</div>
+    <p data-page-node-id="zI2EqoFciWhERHm30xCs0c">原图有<strong data-page-node-id="X0hUAHU47YgJLFqlww7pdI">外黑边（0-50）+ 灰间隙（50-70）+ 内红边（70-100）</strong>三层结构。
+    <code data-page-node-id="Dliy6M9wqXiV15MDZI9ObS">apply_rounded_corners</code> 调用 <code data-page-node-id="NZLGdwFOhQQFiSzb1yyjT5">_get_border_layers_robust</code> 检测边框层时，
+    把"灰色间隙"误识别为第二层边框（因为它与白色背景色差足够大）。裁切后
+    <code data-page-node-id="bWFiLWLs30ImGsPGnIcn3c">_redraw_border_on_corner</code> 用这个误识别结果在间隙区重绘成"灰→红"渐变过渡，破坏了间隙的视觉一致性。</p>
+  </div>
+</div>
+
+
+<!-- ============== 2 ============== -->
+<div class="regr" id="r2" data-page-node-id="BzXEuYaf5pS1hc7MjOSiwR">
+  <div class="regr-h" data-page-node-id="9dUbAbylTkvlE4VRF27SUj">
+    <div class="regr-no" data-page-node-id="SPWsdFHMmUf1bT4ZuugZwF">2</div>
+    <div class="regr-title" data-page-node-id="zHFuKiNKkhvIq25JPXAiYu">test_multilayer_border_with_mixed_colors <span class="pill" data-page-node-id="UNyRNmdAsFb7qZUaCEKIIF">core/image_cropper_border.apply_border_only_corners</span></div>
+    <span class="regr-tag t-p0" data-page-node-id="xH3Rl5sPwFp0RTr1Mqy90A">P0</span>
+  </div>
+
+  <div class="grid2" data-page-node-id="k5oz3J1l9y62XLUwFcywO2">
+    <div data-page-node-id="l95As3mtQkVAxf0V9XmF6r">
+      <h4 data-page-node-id="9xU3tFSWpPrPt40U8Mvdqy">症状</h4>
+      <p data-page-node-id="haWY0vTAWX7Jurz4aA5vw6">四角的 2cm 圆角后，<strong data-page-node-id="ydJZcc7oCGIiA2n4r8UpRu">tr 和 br 间隙变白色失败</strong>，但 tl 和 bl 通过。
+      非对称失败——明显与 <code data-page-node-id="eIBoDZnqEFm8hCZB3y0pea">corner_protect_map</code> 的判定逻辑相关：
+      tl/bl 可能因扇区采样到了不同的内容而走了不同分支。</p>
+    </div>
+    <div data-page-node-id="KgDzTQ6GJyEifpwlCnfS8T">
+      <h4 data-page-node-id="Gyb1EwRbMogTbIzvhkqhhX">数据</h4>
+      <div class="err-block" data-page-node-id="yFsdO5qttaZpjC4kMYRhE6">
+        <span class="err-key" data-page-node-id="i7p01ITlu5ExxG3atZG6EA">失败角:</span><span class="err-val" data-page-node-id="6r6igNnD9k3ML8V2CUuwO1">tr (225 px), br (225 px)</span>
+      </div>
+      <div class="err-block" data-page-node-id="CGvCUt0eDCgi8MljLczb1C">
+        <span class="err-key" data-page-node-id="auewJabyfTvHWjAjaPG558">通过角:</span><span class="err-val" data-page-node-id="BcUjP0tczCj1GUNYXRIc1u">tl, bl</span>
+      </div>
+      <div class="err-block" data-page-node-id="vS8xYTMxtvcfXdchWSRZEn">
+        <span class="err-key" data-page-node-id="TIdCOb45tCemlWKVqEj2LV">总错误像素:</span><span class="err-val" data-page-node-id="SFoQ1NQR6MwvsweYD3PemS">450</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="img-block" data-page-node-id="Intu3cF6ICAuKrnyiJqlDE">
+    <div class="legend" data-page-node-id="D1zPBc3R5TZJDH1nWSIfy7"><span class="r" data-page-node-id="cHRzEMyZPkUWTGyaOWKBRU">红色=非白像素（间隙被填充）</span></div>
+    <img src="2_multilayer_border.png" alt="对比图 2" data-page-node-id="Qc1VpLaHO1CRSm43bQ4NxF">
+    <div class="img-cap" data-page-node-id="DnMgrRZzSNUVlOQ9YqqDBa">左：原图（蓝外边+绿内边+红蓝点阵花纹）｜ 中：apply_border_only_corners 输出 ｜ 右：错误像素（tr/br 顶部与右侧出现红色像素列）</div>
+  </div>
+
+  <div class="cause" data-page-node-id="Lrq76j72JdiIsE2RpPiv8e">
+    <div class="cause-t" data-page-node-id="cKT7ArQtQulLtgCPaFO3cR">根因</div>
+    <p data-page-node-id="WqB66ctFlhVTJfSrSoieDI">非对称失败指向 <code data-page-node-id="nzmaT79COYeE4MtMkzK4ej">apply_border_only_corners</code> 内 <code data-page-node-id="hxgMBXweh6huECHmzO9WAK">corner_protect_map</code> 的方向敏感性。
+    从对比图看，tr 间隙被填上了"外蓝边"颜色——说明该角的 <code data-page-node-id="WsEwcHsH8iZRrOhsQBLuXN">_corner_sector_has_content</code> 判定为
+    "有内容"，启用了保护模式，但保护模式的重绘逻辑把外边框延伸到了间隙区域。<br data-page-node-id="o1XmHTWFccZZrllgXL2BC5">
+    排查方向：<code data-page-node-id="7I6soPwAwMwGXPDntiNcJI">core/image_cropper_mask.py:521</code> 的扇区采样可能因右/下角的图像内容（密集点阵）与左/上角不同，走了不同分支。</p>
+  </div>
+</div>
+
+
+<!-- ============== 3 ============== -->
+<div class="regr" id="r3" data-page-node-id="nQacb25lUlyRU5WpVZISWx">
+  <div class="regr-h" data-page-node-id="TNdDMbnt11YHBJJH0HHNpq">
+    <div class="regr-no" data-page-node-id="hEn8WmFUu4vu7QBB5OKulJ">3</div>
+    <div class="regr-title" data-page-node-id="ChcuxV6jGYhHiARnErZAad">test_extreme_colors_and_anti_aliasing <span class="pill" data-page-node-id="T5Oo28LdXbA1uMe9S4fNQD">apply_border_only_corners</span></div>
+    <span class="regr-tag t-p0" data-page-node-id="BkorUiPFscZ7GdrsD9labI">P0</span>
+  </div>
+
+  <div class="grid2" data-page-node-id="epPMjwAAG0mBUoLOAKyekX">
+    <div data-page-node-id="u4ceb3J0OpmXEsTBez0sDl">
+      <h4 data-page-node-id="fvSp5ygybj5jARVwdNfCXP">症状</h4>
+      <p data-page-node-id="Ln4BErHbH2FuVmmdrJFZUL">右下角 2.5cm 圆角后，间隙区出现 <strong data-page-node-id="isNGjlhTCxSE3BjjU2xNL1">385 个非白像素</strong>，圆弧上有 <strong data-page-node-id="KICeLhM73hAJGfT3XItHvu">133 个颜色偏差像素</strong>。
+      浅灰边框(200,200,200)与白色间隙(255,255,255)色差仅 55，算法边界判定极易混淆。</p>
+    </div>
+    <div data-page-node-id="Wl4PhywW1VLwnLU4G7ZiRf">
+      <h4 data-page-node-id="PCATY4FNhKZ7CNWpyRi6wO">数据</h4>
+      <div class="err-block" data-page-node-id="sSGULMdMTbghv5flyc0umA">
+        <span class="err-key" data-page-node-id="p8E71VF8N8hxrftpkFcHlf">间隙非白像素:</span><span class="err-val" data-page-node-id="d3e43pkANib60AX4lRU1zl">385</span>
+      </div>
+      <div class="err-block" data-page-node-id="3SouLYsYowP0UiZtat1vny">
+        <span class="err-key" data-page-node-id="Ct3JFHzslEKNUhuRf7CJvp">圆弧异常像素:</span><span class="err-val" data-page-node-id="yM4XpcAUPxkZAhteGdxUoC">133 (允许 <10)</span>
+      </div>
+      <div class="err-block" data-page-node-id="mF5VdHpRAzsIiEVo4KV4EB">
+        <span class="err-key" data-page-node-id="Gau6EkkNWvF8FzxBDGG09T">测试背景:</span><span class="err-val" data-page-node-id="XM22SrSfkCAsGeww4ckz6Y">边框色 vs 间隙色差仅 55 RGB</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="img-block" data-page-node-id="EsctedumlxYQBlec1m0DFx">
+    <div class="legend" data-page-node-id="7MgfXVpZT4BOy98SzEgykI"><span class="r" data-page-node-id="gyKVhEW89tyDH2lApHNU5S">红色=间隙非白像素</span><span class="b" data-page-node-id="GRySnWlZe10eSzqfPLnoH3">蓝色=圆弧颜色偏差像素</span></div>
+    <img src="3_extreme_colors.png" alt="对比图 3" data-page-node-id="qk27hWZClpqpTP6DEIYH2M">
+    <div class="img-cap" data-page-node-id="ubLA3vjL2pVIrz1WAuEs0m">左：原图（浅灰边+深灰内容+抗锯齿过渡）｜ 中：apply_border_only_corners 输出 ｜ 右：错误像素标注</div>
+  </div>
+
+  <div class="cause" data-page-node-id="OrhXHKqYXecaLr41IWNrPq">
+    <div class="cause-t" data-page-node-id="3VF0Gjmjhn6Qys1oGaErDM">根因</div>
+    <p data-page-node-id="lu9o7bEUahEMWY3DWkWwxd">边框色(200)与间隙色(255)色差仅 55，远低于算法常用阈值（一般 80+）。
+    <code data-page-node-id="ei8ehebgQKbEuYI3ZcGk5c">_get_border_layers_robust</code> 的色差判定可能把它们当作同色跳过，<br data-page-node-id="slyPuBH7QDETuYst1WCDTy">
+    或把间隙识别为边框内容。<br data-page-node-id="BDKbmaCK3TOsNx0LYqbjb8">
+    这暴露了算法对<strong data-page-node-id="CDlNJmiYx8DGwhpjrAHZEp">低对比度</strong>场景不鲁棒。</p>
+  </div>
+</div>
+
+
+<!-- ============== 4 ============== -->
+<div class="regr" id="r4" data-page-node-id="uppDKMhpIp1PgOG7VlPeAB">
+  <div class="regr-h" data-page-node-id="WEauvl2iDJtvl3oF4NIBCq">
+    <div class="regr-no" data-page-node-id="diHEzVHebp79pnEmTOHxCh">4</div>
+    <div class="regr-title" data-page-node-id="IpU4CYaKJaycoBK7Rg5SxY">test_corner_smoothness_no_gap_fill <span class="pill" data-page-node-id="pRZ0mtlDc5sREZ118giNF1">apply_rounded_corners</span></div>
+    <span class="regr-tag t-p0" data-page-node-id="npnPogdriCh4N0KXXR1Tze">P0</span>
+  </div>
+
+  <div class="grid2" data-page-node-id="Ov3Zrve84VUlKd34Xyr4Ab">
+    <div data-page-node-id="az0CotAOOLR5TnP6fEt5GE">
+      <h4 data-page-node-id="Ffvdh33HLBE9PLA9mXSDdR">症状</h4>
+      <p data-page-node-id="iClFBEWUDFJdciT9jGguWr">左下角 3cm 圆角后，间隙区（距圆心 50-71px）出现 <strong data-page-node-id="oJiGp8NcsWqXggOTMjU2xN">241 个错误黑色像素</strong>，
+      且白色像素为 0。即整个间隙被错误填充成了黑色边框色。<br data-page-node-id="67Utxf4qXJOk0HLJEKHiWi">
+      这是 #1 的同一构造输入的"反方向"诊断——#1 检查"非灰色像素"，#4 检查"黑色像素"，
+      两者都指向同一个 bug：间隙带被边框色覆盖。</p>
+    </div>
+    <div data-page-node-id="ba75IqHcF4kmf27F3XvuiU">
+      <h4 data-page-node-id="CuQRo8Wy6Kzo2J9CobuqDt">数据</h4>
+      <div class="err-block" data-page-node-id="CkvhP0DGssj7axquWuTXUI">
+        <span class="err-key" data-page-node-id="rMpBiK65IOo1pLmAMkXVg4">间隙黑色像素:</span><span class="err-val" data-page-node-id="bHN7dv6dwyWtRZ2KZ7r3q7">241 (允许 <5)</span>
+      </div>
+      <div class="err-block" data-page-node-id="XAZCEEqGLQIAxKNZ0uetYA">
+        <span class="err-key" data-page-node-id="V083FNzU0SGMbbyBvhzxcJ">间隙白色像素:</span><span class="err-val" data-page-node-id="dCM1ItCoZApGsC3PUzGVcF">0 (期望较多)</span>
+      </div>
+      <div class="err-block" data-page-node-id="KZHYQPj0Isa5fROVzrKSl7">
+        <span class="err-key" data-page-node-id="bNClUGTcP83IFZLOGjH3qX">黑色来源:</span><span class="err-val" data-page-node-id="6rlPLNFnehyoEFsaOnLQI9">外边框颜色 (0,0,0)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="img-block" data-page-node-id="3mBfIHma2z9li7LPg1sESN">
+    <div class="legend" data-page-node-id="YiTrxzzKdsKhyUXoPiogJ8"><span class="r" data-page-node-id="zHUw7NqorBHgQWLz2fLqtA">红色=间隙黑色像素</span><span class="g" data-page-node-id="0ADzdVhQu5oQXAGa6wkjZq">绿色=间隙白色像素（期望）</span></div>
+    <img src="4_corner_smoothness_no_gap_fill.png" alt="对比图 4" data-page-node-id="3u5uPa7IjKeeHDK1WEqwNB">
+    <div class="img-cap" data-page-node-id="VPHRcvKgwFRGFmSquPnKV8">左：原图 ｜ 中：圆角输出（左下角黑色弧形延伸进间隙区）｜ 右：错误像素</div>
+  </div>
+
+  <div class="cause" data-page-node-id="lptutzXv8LA8ZyLhBbFprW">
+    <div class="cause-t" data-page-node-id="FaPtT7lKivJs908P3BisAv">根因</div>
+    <p data-page-node-id="ZuDE1Gg2KEwGWTYNMXBA9A">同 #1，但暴露的事实更尖锐：<strong data-page-node-id="EYbfo3nEgCuToOaiH6zmip">间隙像素全部变黑</strong>——不是渐变过渡，而是直接被边框色覆盖。
+    对比 1/4 两张图能看到，<code data-page-node-id="Uejcef1F5AjFmVFeRLKM7l">apply_rounded_corners</code> 在圆弧处把"原图的黑色边框"延伸到间隙区，
+    半径外的间隙色直接消失——这是 <code data-page-node-id="FWEV1kMf3W37Rsy9SluQPI">_redraw_border_on_corner</code> 重绘逻辑的错误：<br data-page-node-id="b6voup67mKIimgjDOALV0Y">
+    它假设间隙在圆弧外侧，但当原图在圆弧内侧也有边框色时，重绘时会复制错位置。</p>
+  </div>
+</div>
+
+
+<!-- ============== 5 ============== -->
+<div class="regr" id="r5" data-page-node-id="25ahM4cpXnuCKIQDQq3Fbq">
+  <div class="regr-h" data-page-node-id="exQzB9zO8BS3GQO23N6shD">
+    <div class="regr-no" data-page-node-id="WEGSLsPAVKdlUrGZFktjnh">5</div>
+    <div class="regr-title" data-page-node-id="xElkGRE0RGiLHPSzMuUWsr">test_border_smoothness <span class="pill" data-page-node-id="Pq5rFygEpwfYAB0FY4hP0C">apply_rounded_corners</span></div>
+    <span class="regr-tag t-p0" data-page-node-id="n7nXLJHryrVCH4pzrHEHPZ">P0</span>
+  </div>
+
+  <div class="grid2" data-page-node-id="Gs3ujuhUVOPXbgS2vOatFy">
+    <div data-page-node-id="IWlRH6skbLo2yG5ZNRPv2V">
+      <h4 data-page-node-id="IA8O4L4cGQ5zEKBVCfx1CV">症状</h4>
+      <p data-page-node-id="jTKAHYYkc1lONdyxLvhLUR">左下角 3cm 圆角后，圆弧上 <strong data-page-node-id="J8AhhcmQurT7hi5RmeFv6J">24/30 = 80% 的采样点是白色缺口</strong>。
+      测试期望缺口率 < 5%。<br data-page-node-id="1xvJqsriQn1CHR9q25Fqtf">
+      视觉上能看到：原图左下角有完整的黑色边框，但圆角处理后，黑色边框在弧线位置<strong data-page-node-id="Ee5edGmKGt7AKRCVDmt0gM">几乎整段消失</strong>，
+      只留下少数几个像素点。</p>
+    </div>
+    <div data-page-node-id="hqLjt0pnxYZTxpQ7RGtsmr">
+      <h4 data-page-node-id="DoK7Wp6UDKPHLjmk0oT80h">数据</h4>
+      <div class="err-block" data-page-node-id="6n7Gl5BfVqebBrnJLG6jLG">
+        <span class="err-key" data-page-node-id="PGZgwMFJK7aCt62IhCLTVN">检查点数:</span><span class="err-val" data-page-node-id="B2LYhjV1uT8vmFgzAETKQK">30</span>
+      </div>
+      <div class="err-block" data-page-node-id="kLeDGGC5JuJVks5E6pM1tp">
+        <span class="err-key" data-page-node-id="FTd5SloRtZSfvC9kPtelhL">白色缺口:</span><span class="err-val" data-page-node-id="uBhALwiiqnA9cKtv60oFlX">24 (期望 <1)</span>
+      </div>
+      <div class="err-block" data-page-node-id="lTXLWsX3Usk74Hp6e2LUQG">
+        <span class="err-key" data-page-node-id="hcAoTolGym1XAHeTUZPm5Q">缺口率:</span><span class="err-val bad" data-page-node-id="llCjnQm1z6u8PCsZLMPeLN">80.0% (期望 <5%)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="img-block" data-page-node-id="RLOzGt8YN1XdJSPYi6aCqa">
+    <div class="legend" data-page-node-id="UQ13KGhYcMSI8RthfC7DQX"><span class="r" data-page-node-id="gY4oPFwwQ3zl4y44FNQ0E6">红色=圆弧白色缺口像素</span></div>
+    <img src="5_border_smoothness.png" alt="对比图 5" data-page-node-id="ApXcQnGPbM23GMCWPS9DIG">
+    <div class="img-cap" data-page-node-id="p9Df4izITd7FYEmOJbDyBa">左：原图 ｜ 中：圆角输出（黑色边框左下角在弧线处不连续）｜ 右：缺口像素（明显成弧线分布）</div>
+  </div>
+
+  <div class="cause" data-page-node-id="Ug72JDlJZpXIFMDUVSwAo5">
+    <div class="cause-t" data-page-node-id="jUtjGn3MPDng1kKoxIzMRQ">根因</div>
+    <p data-page-node-id="OswRlDIP5hpb9SeJszknY1">这是圆角 mask 在裁切时把圆弧上的边框像素错误地"剪切"掉了。<br data-page-node-id="rM1OFikBkRFIXndKf7skOc">
+    <code data-page-node-id="4QQqUv2WOLsA800jeiPden">carve_corner_on_mask</code> 的边界应该正好切到原图边框<strong data-page-node-id="DCW5wPXhxpWprU55366k2d">外侧</strong>，保留整圈边框；<br data-page-node-id="Ho1BUjpHwxpUsK2hmffnMO">
+    但当前 mask 的圆心定位在 (50, 950)——这是图像角点，不是边框圆心。裁切半径 177px 远超 50px 边框厚，
+    导致整段边框被 mask 当作"圆角外侧"切掉了。<br data-page-node-id="6tIuf7N5BXBzN0YKCfzoXw">
+    <strong data-page-node-id="uXyCbRBZhSZS6ROWt1PsMU">这与 #4（间隙被填黑）正好相反</strong>——#4 是 mask 切不到位、#5 是 mask 切过了头。<br data-page-node-id="I9okl4eCwpqPTSakhn1zHX">
+    两者指向同一个 bug：mask 的圆心/半径与边框厚度没有联动。</p>
+  </div>
+</div>
+
+
+<!-- ============== 6 ============== -->
+<div class="regr" id="r6" data-page-node-id="5qQMfEVnWoFXGPdYn3X62Q">
+  <div class="regr-h" data-page-node-id="JmUBxwMFQMHEX0kQ6oTzIK">
+    <div class="regr-no" data-page-node-id="zbs4oowhAHLUeUlmrK2vqF">6</div>
+    <div class="regr-title" data-page-node-id="MexZmHW9qFpxwPhY056R34">test_no_wrong_gap_fill <span class="pill" data-page-node-id="YwlamNVLeW8iFIcl9BEcJG">apply_rounded_corners</span></div>
+    <span class="regr-tag t-p0" data-page-node-id="txpzY7ojzL2LW6VrZCoOHT">P0</span>
+  </div>
+
+  <div class="grid2" data-page-node-id="OxKM5Zllw9MGAl51DqlXF1">
+    <div data-page-node-id="pBO7umzxh4vYqcLA2BzpW0">
+      <h4 data-page-node-id="vFE5ifXV1ByXHzTST03y9D">症状</h4>
+      <p data-page-node-id="3xR37yPwBFszaP4rMz3bMz">距圆心 52-68px 的"核心间隙区"（排除最外侧 2px 容差）有 <strong data-page-node-id="eARuWoGCyHLnlCbOfnnMaG">174/306 = 56.9% 的黑色像素</strong>。<br data-page-node-id="MG5RndYx44Hh1JGVgZcRD8">
+      测试期望 < 5%。<br data-page-node-id="8Kyl7Ar2TqrqeWFbE969Ja">
+      即核心间隙区一半以上被填黑——比 #4 更严重（#4 是 50-71px 全检查）。</p>
+    </div>
+    <div data-page-node-id="LNaB64Y3je9ubs6re0L4Kw">
+      <h4 data-page-node-id="BK1BIXfZ4HRB3yUSDdjElm">数据</h4>
+      <div class="err-block" data-page-node-id="PdR29GWSz3lDO1OAHhPlPH">
+        <span class="err-key" data-page-node-id="KCYCnBgIXqnkL08AIeq3F3">核心区黑色像素:</span><span class="err-val" data-page-node-id="a71yZ3KXcqotA8vGJLjTJI">174 / 306</span>
+      </div>
+      <div class="err-block" data-page-node-id="u3IyvyEaZPyZFFXG7NWrE0">
+        <span class="err-key" data-page-node-id="s6PGu3JsM6AvxFREaakQ8o">黑色占比:</span><span class="err-val bad" data-page-node-id="bWgsvQII7Wj3NZFqFlWFSq">56.9% (期望 <5%)</span>
+      </div>
+      <div class="err-block" data-page-node-id="iSvnsnWf0BF5PQTBtv9YC2">
+        <span class="err-key" data-page-node-id="pH5yvjdp68PWRDQlb1fNjD">检查范围:</span><span class="err-val" data-page-node-id="5ItBqY8Ueph2Gkv5eDYeHO">距圆心 52-68 px（排除边界）</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="img-block" data-page-node-id="ukZqHOR0ke4HkwufptHWkN">
+    <div class="legend" data-page-node-id="EthaaKokJQ51pTZNodveZy"><span class="r" data-page-node-id="1EvqEjOucdK8Rbg0rQE8b2">红色=核心区黑色像素</span></div>
+    <img src="6_no_wrong_gap_fill.png" alt="对比图 6" data-page-node-id="oyskzaAianZSGHCTGBV4yM">
+    <div class="img-cap" data-page-node-id="dxTTnsHorsFsIpOB3haxfc">左：原图 ｜ 中：圆角输出 ｜ 右：错误像素（左下角圆弧内侧连续黑色填充）</div>
+  </div>
+
+  <div class="cause" data-page-node-id="3ZyvppRWnWH1XRK4YREQcc">
+    <div class="cause-t" data-page-node-id="rdO1qbumanlE8ZeHBajvdc">根因</div>
+    <p data-page-node-id="OnyeUZ133oylgsJQ3yDuii">同 #1/#4。<br data-page-node-id="Ss1B3EWAstQYu0vK1YnRXl">
+    值得注意的是，本测试构造<strong data-page-node-id="RCAGKiOAN88fialTgbFzDE">没有内层红边</strong>（仅外黑边+灰间隙），所以核心间隙区被填的黑色
+    <strong data-page-node-id="H7GTBHwnT7WbZ0E2YuuYB8">100% 来自外边框</strong>——这是重绘逻辑把外边框厚度直接延伸到间隙区的明确证据。<br data-page-node-id="XLf8wFLjqG9gHnAbUC9ZVE">
+    Step A <code data-page-node-id="bCVaMDwsEEX2bf3O7Bjq90">_redraw_border_on_corner</code> 在重绘边框时，未正确处理"边框总厚度 vs 间隙宽度"的几何关系。</p>
+  </div>
+</div>
+
+
+<!-- ============== 7 (DONE) ============== -->
+<div class="regr" id="r7" data-page-node-id="uCRnGRVRXqK8Rqzll7BGay">
+  <div class="regr-h" data-page-node-id="T23Lw0Recpk32T0JFLuyk4">
+    <div class="regr-no done" data-page-node-id="LUADoSrSkt6OzJT9qo9UOc">7</div>
+    <div class="regr-title" data-page-node-id="1Srs7FUKi0IxCSzQXyb6rj">test_name_parser <span class="pill" data-page-node-id="SoGdgTJ6VVsdrJ1wVGyZqM">core/parser/name_parser.parse_filename</span></div>
+    <span class="regr-tag t-done" data-page-node-id="XcrmVd4YJnuZaV2lVKepvG">已修复</span>
+  </div>
+
+  <div class="grid2" data-page-node-id="mhShs8vkf6OQLKa02CrTWG">
+    <div data-page-node-id="5H91klZXaRB2qSOFK2Gp4g">
+      <h4 data-page-node-id="Q0zPSBDEbvGsSMspILni53">症状（已修复）</h4>
+      <p data-page-node-id="cKEnBpco3WGY90mhfcLvXS">3 个 case 失败：<code data-page-node-id="V4yQwwtb4Hgts42tI6hRSM">60.5x133CM水池</code>、<code data-page-node-id="ANCZOdQZxcdOJyr5ZJFdST">50x100CM水池</code>、<code data-page-node-id="uDzs8OyMJtbo8FxzJdF5Vt">100x200CM裁剪有图</code>。
+      测试期望按"原始顺序"，代码按"长边为宽"——是测试未跟随 f8beb2d（2026-08-26）的代码调整。</p>
+    </div>
+    <div data-page-node-id="sZWraCLDrBeWoWUCRD6Q4U">
+      <h4 data-page-node-id="Xha3d1i4cvCjka4d9eJzmB">数据</h4>
+      <div class="err-block ok" data-page-node-id="ELfh6TL65vXxLXSqD5bAlO">
+        <span class="err-key" data-page-node-id="3uLvXquJt6FnSWTfT89iDx">修复动作:</span><span class="err-val" data-page-node-id="ERjCtsaWKnvTQMmwAuX2JM">tests/integration/test_fix_validation.py 期望值改"长边为宽"</span>
+      </div>
+      <div class="err-block ok" data-page-node-id="xu8kj4njW8Dh3eZNIgCDi2">
+        <span class="err-key" data-page-node-id="I8s0QZmk63P6WhCp4v1822">回归状态:</span><span class="err-val" data-page-node-id="AXxd2mKCa7PPd0EspRCFMv">6/6 通过</span>
+      </div>
+      <div class="err-block ok" data-page-node-id="oDV5gwMFE5T8JmFG0klAhG">
+        <span class="err-key" data-page-node-id="ouAqJrR7qyAOREnv1y4pzC">下游一致性:</span><span class="err-val" data-page-node-id="YDMTJJjOSWx5fDvdNsfSvg">poolbox:222-225 注释与新期望一致</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="img-block" data-page-node-id="CA6mOLeDRqGQQgk43p1USr">
+    <img src="7_name_parser.png" alt="对比图 7" data-page-node-id="fGkgUtEuavlMMJYIMukY9W">
+    <div class="img-cap" data-page-node-id="CF4gtXKuEZFOjCn6yuuWfU">修复后：6/6 全绿</div>
+  </div>
+
+  <div class="fix" data-page-node-id="GwGVBDz16BsJm0L7f5rqvD">
+    <div class="fix-t" data-page-node-id="vLkOPTTxxHrm15bzEldBPc">修复记录</div>
+    <p data-page-node-id="JB3rpNrQqu4VKO3d74b7rb">在 <code data-page-node-id="Ev8Y5Wg32hPWMBKnpFYzZM">tests/integration/test_fix_validation.py</code> 的 <code data-page-node-id="nf4JrOe0GBExPfxZMeD4c0">test_name_parser</code> 函数顶部
+    加 8 行注释说明：</p>
+    <ol data-page-node-id="HmKqBK591f2yJTaVa2c3pw">
+      <li data-page-node-id="JjUAAYQZz8FMGb9u2tq5gk">产品语义权威来源：<code data-page-node-id="BVDCS4V0wu2wllt3Dh58ne">name_parser.py:443 + 514-530</code></li>
+      <li data-page-node-id="tfcsBGb34al6uEUwZPGUli">标准规则来源 commit：f8beb2d 2026-08-26 "修复程序水池设计器的预览图生成逻辑"</li>
+      <li data-page-node-id="ZZf2c00BwfU9ro7bHF8ZHo">下游一致性证据：<code data-page-node-id="WiA5okhK7MA4jjtlYNaCud">gui/property_panel_poolbox.py:222-225</code> 注释明确 "58x121cm → width_cm=121, height_cm=58"</li>
+      <li data-page-node-id="W1g4eZgJa3jP2914POKcWB">3 个失败 case 的期望值改为"长边=宽、短边=高"</li>
+    </ol>
+    <p data-page-node-id="UoBZyl4C0mrDGpToyjQO82">代码未改任何字节——按"产品语义权威"判定，本次是测试过期，不是代码缺陷。</p>
+  </div>
+</div>
+
+
+<hr data-page-node-id="1HNvM8uE3ZYKuftWXIpCAq">
+
+<h2 data-page-node-id="wWwV9AZvANY4X5YcPCBVDf">修复路线建议（按性价比排序）</h2>
+
+<table data-page-node-id="tukkdlBtz2huejBWlshKRp">
+  <thead data-page-node-id="nPRqWkEfRPqxxcu7uvCxHe"><tr data-page-node-id="Xoen74wfhNi69BSCW40Nsa"><th data-page-node-id="Gcj3ESfPknXoOdhEESmQef">#</th><th data-page-node-id="4TdAveYTcdYZ91E2k8NFvi">根因类别</th><th data-page-node-id="X8VB8U21pbIcJVZahl91Hc">修复点</th><th data-page-node-id="WHZ5tEEnCUHYz76Huiy8O0">预估影响面</th><th data-page-node-id="FCalMLRNpiD34kQBMYd2Ba">建议</th></tr></thead>
+  <tbody data-page-node-id="ltGtCbft8mU362f9cksNmz">
+    <tr data-page-node-id="GMBin5tXxkSjnNhplstfBs"><td data-page-node-id="tYwiE912qVSVYCffar5fAU">#7</td><td data-page-node-id="Bv49T48F8KlPet0r783c5w">测试过期</td><td data-page-node-id="EFu7xIsfZACyS6U0b4j9vd"><code data-page-node-id="bnJw2W0eDiPY0W1FmsZrTH">test_fix_validation.py</code> 期望值</td><td data-page-node-id="xS6A2yLl68yckrVeszMRnk">低</td><td class="ok" data-page-node-id="QQ0lIYI0Hw7Bl5wCZdq92l">✅ 已修复</td></tr>
+    <tr data-page-node-id="Ve5CWuIBr4D0xReyA4LJwH"><td data-page-node-id="llDHe6BT799VfgLuA1jvPg">#1-#6</td><td data-page-node-id="oSQ8IbCbbnYkIOhCuiZS6g">mask 边界</td><td data-page-node-id="RK66LTFVAVFUIsVR7HHvaa"><code data-page-node-id="c4oVz03fR8hkKrX07ikAc1">corner_protect_map</code> 判定 + <code data-page-node-id="Kzv5KxxsvJGZaG2eqgC13V">_redraw_border_on_corner</code> 重绘</td><td data-page-node-id="ZG3HhPUKQaJvpoHKg2opPH">高（覆盖所有圆角场景）</td><td class="bad" data-page-node-id="rnTn1wbUWZVpnn1nQFRfkC">需深入重构</td></tr>
+  </tbody>
+</table>
+
+<h3 data-page-node-id="t3xiqvyhY3wWRjx8TCZIum">圆角 mask 的修复方向（#1-#6 共用）</h3>
+
+<div class="scope" data-page-node-id="2fFcVbk9COTZArA2Kp0I1h">
+  <div class="scope-t" data-page-node-id="sEp8WmftFIWBQG3v3VWhB5">两个独立 bug 同时存在</div>
+  <ul data-page-node-id="q4JFqWnqp8aF8lYaNEWs0I">
+    <li data-page-node-id="a8In5mVTr8kImaLNWHY2Gb"><strong data-page-node-id="sWaLw7kAP2leJPM4phPEAy">Bug A（#4/#6 体现）</strong>：圆角弧线内侧，间隙被外边框色覆盖。<br data-page-node-id="QeYpVK7xobnOMWmBYaVLcT">
+    修复方向：<code data-page-node-id="4s3W178WdT3i9H6fgCgMXB">_redraw_border_on_corner</code> 的同心圆弧重绘，需要按"边框总厚度 T"做径向偏移，<br data-page-node-id="EXMgtN1a9EuXOCuKYZy8n1">
+    确保只覆盖 [r-T, r] 区间，不污染间隙区 (r-T, r-0]。</li>
+    <li data-page-node-id="CQyyMco15QQ2oxih1zCPCe"><strong data-page-node-id="oGiXGiLBY8juEetesdCetN">Bug B（#5 体现）</strong>：圆角弧线外侧，边框被 mask 错误裁切掉。<br data-page-node-id="Hoy2EKiNs7HuGQf0nxZ2lP">
+    修复方向：<code data-page-node-id="V2KEp1PpEmKkC3f3caDqOj">carve_corner_on_mask</code> 的 mask 边界应该与边框外侧对齐，<br data-page-node-id="D6nY1XnkifHYJ4z6oUVSDa">
+    即 mask 圆心 = 边框外边角点 (50, 950)，半径 = r，但 mask 不切到边框内部。</li>
+  </ul>
+</div>
+
+<div class="fix" data-page-node-id="dY8RBub6CNPjFoQmvTaV4X">
+  <div class="fix-t" data-page-node-id="A0gAfN8cdqmVm6rvG9M6Gg">建议先做的诊断</div>
+  <ol data-page-node-id="cYe315IUPPiq6OH3q8yoGm">
+    <li data-page-node-id="NPVTpQ3uSUQufE7ait1DtQ">读 <code data-page-node-id="0phPbquuITdBp3B26BR2MS">core/corner/algorithm.py:carve_corner_on_mask</code>——确认 mask 圆心是否=边框外边角点</li>
+    <li data-page-node-id="UYvTUGjC7xkQr6TxQEqukx">读 <code data-page-node-id="QkKg37XFop6rLqI4DjHAax">core/image_cropper_mask.py:_corner_sector_has_content</code>——确认扇区采样是否对称</li>
+    <li data-page-node-id="FkAnVSglbY3jXuIaKoblhe">读 <code data-page-node-id="T28CHCGdmsKFgvlV6Le57x">core/image_cropper_mask.py:_redraw_border_on_corner</code>（如存在）——确认径向偏移逻辑</li>
+    <li data-page-node-id="1VQq0l35kBGBoh3bfoDdWW">对 1 个用例加 <code data-page-node-id="EDUw3MsyiHKajaqNmftdPe">print()</code> trace，画出 mask 边界、border_layers、protect_map</li>
+  </ol>
+  <p data-page-node-id="QqMjH7wWcz3f7i5wesvFCd">预计 30 分钟读码 + 1-2 小时改一处 + 回归全测 ≈ 半人天。</p>
+</div>
+
+<hr data-page-node-id="yGzvTKieWA1e07CBXKO3yr">
+
+<h2 data-page-node-id="HjtKNK5jq9biFc4XeA4Hj9">产物清单</h2>
+<ul data-page-node-id="jFtwZ5Pxfx3giwNh7lOgE6">
+  <li data-page-node-id="EM2wfX0qLEhd2MI4rsInSf"><code data-page-node-id="XRb84CrBRhANYTWvMwh4jA">.workbuddy/diag/diag7.py</code> — 诊断脚本（可重复运行）</li>
+  <li data-page-node-id="erJnoivmLYWUNq1u2308xY"><code data-page-node-id="qleMk6QfG9AU8DHIBeS3Cb">.workbuddy/diag/diag_results.json</code> — 错误数据汇总</li>
+  <li data-page-node-id="FdjiD5bqd9HmXSceqYB5eG"><code data-page-node-id="QDcXjGRbJGkBEu7wnb6xyh">.workbuddy/diag/1-7.png</code> — 7 张对比图（原图/输出/标注）</li>
+  <li data-page-node-id="2heCurn9SKteS3VSu2oaCV"><code data-page-node-id="53FceuYdscgaVasibi27RC">ProductSummary/SmartShapeCrop分析报告/1-7.png</code> — 报告引用副本</li>
+  <li data-page-node-id="5HUXQDmnKMoh5yGjKRPB91"><code data-page-node-id="pDF6a2q3e1or0murPHJJ1T">ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-V2.2-回归诊断报告.html</code> — 本报告</li>
+</ul>
+
+</main>
+
+<footer data-page-node-id="nowHPsN4zgHPHXT585IAaB">
+  <span class="ver-foot" data-page-node-id="OM2jpjpdZ6BJhixJ6zLaim">V2.2</span> SmartShapeCrop 回归诊断报告 · 2026-09-05 · 松烟
+</footer>
+
+</body>
+</html>
