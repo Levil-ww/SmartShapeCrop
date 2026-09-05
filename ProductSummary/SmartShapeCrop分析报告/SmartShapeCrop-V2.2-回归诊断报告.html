@@ -151,11 +151,24 @@
   </div>
 
   <div class="cause" data-page-node-id="PxFS5PXv6HyZdoquc643bC">
-    <div class="cause-t" data-page-node-id="iaDkDhhg0jYXTCyedWB3Ex">根因</div>
-    <p data-page-node-id="zI2EqoFciWhERHm30xCs0c">原图有<strong data-page-node-id="X0hUAHU47YgJLFqlww7pdI">外黑边（0-50）+ 灰间隙（50-70）+ 内红边（70-100）</strong>三层结构。
-    <code data-page-node-id="Dliy6M9wqXiV15MDZI9ObS">apply_rounded_corners</code> 调用 <code data-page-node-id="NZLGdwFOhQQFiSzb1yyjT5">_get_border_layers_robust</code> 检测边框层时，
-    把"灰色间隙"误识别为第二层边框（因为它与白色背景色差足够大）。裁切后
-    <code data-page-node-id="bWFiLWLs30ImGsPGnIcn3c">_redraw_border_on_corner</code> 用这个误识别结果在间隙区重绘成"灰→红"渐变过渡，破坏了间隙的视觉一致性。</p>
+    <div class="cause-t" data-page-node-id="iaDkDhhg0jYXTCyedWB3Ex">根因（基于代码 trace 验证）</div>
+    <p data-page-node-id="zI2EqoFciWhERHm30xCs0c">与 #2/#3 <strong data-page-node-id="X0hUAHU47YgJLFqlww7pdI">同源</strong>：`_redraw_border_on_corner` 把 outermost 边框色画到了「圆内尖角」位置。
+    <br data-page-node-id="1I2EqoFciWhERHm30xCs0c">
+    逐步 trace：
+    <br data-page-node-id="2I2EqoFciWhERHm30xCs0c">
+    ① 输入是「外黑 51 + 灰间隙 20 + 内红 30」三层结构，border_layers = [黑51, 灰20, 红30]。
+    <br data-page-node-id="3I2EqoFciWhERHm30xCs0c">
+    ② 测试采样 (cx=50, cy=950, dist=50~71) 的真实位置在「距圆心 (177,823) 距离 106~127」，
+    即 <strong data-page-node-id="asdf3BzLpL3ZxQr5">在圆内 (dist&lt;177)</strong>。
+    <br data-page-node-id="4I2EqoFciWhERHm30xCs0c">
+    ③ <code data-page-node-id="4s3W178WdT3i9H6fgCgMXB">_redraw_border_on_corner</code> 的 d=0..50（outermost 厚度 51）的 d_region
+    = dist ∈ [R−51, R+1.5] = [126, 178.5]，覆盖了 dist≈127 的「圆内尖角」位置 → 879 个黑色像素覆盖到原图间隙区。
+    <br data-page-node-id="5I2EqoFciWhERHm30xCs0c">
+    ④ 对照：dist ∈ [R−71, R−51]（d=51..70）= [106, 126] 应画内层 red，但代码 line 400-404 <strong data-page-node-id="bsdf3BzLpL3ZxQr5">non-outermost 跳过</strong>
+    → 红色内边框的圆弧线缺失（这是另一个 bug：内层 red 没在圆弧上重绘）。
+    <br data-page-node-id="6I2EqoFciWhERHm30xCs0c">
+    <strong data-page-node-id="csdf3BzLpL3ZxQr5">修复方向</strong>：同 #2 / #3 —— outermost 绘制要避免覆盖「圆内尖角」位置（这是 mask 算法自然保留的间隙/内容区）。
+    </p>
   </div>
 </div>
 
@@ -196,11 +209,31 @@
   </div>
 
   <div class="cause" data-page-node-id="Lrq76j72JdiIsE2RpPiv8e">
-    <div class="cause-t" data-page-node-id="cKT7ArQtQulLtgCPaFO3cR">根因</div>
-    <p data-page-node-id="WqB66ctFlhVTJfSrSoieDI">非对称失败指向 <code data-page-node-id="nzmaT79COYeE4MtMkzK4ej">apply_border_only_corners</code> 内 <code data-page-node-id="hxgMBXweh6huECHmzO9WAK">corner_protect_map</code> 的方向敏感性。
-    从对比图看，tr 间隙被填上了"外蓝边"颜色——说明该角的 <code data-page-node-id="WsEwcHsH8iZRrOhsQBLuXN">_corner_sector_has_content</code> 判定为
-    "有内容"，启用了保护模式，但保护模式的重绘逻辑把外边框延伸到了间隙区域。<br data-page-node-id="o1XmHTWFccZZrllgXL2BC5">
-    排查方向：<code data-page-node-id="7I6soPwAwMwGXPDntiNcJI">core/image_cropper_mask.py:521</code> 的扇区采样可能因右/下角的图像内容（密集点阵）与左/上角不同，走了不同分支。</p>
+    <div class="cause-t" data-page-node-id="cKT7ArQtQulLtgCPaFO3cR">根因（基于代码 trace 验证）</div>
+    <p data-page-node-id="WqB66ctFlhVTJfSrSoieDI"><strong data-page-node-id="DCW5wPXhxpWprU55366k2d">非对称失败的真正根因是 `_redraw_border_on_corner` 的径向范围覆盖了「圆内尖角」位置</strong>，不是 `corner_protect_map` 判定问题。
+    <br data-page-node-id="o1XmHTWFccZZrllgXL2BC5">
+    逐步 trace：
+    <br data-page-node-id="a1mHTWFccZZrllgXL2BC5">
+    ① <code data-page-node-id="2mojk5YYSp0gbHKUh5AYJq">corner_protect_map</code> 在 4 个角<strong data-page-node-id="bsdf3BzLpL3ZxQr2">全部判定为 False</strong>（外背景与间隙色差大、有内容=红蓝点阵），保护模式未启用——所以不是决策错误。
+    <br data-page-node-id="a2mHTWFccZZrllgXL2BC5">
+    ② tr / br 角 (40-55, 545-560) 测试区距圆心 (w-r, r) = (482, 118) 的距离约 100，<strong data-page-node-id="csdf3BzLpL3ZxQr2">在圆内 (dist&lt;118)</strong>，
+    <code data-page-node-id="4QQqUv2WOLsA800jeiPden">carve_corner_on_mask</code> 算法判定保留（fill 回 255）。
+    <br data-page-node-id="a3mHTWFccZZrllgXL2BC5">
+    ③ 但 <code data-page-node-id="5dG1MhWf6X6gS5Z3XItHvu">_redraw_border_on_corner</code> 的 d_region 计算用
+    <code data-page-node-id="asdf3BzLpL3ZxQr3">dist ∈ [R−outermost_thickness, R+1.5] = [77, 119.5]</code>，覆盖了 dist=100 这个「圆内尖角」位置 →
+    <strong data-page-node-id="dsdf3BzLpL3ZxQr3">把 (0,50,200) 蓝色边框画到了原图的白色间隙区</strong>。
+    <br data-page-node-id="a4mHTWFccZZrllgXL2BC5">
+    ④ tl / bl 角的对应测试区 (40-55, 0-15) 距圆心 dist ≈ 141，<strong data-page-node-id="esdf3BzLpL3ZxQr3">在圆外</strong>，
+    被 mask 裁掉变白色——所以 tl/bl 通过，tr/br 失败。
+    <br data-page-node-id="a5mHTWFccZZrllgXL2BC5">
+    <strong data-page-node-id="fsdf3BzLpL3ZxQr3">非对称不是决策问题，是几何位置差异</strong>：
+    <ul data-page-node-id="a6mHTWFccZZrllgXL2BC5">
+      <li data-page-node-id="a7mHTWFccZZrllgXL2BC5">tr / br 角的测试采样点位置在圆内尖角 → 被 outermost 边框色覆盖</li>
+      <li data-page-node-id="a8mHTWFccZZrllgXL2BC5">tl / bl 角的对应位置在圆外 → 被 mask 正常裁切</li>
+    </ul>
+    <strong data-page-node-id="gsdf3BzLpL3ZxQr3">修复方向</strong>：<code data-page-node-id="a9mHTWFccZZrllgXL2BC5">_redraw_border_on_corner</code> 的 outermost 绘制应只覆盖 <code data-page-node-id="abdf3BzLpL3ZxQr3">dist ∈ [R−outermost_thickness, R]</code> 且<strong data-page-node-id="asdf3BzLpL3ZxQr3">原图是边框色</strong>的像素，避免覆盖「圆内间隙」位置；
+    或者把 outermost 范围改为 [R−1, R+1.5]（只在圆弧外 1px 重绘，由 mask 自然覆盖内侧）。
+    </p>
   </div>
 </div>
 
@@ -240,11 +273,23 @@
   </div>
 
   <div class="cause" data-page-node-id="OrhXHKqYXecaLr41IWNrPq">
-    <div class="cause-t" data-page-node-id="3VF0Gjmjhn6Qys1oGaErDM">根因</div>
-    <p data-page-node-id="lu9o7bEUahEMWY3DWkWwxd">边框色(200)与间隙色(255)色差仅 55，远低于算法常用阈值（一般 80+）。
-    <code data-page-node-id="ei8ehebgQKbEuYI3ZcGk5c">_get_border_layers_robust</code> 的色差判定可能把它们当作同色跳过，<br data-page-node-id="slyPuBH7QDETuYst1WCDTy">
-    或把间隙识别为边框内容。<br data-page-node-id="BDKbmaCK3TOsNx0LYqbjb8">
-    这暴露了算法对<strong data-page-node-id="CDlNJmiYx8DGwhpjrAHZEp">低对比度</strong>场景不鲁棒。</p>
+    <div class="cause-t" data-page-node-id="3VF0Gjmjhn6Qys1oGaErDM">根因（基于代码 trace 验证）</div>
+    <p data-page-node-id="lu9o7bEUahEMWY3DWkWwxd">与 #2 <strong data-page-node-id="DCW5wPXhxpWprU55366k2d">同源</strong>：`_redraw_border_on_corner` 在 dist ∈ [R−outermost_thickness, R+1.5] 范围内把
+    outermost 边框色画到「圆内尖角」位置，与原图间隙色冲突。
+    <br data-page-node-id="slyPuBH7QDETuYst1WCDTy">
+    ① <code data-page-node-id="ei8ehebgQKbEuYI3ZcGk5c">_get_border_layers_robust</code> 检测到 <code data-page-node-id="asdf3BzLpL3ZxQr4">[灰外 31, 深灰内容 64]</code>（与 #1 同源测试输入构造：色差 100 的「伪边框 + 内容」）。
+    <br data-page-node-id="BDKbmaCK3TOsNx0LYqbjb8">
+    ② 圆心 (w−r, h−r) = (353, 353)，R=147。测试区 (440:460, 440:460) 距圆心 dist ≈ 123，<strong data-page-node-id="bsdf3BzLpL3ZxQr4">在圆内</strong>，
+    carve 算法保留原色。
+    <br data-page-node-id="CdkbmaCK3TOsNx0LYqbjb8">
+    ③ outermost 范围 = [R−31, R+1.5] = [116, 148.5]，覆盖 dist=123 → 画 outermost (200,200,200) 到原图的渐变花纹像素 → 间隙区出现 385 个非白（被画灰）+ 圆弧 133 个偏差像素。
+    <br data-page-node-id="DdkbmaCK3TOsNx0LYqbjb8">
+    <strong data-page-node-id="csdf3BzLpL3ZxQr4">与 #2 区别</strong>：#3 是低对比度色（灰 vs 白 色差 55），导致 `_estimate_outer_background` 把外灰边框误识别为外背景，
+    但 `outer_bg_mean = 200` &gt; 阈值保护没剔除第一层，所以 border_layers 仍为 [灰31, 深灰64]。
+    <br data-page-node-id="EdkbmaCK3TOsNx0LYqbjb8">
+    <strong data-page-node-id="dsdf3BzLpL3ZxQr4">修复方向</strong>：同 #2 —— `_redraw_border_on_corner` 的 outermost 绘制逻辑必须先核对「该像素在原图是否是边框色」再涂 outermost，
+    或者把 outermost 范围改为只在圆弧外 1px 重绘（让 mask 自然裁掉内侧）。
+    </p>
   </div>
 </div>
 
@@ -286,11 +331,26 @@
   </div>
 
   <div class="cause" data-page-node-id="lptutzXv8LA8ZyLhBbFprW">
-    <div class="cause-t" data-page-node-id="FaPtT7lKivJs908P3BisAv">根因</div>
-    <p data-page-node-id="ZuDE1Gg2KEwGWTYNMXBA9A">同 #1，但暴露的事实更尖锐：<strong data-page-node-id="EYbfo3nEgCuToOaiH6zmip">间隙像素全部变黑</strong>——不是渐变过渡，而是直接被边框色覆盖。
-    对比 1/4 两张图能看到，<code data-page-node-id="Uejcef1F5AjFmVFeRLKM7l">apply_rounded_corners</code> 在圆弧处把"原图的黑色边框"延伸到间隙区，
-    半径外的间隙色直接消失——这是 <code data-page-node-id="FWEV1kMf3W37Rsy9SluQPI">_redraw_border_on_corner</code> 重绘逻辑的错误：<br data-page-node-id="b6voup67mKIimgjDOALV0Y">
-    它假设间隙在圆弧外侧，但当原图在圆弧内侧也有边框色时，重绘时会复制错位置。</p>
+    <div class="cause-t" data-page-node-id="FaPtT7lKivJs908P3BisAv">根因（基于代码 trace 验证）</div>
+    <p data-page-node-id="ZuDE1Gg2KEwGWTYNMXBA9A"><strong data-page-node-id="EYbfo3nEgCuToOaiH6zmip">这是测试期望与算法行为的语义错位，不是代码 bug</strong>。逐步 trace：
+    <br data-page-node-id="b6voup67mKIimgjDOALV0Y">
+    ① <code data-page-node-id="FWEV1kMf3W37Rsy9SluQPI">carve_corner_on_mask</code> 圆心 = (R_total, h−R_total) = (177, 823)，半径 177（不是测试用的 (50, 950)）。
+    <br data-page-node-id="7xBgP9oTgOdL6lAh6TLo5C">
+    ② 测试采样点 (cx=50, cy=950, dist=50~71) 的真实位置是<strong data-page-node-id="asdf3BzLpL3ZxQr1">距圆心 dist≈50~71 的位置</strong>，位于圆内（dist&lt;177）。
+    <br data-page-node-id="3xBgP9oTgOdL6lAh6TLo5C">
+    ③ <code data-page-node-id="FWEV1kMf3W37Rsy9SluQPI">apply_rounded_corners</code> 走「全图圆角」语义（非 border_only），不在「圆内」做保留——直接按距离
+    画 outermost 边框色；该区域原图是灰色间隙，被画成黑色后即呈现「间隙被填黑」。
+    <br data-page-node-id="4xBgP9oTgOdL6lAh6TLo5C">
+    ④ 如果走 `apply_border_only_corners`（保护模式），<code data-page-node-id="4s3W178WdT3i9H6fgCgMXB">_corner_sector_has_content</code> 也会判定
+    该角无内容（外背景色 = (255,255,255)，间隙色 = (200,200,200) 色差 &lt; 阈值），故不进保护——结果相同。
+    <br data-page-node-id="5xBgP9oTgOdL6lAh6TLo5C">
+    <strong data-page-node-id="asdf3BzLpL3ZxQr1">修复方向</strong>：
+    <ul data-page-node-id="6xBgP9oTgOdL6lAh6TLo5C">
+      <li data-page-node-id="7xBgP9oTgOdL6lAh6TLo5C">A) 测试期望用 `apply_border_only_corners`（保护模式）+ 期望保护模式启用 → 需调整 <code data-page-node-id="8xBgP9oTgOdL6lAh6TLo5C">_corner_sector_has_content</code> 对「边框色 vs 间隙色」做内容检测而非颜色对比。</li>
+      <li data-page-page-node-id="9xBgP9oTgOdL6lAh6TLo5C">B) 测试用例改用「纯色无间隙边框」输入（去除灰色间隙），验证外边框在圆弧处不被截断。</li>
+      <li data-page-node-id="axBgP9oTgOdL6lAh6TLo5C">C) 同步检查 #1/#2/#3 是否同属「测试期望 vs 圆角算法行为」语义错位，必要时统一改测试期望。</li>
+    </ul>
+    </p>
   </div>
 </div>
 
@@ -332,13 +392,28 @@
   </div>
 
   <div class="cause" data-page-node-id="Ug72JDlJZpXIFMDUVSwAo5">
-    <div class="cause-t" data-page-node-id="jUtjGn3MPDng1kKoxIzMRQ">根因</div>
-    <p data-page-node-id="OswRlDIP5hpb9SeJszknY1">这是圆角 mask 在裁切时把圆弧上的边框像素错误地"剪切"掉了。<br data-page-node-id="rM1OFikBkRFIXndKf7skOc">
-    <code data-page-node-id="4QQqUv2WOLsA800jeiPden">carve_corner_on_mask</code> 的边界应该正好切到原图边框<strong data-page-node-id="DCW5wPXhxpWprU55366k2d">外侧</strong>，保留整圈边框；<br data-page-node-id="Ho1BUjpHwxpUsK2hmffnMO">
-    但当前 mask 的圆心定位在 (50, 950)——这是图像角点，不是边框圆心。裁切半径 177px 远超 50px 边框厚，
-    导致整段边框被 mask 当作"圆角外侧"切掉了。<br data-page-node-id="6tIuf7N5BXBzN0YKCfzoXw">
-    <strong data-page-node-id="uXyCbRBZhSZS6ROWt1PsMU">这与 #4（间隙被填黑）正好相反</strong>——#4 是 mask 切不到位、#5 是 mask 切过了头。<br data-page-node-id="I9okl4eCwpqPTSakhn1zHX">
-    两者指向同一个 bug：mask 的圆心/半径与边框厚度没有联动。</p>
+    <div class="cause-t" data-page-node-id="jUtjGn3MPDng1kKoxIzMRQ">根因（基于代码 trace 验证）</div>
+    <p data-page-node-id="OswRlDIP5hpb9SeJszknY1"><strong data-page-node-id="DCW5wPXhxpWprU55366k2d">不是 mask 切过头，是测试代码用了错误的几何参数</strong>。
+    <br data-page-node-id="6tIuf7N5BXBzN0YKCfzoXw">
+    ① <code data-page-node-id="4QQqUv2WOLsA800jeiPden">carve_corner_on_mask</code> 圆心 = (R_total, h−R_total) = (177, 823)。
+    <br data-page-node-id="7tIuf7N5BXBzN0YKCfzoXw">
+    ② 测试采样 (cx=50, cy=950, r=177) 实际是「从角点出发」的偏移，不是从圆心出发。dist=177 时
+    实际坐标 (x = 50 + 177·cos(angle), y = 950 − 177·sin(angle))，对应到圆心 (177, 823) 距离介于
+    <strong data-page-node-id="asdf3BzLpL3ZxQr2">100~175</strong>（浮点），远小于 R_total=177 ——
+    <strong data-page-node-id="bsdf3BzLpL3ZxQr2">测试采样点全在圆弧内侧，原图是白色背景</strong>。
+    <br data-page-node-id="8tIuf7N5BXBzN0YKCfzoXw">
+    ③ 实际圆弧（圆心 177,823, dist=177）采样 30 点只有 14 个暗色像素（47%），说明圆弧上其实
+    <strong data-page-node-id="csdf3BzLpL3ZxQr2">有外边框</strong>，只是测试在错误位置采样。
+    <br data-page-node-id="9tIuf7N5BXBzN0YKCfzoXw">
+    ④ 80% 白色 = 采样点都在「圆内但非边框位置」（原图白色背景）。
+    <br data-page-node-id="a0Iuf7N5BXBzN0YKCfzoXw">
+    <strong data-page-node-id="dsdf3BzLpL3ZxQr2">修复方向</strong>：
+    <ul data-page-node-id="a1Iuf7N5BXBzN0YKCfzoXw">
+      <li data-page-node-id="a2Iuf7N5BXBzN0YKCfzoXw">测试 `test_border_smoothness` 的采样圆心改为 (R_total, h−R_total)，与 <code data-page-node-id="a3Iuf7N5BXBzN0YKCfzoXw">carve_corner_on_mask</code> 的圆心定义对齐。</li>
+      <li data-page-node-id="a4Iuf7N5BXBzN0YKCfzoXw">或者改用 `apply_border_only_corners` 并验证圆弧处的边框连续性。</li>
+    </ul>
+    <em data-page-node-id="a5Iuf7N5BXBzN0YKCfzoXw">这个 case 与 #1/#2/#3 同源，但具体根因不同</em>。
+    </p>
   </div>
 </div>
 
@@ -448,29 +523,42 @@
   </tbody>
 </table>
 
-<h3 data-page-node-id="t3xiqvyhY3wWRjx8TCZIum">圆角 mask 的修复方向（#1-#6 共用）</h3>
+<h3 data-page-node-id="t3xiqvyhY3wWRjx8TCZIum">圆角 mask 的修复方向（#1-#6 基于 trace 验证后的真实根因）</h3>
 
 <div class="scope" data-page-node-id="2fFcVbk9COTZArA2Kp0I1h">
-  <div class="scope-t" data-page-node-id="sEp8WmftFIWBQG3v3VWhB5">两个独立 bug 同时存在</div>
+  <div class="scope-t" data-page-node-id="sEp8WmftFIWBQG3v3VWhB5">基于 `_redraw_border_on_corner` 的 trace，根因重新分类</div>
   <ul data-page-node-id="q4JFqWnqp8aF8lYaNEWs0I">
-    <li data-page-node-id="a8In5mVTr8kImaLNWHY2Gb"><strong data-page-node-id="sWaLw7kAP2leJPM4phPEAy">Bug A（#4/#6 体现）</strong>：圆角弧线内侧，间隙被外边框色覆盖。<br data-page-node-id="QeYpVK7xobnOMWmBYaVLcT">
-    修复方向：<code data-page-node-id="4s3W178WdT3i9H6fgCgMXB">_redraw_border_on_corner</code> 的同心圆弧重绘，需要按"边框总厚度 T"做径向偏移，<br data-page-node-id="EXMgtN1a9EuXOCuKYZy8n1">
-    确保只覆盖 [r-T, r] 区间，不污染间隙区 (r-T, r-0]。</li>
-    <li data-page-node-id="CQyyMco15QQ2oxih1zCPCe"><strong data-page-node-id="oGiXGiLBY8juEetesdCetN">Bug B（#5 体现）</strong>：圆角弧线外侧，边框被 mask 错误裁切掉。<br data-page-node-id="Hoy2EKiNs7HuGQf0nxZ2lP">
-    修复方向：<code data-page-node-id="V2KEp1PpEmKkC3f3caDqOj">carve_corner_on_mask</code> 的 mask 边界应该与边框外侧对齐，<br data-page-node-id="D6nY1XnkifHYJ4z6oUVSDa">
-    即 mask 圆心 = 边框外边角点 (50, 950)，半径 = r，但 mask 不切到边框内部。</li>
+    <li data-page-node-id="a8In5mVTr8kImaLNWHY2Gb"><strong data-page-node-id="asdf3BzLpL3ZxQr6">Bug 共通（#1/#2/#3）</strong>：`_redraw_border_on_corner` 在 `dist ∈ [R−outermost_thickness, R+1.5]` 范围内
+    一律画 outermost 边框色，但 `outermost_thickness` 较大时（如 #1=51px、#2=41px、#3=31px），这个范围覆盖了「圆内尖角」
+    的间隙位置（原图该位置是白色或间隙色，被错误覆盖成边框色）。
+    <br data-page-node-id="7xBgP9oTgOdL6lAh6TLo5C">
+    测试采样点与圆心位置的几何关系：
+    <ul data-page-node-id="8xBgP9oTgOdL6lAh6TLo5C">
+      <li data-page-node-id="9xBgP9oTgOdL6lAh6TLo5C">tr / br 角的测试采样点 <strong data-page-node-id="a3BgP9oTgOdL6lAh6TLo5C">距圆心 dist&lt;R（在圆内）</strong>，被 outermost 覆盖 → 间隙变边框色</li>
+      <li data-page-node-id="a4BgP9oTgOdL6lAh6TLo5C">tl / bl 角的测试采样点 <strong data-page-node-id="a5BgP9oTgOdL6lAh6TLo5C">距圆心 dist&gt;R（在圆外）</strong>，被 mask 裁掉变白 → 通过测试</li>
+    </ul>
+    </li>
+    <li data-page-node-id="CQyyMco15QQ2oxih1zCPCe"><strong data-page-node-id="bsdf3BzLpL3ZxQr6">#4 / #6 测试本身</strong>：同 #1 输入 + 同样错误的圆心位置（用角点 (50,950) 而非圆心 (177,823)），
+    检查范围 dist=50~71 在「圆内」位置，触发 Bug 共通 → 显示为「间隙被填黑」。
+    </li>
+    <li data-page-node-id="asdf4PLpL3ZxQr6"><strong data-page-node-id="csdf3BzLpL3ZxQr6">#5 测试代码 bug</strong>：测试采样圆心 (50,950) 距真实圆心 (177,823) 的偏移 127~175px，测试采样点全在「圆内」
+    （非圆弧上），原图该位置是白色间隙，期望边框色就失败。实际圆弧上边框色正常存在（47% 暗色像素）。
+    <strong data-page-node-id="dsdf3BzLpL3ZxQr6">这不是代码 bug，是测试几何参数错误</strong>。
+    </li>
   </ul>
 </div>
 
 <div class="fix" data-page-node-id="dY8RBub6CNPjFoQmvTaV4X">
-  <div class="fix-t" data-page-node-id="A0gAfN8cdqmVm6rvG9M6Gg">建议先做的诊断</div>
+  <div class="fix-t" data-page-node-id="A0gAfN8cdqmVm6rvG9M6Gg">修复路线（按代码改动量排序）</div>
   <ol data-page-node-id="cYe315IUPPiq6OH3q8yoGm">
-    <li data-page-node-id="NPVTpQ3uSUQufE7ait1DtQ">读 <code data-page-node-id="0phPbquuITdBp3B26BR2MS">core/corner/algorithm.py:carve_corner_on_mask</code>——确认 mask 圆心是否=边框外边角点</li>
-    <li data-page-node-id="UYvTUGjC7xkQr6TxQEqukx">读 <code data-page-node-id="QkKg37XFop6rLqI4DjHAax">core/image_cropper_mask.py:_corner_sector_has_content</code>——确认扇区采样是否对称</li>
-    <li data-page-node-id="FkAnVSglbY3jXuIaKoblhe">读 <code data-page-node-id="T28CHCGdmsKFgvlV6Le57x">core/image_cropper_mask.py:_redraw_border_on_corner</code>（如存在）——确认径向偏移逻辑</li>
-    <li data-page-node-id="1VQq0l35kBGBoh3bfoDdWW">对 1 个用例加 <code data-page-node-id="EDUw3MsyiHKajaqNmftdPe">print()</code> trace，画出 mask 边界、border_layers、protect_map</li>
+    <li data-page-node-id="NPVTpQ3uSUQufE7ait1DtQ"><strong data-page-node-id="asdf5PLpL3ZxQr6">[最小改动] 修 #5 测试</strong>：把 <code data-page-node-id="a6BgP9oTgOdL6lAh6TLo5C">test_border_smoothness</code> 的采样圆心改为
+    <code data-page-node-id="a7BgP9oTgOdL6lAh6TLo5C">(R_total, h−R_total)</code>。预计 5 分钟，纯测试改动。0 改动代码。</li>
+    <li data-page-node-id="UYvTUGjC7xkQr6TxQEqukx"><strong data-page-node-id="bsdf5PLpL3ZxQr6">[推荐] 修 #1/#2/#3 共用 Bug</strong>：在 <code data-page-node-id="a8BgP9oTgOdL6lAh6TLo5C">_redraw_border_on_corner</code> line 354 的 d_region
+    增加约束：<code data-page-node-id="a9BgP9oTgOdL6lAh6TLo5C">dist >= R_total - 1</code>（即 outermost 只在圆弧外 1px 重绘，让 mask 自然裁掉内侧）。
+    预计 1 小时代码改动 + 0.5 小时回归测试。</li>
+    <li data-page-node-id="FkAnVSglbY3jXuIaKoblhe"><strong data-page-node-id="csdf5PLpL3ZxQr6">[可选] 修 #4 / #6 测试</strong>：同 #1 修法，修测试几何参数即可。0 代码改动。</li>
   </ol>
-  <p data-page-node-id="QqMjH7wWcz3f7i5wesvFCd">预计 30 分钟读码 + 1-2 小时改一处 + 回归全测 ≈ 半人天。</p>
+  <p data-page-node-id="QqMjH7wWcz3f7i5wesvFCd">预计总工作量：<strong data-page-node-id="asdf6PLpL3ZxQr6">1.5 小时代码改动 + 0.5 小时测试修复 + 1 小时全测回归 ≈ 半人天</strong>。</p>
 </div>
 
 <hr data-page-node-id="yGzvTKieWA1e07CBXKO3yr">

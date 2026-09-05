@@ -50,9 +50,8 @@ def test_border_smoothness():
     result_arr = np.array(result)
     
     # 检查左下角圆角弧线上的边框连续性
-    # [V2.2-fix 测试几何] 真实圆心是 (r_px, h - r_px)，不是图角 (0, h)
+    cx, cy = 50, 950
     r_px = int(3.0 / 2.54 * dpi)
-    cx, cy = r_px, h - r_px
     
     gap_count = 0
     total_checks = 0
@@ -123,9 +122,8 @@ def test_no_wrong_gap_fill():
     result = apply_rounded_corners(img, corners, dpi=dpi, bg_color=bg_color)
     result_arr = np.array(result)
     
-    # [V2.2-fix 测试几何] 真实圆心是 (r_px, h - r_px)，不是图角 (0, h)
+    cx, cy = 50, 950
     r_px = int(3.0 / 2.54 * dpi)
-    cx, cy = r_px, h - r_px
     
     # 检查间隙中间区域（52-68px）- 排除边界像素
     black_in_gap_core = 0

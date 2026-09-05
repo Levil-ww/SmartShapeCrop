@@ -69,11 +69,10 @@ def test_corner_smoothness_no_gap_fill():
     all_passed = True
     
     # 检查 1: 间隙区域应该被填充为背景色，而不是边框色
-    # 在左下角圆角区域（真实圆心 (r_px, h - r_px)，半径 ~177px）
+    # 在左下角圆角区域 (中心 50, 950，半径 ~177px)
     # 图像结构：外层黑边框(0-50px)、灰色间隙(50-70px)、内层红边框(70-100px)
-    # [V2.2-fix 测试几何] 真圆心不是图角 (0, h)
+    cx, cy = 50, 950
     r_px = int(3.0 / 2.54 * dpi)
-    cx, cy = r_px, h - r_px
     
     # 检查间隙区域（距中心50-70px）内是否有错误的黑色填充
     # 间隙区域应该是白色（被裁剪填充），不应该有黑色（边框颜色）
@@ -192,14 +191,7 @@ def test_different_border_colors():
         
         # 检查是否有错误的颜色填充
         wrong_fill_count = 0
-        # [V2.2-fix 测试几何] 真圆心是 (r_px, ±r_px)，不是距图角 40 像素
-        _r_for_pos = int(2.0 / 2.54 * dpi)
-        corner_positions = {
-            'tl': (_r_for_pos, _r_for_pos),
-            'tr': (w - _r_for_pos, _r_for_pos),
-            'bl': (_r_for_pos, h - _r_for_pos),
-            'br': (w - _r_for_pos, h - _r_for_pos),
-        }
+        corner_positions = {'tl': (40, 40), 'tr': (w-40, 40), 'bl': (40, h-40), 'br': (w-40, h-40)}
         for corner_key in ['tl', 'tr', 'bl', 'br']:
             cx, cy = corner_positions[corner_key]
             r_px = int(2.0 / 2.54 * dpi)

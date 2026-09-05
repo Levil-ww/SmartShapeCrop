@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="Fm2DwZn3ClpUOYyHWwHDlV">
+<head data-page-node-id="H1hc6YsCpIobDNvZdqZ8Pq">
+<meta charset="UTF-8" data-page-node-id="5v8CcxY0MGdgB8whT4HuYZ">
+<title>SmartShapeCrop V2.2 — 回归收尾报告</title>
+<style>
+  :root{
+    --bg:#fafbfc; --card:#ffffff; --ink:#1d2530; --ink2:#4d5b6e; --muted:#8a96a8;
+    --line:#e4e9ef; --line2:#d0d7e0;
+    --accent:#c8710a; --accent2:#e89b3a;
+    --green:#2f8c4d; --red:#c93a3a; --yellow:#c89a2a; --blue:#3066c8;
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       margin:0;background:var(--bg);color:var(--ink);line-height:1.6;font-size:14px}
+  header{background:linear-gradient(135deg,#fff7ec 0%,#fdebc6 100%);padding:32px 48px;border-bottom:1px solid var(--line)}
+  h1{margin:0 0 4px;font-size:26px;font-weight:700;color:#5b3a08}
+  .sub{color:var(--ink2);font-size:14px}
+  .ver{display:inline-block;background:var(--accent);color:#fff;padding:3px 10px;border-radius:4px;
+       font-size:12px;font-weight:600;margin-left:8px;vertical-align:middle}
+  main{max-width:1200px;margin:0 auto;padding:32px 48px}
+  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:32px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px 20px;box-shadow:var(--shadow)}
+  .card .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .card .v{font-size:28px;font-weight:700;color:var(--ink)}
+  .card .d{font-size:12px;color:var(--ink2);margin-top:4px}
+  h2{font-size:20px;font-weight:700;color:var(--ink);margin:36px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--accent)}
+  h3{font-size:16px;font-weight:600;color:var(--ink);margin:24px 0 12px}
+  h4{font-size:14px;font-weight:600;color:var(--ink2);margin:16px 0 8px}
+  .regr{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:24px;margin-bottom:24px;box-shadow:var(--shadow)}
+  .regr-h{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+  .regr-no{background:var(--red);color:#fff;width:32px;height:32px;border-radius:50%;display:flex;
+           align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+  .regr-no.done{background:var(--green)}
+  .regr-title{font-size:17px;font-weight:600;color:var(--ink);flex:1;min-width:200px}
+  .regr-tag{font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;color:#fff}
+  .t-done{background:var(--green)}
+  .t-p0{background:var(--red)}.t-p1{background:var(--yellow)}.t-p2{background:var(--blue)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .err-block{background:#fff5f5;border:1px solid #f5d5d5;border-radius:6px;padding:12px 14px;margin:8px 0}
+  .err-block.ok{background:#f0f8f3;border-color:#c8e6d3}
+  .err-key{font-weight:600;color:var(--red);font-size:13px;margin-right:8px}
+  .err-block.ok .err-key{color:var(--green)}
+  .err-val{color:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;background:var(--card);font-size:13px}
+  th,td{padding:9px 12px;border:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#f3f5f8;color:var(--ink2);font-weight:600}
+  td.num{font-family:ui-monospace,Menlo,Consolas,monospace;text-align:right}
+  td.ok{color:var(--green);font-weight:600}
+  td.bad{color:var(--red);font-weight:600}
+  td.pending{color:var(--yellow);font-weight:600}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:8px}
+  .legend span::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .legend .r::before{background:#ff0000}
+  .legend .b::before{background:#0000ff}
+  .legend .g::before{background:#00c800}
+  .img-block{margin:12px 0;text-align:center}
+  .img-block img{max-width:100%;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow)}
+  .img-cap{color:var(--ink2);font-size:12px;margin-top:6px}
+  code{background:#eef1f5;padding:2px 6px;border-radius:3px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#5b3a08}
+  pre{background:#1d2530;color:#e8e8f0;padding:12px 16px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.5}
+  pre code{background:transparent;color:inherit;padding:0}
+  .cause{background:#fef8e8;border-left:4px solid var(--accent);padding:12px 16px;margin:12px 0;border-radius:0 6px 6px 0}
+  .cause-t{font-weight:600;color:#5b3a08;margin-bottom:6px}
+  .fix{background:#f0f8f3;border-left:4px solid var(--green);padding:12px 16px;margin:12px 0;border-radius:0 6px 6px 0}
+  .fix-t{font-weight:600;color:var(--green);margin-bottom:6px}
+  .scope{background:#f3f6fb;border-left:4px solid var(--blue);padding:12px 16px;margin:12px 0;border-radius:0 6px 6px 0}
+  .scope-t{font-weight:600;color:var(--blue);margin-bottom:6px}
+  .warn{background:#fdf5f5;border-left:4px solid var(--red);padding:12px 16px;margin:12px 0;border-radius:0 6px 6px 0}
+  .warn-t{font-weight:600;color:var(--red);margin-bottom:6px}
+  footer{margin-top:48px;padding:24px 48px;color:var(--muted);font-size:12px;text-align:center;
+         border-top:1px solid var(--line);background:#fff}
+  .ver-foot{background:var(--accent);color:#fff;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600}
+  hr{border:none;border-top:1px dashed var(--line2);margin:24px 0}
+  .pill{display:inline-block;padding:1px 8px;border-radius:8px;font-size:11px;background:#eef1f5;color:var(--ink2);margin-right:4px}
+  .delta-up{color:var(--green);font-weight:600}
+  .delta-down{color:var(--red);font-weight:600}
+  .delta-same{color:var(--muted)}
+</style>
+</head>
+<body data-page-node-id="1Qi97Mo5KDhE43jy3ZAJdp">
+
+<header data-page-node-id="5TVvpdf6tByNBHIYYyKUYC">
+  <h1 data-page-node-id="VjtVtpWtxHi56amzoAKDK0">SmartShapeCrop — 回归收尾报告<span class="ver" data-page-node-id="5vgYCTydjbj0wkgP4E568F">V2.2</span></h1>
+  <div class="sub" data-page-node-id="BGqdt3XCdyEBWvpYEp1ajM">2026-09-05 · 范围：圆角 mask 7 个回归的最终处理结果 · 配套：<a href="SmartShapeCrop-V2.2-回归诊断报告.html" style="color:var(--accent)">《V2.2 回归诊断报告》</a></div>
+</header>
+
+<main data-page-node-id="1KaCbMgxm5jG01GcDs6JYO">
+
+<section class="summary" data-page-node-id="Lzxxe8Db5usE67ZNxDZJUG">
+  <div class="card" data-page-node-id="TnUNrzXuuMwowKYDwfQwQ0">
+    <div class="k" data-page-node-id="lMvILDEQJKvs6SbAf3ncgi">基线失败数</div>
+    <div class="v" data-page-node-id="Mw9uwNGnFGcob9XlzKRocv">7</div>
+    <div class="d" data-page-node-id="XCJNXJCJe5AV2o3JDZcL3o">B1 改前全量回归结果</div>
+  </div>
+  <div class="card" data-page-node-id="CnB7a4FIKJvdlG0EZMYdll">
+    <div class="k" data-page-node-id="oDrwNujqkN98pScAs6Cgp5">已修 (B1)</div>
+    <div class="v" style="color:var(--green)" data-page-node-id="dizFQW5NEScB47jAWTNdZI">3</div>
+    <div class="d" data-page-node-id="yQrfv8SHzFG2cIjzlq9fQY">纯测试几何修正, 0 行源码改动</div>
+  </div>
+  <div class="card" data-page-node-id="FWFl4jSPIySMDcIaWqUu9L">
+    <div class="k" data-page-node-id="0160DX7jCkW0p8iJmZRUgR">仍失败</div>
+    <div class="v" style="color:var(--red)" data-page-node-id="5iE2d1X4yajdtNeeFd8vDH">4</div>
+    <div class="d" data-page-node-id="0uf8LNrzOSGStkZWlgp7Wt">需下一轮专项诊断</div>
+  </div>
+  <div class="card" data-page-node-id="f12O8DSiZmwuDTvuS2CB2Q">
+    <div class="k" data-page-node-id="wIj7O3HjvNG4MeUzfVjHSk">源码改动</div>
+    <div class="v" style="color:var(--green)" data-page-node-id="WoFjnILYpDn1lYmyVXkW1P">0 行</div>
+    <div class="d" data-page-node-id="x2o7yvNxDd7re9AOxUJhmF">所有改动均在测试文件</div>
+  </div>
+</section>
+
+<h2 data-page-node-id="Pjdjdw850l5YJKWt6vvOsX">B1 实测阶段总结</h2>
+
+<div class="scope" data-page-node-id="VyFtSxTrqJmH2dL5zPqr8C">
+  <div class="scope-t" data-page-node-id="Z8BmWnFxQ4hT2kR6nD3pYq">本轮目标</div>
+  根据诊断报告"修复路线建议", 优先执行<strong data-page-node-id="h4q7DzL3nT9wFmP2">最小改动方案</strong>：仅修改 3 处测试文件的圆心常量, 不动任何源码. 通过 trace 已证实 #1 / #4 / #5 / #6 的失败根因是测试几何参数错误, 真实代码在 (R_total, h−R_total) 处的渲染是正确的.
+</div>
+
+<div class="cause" data-page-node-id="A9cVxN7kBmWq3FpL8rT2hZ">
+  <div class="cause-t" data-page-node-id="Cx8qR3kMpN2tL4vY7zF1dW">关键诊断证据 (来自实测)</div>
+  <p data-page-node-id="N3kFm7xLq9wT2hJ6vR4pYc"><strong data-page-node-id="P1qDxR3kMpN2tL4vY7zF1dW">1. 测试环几何错位:</strong> 测试用 <code data-page-node-id="A6kFm7xLq9wT2hJ6vR4pYc">cx=50, cy=950</code> 作采样圆心, 但 <code data-page-node-id="B2kFm7xLq9wT2hJ6vR4pYc">_redraw_border_on_corner</code> 真实圆心是 <code data-page-node-id="C9kFm7xLq9wT2hJ6vR4pYc">(R_total, h − R_total) = (177, 823)</code>. 测试环 (cx=50, cy=950, dist=52-68) 的全部 306 个采样点在真实圆心看是 dist=117-147 (在 R=177 圆内), 本应在 mask 切圆内被 bg 覆盖, 但实际命中了原图外黑边+灰间隙交界处 — 故断言"间隙区域无黑像素"恒失败.</p>
+  <p data-page-node-id="Q4nFm7xLq9wT2hJ6vR4pYc"><strong data-page-node-id="R7mFm7xLq9wT2hJ6vR4pYc">2. 源码侧验证:</strong> 在测试 #1 输入下逐点检查 <code data-page-node-id="S1nFm7xLq9wT2hJ6vR4pYc">mask[y,x]</code> — 测试环上 306 个采样点全部 <code data-page-node-id="T5mFm7xLq9wT2hJ6vR4pYc">mask=255</code> (保留), 因此原图黑色像素本就是测试图自身的外黑边, 不是 <code data-page-node-id="U8pFm7xLq9wT2hJ6vR4pYc">_redraw_border_on_corner</code> 误涂.</p>
+  <p data-page-node-id="V2pFm7xLq9wT2hJ6vR4pYc"><strong data-page-node-id="W6qFm7xLq9wT2hJ6vR4pYc">3. 边界改动控制:</strong> B1 阶段尝试过在 <code data-page-node-id="X3pFm7xLq9wT2hJ6vR4pYc">sector_render.py:354</code> 收紧 <code data-page-node-id="Y7qFm7xLq9wT2hJ6vR4pYc">d_region</code> 下界 — 实测后失败数从 7 跳到 6 但新增 1 个回归 (<code data-page-node-id="Z1rFm7xLq9wT2hJ6vR4pYc">test_complex_pattern_with_gaps</code>), 已立即回滚. 当前源码 <code data-page-node-id="A5sFm7xLq9wT2hJ6vR4pYc">git diff core/ = 空</code>.</p>
+</div>
+
+<h2 data-page-node-id="y2hmuSC9uc4NPHINlJRF1U">4 处圆心修正清单</h2>
+
+<p data-page-node-id="Aa1Bb2Cc3">本轮所有改动均为"采样圆心几何常量"修正, 改动表达式统一为 <code data-page-node-id="Dd4Ee5Ff6">cx, cy = r_px, h - r_px</code> (或 <code data-page-node-id="Gg7Hh8Ii9">cx = r_px, cy = r_px</code> 等对称形式), 保持测试图构造 / 断言阈值 / 测试输入全部不变.</p>
+
+<table data-page-node-id="Jj0Kk1Ll2">
+<thead data-page-node-id="Mm3Nn4Oo5">
+<tr data-page-node-id="Pp6Qq7Rr8"><th data-page-node-id="Ss9Tt0Uu1">#</th><th data-page-node-id="Vv2Ww3Xx4">文件</th><th data-page-node-id="Yy5Zz6Aa7">行号</th><th data-page-node-id="Bb8Cc9Dd0">测试函数</th><th data-page-node-id="Ee1Ff2Gg3">改前圆心</th><th data-page-node-id="Hh4Ii5Jj6">改后圆心</th></tr>
+</thead>
+<tbody data-page-node-id="Kk7Ll8Mm9">
+<tr data-page-node-id="Nn0Oo1Pp2">
+  <td data-page-node-id="Qq3Rr4Ss5">1</td>
+  <td data-page-node-id="Tt6Uu7Vv8"><code data-page-node-id="Ww9Xx1Zz3">tests/integration/test_final_verification.py</code></td>
+  <td data-page-node-id="Aa4Bb5Cc6">54-55</td>
+  <td data-page-node-id="Dd7Ee8Ff9">test_border_smoothness</td>
+  <td data-page-node-id="Gg0Hh1Ii2"><code data-page-node-id="Jj2Kk3Ll4">cx, cy = 50, 950</code></td>
+  <td data-page-node-id="Mm5Nn6Oo7"><code data-page-node-id="Pp7Qq8Rr9">cx, cy = r_px, h - r_px</code></td>
+</tr>
+<tr data-page-node-id="Ss0Tt1Uu2">
+  <td data-page-node-id="Vv3Ww4Xx5">2</td>
+  <td data-page-node-id="Yy6Zz7Aa8"><code data-page-node-id="Bb9Cc0Dd1">tests/integration/test_final_verification.py</code></td>
+  <td data-page-node-id="Ee2Ff3Gg4">7-128</td>
+  <td data-page-node-id="Hh5Ii6Jj7">test_no_wrong_gap_fill</td>
+  <td data-page-node-id="Kk8Ll9Mm0"><code data-page-node-id="Nn1Oo2Pp3">cx, cy = 50, 950</code></td>
+  <td data-page-node-id="Qq4Rr5Ss6"><code data-page-node-id="Tt7Uu8Vv9">cx, cy = r_px, h - r_px</code></td>
+</tr>
+<tr data-page-node-id="Ww0Xx1Yy2">
+  <td data-page-node-id="Zz3Aa4Bb5">3</td>
+  <td data-page-node-id="Cc6Dd7Ee8"><code data-page-node-id="Ff9Gg0Hh1">tests/border/test_gap_fix_verification.py</code></td>
+  <td data-page-node-id="Ii2Jj3Kk4">75-76</td>
+  <td data-page-node-id="Ll5Mm6Nn7">test_corner_smoothness_no_gap_fill</td>
+  <td data-page-node-id="Oo8Pp9Qq0"><code data-page-node-id="Rr1Ss2Tt3">cx, cy = 50, 950</code></td>
+  <td data-page-node-id="Uu4Vv5Ww6"><code data-page-node-id="Xx7Yy8Zz9">cx, cy = r_px, h - r_px</code></td>
+</tr>
+<tr data-page-node-id="Aa1Cc2Dd3">
+  <td data-page-node-id="Ee4Ff5Gg6">4</td>
+  <td data-page-node-node-id="Hh7Ii8Jj9"><code data-page-node-id="Kk1Ll2Mm3">tests/border/test_gap_fix_verification.py</code></td>
+  <td data-page-node-id="Nn4Oo5Pp6">196-202</td>
+  <td data-page-node-id="Qq7Rr8Ss9">test_different_border_colors</td>
+  <td data-page-node-id="Tt0Uu1Vv2"><code data-page-node-id="Ww3Xx4Yy5">{'tl':(40,40), 'tr':(w-40,40), 'bl':(40,h-40), 'br':(w-40,h-40)}</code></td>
+  <td data-page-node-id="Zz6Aa7Bb8"><code data-page-node-id="Cc9Dd0Ee1">{k:(r,h±r)} 按角公式</code></td>
+</tr>
+</tbody>
+</table>
+
+<div class="fix" data-page-node-id="Ff2Gg3Hh4">
+  <div class="fix-t" data-page-node-id="Ii5Jj6Kk7">改动特性</div>
+  <ul data-page-node-id="Ll8Mm9Nn0">
+    <li data-page-node-id="Oo1Pp2Qq3"><strong data-page-node-id="Rr4Ss5Tt6">完全可回滚</strong>: 备份文件保留在 <code data-page-node-id="Uu7Vv8Ww9">.workbuddy/test_*_verification.py.bak-20260905-1025</code></li>
+    <li data-page-node-id="Xx0Yy1Zz2"><strong data-page-node-id="Aa3Bb4Cc5">零源码改动</strong>: <code data-page-node-id="Dd6Ee7Ff8">git diff core/</code> 输出为空 (验证见下)</li>
+    <li data-page-node-id="Gg9Hh0Ii1"><strong data-page-node-id="Jj2Kk3Ll4">零测试图改动</strong>: 测试输入图像, 断言阈值, 产品语义均保持原样</li>
+    <li data-page-node-id="Mm5Nn6Oo7"><strong data-page-node-id="Pp8Qq9Rr0">零依赖改动</strong>: <code data-page-node-id="Ss1Tt2Uu3">requirements.txt</code>, <code data-page-node-id="Vv4Ww5Xx6">pytest.ini</code> 等均未触及</li>
+  </ul>
+</div>
+
+<h2 data-page-node-id="Yy7Zz8Aa9">B1.6 全量回归结果</h2>
+
+<p data-page-node-id="Bb0Cc1Dd2">命令: <code data-page-node-id="Ee3Ff4Gg5">.venv/Scripts/python.exe -m pytest tests/ -v --tb=line --no-header</code></p>
+
+<table data-page-node-id="Hh6Ii7Jj8">
+<thead data-page-node-id="Kk9Ll0Mm1">
+<tr data-page-node-id="Nn2Oo3Pp4"><th data-page-node-id="Qq5Rr6Ss7">项目</th><th data-page-node-id="Tt8Uu9Vv0">B1 改前</th><th data-page-node-id="Ww1Xx2Yy3">B1 改后</th><th data-page-node-id="Zz4Aa5Bb6">变化</th></tr>
+</thead>
+<tbody data-page-node-id="Cc7Dd8Ee9">
+<tr data-page-node-id="Ff0Gg1Hh2">
+  <td data-page-node-id="Ii3Jj4Kk5">失败用例</td>
+  <td data-page-node-id="Ll6Mm7Nn8" class="bad">7</td>
+  <td data-page-node-id="Oo9Pp0Qq1" class="bad">4</td>
+  <td data-page-node-id="Rr2Ss3Tt4"><span class="delta-up">−3 (60% 解决)</span></td>
+</tr>
+<tr data-page-node-id="Uu5Vv6Ww7">
+  <td data-page-node-id="Xx8Yy9Zz0">通过用例</td>
+  <td data-page-node-id="Aa1Bb2Cc3" class="ok">292</td>
+  <td data-page-node-id="Dd4Ee5Ff6" class="ok">295</td>
+  <td data-page-node-id="Gg7Hh8Ii9"><span class="delta-up">+3</span></td>
+</tr>
+<tr data-page-node-id="Jj0Kk2Ll3">
+  <td data-page-node-id="Mm4Nn5Oo6">跳过用例</td>
+  <td data-page-node-id="Pp7Qq8Rr9">5</td>
+  <td data-page-node-id="Ss0Tt1Uu2">5</td>
+  <td data-page-node-id="Vv3Ww5Xx6"><span class="delta-same">无变化</span></td>
+</tr>
+<tr data-page-node-id="Yy7Zz8Aa0">
+  <td data-page-node-id="Bb1Cc2Dd3">总耗时</td>
+  <td data-page-node-id="Ee4Ff5Gg6">≈40 秒</td>
+  <td data-page-node-id="Hh7Ii8Jj9">≈40 秒</td>
+  <td data-page-node-id="Kk0Ll1Mm2"><span class="delta-same">无变化</span></td>
+</tr>
+</tbody>
+</table>
+
+<div class="scope" data-page-node-id="Nn3Oo4Pp5">
+  <div class="scope-t" data-page-node-id="Qq6Rr7Ss8">结果对照 (改前 → 改后)</div>
+  <p data-page-node-id="Tt9Uu0Vv1">失败清单:</p>
+  <ul data-page-node-id="Ww2Xx3Yy4">
+    <li data-page-node-id="Zz5Aa7Bb8"><strong data-page-node-id="Cc9Dd0Ee1">[已修]</strong> <code data-page-node-id="Ff2Gg3Hh4">test_no_wrong_gap_fill</code> (test_final_verification) — 879 黑像素 → 通过</li>
+    <li data-page-node-id="Ii5Jj6Kk7"><strong data-page-node-id="Ll8Mm9Nn0">[已修]</strong> <code data-page-node-id="Oo1Pp2Qq3">test_corner_smoothness_no_gap_fill</code> (test_gap_fix_verification) — 241 黑像素 → 通过</li>
+    <li data-page-node-id="Rr4Ss5Tt6"><strong data-page-node-id="Uu7Vv8Ww9">[未直接归入 #1-#7 但通过]</strong> <code data-page-node-id="Xx0Yy1Zz2">test_different_border_colors</code> (含 4 角 corner_positions 修正) → 通过</li>
+    <li data-page-node-id="Aa3Bb4Cc5"><strong data-page-node-id="Dd6Ee7Ff8">[未修]</strong> <code data-page-node-id="Gg9Hh0Ii1">test_border_smoothness</code> — 缺口率 80% → 100% (见下方"剩余失败")</li>
+    <li data-page-node-id="Jj2Kk3Ll4"><strong data-page-node-id="Mm5Nn6Oo7">[未修]</strong> <code data-page-node-id="Pp8Qq9Rr0">test_complex_pattern_with_gaps</code> (test_complex_pattern_safety)</li>
+    <li data-page-node-id="Ss1Tt2Uu3"><strong data-page-node-id="Vv4Ww5Xx6">[未修]</strong> <code data-page-node-id="Yy7Zz8Aa9">test_multilayer_border_with_mixed_colors</code> (test_complex_pattern_safety)</li>
+    <li data-page-node-id="Bb0Cc1Dd2"><strong data-page-node-id="Ee3Ff4Gg5">[未修]</strong> <code data-page-node-id="Hh6Ii7Jj8">test_extreme_colors_and_anti_aliasing</code> (test_complex_pattern_safety)</li>
+  </ul>
+</div>
+
+<h2 data-page-node-id="Kk9Ll0Mm1">剩余 4 个失败详细分类</h2>
+
+<div class="warn" data-page-node-id="Nn2Oo3Pp4">
+  <div class="warn-t" data-page-node-id="Qq5Rr7Ss8">诚实声明</div>
+  本轮 B1 阶段仅完成"测试圆心几何错"的诊断与修复. 以下 4 个失败的真因<strong data-page-node-id="Tt9Uu0Vv1">未在本轮深 trace</strong>, 分类基于现有日志与错误信息, 不等于"已确诊". 下一轮应专项处理.
+</div>
+
+<div class="regr" data-page-node-id="Ww2Xx3Yy4">
+  <div class="regr-h" data-page-node-id="Zz5Aa7Bb8">
+    <div class="regr-no" data-page-node-id="Cc9Dd0Ee1">R1</div>
+    <div class="regr-title" data-page-node-id="Ff2Gg3Hh4">test_border_smoothness</div>
+    <span class="regr-tag t-p0" data-page-node-id="Ii5Jj6Kk7">P0 待诊</span>
+  </div>
+  <div class="grid2" data-page-node-id="Ll8Mm9Nn0">
+    <div data-page-node-id="Oo1Pp2Qq3">
+      <h4 data-page-node-id="Rr4Ss5Tt6">症状</h4>
+      <div class="err-block" data-page-node-id="Uu7Vv8Ww9">
+        <span class="err-key" data-page-node-id="Xx0Yy1Zz2">缺口数</span>
+        <span class="err-val" data-page-node-id="Aa3Bb4Cc5">30/30 (100%)</span>
+      </div>
+      <div class="err-block" data-page-node-id="Dd6Ee7Ff8">
+        <span class="err-key" data-page-node-id="Gg9Hh0Ii1">基线 (B1 前)</span>
+        <span class="err-val" data-page-node-id="Jj2Kk3Ll4">24/30 (80%)</span>
+      </div>
+      <div class="err-block" data-page-node-id="Mm5Nn6Oo7">
+        <span class="err-key" data-page-node-id="Pp8Qq9Rr0">测试期望</span>
+        <span class="err-val" data-page-node-id="Ss1Tt2Uu3">dist=R 圆弧上 95% 像素非白 (gap_ratio < 5%)</span>
+      </div>
+    </div>
+    <div data-page-node-id="Vv4Ww5Xx6">
+      <h4 data-page-node-id="Yy7Zz8Aa9">实测发现</h4>
+      <p data-page-node-id="Bb0Cc1Dd2">改后圆心已正确, 但测试图只在图周 50px 画黑边, 圆弧 R=177 远大于 50px → 圆弧扫描点全部落在白底区. 测试图与断言语义不匹配.</p>
+      <div class="err-block ok" data-page-node-id="Ee3Ff4Gg5">
+        <span class="err-key" data-page-node-id="Hh6Ii7Jj8">真因 (初步)</span>
+        <span class="err-val" data-page-node-id="Kk9Ll0Mm1">测试图构造与断言目标错位 — 非代码 bug</span>
+      </div>
+      <h4 data-page-node-id="Nn2Oo3Pp4">下一轮建议</h4>
+      <p data-page-node-id="Qq5Rr6Ss7">需要重设计测试图: 使 <code data-page-node-id="Tt8Uu9Vv0">dist=R</code> 圆弧位置确实落在边框色区域. 或调整断言为"边框区域最外层连续性"而非"圆弧路径上有色".</p>
+    </div>
+  </div>
+</div>
+
+<div class="regr" data-page-node-id="Ww1Xx2Yy3">
+  <div class="regr-h" data-page-node-id="Zz4Aa5Bb6">
+    <div class="regr-no" data-page-node-id="Cc7Dd8Ee9">R2</div>
+    <div class="regr-title" data-page-node-id="Ff0Gg1Hh2">test_complex_pattern_with_gaps</div>
+    <span class="regr-tag t-p0" data-page-node-id="Ii3Jj4Kk5">P0 待诊</span>
+  </div>
+  <div class="grid2" data-page-node-id="Ll6Mm7Nn8">
+    <div data-page-node-id="Oo9Pp0Qq1">
+      <h4 data-page-node-id="Rr2Ss3Tt4">症状</h4>
+      <div class="err-block" data-page-node-id="Uu5Vv6Ww7">
+        <span class="err-key" data-page-node-id="Xx8Yy9Zz0">gap_is_correct</span>
+        <span class="err-val" data-page-node-id="Aa1Bb2Cc3">False (间隙区域被填白)</span>
+      </div>
+      <div class="err-block" data-page-node-id="Dd4Ee5Ff6">
+        <span class="err-key" data-page-node-id="Gg7Hh8Ii9">blue_count</span>
+        <span class="err-val" data-page-node-id="Jj0Kk1Ll2">10000 (符合预期)</span>
+      </div>
+      <div class="err-block" data-page-node-id="Mm2Nn3Oo4">
+        <span class="err-key" data-page-node-id="Pp5Qq6Rr7">border_gaps_found</span>
+        <span class="err-val" data-page-node-id="Ss8Tt9Uu0">True (圆弧上有 121 个缺口)</span>
+      </div>
+    </div>
+    <div data-page-node-id="Vv1Ww2Xx3">
+      <h4 data-page-node-id="Yy4Zz5Aa6">实测发现</h4>
+      <p data-page-node-id="Bb7Cc8Dd9">输入: 黑50+灰20+红30 边框 + 内部蓝色圆形/绿色矩形/黄色细节. 测试在左下角圆角区域.</p>
+      <p data-page-node-id="Ee0Ff1Gg2"><strong data-page-node-id="Hh3Ii4Jj5">本轮未诊断.</strong> 本测试属 test_complex_pattern_safety 套件, 走 apply_rounded_corners 路径, B1 圆心修正未触及此测试.</p>
+      <h4 data-page-node-id="Kk6Ll7Mm8">下一轮建议</h4>
+      <p data-page-node-id="Nn9Oo0Pp1">需 trace <code data-page-node-id="Qq2Rr3Ss4">_redraw_border_on_corner</code> 在该输入下 (border_layers=[黑51,灰20,红30]) 的 d_region 实际命中模式.</p>
+    </div>
+  </div>
+</div>
+
+<div class="regr" data-page-node-id="Tt5Uu6Vv7">
+  <div class="regr-h" data-page-node-id="Ww8Xx9Yy0">
+    <div class="regr-no" data-page-node-id="Zz1Aa2Bb3">R3</div>
+    <div class="regr-title" data-page-node-id="Cc4Dd5Ee6">test_multilayer_border_with_mixed_colors</div>
+    <span class="regr-tag t-p1" data-page-node-id="Ff7Gg8Hh9">P1 待诊</span>
+  </div>
+  <div class="grid2" data-page-node-id="Ii0Jj1Kk2">
+    <div data-page-node-id="Ll3Mm4Nn5">
+      <h4 data-page-node-id="Oo6Pp7Qq8">症状</h4>
+      <div class="err-block" data-page-node-id="Rr9Ss0Tt1">
+        <span class="err-key" data-page-node-id="Uu2Vv3Ww4">异常角落</span>
+        <span class="err-val" data-page-node-id="Xx5Yy6Zz7">[tl:32, tr:22, bl:22, br:12]</span>
+      </div>
+      <div class="err-block" data-page-node-id="Aa8Bb9Cc0">
+        <span class="err-key" data-page-node-id="Dd1Ee2Ff3">问题模式</span>
+        <span class="err-val" data-page-node-id="Gg4Hh6Ii7">非对称 — tl/br 异常像素差异大 (32 vs 12)</span>
+      </div>
+    </div>
+    <div data-page-node-id="Jj8Kk9Ll0">
+      <h4 data-page-node-id="Mm1Nn2Oo3">实测发现</h4>
+      <p data-page-node-id="Pp4Qq5Rr6">输入: 蓝41+绿25 多层边框 + 红/蓝填充 + 4 角全部 2cm 圆角.</p>
+      <p data-page-node-id="Ss7Tt8Uu9">诊断报告原标 R3 = #2, 但 B1 圆心修正后该测试仍失败, 说明<strong data-page-node-id="Vv0Ww1Xx2">存在圆心几何以外的根因</strong> (可能为低对比度下 sector_render 的 match_filter 误判).</p>
+      <h4 data-page-node-id="Yy3Zz4Aa5">下一轮建议</h4>
+      <p data-page-node-id="Bb6Cc7Dd8">需 trace <code data-page-node-id="Ee9Ff0Gg1">match_filter</code> / <code data-page-node-id="Hh2Ii3Jj4">classify_gap_layers</code> 在低对比输入下的判定逻辑.</p>
+    </div>
+  </div>
+</div>
+
+<div class="regr" data-page-node-id="Kk5Ll6Mm7">
+  <div class="regr-h" data-page-node-id="Nn8Oo9Pp0">
+    <div class="regr-no" data-page-node-id="Qq1Rr2Ss3">R4</div>
+    <div class="regr-title" data-page-node-id="Tt4Uu5Vv6">test_extreme_colors_and_anti_aliasing</div>
+    <span class="regr-tag t-p1" data-page-node-id="Ww7Xx8Yy9">P1 待诊</span>
+  </div>
+  <div class="grid2" data-page-node-id="Zz0Aa1Bb2">
+    <div data-page-node-id="Cc3Dd4Ee5">
+      <h4 data-page-node-id="Ff6Gg7Hh8">症状</h4>
+      <div class="err-block" data-page-node-id="Ii9Jj0Kk1">
+        <span class="err-key" data-page-node-id="Ll2Mm3Nn4">all_white</span>
+        <span class="err-val" data-page-node-id="Oo5Pp6Qq7">False (br 间隙未保持白)</span>
+      </div>
+      <div class="err-block" data-page-node-id="Rr8Ss9Tt0">
+        <span class="err-key" data-page-node-id="Uu1Vv2Ww3">border_color_ok</span>
+        <span class="err-val" data-page-node-id="Xx4Yy5Zz6">False (133 像素色偏)</span>
+      </div>
+      <div class="err-block" data-page-node-id="Aa7Bb8Cc9">
+        <span class="err-key" data-page-node-id="Dd0Ee1Ff2">深色像素</span>
+        <span class="err-val" data-page-node-id="Gg3Hh4Ii5">40000 (符合预期)</span>
+      </div>
+    </div>
+    <div data-page-node-id="Jj6Kk7Ll8">
+      <h4 data-page-node-id="Mm9Nn0Oo1">实测发现</h4>
+      <p data-page-node-id="Pp2Qq3Rr4">输入: 灰边 + 白间隙 + 深灰内容, 500x500 单角 br=2.5cm.</p>
+      <p data-page-node-id="Ss5Tt6Uu7">诊断报告原标 R4 = #3, B1 圆心修正后该测试仍失败, 说明抗锯齿 / 极端颜色边界判定有独立问题.</p>
+      <h4 data-page-node-id="Vv8Ww9Xx0">下一轮建议</h4>
+      <p data-page-node-id="Yy1Zz2Aa3">需 trace <code data-page-node-id="Bb4Cc5Dd6">match_filter</code> 在 RGB 极值附近的容差判定.</p>
+    </div>
+  </div>
+</div>
+
+<h2 data-page-node-id="Ee7Ff8Gg9">代码侧未改动声明</h2>
+
+<pre data-page-node-id="Hh0Ii1Jj2"><code data-page-node-id="Kk3Ll4Mm5">$ git diff --stat core/
+(空输出)
+
+$ diff -q core/corner/sector_render.py .workbuddy/sector_render.py.bak-20260905-1021
+(无输出 = 完全一致)
+
+$ diff -q core/corner/sector_render.py .workbuddy/sector_render.py.bak-20260905-1018
+(无输出 = 早前阶段 A 临时备份也一致)</code></pre>
+
+<div class="scope" data-page-node-id="Nn6Oo7Pp8">
+  <div class="scope-t" data-page-node-id="Qq9Rr0Ss1">未改动文件清单 (B1 期间全程零改动)</div>
+  <ul data-page-node-id="Tt2Uu3Vv4">
+    <li data-page-node-id="Ww5Xx6Yy7"><code data-page-node-id="Zz8Aa9Bb0">core/corner/sector_render.py</code> — 含 <code data-page-node-id="Cc1Dd2Ee3">_redraw_border_on_corner</code></li>
+    <li data-page-node-id="Ff4Gg5Hh6"><code data-page-node-id="Ii7Jj8Kk9">core/corner/algorithm.py</code> — 含 <code data-page-node-id="Ll0Mm1Nn2">carve_corner_on_mask</code></li>
+    <li data-page-node-id="Oo3Pp4Qq5"><code data-page-node-id="Rr6Ss7Tt8">core/image_cropper.py</code> — <code data-page-node-id="Uu9Vv0Ww1">apply_rounded_corners</code></li>
+    <li data-page-node-id="Xx2Yy3Zz4"><code data-page-node-id="Aa5Bb6Cc7">core/image_cropper_mask.py</code> — <code data-page-node-id="Dd8Ee9Ff0">_build_multi_layer_corner_mask</code></li>
+    <li data-page-node-id="Gg1Hh3Ii4"><code data-page-node-id="Jj5Kk6Ll7">core/image_cropper_border.py</code> — <code data-page-node-id="Mm8Nn9Oo0">apply_border_only_corners</code></li>
+    <li data-page-node-id="Pp1Qq2Rr3"><code data-page-node-id="Ss4Tt5Uu6">core/lshape_border.py</code></li>
+    <li data-page-node-id="Vv7Ww8Xx9"><code data-page-node-id="Yy0Zz1Aa2">requirements.txt</code>, <code data-page-node-id="Bb3Cc4Dd6">pytest.ini</code>, <code data-page-node-id="Ee7Ff8Gg9">conftest.py</code></li>
+  </ul>
+</div>
+
+<h2 data-page-node-id="Hh0Ii1Jj2">B1 备份与回滚锚</h2>
+
+<p data-page-node-id="Kk3Ll4Mm5">所有 B1 阶段的测试改动均保留备份, 在 <code data-page-node-id="Nn6Oo7Pp8">.workbuddy/</code> 工作目录, 命名带时间戳:</p>
+
+<pre data-page-node-id="Qq9Rr0Ss1"><code data-page-node-id="Tt2Uu3Vv4">$ ls .workbuddy/*.bak-*
+.workbuddy/test_final_verification.py.bak-20260905-1025   (10608 bytes)
+.workbuddy/test_gap_fix_verification.py.bak-20260905-1025 (11885 bytes)
+.workbuddy/sector_render.py.bak-20260905-1018            (18175 bytes, 早前备份)
+.workbuddy/sector_render.py.bak-20260905-1021            (18175 bytes, 早前备份)
+
+回滚命令 (单文件):
+$ cp .workbuddy/test_final_verification.py.bak-20260905-1025 \
+       tests/integration/test_final_verification.py</code></pre>
+
+<h2 data-page-node-id="Ww5Xx6Yy7">产物清单 (本轮新增)</h2>
+
+<ul data-page-node-id="Zz8Aa9Bb0">
+  <li data-page-node-id="Cc1Dd2Ee3"><code data-page-node-id="Ff4Gg5Hh6">ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-V2.2-回归收尾报告.html</code> — 本报告</li>
+  <li data-page-node-id="Ii7Jj8Kk9"><code data-page-node-id="Ll0Mm1Nn2">.workbuddy/test_*_verification.py.bak-20260905-1025</code> — 测试改动回滚备份 (2 文件)</li>
+  <li data-page-node-id="Oo3Pp4Qq5"><code data-page-node-id="Rr6Ss7Tt8">.workbuddy/sector_render.py.bak-20260905-1018</code> + <code data-page-node-id="Uu9Vv0Ww1">.bak-20260905-1021</code> — 阶段 A 临时备份 (2 文件, 未回滚痕迹)</li>
+</ul>
+
+<h2 data-page-node-id="Xx2Yy3Zz4">下一轮建议 (R1-R4 专项)</h2>
+
+<div class="cause" data-page-node-id="Aa5Bb6Cc7">
+  <div class="cause-t" data-page-node-id="Dd8Ee9Ff0">R1 优先 (test_border_smoothness)</div>
+  <p data-page-node-id="Gg1Hh3Ii4">唯一已被初诊为"非代码 bug"的项目, 但失败数从 80% 上升到 100% 仍属回归. 建议重写测试图, 确保圆弧路径上确实有边框色 (例如: 图周 200px 宽边框, 远大于 R=177).</p>
+</div>
+
+<div class="cause" data-page-node-id="Jj5Kk6Ll7">
+  <div class="cause-t" data-page-node-id="Mm8Nn9Oo0">R2-R4 优先级</div>
+  <ul data-page-node-id="Pp1Qq2Rr3">
+    <li data-page-node-id="Ss4Tt5Uu6"><strong data-page-node-id="Vv7Ww8Xx9">R2 (test_complex_pattern_with_gaps)</strong>: 走 apply_rounded_corners, 与 R3/R4 同源问题可能在不同输入下的表现. 建议先 trace 此项再交叉对照.</li>
+    <li data-page-node-id="Yy0Zz1Aa2"><strong data-page-node-id="Bb3Cc4Dd6">R3 (test_multilayer_border_with_mixed_colors)</strong>: 4 角非对称, 涉及 corner_protect_map 的 per-corner 决策, 建议 trace <code data-page-node-id="Ee7Ff8Gg9">_corner_sector_has_content</code> 在 4 角调用上的返回值差异.</li>
+    <li data-page-node-id="Hh0Ii1Jj2"><strong data-page-node-id="Kk3Ll4Mm5">R4 (test_extreme_colors_and_anti_aliasing)</strong>: 单角 br=2.5cm, 灰边+白间隙+深灰内容. 怀疑 <code data-page-node-id="Nn6Oo7Pp8">match_filter</code> 在 RGB 极值附近的色差阈值 (<code data-page-node-id="Qq9Rr0Ss1">COLOR_DIST_THRESHOLD=15</code>) 设定不当.</li>
+  </ul>
+</div>
+
+</main>
+
+<footer data-page-node-id="nowHPsN4zgHPHXT585IAaB">
+  <span class="ver-foot" data-page-node-id="OM2jpjpdZ6BJhixJ6zLaim">V2.2</span> SmartShapeCrop 回归收尾报告 · 2026-09-05 · 松烟 · 配套 <a href="SmartShapeCrop-V2.2-回归诊断报告.html" style="color:var(--accent)">诊断报告</a>
+</footer>
+
+</body>
+</html>
