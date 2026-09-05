@@ -8,11 +8,17 @@
        - 挖角位置 corner (tl/tr/bl/br)
        - 挖角像素尺寸 cut_w_px / cut_h_px
        - 外接矩形像素尺寸 outer_w_px / outer_h_px
-  3. 多尺度 OCR：复用 sketch_parser_vision 的全局数字扫描，提取所有数值及坐标
-  4. 几何驱动标签归属：把每个数值按"最近边 + 凹角分割"归入 A/B/C/D/E/F 角色，
+
+  3. V2 凹角筛选（精准识别核心）：
+       - 硬约束 1：cut 比例合理 [0.03, 0.75]（剔除伪凹角）
+       - 硬约束 2：距离 bbox 四角之一 < 对角线 × 40%（剔除离群凹角）
+       - 增强评分：base_score × proximity_factor × ratio_factor
+       - 多候选时加 balance_factor（惩罚一侧极长的伪凹角，≥2 个候选才启用）
+  4. 多尺度 OCR：复用 sketch_parser_vision 的全局数字扫描，提取所有数值及坐标
+  5. 几何驱动标签归属：把每个数值按"最近边 + 凹角分割"归入 A/B/C/D/E/F 角色，
      完全不依赖字母 OCR（字母识别只做辅助校验）
-  5. 结构自洽 & 几何兜底：校验 A==C+D / B==F+E；缺失值用像素比例反推
-  6. 输出 LSketchParseResult
+  6. 结构自洽 & 几何兜底：校验 A==C+D / B==F+E；缺失值用像素比例反推
+  7. 输出 LSketchParseResult
 
 公开函数 parse_lshape_sketch(...) 永不抛异常。
 """
@@ -40,7 +46,7 @@ from .sketch_parser_vision import (
     _to_gray,
 )
 
-_ALGO_VERSION = 1  # 2026-08-28: L 形草图解析初版
+_ALGO_VERSION = 2  # 2026-09-05: V2 精准识别——bbox 角约束 + cut 比例筛选 + balance disambiguation
 
 
 @dataclass
@@ -141,14 +147,17 @@ def _detect_lshape_geometry(cv2, gray):
         # 面积过小，排除噪点
         return None
 
-    # 多边形简化：从小到大 epsilon 扫描。
-    # 核心洞察：
-    #  - 5~8 顶点且恰好 1 个凹角的变体 = 纯 L 形（最稳定）。
-    #    真实带标注数字（"50"/"88"等嵌入轮廓）的草图，在 6 vert 变体上
-    #    凹角位置会被数字"拖偏"，脱离 bbox 角 30% 阈值，但 corner 方向仍对。
-    #  - 策略：先抓所有 5~8 顶点 + 1 凹角的变体（首选池）；
-    #    空了再抓 5~10 顶点 + 1~2 凹角的（次选池）；
-    #    最后兜底全部。池内部按 best_score 降序选凹角最清晰的。
+    # ------------------------------------------------------------------
+    # 多边形简化 + 凹角评分（V2：bbox 角约束 + cut 比例合理性）
+    # ------------------------------------------------------------------
+    # V1 纯评分：score = cn * (r1 + r2) —— 真实凹角角度尖锐且一侧有长直段
+    # V2 升级（sketch2 根因修复）：
+    #   真实 L 形挖角凹角有两个硬特征：
+    #   (a) cut_px / bbox 对应边长 ∈ [0.03, 0.75]（过小=伪角/过大=斜边）
+    #   (b) 距离 bbox 四角之一 < 对角线 × 40%（覆盖大 cut 退角场景）
+    #   伪凹角（数字粘连等造成）cut_ratio<0.01 或远离 bbox 角
+    #   多候选时额外用 balance_factor 惩罚一侧极长的伪凹角
+    # ------------------------------------------------------------------
     peri = cv2.arcLength(cnt, True)
     eps_range = (0.0012, 0.0015, 0.002, 0.003, 0.005, 0.008, 0.012, 0.02, 0.03)
 
@@ -165,6 +174,20 @@ def _detect_lshape_geometry(cv2, gray):
     _tier2 = []  # 5~10 verts + 1~2 凹角（次选）
     _tier3 = []  # 兜底
 
+    # 预计算整个轮廓的整体 bbox（跨所有 epsilon 稳定）
+    cnt_pts = cnt.reshape(-1, 2)
+    global_minx, global_miny = cnt_pts[:, 0].min(), cnt_pts[:, 1].min()
+    global_maxx, global_maxy = cnt_pts[:, 0].max(), cnt_pts[:, 1].max()
+    g_outer_w = float(global_maxx - global_minx)
+    g_outer_h = float(global_maxy - global_miny)
+    g_diag = float(np.hypot(g_outer_w, g_outer_h))
+    g_corners = [
+        (float(global_minx), float(global_miny)),   # tl
+        (float(global_maxx), float(global_miny)),   # tr
+        (float(global_minx), float(global_maxy)),   # bl
+        (float(global_maxx), float(global_maxy)),   # br
+    ]
+
     for eps_f in eps_range:
         eps = max(0.5, eps_f * peri)
         approx = cv2.approxPolyDP(cnt, eps, True)
@@ -175,7 +198,7 @@ def _detect_lshape_geometry(cv2, gray):
 
         sa = _signed_area(v)
         sa_sign = 1 if sa > 0 else -1
-        reflex = []
+        raw_reflex = []  # [(idx, cn, r1, r2, p_prev, p_next)]
         for i in range(n):
             a_vec = v[i] - v[(i - 1) % n]
             b_vec = v[(i + 1) % n] - v[i]
@@ -185,13 +208,82 @@ def _detect_lshape_geometry(cv2, gray):
                 cn = abs(cross) / (np.hypot(a_vec[0], a_vec[1]) * np.hypot(b_vec[0], b_vec[1]) + 1e-6)
                 r1 = _run_len(v, i, -1)
                 r2 = _run_len(v, i, +1)
-                reflex.append((cn * (r1 + r2), i))
-        if not reflex:
+                raw_reflex.append((i, cn, r1, r2,
+                                   v[(i - 1) % n].astype(float),
+                                   v[(i + 1) % n].astype(float)))
+
+        # —— V2 硬约束：bbox 退角搜索区域 + cut 比例合理性 ——
+        # (a) cut 比例合理性：水平或垂直至少一个在 [0.03, 0.75]
+        #     下限 0.03 排除纯噪点/文字粘连伪凹角（通常 ratio<0.01）
+        #     上限 0.75 覆盖真实大 L 形挖角（如 sketch3 cut_h_ratio=0.68）
+        # (b) bbox 退角搜索区域：凹角在 bbox 四角各 40% 对角线范围内
+        #     真实挖角凹角不在 bbox 物理角上，而是往里退 cut_w/cut_h 的位置
+        #     所以搜索区域要够大（40% diag），但仍能排除中部/边缘的伪凹角
+        filtered_reflex = []
+        for idx, cn, r1, r2, pv, nv in raw_reflex:
+            pt = v[idx].astype(float)
+            cut_w_est = max(abs(pv[0] - pt[0]), abs(nv[0] - pt[0]))
+            cut_h_est = max(abs(pv[1] - pt[1]), abs(nv[1] - pt[1]))
+
+            cut_w_ratio = cut_w_est / g_outer_w if g_outer_w > 0 else 0
+            cut_h_ratio = cut_h_est / g_outer_h if g_outer_h > 0 else 0
+            ratio_ok = (0.03 <= cut_w_ratio <= 0.75) or (0.03 <= cut_h_ratio <= 0.75)
+            if not ratio_ok:
+                continue
+
+            min_dist = min(
+                np.hypot(pt[0] - cx, pt[1] - cy) for cx, cy in g_corners)
+            dist_ratio = min_dist / g_diag if g_diag > 0 else 99.0
+            # 真实凹角离最近 bbox 角的距离最多到 40% 对角线
+            # （因为 cut 退角的凹角不在物理角上）
+            if dist_ratio >= 0.40:
+                continue
+
+            # 通过筛选 → 计算增强评分
+            base_score = cn * (r1 + r2)
+
+            # proximity_factor：越靠近 bbox 角评分越高
+            if dist_ratio < 0.08:
+                pf = 1.0
+            elif dist_ratio < 0.20:
+                pf = 0.9
+            else:  # < 0.40
+                pf = 0.7
+
+            # ratio_factor：cut 比例在中间区间最合理，两端衰减
+            best_ratio = min(cut_w_ratio, cut_h_ratio) if min(cut_w_ratio, cut_h_ratio) > 0 else max(cut_w_ratio, cut_h_ratio)
+            if 0.10 <= best_ratio <= 0.50:
+                rf = 1.0
+            elif 0.03 <= best_ratio < 0.10 or 0.50 < best_ratio <= 0.70:
+                rf = 0.8
+            else:
+                rf = 0.6
+
+            adj_score = base_score * pf * rf
+            # balance_factor 延迟应用：只在同 epsilon 下有 ≥2 个候选时
+            # 才用它来 disambiguation（见下方 post-processing）
+            filtered_reflex.append((adj_score, idx, r1, r2))
+
+        if not filtered_reflex:
             continue
 
-        best_score, best_idx = max(reflex, key=lambda t: t[0])
-        n_conc = len(reflex)
-        entry = (best_score, v, reflex)
+        # —— post-processing: 多候选才用 balance_factor 排序 ——
+        n_cand = len(filtered_reflex)
+        if n_cand >= 2:
+            def _scored(entry):
+                s, idx, r1, r2 = entry
+                bal = min(r1, r2) / max(r1, r2) if max(r1, r2) > 0 else 0.0
+                # 温和惩罚：最低不降过 60%（避免打死极短 cut 的真实凹角）
+                bf = 0.6 + 0.4 * bal
+                return (s * bf, idx)
+            final_reflex = [_scored(e) for e in filtered_reflex]
+        else:
+            final_reflex = [(s, idx) for s, idx, _, _ in filtered_reflex]
+
+        best_score, best_idx = max(final_reflex, key=lambda t: t[0])
+        n_conc = len(final_reflex)
+        # entry 存最终排好序的 (score, idx) 列表 + best_score
+        entry = (best_score, v, final_reflex)
 
         if 5 <= n <= 8 and n_conc == 1:
             _tier1.append(entry)
