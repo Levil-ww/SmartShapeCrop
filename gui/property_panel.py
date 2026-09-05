@@ -519,10 +519,15 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         # self._schedule_apply_quiet()
 
     def _on_lshape_applied(self, params: dict):
-        """用户在确认框中确认 L 形挖角 → 切换模式 + 更新画布 + 触发预览。
+        """L 形挖角参数应用 → 切换模式 + 同步尺寸（暂不刷画布，让草图保持显示）。
 
-        迁移自原 _apply_lshape_params 中"切换模式 + 更新画布尺寸"部分；
-        参数回填（_cb_lcorner/_sp_lw/_sp_lh）已由 LShapePanel._apply_lshape_params 自行完成。
+        [2026-09-05 UX 修复] 之前这里调用 self._apply_quiet() 立即用空素材渲染
+        L 形 design → 画布显示灰色空矩形（素材还没匹配完）。
+        识别成功时 LShapePanel 会自动 emit generate_requested → PoolRenderWorker
+        匹配素材 + 完整渲染；在这之前画布应保持草图 overlay，不让用户看到中间态。
+        若 generate 失败（模板库未选 / 目标文件空），画布继续显示草图也不会误导。
+
+        手动设置 L 形参数（非自动识别路径）→ 用户后续点「生成预览」才触发完整渲染。
         """
         try:
             # 1) 裁剪模式 → L 形挖角
@@ -538,17 +543,17 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 self._pool_raw_outer_h = outer_h
                 self._sp_w.setValue(outer_w + 1.0)
                 self._sp_h.setValue(outer_h + 1.0)
-            # 3) 触发模式切换后的软预览；【识别成功时 LShapePanel 会自动 emit generate_requested，
-            #    立即启动 PoolRenderWorker 做素材库匹配 + 完整预览，无需用户再点「生成预览」】。
-            #    若手动设置 L 形参数（非自动识别路径）后续也可随时点生成预览按钮。
-            # [2026-09-04 Fix B] 水池面板只写简洁状态，详细识别结果由 L 面板自己显示
-            # （LShapePanel._apply_lshape_params 已写完整状态到 _lshape_status）
+            # 3) 只同步数据层（SpinBox → design），不触发 design_changed → 不刷画布。
+            #    画布保持草图显示，等 generate_requested → _on_pool_finished_ok 统一渲染。
+            self._collect()
+            self._update_layers_label()
+            # 4) 状态栏简洁提示（详细识别结果由 L 面板自己的 _lshape_status 显示）
             corner_label_map = {'tl': '左上', 'tr': '右上', 'bl': '左下', 'br': '右下'}
             corner_label = corner_label_map.get(str(params.get('corner', '')), str(params.get('corner', '')))
             self._set_pool_status(
                 f"L 形挖角模式：{corner_label}角挖角已激活 "
                 f"（画布 {outer_w + 1:.1f} × {outer_h + 1:.1f} cm）")
-            self._apply_quiet()
+            # 故意不 emit design_changed / 不调 _apply_quiet() —— 让画布保持草图 overlay
         except Exception as e:
             logger.exception(f"[PropertyPanel] _on_lshape_applied 异常: {e}")
             self._set_pool_status(f"L 形参数回填异常：{e}", is_error=True)
