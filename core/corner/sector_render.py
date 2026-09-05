@@ -303,25 +303,52 @@ def _redraw_border_on_corner(
         valid_angle = (angle >= ang_min) | (angle < 1)
     else:
         valid_angle = (angle >= ang_min) & (angle <= ang_max)
-    # [Fix v8 四缺陷合并修复]
-    #   1. valid_region 采用 R+2 容差（V1.0 行为），避免 婉卉 弧-直交界留
-    #      下 1-2px 白色间隙。
-    #   2. 删除 CORE_BORDER_DEPTH "核心区无条件绘制" 逻辑，改用 V1.0
-    #      风格的「源感知选择性重绘」(match_filter)：
-    #        只绘制源像素颜色匹配相邻边框色的像素 (adjacent dist <=
-    #        TRANSITION_THRESH)，或靠近角度边界的像素。
-    #      这样：
-    #        - 中古花园 的文字+花纹不被实心色块覆盖（颜色不匹配任一边框层）
-    #        - 闲叙青釉 的人字纹装饰保持原样（不被涂成实心米色弧）
-    #      同时保留 outermost 层始终绘制的安全锚（保证最外边完整）。
+    # [Fix 边框线粗细] valid_region 采用 R+2 容差，包含所有 inside_arc 像素
+    #   (dist <= R_total + 2)，确保弧-直交界处无 1-2px 白色间隙。
+    #   多层结构感知重绘见下方 content_protect_mask（核心区始终绘制，
+    #   过渡区/边框外保护内容像素）。
     valid_region = valid_angle & (dist <= float(R_total) + 2.0)
 
     if validity_arr is not None:
         valid_region = valid_region & validity_arr
 
-    # --- 预计算 V1.0 风格的阈值常量（与 V1.0 对齐） ---
-    COLOR_DIST_THRESHOLD = 15.0
-    TRANSITION_THRESHOLD = 25.0
+    # === [Fix 圆角断触/白色空隙/粗细不一致 2026-09-05] ===
+    # 回退 d246636 的「多层结构感知重绘」：所有非间隙实心边框层（含内层）
+    #   都在圆弧上重绘，形成与直边厚度一致的同心圆弧。
+    # 根因（96d3031 引入）：只重绘 color_idx==0 的最外层，内层依赖 mask 自然裁圆，
+    #   导致圆角处内层边框断触、露白、与直边粗细不一致。
+    #
+    # 三区域渐进内容保护（避免覆盖花纹/文字）：
+    #   1. 核心边框区 (depth < CORE_BORDER_DEPTH)：始终绘制（保证圆角边框实心）
+    #   2. 过渡区 (CORE_BORDER_DEPTH <= depth < total_border_depth)：保护内容像素
+    #      —— 仅边框带最内沿 2px，避免覆盖弧内侧紧贴边框的花纹/文字。
+    #      过渡区过宽（如 4px）会导致圆角内层边框末端缺像素、粗细不一致；
+    #      完全移除过渡区则会过度覆盖内容（婉卉 CASE4 内容保留率下降）。
+    #   3. 边框外 (depth >= total_border_depth)：保护内容像素
+    content_protect_mask = None
+    if src_arr is not None:
+        BORDER_SIGMA = 6.0
+        bg_arr_detect = np.array(bg_color, dtype=np.float64)
+        src_f64 = src_arr.astype(np.float64)
+        color_dist_to_border_min = np.full((roi_h, roi_w), np.inf, dtype=np.float64)
+        for bc, _ in border_layers:
+            bc_arr = np.array(bc, dtype=np.float64)
+            d = np.sqrt(np.sum((src_f64 - bc_arr) ** 2, axis=2))
+            color_dist_to_border_min = np.minimum(color_dist_to_border_min, d)
+        dist_to_bg = np.sqrt(np.sum((src_f64 - bg_arr_detect) ** 2, axis=2))
+        is_content_pixel = (color_dist_to_border_min > BORDER_SIGMA) & (dist_to_bg > BORDER_SIGMA)
+
+        # 过渡区宽度固定 2px：只保护边框带最内沿 2px，平衡实心度与内容保留
+        TRANSITION_PX = 2
+        CORE_BORDER_DEPTH = max(0, total_border_depth - TRANSITION_PX)
+
+        # 空间判断：过渡区内容保护只作用于靠近直边的像素（xx/yy 接近 ROI 边缘）。
+        #   圆角内部（远离两边直边）的过渡区始终绘制——否则圆角内层边框末端缺像素。
+        #   直边附近的过渡区保护紧贴边框的花纹/文字（婉卉 CASE4）。
+        near_edge = (xx <= float(total_border_depth) * 1.5) | (yy <= float(total_border_depth) * 1.5)
+        in_transition_zone = near_edge & (depth >= float(CORE_BORDER_DEPTH)) & (depth < float(total_border_depth))
+        outside_border_zone = (depth >= float(total_border_depth))
+        content_protect_mask = is_content_pixel & (in_transition_zone | outside_border_zone)
 
     # === [Fix INV-1/INV-3/INV-5 + 玛利亚玫瑰] 处理弧线外侧区域 ===
     #
@@ -389,18 +416,25 @@ def _redraw_border_on_corner(
             continue
 
         # ================================================================
-        # [v9 Fix 用户指令：只修改最外层圆弧角]
-        # 仅 outermost (color_idx == 0) 完整重绘为实心圆弧（保证外轮廓干净）。
-        # 内层实心边框/装饰层 (color_idx >= 1) 完全不重绘：
-        #   内层内容由 mask 自然裁圆（dist<=R 内像素保留源值），不需要主动
-        #   涂实心色 —— 否则会把闲叙青釉的人字纹、玛利亚玫瑰的圆点边带、
-        #   中古花园的文字花纹涂成过粗的实心弧/破坏图案。
+        # [Fix 圆角断触/白色空隙/粗细不一致 2026-09-05]
+        # 所有非间隙实心边框层（含内层 color_idx >= 1）都参与重绘，
+        #   形成与直边厚度一致的同心圆弧。
+        # content_protect_mask 保护内容像素（花纹/文字）不被边框色覆盖：
+        #   核心边框区始终绘制，过渡区/边框外只绘制非内容像素。
         # 间隙层 (is_gap) 已在上一段处理并 continue。
         # ================================================================
-        if color_idx == 0:
-            color_fill = np.array(target_color, dtype=result_arr.dtype)
-            result_arr[local_coords[0], local_coords[1], :] = color_fill.reshape(1, 3)
-        # non-outermost non-gap：跳过，保持源图自然裁圆结果
+        if content_protect_mask is not None:
+            protect_here = content_protect_mask[local_coords[0], local_coords[1]]
+            if np.any(protect_here):
+                paint_mask = ~protect_here
+                if np.any(paint_mask):
+                    py = local_coords[0][paint_mask]
+                    px = local_coords[1][paint_mask]
+                    color_fill = np.array(target_color, dtype=result_arr.dtype)
+                    result_arr[py, px, :] = color_fill.reshape(1, 3)
+                continue
+        color_fill = np.array(target_color, dtype=result_arr.dtype)
+        result_arr[local_coords[0], local_coords[1], :] = color_fill.reshape(1, 3)
         continue
 
     # === V1.0 风格简化：二次确保弧外侧 + 边界像素为背景色 ===

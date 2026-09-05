@@ -590,6 +590,8 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
 
     # 构建层列表：包含所有色段（包括 < MIN_LAYER_THICKNESS 的过渡带）
     # 过渡带（1-2px）是抗锯齿像素，需要合并到相邻的厚层中
+    # [Fix 塞纳时光米色弧形缺口] 保留每层的起始深度 start_depth，
+    #   用于后续检测"边框层之间过大间隙"——间隙过大说明内层其实是内容元素。
     raw_layers = []
     starts = np.concatenate(([0], change_indices + 1, [len(smoothed)]))
     for k in range(len(starts) - 1):
@@ -597,7 +599,7 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
         thickness = e - s
         avg_color = np.mean(smoothed[s:e], axis=0)
         color_tuple = tuple(int(round(v)) for v in avg_color)
-        raw_layers.append((color_tuple, thickness))
+        raw_layers.append((color_tuple, thickness, s))
 
     # [Fix P0-4 抗锯齿带合并]
     # 将 < MIN_LAYER_THICKNESS 的薄层（抗锯齿过渡带）合并到相邻的厚层中。
@@ -610,28 +612,28 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     # 之前：抗锯齿被丢弃，变成 黑(120) + 背景(30) + 黑(100)  → 背景合并两段黑
     # 现在：抗锯齿合并到邻层，黑(121) + 背景(30) + 黑(101) → 结构正确
     merged_layers = []
-    for col, t in raw_layers:
+    for col, t, sd in raw_layers:
         if t < MIN_LAYER_THICKNESS and merged_layers:
-            # 薄层合并到前一个层：只增加厚度，不改变颜色
-            prev_col, prev_t = merged_layers[-1]
-            merged_layers[-1] = (prev_col, prev_t + t)
+            # 薄层合并到前一个层：只增加厚度，不改变颜色和起始深度
+            prev_col, prev_t, prev_sd = merged_layers[-1]
+            merged_layers[-1] = (prev_col, prev_t + t, prev_sd)
         else:
-            merged_layers.append((col, t))
+            merged_layers.append((col, t, sd))
 
     # 再次检查：如果第一个层就是薄层，向后合并
     if merged_layers and merged_layers[0][1] < MIN_LAYER_THICKNESS and len(merged_layers) > 1:
-        first_col, first_t = merged_layers[0]
-        second_col, second_t = merged_layers[1]
-        merged_layers[0] = (second_col, first_t + second_t)
+        first_col, first_t, first_sd = merged_layers[0]
+        second_col, second_t, second_sd = merged_layers[1]
+        merged_layers[0] = (second_col, first_t + second_t, first_sd)
         merged_layers.pop(1)
 
-    layers = [(c, t) for c, t in merged_layers if t >= MIN_LAYER_THICKNESS]
+    layers = [(c, t, sd) for c, t, sd in merged_layers if t >= MIN_LAYER_THICKNESS]
 
     # [Fix P0-2 / 修复② 相邻同色合并]
     if len(layers) >= 2:
-        merged: list[tuple[tuple[int, int, int], int]] = []
-        cur_col, cur_t = layers[0]
-        for col, t in layers[1:]:
+        merged = []
+        cur_col, cur_t, cur_sd = layers[0]
+        for col, t, sd in layers[1:]:
             d = float(np.sqrt(sum((a - b) ** 2 for a, b in zip(col, cur_col))))
             if d <= COLOR_DIFF_THRESHOLD:
                 total_t = cur_t + t
@@ -639,20 +641,43 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
                     cur_col = tuple(int(round((cur_col[j] * cur_t + col[j] * t) / total_t)) for j in range(3))
                 cur_t = total_t
             else:
-                merged.append((cur_col, cur_t))
-                cur_col, cur_t = col, t
-        merged.append((cur_col, cur_t))
+                merged.append((cur_col, cur_t, cur_sd))
+                cur_col, cur_t, cur_sd = col, t, sd
+        merged.append((cur_col, cur_t, cur_sd))
         layers = merged
 
     # [Fix P0-2 / 修复① 背景色过滤]
     if bg_color is not None and layers:
-        filtered: list[tuple[tuple[int, int, int], int]] = []
-        for col, t in layers:
+        filtered = []
+        for col, t, sd in layers:
             d = float(np.sqrt(sum((a - b) ** 2 for a, b in zip(col, bg_color))))
             if d <= BG_THRESHOLD:
                 continue
-            filtered.append((col, t))
+            filtered.append((col, t, sd))
         layers = filtered
+
+    # [Fix 塞纳时光米色弧形缺口 2026-09-05] 边框层间隙上限校验
+    # 问题：扫描深度(300px)远超实际边框厚度，内容区的彩色元素(棕色花瓶/绿色花纹)
+    #       会被误检为"内层边框"。这些伪层与真实外边框之间隔着大片内容色(已被bg过滤)，
+    #       导致 total_border_depth 虚高，圆角处把内容色当边框重绘，
+    #       content_protect 在内侧留出米色弧形缺口。
+    # 判据：真实边框系统中，相邻边框层（含间隙层）之间的间距不会太大。
+    #       若两个非背景层之间的原始深度差 > MAX_BORDER_GAP_PX，
+    #       说明内层其实是内容元素，截断丢弃。
+    if len(layers) >= 2:
+        MAX_BORDER_GAP_PX = 20.0
+        valid_layers = [layers[0]]
+        for i in range(1, len(layers)):
+            prev_end = layers[i - 1][2] + layers[i - 1][1]
+            cur_start = layers[i][2]
+            gap = cur_start - prev_end
+            if gap > MAX_BORDER_GAP_PX:
+                break
+            valid_layers.append(layers[i])
+        layers = valid_layers
+
+    # 起始深度仅用于上述间隙校验，之后恢复为 (color, thickness) 二元组
+    layers = [(c, t) for c, t, _sd in layers]
 
     # [Fix P0-7 花纹周期截断]
     # 问题：花野/墨上花开 等带规则重复图案（四叶草/花朵线条）的图片，
