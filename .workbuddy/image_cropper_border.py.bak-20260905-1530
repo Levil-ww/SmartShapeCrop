@@ -429,7 +429,6 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
                 src_img=img, validity_mask=validity_mask,
                 only_outermost=False,  # 绘制所有边框层（gap层由Smart Gap Check自动跳过）
                 bg_color=bg_color,
-                paint_inside_arc=False,  # [P2-B R2] border_only + 无保护：保留源间隙，避免覆盖源 bg 色像素
             )
 
     # Step B: 安全补绘外轮廓

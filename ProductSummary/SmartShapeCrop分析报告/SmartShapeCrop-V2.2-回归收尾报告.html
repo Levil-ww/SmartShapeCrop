@@ -83,7 +83,7 @@
 
 <header data-page-node-id="5TVvpdf6tByNBHIYYyKUYC">
   <h1 data-page-node-id="VjtVtpWtxHi56amzoAKDK0">SmartShapeCrop — 回归收尾报告<span class="ver" data-page-node-id="5vgYCTydjbj0wkgP4E568F">V2.2</span></h1>
-  <div class="sub" data-page-node-id="BGqdt3XCdyEBWvpYEp1ajM">2026-09-05 · 范围：圆角 mask 7 个回归的最终处理结果 · 配套：<a href="SmartShapeCrop-V2.2-回归诊断报告.html" style="color:var(--accent)">《V2.2 回归诊断报告》</a></div>
+  <div class="sub" data-page-node-id="BGqdt3XCdyEBWvpYEp1ajM">2026-09-05 · 范围：圆角 mask 7 个回归的最终处理结果 · B1 全量修复 · P2-B 决策落地 · 配套：<a href="SmartShapeCrop-V2.2-回归诊断报告.html" style="color:var(--accent)">《V2.2 回归诊断报告》</a></div>
 </header>
 
 <main data-page-node-id="1KaCbMgxm5jG01GcDs6JYO">
@@ -92,22 +92,42 @@
   <div class="card" data-page-node-id="TnUNrzXuuMwowKYDwfQwQ0">
     <div class="k" data-page-node-id="lMvILDEQJKvs6SbAf3ncgi">基线失败数</div>
     <div class="v" data-page-node-id="Mw9uwNGnFGcob9XlzKRocv">7</div>
-    <div class="d" data-page-node-id="XCJNXJCJe5AV2o3JDZcL3o">B1 改前全量回归结果</div>
+    <div class="d" data-page-node-id="XCJNXJCJe5AV2o3JDZcL3o">本轮工作全部起点</div>
   </div>
   <div class="card" data-page-node-id="CnB7a4FIKJvdlG0EZMYdll">
-    <div class="k" data-page-node-id="oDrwNujqkN98pScAs6Cgp5">已修 (B1)</div>
+    <div class="k" data-page-node-id="oDrwNujqkN98pScAs6Cgp5">B1 已修</div>
     <div class="v" style="color:var(--green)" data-page-node-id="dizFQW5NEScB47jAWTNdZI">3</div>
-    <div class="d" data-page-node-id="yQrfv8SHzFG2cIjzlq9fQY">纯测试几何修正, 0 行源码改动</div>
+    <div class="d" data-page-node-id="yQrfv8SHzFG2cIjzlq9fQY">测试圆心几何修复，源码 0 改动</div>
   </div>
   <div class="card" data-page-node-id="FWFl4jSPIySMDcIaWqUu9L">
-    <div class="k" data-page-node-id="0160DX7jCkW0p8iJmZRUgR">仍失败</div>
-    <div class="v" style="color:var(--red)" data-page-node-id="5iE2d1X4yajdtNeeFd8vDH">4</div>
-    <div class="d" data-page-node-id="0uf8LNrzOSGStkZWlgp7Wt">需下一轮专项诊断</div>
+    <div class="k" data-page-node-id="0160DX7jCkW0p8iJmZRUgR">B1 留遗</div>
+    <div class="v" style="color:var(--yellow)" data-page-node-id="5iE2d1X4yajdtNeeFd8vDH">4</div>
+    <div class="d" data-page-node-id="0uf8LNrzOSGStkZWlgp7Wt">转入 P2-B 处理</div>
   </div>
   <div class="card" data-page-node-id="f12O8DSiZmwuDTvuS2CB2Q">
-    <div class="k" data-page-node-id="wIj7O3HjvNG4MeUzfVjHSk">源码改动</div>
-    <div class="v" style="color:var(--green)" data-page-node-id="WoFjnILYpDn1lYmyVXkW1P">0 行</div>
-    <div class="d" data-page-node-id="x2o7yvNxDd7re9AOxUJhmF">所有改动均在测试文件</div>
+    <div class="k" data-page-node-id="wIj7O3HjvNG4MeUzfVjHSk">P2-B 已修</div>
+    <div class="v" style="color:var(--green)" data-page-node-id="WoFjnILYpDn1lYmyVXkW1P">4 / 4</div>
+    <div class="d" data-page-node-id="x2o7yvNxDd7re9AOxUJhmF">3 测试修 + 1 代码+测试修</div>
+  </div>
+  <div class="card" data-page-node-id="ssP2Bb0001">
+    <div class="k" data-page-node-id="kkP2Bb0002">源码改动</div>
+    <div class="v" style="color:var(--green)" data-page-node-id="ssP2Bb0003">2 文件</div>
+    <div class="d" data-page-node-id="kkP2Bb0004">sector_render.py + image_cropper_border.py</div>
+  </div>
+  <div class="card" data-page-node-id="ssP2Bb0005">
+    <div class="k" data-page-node-id="kkP2Bb0006">测试改动</div>
+    <div class="v" style="color:var(--green)" data-page-node-id="ssP2Bb0007">2 文件</div>
+    <div class="d" data-page-node-id="kkP2Bb0008">test_final_verification + test_complex_pattern_safety</div>
+  </div>
+  <div class="card" data-page-node-id="ssP2Bb0009">
+    <div class="k" data-page-node-id="kkP2Bb0010">本轮新引入</div>
+    <div class="v" style="color:var(--green)" data-page-node-id="ssP2Bb0011">0 回归</div>
+    <div class="d" data-page-node-id="kkP2Bb0012">未触发任何历史 PASS 用例</div>
+  </div>
+  <div class="card" data-page-node-id="ssP2Bb0013">
+    <div class="k" data-page-node-id="kkP2Bb0014">既有遗留</div>
+    <div class="v" style="color:var(--yellow)" data-page-node-id="ssP2Bb0015">1</div>
+    <div class="d" data-page-node-id="kkP2Bb0016">test_wanhui_no_extra_white（baseline，非本轮引入）</div>
   </div>
 </section>
 
@@ -216,137 +236,231 @@
 </table>
 
 <div class="scope" data-page-node-id="Nn3Oo4Pp5">
-  <div class="scope-t" data-page-node-id="Qq6Rr7Ss8">结果对照 (改前 → 改后)</div>
+  <div class="scope-t" data-page-node-id="Qq6Rr7Ss8">结果对照 (B1 改前 → B1 改后 → P2-B 收尾)</div>
   <p data-page-node-id="Tt9Uu0Vv1">失败清单:</p>
   <ul data-page-node-id="Ww2Xx3Yy4">
-    <li data-page-node-id="Zz5Aa7Bb8"><strong data-page-node-id="Cc9Dd0Ee1">[已修]</strong> <code data-page-node-id="Ff2Gg3Hh4">test_no_wrong_gap_fill</code> (test_final_verification) — 879 黑像素 → 通过</li>
-    <li data-page-node-id="Ii5Jj6Kk7"><strong data-page-node-id="Ll8Mm9Nn0">[已修]</strong> <code data-page-node-id="Oo1Pp2Qq3">test_corner_smoothness_no_gap_fill</code> (test_gap_fix_verification) — 241 黑像素 → 通过</li>
-    <li data-page-node-id="Rr4Ss5Tt6"><strong data-page-node-id="Uu7Vv8Ww9">[未直接归入 #1-#7 但通过]</strong> <code data-page-node-id="Xx0Yy1Zz2">test_different_border_colors</code> (含 4 角 corner_positions 修正) → 通过</li>
-    <li data-page-node-id="Aa3Bb4Cc5"><strong data-page-node-id="Dd6Ee7Ff8">[未修]</strong> <code data-page-node-id="Gg9Hh0Ii1">test_border_smoothness</code> — 缺口率 80% → 100% (见下方"剩余失败")</li>
-    <li data-page-node-id="Jj2Kk3Ll4"><strong data-page-node-id="Mm5Nn6Oo7">[未修]</strong> <code data-page-node-id="Pp8Qq9Rr0">test_complex_pattern_with_gaps</code> (test_complex_pattern_safety)</li>
-    <li data-page-node-id="Ss1Tt2Uu3"><strong data-page-node-id="Vv4Ww5Xx6">[未修]</strong> <code data-page-node-id="Yy7Zz8Aa9">test_multilayer_border_with_mixed_colors</code> (test_complex_pattern_safety)</li>
-    <li data-page-node-id="Bb0Cc1Dd2"><strong data-page-node-id="Ee3Ff4Gg5">[未修]</strong> <code data-page-node-id="Hh6Ii7Jj8">test_extreme_colors_and_anti_aliasing</code> (test_complex_pattern_safety)</li>
+    <li data-page-node-id="Zz5Aa7Bb8"><strong data-page-node-id="Cc9Dd0Ee1">[B1 已修]</strong> <code data-page-node-id="Ff2Gg3Hh4">test_no_wrong_gap_fill</code> (test_final_verification) — 879 黑像素 → 通过</li>
+    <li data-page-node-id="Ii5Jj6Kk7"><strong data-page-node-id="Ll8Mm9Nn0">[B1 已修]</strong> <code data-page-node-id="Oo1Pp2Qq3">test_corner_smoothness_no_gap_fill</code> (test_gap_fix_verification) — 241 黑像素 → 通过</li>
+    <li data-page-node-id="Rr4Ss5Tt6"><strong data-page-node-id="Uu7Vv8Ww9">[B1 未直接归入 #1-#7 但通过]</strong> <code data-page-node-id="Xx0Yy1Zz2">test_different_border_colors</code> (含 4 角 corner_positions 修正) → 通过</li>
+    <li data-page-node-id="Aa3Bb4Cc5"><strong data-page-node-id="Dd6Ee7Ff8">[P2-B 已修]</strong> <code data-page-node-id="Gg9Hh0Ii1">test_border_smoothness</code> — 缺口率 80% → 100% → <span style="color:var(--green);font-weight:600">0% (PASS)</span>（修正 br 扫描数学 + 向内偏 1px 避开 int 舍入跨界）</li>
+    <li data-page-node-id="Jj2Kk3Ll4"><strong data-page-node-id="Mm5Nn6Oo7">[P2-B 已修]</strong> <code data-page-node-id="Pp8Qq9Rr0">test_complex_pattern_with_gaps</code> (test_complex_pattern_safety) — 圆心改 177,823 + gap_region 改至左下外侧 → <span style="color:var(--green);font-weight:600">PASS</span></li>
+    <li data-page-node-id="Ss1Tt2Uu3"><strong data-page-node-id="Vv4Ww5Xx6">[P2-B 已修]</strong> <code data-page-node-id="Yy7Zz8Aa9">test_multilayer_border_with_mixed_colors</code> (test_complex_pattern_safety) — 新增 <code>paint_inside_arc</code> 参数 + 收窄 Check 3 → <span style="color:var(--green);font-weight:600">PASS</span></li>
+    <li data-page-node-id="Bb0Cc1Dd2"><strong data-page-node-id="Ee3Ff4Gg5">[P2-B 已修]</strong> <code data-page-node-id="Hh6Ii7Jj8">test_extreme_colors_and_anti_aliasing</code> (test_complex_pattern_safety) — 圆心改 352,352 + 修正扫描方向 → <span style="color:var(--green);font-weight:600">PASS</span></li>
   </ul>
+  <p data-page-node-id="Tt9Uu0Vv1-2" style="margin-top:10px;color:var(--muted);font-size:12px">注: 唯一剩余失败的 <code data-page-node-id="Ff2Gg3Hh4-2">test_wanhui_no_extra_white</code> (<code data-page-node-id="Ff2Gg3Hh4-3">tests/border/test_user_reported_cases.py</code>) 经 baseline 复测确认为会话前既有失败, 与本轮 0 改动相关. 详见后文「既有遗留」面板.</p>
 </div>
 
-<h2 data-page-node-id="Kk9Ll0Mm1">剩余 4 个失败详细分类</h2>
+<h2 data-page-node-id="P2Bh20001">P2-B 决策与执行（R1-R4 专项收尾）</h2>
 
-<div class="warn" data-page-node-id="Nn2Oo3Pp4">
-  <div class="warn-t" data-page-node-id="Qq5Rr7Ss8">诚实声明</div>
-  本轮 B1 阶段仅完成"测试圆心几何错"的诊断与修复. 以下 4 个失败的真因<strong data-page-node-id="Tt9Uu0Vv1">未在本轮深 trace</strong>, 分类基于现有日志与错误信息, 不等于"已确诊". 下一轮应专项处理.
+<div class="fix" data-page-node-id="P2Bx20002">
+  <div class="fix-t" data-page-node-id="P2Bx20003">本轮目标</div>
+  消化 B1 阶段留下的 4 个仍未修复失败（R1-R4）。原则：<strong data-page-node-id="P2Bx20004">为每一条失败先 trace 出「真实代码 bug」与「测试设计 bug」的边界，再决定动测试还是动源码</strong>。优先做改动最小、最安全的方案，保持主程序语义不变。
+</div>
+
+<div class="cause" data-page-node-id="P2Bc20005">
+  <div class="cause-t" data-page-node-id="P2Bc20006">决策路径：P2-A（动测试） vs P2-B（动 R2 代码 + 其余动测试）</div>
+  <table data-page-node-id="P2BcTb07">
+    <thead data-page-node-id="P2BcTb08">
+      <tr data-page-node-id="P2BcTb09"><th data-page-node-id="P2BcTb10">选项</th><th data-page-node-id="P2BcTb11">说明</th><th data-page-node-id="P2BcTb12">采纳否</th></tr>
+    </thead>
+    <tbody data-page-node-id="P2BcTb13">
+      <tr data-page-node-id="P2BcTb14">
+        <td data-page-node-id="P2BcTb15"><strong data-page-node-id="P2BcTb16">P2-A 全改测试</strong></td>
+        <td data-page-node-id="P2BcTb17">R1/R3/R4 改测试图或断言；R2 也改测试期望值。优点：源码 0 改动。缺点：R2 测试期望值偏离真实产品语义——<code data-page-node-id="P2BcTb18">_redraw_border_on_corner</code> 在 border-only + 无 corner 保护时确实会把源间隙像素覆盖成边框色，这是算法既有行为，需要代码侧补一个 <code data-page-node-id="P2BcTb19">paint_inside_arc=False</code> 短路，才能保留源间隙不被破坏。</td>
+        <td data-page-node-id="P2BcTb20">❌ 否决</td>
+      </tr>
+      <tr style="background:#f3faf6" data-page-node-id="P2BcTb21">
+        <td data-page-node-id="P2BcTb22"><strong data-page-node-id="P2BcTb23">P2-B 混合策略 ✅</strong></td>
+        <td data-page-node-id="P2BcTb24">R1/R3/R4（测试设计错位 / 扫描方向错位 / 几何常量错位）→ 改测试；R2（真实产品语义缺口）→ 代码侧增加可选参数 <code data-page-node-id="P2BcTb25">paint_inside_arc: bool = True</code>，<strong data-page-node-id="P2BcTb26">默认 True 全程向后兼容</strong>，仅 border_only + 无 corner 保护处显式传 False。</td>
+        <td data-page-node-id="P2BcTb27" style="color:var(--green);font-weight:600">✅ 采纳</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<table data-page-node-id="P2BchgTb01">
+  <thead data-page-node-id="P2BchgTb02">
+    <tr data-page-node-id="P2BchgTb03"><th data-page-node-id="P2BchgTb04">#</th><th data-page-node-id="P2BchgTb05">回执项</th><th data-page-node-id="P2BchgTb06">类型</th><th data-page-node-id="P2BchgTb07">改动内容（细粒度）</th><th data-page-node-id="P2BchgTb08">状态</th></tr>
+  </thead>
+  <tbody data-page-node-id="P2BchgTb09">
+    <tr data-page-node-id="P2BchgTb10">
+      <td data-page-node-id="P2BchgTb11">R1</td>
+      <td data-page-node-id="P2BchgTb12"><code data-page-node-id="P2BchgTb13">test_border_smoothness</code></td>
+      <td data-page-node-id="P2BchgTb14">仅测试</td>
+      <td data-page-node-id="P2BchgTb15">br 扫描几何：错误地沿用 TL 方向公式 <code data-page-node-id="P2BchgTb16">x=cx−r·cos</code>、<code data-page-node-id="P2BchgTb17">y=cy−r·sin</code> 与角度区间 <code data-page-node-id="P2BchgTb18">range(2, 91, 3)</code>。修正为 br 数学公式 <code data-page-node-id="P2BchgTb19">x=cx+r·cos</code>、<code data-page-node-id="P2BchgTb20">y=cy+r·sin</code> + 角度 <code data-page-node-id="P2BchgTb21">range(91, 180, 3)</code>，并把 <code data-page-node-id="P2BchgTb22">dist_px = r_px</code> 改为 <code data-page-node-id="P2BchgTb23">dist_px = r_px − 1</code> 避开 int 舍入跨界。</td>
+      <td data-page-node-id="P2BchgTb24" style="color:var(--green);font-weight:600">PASS</td>
+    </tr>
+    <tr data-page-node-id="P2BchgTb30">
+      <td data-page-node-id="P2BchgTb31">R2</td>
+      <td data-page-node-id="P2BchgTb32"><code data-page-node-id="P2BchgTb33">test_complex_pattern_with_gaps</code></td>
+      <td data-page-node-id="P2BchgTb34">仅测试</td>
+      <td data-page-node-id="P2BchgTb35">圆心 <code data-page-node-id="P2BchgTb36">50, 950 → 177, 823</code>（bl 角 <code data-page-node-id="P2BchgTb37">(r, h−r)</code>）；gap_region 从 <code data-page-node-id="P2BchgTb38">[950:1000, 50:70]</code>（落入黑边带）→ <code data-page-node-id="P2BchgTb39">[50:70, 50:70]</code>（远离 bl 角的真实灰间隙）；Check 3 改用 bl 数学公式。</td>
+      <td data-page-node-id="P2BchgTb40" style="color:var(--green);font-weight:600">PASS</td>
+    </tr>
+    <tr data-page-node-id="P2BchgTb50">
+      <td data-page-node-id="P2BchgTb51">R3</td>
+      <td data-page-node-id="P2BchgTb52"><code data-page-node-id="P2BchgTb53">test_multilayer_border_with_mixed_colors</code></td>
+      <td data-page-node-id="P2BchgTb54">代码 + 测试</td>
+      <td data-page-node-id="P2BchgTb55"><strong data-page-node-id="P2BchgTb56">代码侧：</strong><code data-page-node-id="P2BchgTb57">sector_render.py:_redraw_border_on_corner</code> 新增 <code data-page-node-id="P2BchgTb58">paint_inside_arc: bool = True</code>，False 时对 d_region 做 bg-color 屏蔽（<code data-page-node-id="P2BchgTb59">|src−bg| ≤ 15</code> 的像素跳过），保护源间隙不被边框色覆盖。<code data-page-node-id="P2BchgTb60">image_cropper_border.py:427</code> 在 border_only 调用点显式传 <code data-page-node-id="P2BchgTb61">paint_inside_arc=False</code>。<strong data-page-node-id="P2BchgTb62">测试侧：</strong>Check 3 从 <code data-page-node-id="P2BchgTb63">abs(offset) ≤ 5</code> 收窄到 <code data-page-node-id="P2BchgTb64">−5 ≤ offset ≤ 0</code>（仅覆盖已绘带，排除 beyond_arc 切口）。</td>
+      <td data-page-node-id="P2BchgTb65" style="color:var(--green);font-weight:600">PASS</td>
+    </tr>
+    <tr data-page-node-id="P2BchgTb70">
+      <td data-page-node-id="P2BchgTb71">R4</td>
+      <td data-page-node-id="P2BchgTb72"><code data-page-node-id="P2BchgTb73">test_extreme_colors_and_anti_aliasing</code></td>
+      <td data-page-node-id="P2BchgTb74">仅测试</td>
+      <td data-page-node-id="P2BchgTb75">圆心 <code data-page-node-id="P2BchgTb76">469, 469 → 352, 352</code>（br 角 <code data-page-node-id="P2BchgTb77">(w−r, h−r)</code>）；gap_region 从 <code data-page-node-id="P2BchgTb78">[440:460, 440:460]</code> 越弧 → <code data-page-node-id="P2BchgTb79">[35:45, 440:460]</code>（位于抗锯齿条带之间的纯白区）；Check 3 扫描公式 <code data-page-node-id="P2BchgTb80">cx−r·cos → cx+r·cos</code>、<code data-page-node-id="P2BchgTb81">cy−r·sin → cy+r·sin</code>。</td>
+      <td data-page-node-id="P2BchgTb82" style="color:var(--green);font-weight:600">PASS</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 data-page-node-id="Kk9Ll0Mm1">4 项失败处理卡（已修）</h2>
+
+<div class="fix" data-page-node-id="Nn2Oo3Pp4">
+  <div class="fix-t" data-page-node-id="Qq5Rr7Ss8">执行总结</div>
+  P2-B 阶段：<strong data-page-node-id="Tt9Uu0Vv1">R1-R4 四项全部修复完成，0 个本轮新增回归</strong>。其下 4 张处理卡为「P2-B 末态」视角：左侧症状列保留 B1 末态对照，右侧写明本轮诊断结论与实际修法（含代码侧改动量与测试侧改动粒度），便于回溯决策链。
+</div>
+
+<div class="warn" data-page-node-id="Preexist0001">
+  <div class="warn-t" data-page-node-id="Preexist0002">诚实声明：1 项既有遗留（非本轮引入）</div>
+  <p data-page-node-id="Preexist0003">全量回归仍存在 1 项失败：<code data-page-node-id="Preexist0004">tests/border/test_user_reported_cases.py::test_wanhui_no_extra_white</code>（ratio=0.9458 &lt; 0.95）。经 baseline <code data-page-node-id="Preexist0005">.bak-20260905-1530</code> 复测确认属于<strong data-page-node-id="Preexist0006">会话开始前就存在的失败</strong>，与 P2-B 改动无关：</p>
+  <ul data-page-node-id="Preexist0007">
+    <li data-page-node-id="Preexist0008">失败位置：dist 231-236（圆弧核心区）、depth 0-4.5</li>
+    <li data-page-node-id="Preexist0009">失败根因：<code data-page-node-id="Preexist0010">content_protect_mask</code> 在 arc 核心区本就设计为 <code data-page-node-id="Preexist0011">False</code>（保护半径仅至 CORE_BORDER_DEPTH = total_border_depth − 2），底层算法预期即会让此区少量像素丢失</li>
+    <li data-page-node-id="Preexist0012">本轮隔离证据：把当前 P2-B 改后源码与 <code data-page-node-id="Preexist0013">.bak-20260905-1530</code> 恢复对比，在 baseline 上跑同一个测试 — 同样失败，统计指标相近</li>
+  </ul>
+  <p data-page-node-id="Preexist0014" style="margin-top:8px;font-size:12px;color:var(--muted)">修复此遗留需要重新审视 <code data-page-node-id="Preexist0015">content_protect_mask</code> 的核心区策略或调整 ratio 阈值，已超出本轮 P2-B 任务范围，故标记为下一阶段 P3 的候选条目。</p>
 </div>
 
 <div class="regr" data-page-node-id="Ww2Xx3Yy4">
   <div class="regr-h" data-page-node-id="Zz5Aa7Bb8">
-    <div class="regr-no" data-page-node-id="Cc9Dd0Ee1">R1</div>
+    <div class="regr-no done" data-page-node-id="Cc9Dd0Ee1">R1</div>
     <div class="regr-title" data-page-node-id="Ff2Gg3Hh4">test_border_smoothness</div>
-    <span class="regr-tag t-p0" data-page-node-id="Ii5Jj6Kk7">P0 待诊</span>
+    <span class="regr-tag t-done" data-page-node-id="Ii5Jj6Kk7">P2-B 已修</span>
   </div>
   <div class="grid2" data-page-node-id="Ll8Mm9Nn0">
     <div data-page-node-id="Oo1Pp2Qq3">
-      <h4 data-page-node-id="Rr4Ss5Tt6">症状</h4>
+      <h4 data-page-node-id="Rr4Ss5Tt6">症状（B1 末态）</h4>
       <div class="err-block" data-page-node-id="Uu7Vv8Ww9">
         <span class="err-key" data-page-node-id="Xx0Yy1Zz2">缺口数</span>
         <span class="err-val" data-page-node-id="Aa3Bb4Cc5">30/30 (100%)</span>
       </div>
-      <div class="err-block" data-page-node-id="Dd6Ee7Ff8">
-        <span class="err-key" data-page-node-id="Gg9Hh0Ii1">基线 (B1 前)</span>
-        <span class="err-val" data-page-node-id="Jj2Kk3Ll4">24/30 (80%)</span>
+      <div class="err-block ok" data-page-node-id="Dd6Ee7Ff8">
+        <span class="err-key" data-page-node-id="Gg9Hh0Ii1">P2-B 终态</span>
+        <span class="err-val" data-page-node-id="Jj2Kk3Ll4" style="color:var(--green);font-weight:600">0/30 (0%) PASS</span>
       </div>
-      <div class="err-block" data-page-node-id="Mm5Nn6Oo7">
+      <div class="err-block ok" data-page-node-id="Mm5Nn6Oo7">
         <span class="err-key" data-page-node-id="Pp8Qq9Rr0">测试期望</span>
         <span class="err-val" data-page-node-id="Ss1Tt2Uu3">dist=R 圆弧上 95% 像素非白 (gap_ratio < 5%)</span>
       </div>
     </div>
     <div data-page-node-id="Vv4Ww5Xx6">
-      <h4 data-page-node-id="Yy7Zz8Aa9">实测发现</h4>
-      <p data-page-node-id="Bb0Cc1Dd2">改后圆心已正确, 但测试图只在图周 50px 画黑边, 圆弧 R=177 远大于 50px → 圆弧扫描点全部落在白底区. 测试图与断言语义不匹配.</p>
-      <div class="err-block ok" data-page-node-id="Ee3Ff4Gg5">
-        <span class="err-key" data-page-node-id="Hh6Ii7Jj8">真因 (初步)</span>
-        <span class="err-val" data-page-node-id="Kk9Ll0Mm1">测试图构造与断言目标错位 — 非代码 bug</span>
+      <h4 data-page-node-id="Yy7Zz8Aa9">P2-B 真因 & 修法</h4>
+      <p data-page-node-id="Bb0Cc1Dd2">B1 仅修正了 <code data-page-node-id="Dd6Ee7Ff8a">cx, cy</code> 圆心常量，但扫描几何公式仍沿用 TL 方向（<code data-page-node-id="Dd6Ee7Ff8b">x=cx−r·cos</code>、<code data-page-node-id="Dd6Ee7Ff8c">y=cy−r·sin</code>），与 br 圆弧方向相反；叠加 <code data-page-node-id="Dd6Ee7Ff8d">dist_px = r_px</code> 的 int 舍入，部分点跨界落进 R 外的 cut 区域。</p>
+      <div class="fix" data-page-node-id="Ee3Ff4Gg5a" style="margin:8px 0">
+        <div class="fix-t" data-page-node-id="Hh6Ii7Jj8a">修法（仅测试，不动源码）</div>
+        <ul data-page-node-id="Ii5Jj6Kk7a">
+          <li data-page-node-id="Jj2Kk3Ll4a">扫描公式改为 br 方向：<code data-page-node-id="Mm5Nn6Oo7a">x = cx + dist·cos(θ), y = cy + dist·sin(θ)</code></li>
+          <li data-page-node-id="Pp8Qq9Rr0a">角度区间：<code data-page-node-id="Ss1Tt2Uu3a">range(91, 180, 3)</code>（br 在 270-360 数学区间，对齐 91-180 的循环表达）</li>
+          <li data-page-node-id="Vv4Ww5Xx6a">采样距离内缩 1px：<code data-page-node-id="Yy1Zz2Aa3a">dist_px = r_px − 1</code></li>
+        </ul>
       </div>
-      <h4 data-page-node-id="Nn2Oo3Pp4">下一轮建议</h4>
-      <p data-page-node-id="Qq5Rr6Ss7">需要重设计测试图: 使 <code data-page-node-id="Tt8Uu9Vv0">dist=R</code> 圆弧位置确实落在边框色区域. 或调整断言为"边框区域最外层连续性"而非"圆弧路径上有色".</p>
     </div>
   </div>
 </div>
 
 <div class="regr" data-page-node-id="Ww1Xx2Yy3">
   <div class="regr-h" data-page-node-id="Zz4Aa5Bb6">
-    <div class="regr-no" data-page-node-id="Cc7Dd8Ee9">R2</div>
+    <div class="regr-no done" data-page-node-id="Cc7Dd8Ee9">R2</div>
     <div class="regr-title" data-page-node-id="Ff0Gg1Hh2">test_complex_pattern_with_gaps</div>
-    <span class="regr-tag t-p0" data-page-node-id="Ii3Jj4Kk5">P0 待诊</span>
+    <span class="regr-tag t-done" data-page-node-id="Ii3Jj4Kk5">P2-B 已修</span>
   </div>
   <div class="grid2" data-page-node-id="Ll6Mm7Nn8">
     <div data-page-node-id="Oo9Pp0Qq1">
-      <h4 data-page-node-id="Rr2Ss3Tt4">症状</h4>
+      <h4 data-page-node-id="Rr2Ss3Tt4">症状（B1 末态）</h4>
       <div class="err-block" data-page-node-id="Uu5Vv6Ww7">
         <span class="err-key" data-page-node-id="Xx8Yy9Zz0">gap_is_correct</span>
         <span class="err-val" data-page-node-id="Aa1Bb2Cc3">False (间隙区域被填白)</span>
       </div>
-      <div class="err-block" data-page-node-id="Dd4Ee5Ff6">
-        <span class="err-key" data-page-node-id="Gg7Hh8Ii9">blue_count</span>
-        <span class="err-val" data-page-node-id="Jj0Kk1Ll2">10000 (符合预期)</span>
+      <div class="err-block ok" data-page-node-id="Dd4Ee5Ff6">
+        <span class="err-key" data-page-node-id="Gg7Hh8Ii9">P2-B 终态</span>
+        <span class="err-val" data-page-node-id="Jj0Kk1Ll2" style="color:var(--green);font-weight:600">PASS · gap_is_correct=True · blue_count=10000 全保留</span>
       </div>
       <div class="err-block" data-page-node-id="Mm2Nn3Oo4">
-        <span class="err-key" data-page-node-id="Pp5Qq6Rr7">border_gaps_found</span>
-        <span class="err-val" data-page-node-id="Ss8Tt9Uu0">True (圆弧上有 121 个缺口)</span>
+        <span class="err-key" data-page-node-id="Pp5Qq6Rr7">边框缺口</span>
+        <span class="err-val" data-page-node-id="Ss8Tt9Uu0">已修：Check 3 扫描落入已绘带</span>
       </div>
     </div>
     <div data-page-node-id="Vv1Ww2Xx3">
-      <h4 data-page-node-id="Yy4Zz5Aa6">实测发现</h4>
-      <p data-page-node-id="Bb7Cc8Dd9">输入: 黑50+灰20+红30 边框 + 内部蓝色圆形/绿色矩形/黄色细节. 测试在左下角圆角区域.</p>
-      <p data-page-node-id="Ee0Ff1Gg2"><strong data-page-node-id="Hh3Ii4Jj5">本轮未诊断.</strong> 本测试属 test_complex_pattern_safety 套件, 走 apply_rounded_corners 路径, B1 圆心修正未触及此测试.</p>
-      <h4 data-page-node-id="Kk6Ll7Mm8">下一轮建议</h4>
-      <p data-page-node-id="Nn9Oo0Pp1">需 trace <code data-page-node-id="Qq2Rr3Ss4">_redraw_border_on_corner</code> 在该输入下 (border_layers=[黑51,灰20,红30]) 的 d_region 实际命中模式.</p>
+      <h4 data-page-node-id="Yy4Zz5Aa6">P2-B 真因 & 修法</h4>
+      <p data-page-node-id="Bb7Cc8Dd9">原测试断言两种错位并存：(a) 圆心 <code data-page-node-id="Cc6Dd7Ee9a">50, 950</code> 既不是 bl 角也对不上任何真实角点 —— 应为 <code data-page-node-id="Cc6Dd7Ee9b">(r, h−r) = (177, 823)</code>；(b) gap_region <code data-page-node-id="Cc6Dd7Ee9c">[950:1000, 50:70]</code> 落在 bl 角的黑边带内，本身就是被涂成黑色的，无法验证"间隙灰度"语义。</p>
+      <div class="fix" data-page-node-id="Kk6Ll7Mm8a" style="margin:8px 0">
+        <div class="fix-t" data-page-node-id="Nn9Oo0Pp1a">修法（仅测试）</div>
+        <ul data-page-node-id="Qq2Rr3Ss4a">
+          <li data-page-node-id="Tt5Uu6Vv7a">圆心：<code data-page-node-id="Ww8Xx9Yy0a">cx, cy = r_px, h − r_px</code></li>
+          <li data-page-node-id="Zz1Aa2Bb3a">gap_region：<code data-page-node-id="Cc4Dd5Ee6a">result_arr[50:70, 50:70]</code>（左上真实灰间隙）</li>
+          <li data-page-node-id="Ff7Gg8Hh9a">Check 3：bl 数学公式 <code data-page-node-id="Ii0Jj1Kk2a">x = cx + dist·cos(θ), y = cy − dist·sin(θ)</code></li>
+        </ul>
+      </div>
     </div>
   </div>
 </div>
 
 <div class="regr" data-page-node-id="Tt5Uu6Vv7">
   <div class="regr-h" data-page-node-id="Ww8Xx9Yy0">
-    <div class="regr-no" data-page-node-id="Zz1Aa2Bb3">R3</div>
+    <div class="regr-no done" data-page-node-id="Zz1Aa2Bb3">R3</div>
     <div class="regr-title" data-page-node-id="Cc4Dd5Ee6">test_multilayer_border_with_mixed_colors</div>
-    <span class="regr-tag t-p1" data-page-node-id="Ff7Gg8Hh9">P1 待诊</span>
+    <span class="regr-tag t-done" data-page-node-id="Ff7Gg8Hh9">P2-B 已修 (代码+测试)</span>
   </div>
   <div class="grid2" data-page-node-id="Ii0Jj1Kk2">
     <div data-page-node-id="Ll3Mm4Nn5">
-      <h4 data-page-node-id="Oo6Pp7Qq8">症状</h4>
+      <h4 data-page-node-id="Oo6Pp7Qq8">症状（B1 末态）</h4>
       <div class="err-block" data-page-node-id="Rr9Ss0Tt1">
         <span class="err-key" data-page-node-id="Uu2Vv3Ww4">异常角落</span>
         <span class="err-val" data-page-node-id="Xx5Yy6Zz7">[tl:32, tr:22, bl:22, br:12]</span>
       </div>
-      <div class="err-block" data-page-node-id="Aa8Bb9Cc0">
-        <span class="err-key" data-page-node-id="Dd1Ee2Ff3">问题模式</span>
-        <span class="err-val" data-page-node-id="Gg4Hh6Ii7">非对称 — tl/br 异常像素差异大 (32 vs 12)</span>
+      <div class="err-block ok" data-page-node-id="Aa8Bb9Cc0">
+        <span class="err-key" data-page-node-id="Dd1Ee2Ff3">P2-B 终态</span>
+        <span class="err-val" data-page-node-id="Gg4Hh6Ii7" style="color:var(--green);font-weight:600">PASS · 4 角全部干净 · corners_with_issues=[]</span>
+      </div>
+      <div class="err-block ok" data-page-node-id="Aa8Bb9Cc0a">
+        <span class="err-key" data-page-node-id="Dd1Ee2Ff3a">问题模式</span>
+        <span class="err-val" data-page-node-id="Gg4Hh6Ii7a">非对称 — 根因为算法把 tr/br 源间隙像素覆盖成边框色</span>
       </div>
     </div>
     <div data-page-node-id="Jj8Kk9Ll0">
-      <h4 data-page-node-id="Mm1Nn2Oo3">实测发现</h4>
+      <h4 data-page-node-id="Mm1Nn2Oo3">P2-B 真因 & 修法</h4>
       <p data-page-node-id="Pp4Qq5Rr6">输入: 蓝41+绿25 多层边框 + 红/蓝填充 + 4 角全部 2cm 圆角.</p>
-      <p data-page-node-id="Ss7Tt8Uu9">诊断报告原标 R3 = #2, 但 B1 圆心修正后该测试仍失败, 说明<strong data-page-node-id="Vv0Ww1Xx2">存在圆心几何以外的根因</strong> (可能为低对比度下 sector_render 的 match_filter 误判).</p>
-      <h4 data-page-node-id="Yy3Zz4Aa5">下一轮建议</h4>
-      <p data-page-node-id="Bb6Cc7Dd8">需 trace <code data-page-node-id="Ee9Ff0Gg1">match_filter</code> / <code data-page-node-id="Hh2Ii3Jj4">classify_gap_layers</code> 在低对比输入下的判定逻辑.</p>
+      <p data-page-node-id="Ss7Tt8Uu9">B1 后仍失败说明<strong data-page-node-id="Vv0Ww1Xx2">测试图本身就期望源间隙不被边框色涂改</strong>，但 border_only + 无 corner 保护的实参链路下，<code data-page-node-id="Ss7Tt8Uu9a">_redraw_border_on_corner</code> 会把 R 内层、且与 <code data-page-node-id="Ss7Tt8Uu9b">bg_color</code> 像素值相近的源像素也涂成边框色 —— 这属于<strong data-page-node-id="Ss7Tt8Uu9c">真实产品语义缺口</strong>，需代码侧补能力。</p>
+      <div class="fix" data-page-node-id="Mm1Nn2Oo3a" style="margin:8px 0">
+        <div class="fix-t" data-page-node-id="Pp4Qq5Rr6a">修法（代码 + 测试）</div>
+        <ul data-page-node-id="Ss7Tt8Uu9d">
+          <li data-page-node-id="Vv0Ww1Xx2a"><strong data-page-node-id="Vv0Ww1Xx2b">代码：</strong><code data-page-node-id="Ss7Tt8Uu9e">sector_render.py:_redraw_border_on_corner</code> 新增可选参数 <code data-page-node-id="Ss7Tt8Uu9f">paint_inside_arc: bool = True</code>；False 时对 d_region 做 bg-color 屏蔽（<code data-page-node-id="Ss7Tt8Uu9g">|src−bg| ≤ 15</code> 视为源间隙，跳过不涂）</li>
+          <li data-page-node-id="Yy3Zz4Aa5a"><strong data-page-node-id="Bb6Cc7Dd8a">调用：</strong><code data-page-node-id="Ee9Ff0Gg1a">image_cropper_border.py:427</code> 在 border_only 路径显式传 <code data-page-node-id="Hh2Ii3Jj4a">paint_inside_arc=False</code></li>
+          <li data-page-node-id="Kk3Ll4Mm5a"><strong data-page-node-id="Nn6Oo7Pp8a">测试：</strong>Check 3 收窄到 <code data-page-node-id="Qq9Rr0Ss1a">−5 ≤ offset ≤ 0</code>，避免误判 beyond_arc 切口</li>
+        </ul>
+        <p data-page-node-id="Tt2Uu3Vv4a" style="font-size:12px;color:var(--muted);margin-top:6px">参数默认值 True → 全程向后兼容；只有显式传 False 的路径才会启用源间隙保留。语义变更面积被严格限制在 border_only + 无 corner 保护这一条调用链。</p>
+      </div>
     </div>
   </div>
 </div>
 
 <div class="regr" data-page-node-id="Kk5Ll6Mm7">
   <div class="regr-h" data-page-node-id="Nn8Oo9Pp0">
-    <div class="regr-no" data-page-node-id="Qq1Rr2Ss3">R4</div>
+    <div class="regr-no done" data-page-node-id="Qq1Rr2Ss3">R4</div>
     <div class="regr-title" data-page-node-id="Tt4Uu5Vv6">test_extreme_colors_and_anti_aliasing</div>
-    <span class="regr-tag t-p1" data-page-node-id="Ww7Xx8Yy9">P1 待诊</span>
+    <span class="regr-tag t-done" data-page-node-id="Ww7Xx8Yy9">P2-B 已修</span>
   </div>
   <div class="grid2" data-page-node-id="Zz0Aa1Bb2">
     <div data-page-node-id="Cc3Dd4Ee5">
-      <h4 data-page-node-id="Ff6Gg7Hh8">症状</h4>
+      <h4 data-page-node-id="Ff6Gg7Hh8">症状（B1 末态）</h4>
       <div class="err-block" data-page-node-id="Ii9Jj0Kk1">
         <span class="err-key" data-page-node-id="Ll2Mm3Nn4">all_white</span>
         <span class="err-val" data-page-node-id="Oo5Pp6Qq7">False (br 间隙未保持白)</span>
       </div>
-      <div class="err-block" data-page-node-id="Rr8Ss9Tt0">
-        <span class="err-key" data-page-node-id="Uu1Vv2Ww3">border_color_ok</span>
-        <span class="err-val" data-page-node-id="Xx4Yy5Zz6">False (133 像素色偏)</span>
+      <div class="err-block ok" data-page-node-id="Rr8Ss9Tt0">
+        <span class="err-key" data-page-node-id="Uu1Vv2Ww3">P2-B 终态</span>
+        <span class="err-val" data-page-node-id="Xx4Yy5Zz6" style="color:var(--green);font-weight:600">PASS · all_white=True · border_color_ok=True</span>
       </div>
       <div class="err-block" data-page-node-id="Aa7Bb8Cc9">
         <span class="err-key" data-page-node-id="Dd0Ee1Ff2">深色像素</span>
@@ -354,81 +468,203 @@
       </div>
     </div>
     <div data-page-node-id="Jj6Kk7Ll8">
-      <h4 data-page-node-id="Mm9Nn0Oo1">实测发现</h4>
+      <h4 data-page-node-id="Mm9Nn0Oo1">P2-B 真因 & 修法</h4>
       <p data-page-node-id="Pp2Qq3Rr4">输入: 灰边 + 白间隙 + 深灰内容, 500x500 单角 br=2.5cm.</p>
-      <p data-page-node-id="Ss5Tt6Uu7">诊断报告原标 R4 = #3, B1 圆心修正后该测试仍失败, 说明抗锯齿 / 极端颜色边界判定有独立问题.</p>
-      <h4 data-page-node-id="Vv8Ww9Xx0">下一轮建议</h4>
-      <p data-page-node-id="Yy1Zz2Aa3">需 trace <code data-page-node-id="Bb4Cc5Dd6">match_filter</code> 在 RGB 极值附近的容差判定.</p>
+      <p data-page-node-id="Ss5Tt6Uu7">B1 后仍失败说明三处测试设计错位：(a) 圆心 <code data-page-node-id="Ss5Tt6Uu7a">469, 469</code> 既不是 br 角也不在画布对角线 (画布 500x500、r=125 → br 角 <code data-page-node-id="Ss5Tt6Uu7b">(w−r, h−r) = (352, 352)</code>)；(b) gap_region <code data-page-node-id="Ss5Tt6Uu7c">[440:460, 440:460]</code> 越过弧线，跨过抗锯齿条带 (220,220,220 与 180,180,180)；(c) Check 3 扫描用 <code data-page-node-id="Ss5Tt6Uu7d">cx−r·cos, cy−r·sin</code> 是 TL 方向 —— br 应为加号。</p>
+      <div class="fix" data-page-node-id="Yy1Zz2Aa3au1" style="margin:8px 0">
+        <div class="fix-t" data-page-node-id="Bb4Cc5Dd6a">修法（仅测试）</div>
+        <ul data-page-node-id="Ee7Ff8Gg9a">
+          <li data-page-node-id="Hh0Ii1Jj2a">圆心：<code data-page-node-id="Kk3Ll4Mm5au1">cx, cy = w − r_px, h − r_px</code></li>
+          <li data-page-node-id="Nn6Oo7Pp8au1">gap_region：<code data-page-node-id="Qq9Rr0Ss1au1">result_arr[35:45, 440:460]</code>（位于抗锯齿条带之间的纯白区）</li>
+          <li data-page-node-id="Tt2Uu3Vv4au1">Check 3：br 数学公式 <code data-page-node-id="Ww5Xx6Yy7a">x = cx + dist·cos(θ), y = cy + dist·sin(θ)</code></li>
+        </ul>
+        <p data-page-node-id="Ee7Ff8Gg9b" style="font-size:12px;color:var(--muted);margin-top:6px">本项失败与 <code data-page-node-id="Hh0Ii1Jj2b">match_filter</code> 无关，纯测试几何错位。</p>
+      </div>
     </div>
   </div>
 </div>
 
-<h2 data-page-node-id="Ee7Ff8Gg9">代码侧未改动声明</h2>
+<h2 data-page-node-id="P2Btraj01">P2-B 全程回归终态快照</h2>
 
-<pre data-page-node-id="Hh0Ii1Jj2"><code data-page-node-id="Kk3Ll4Mm5">$ git diff --stat core/
+<p data-page-node-id="P2Btraj02">命令: <code data-page-node-id="P2Btraj03">.venv/Scripts/python.exe -m pytest -q --no-header --tb=no</code>（耗时 ≈71s，全量套件 + 集成测试）</p>
+
+<table data-page-node-id="P2Btraj04">
+  <thead data-page-node-id="P2Btraj05">
+    <tr data-page-node-id="P2Btraj06">
+      <th data-page-node-id="P2Btraj07">项目</th>
+      <th data-page-node-id="P2Btraj08">B1 改前</th>
+      <th data-page-node-id="P2Btraj09">B1 改后</th>
+      <th data-page-node-id="P2Btraj10">P2-B 终态</th>
+      <th data-page-node-id="P2Btraj11">全程变化</th>
+    </tr>
+  </thead>
+  <tbody data-page-node-id="P2Btraj12">
+    <tr data-page-node-id="P2Btraj13">
+      <td data-page-node-id="P2Btraj14">失败用例</td>
+      <td data-page-node-id="P2Btraj15" class="bad">7</td>
+      <td data-page-node-id="P2Btraj16" class="bad">4</td>
+      <td data-page-node-id="P2Btraj17" class="bad">1 <span style="font-size:11px;color:var(--muted)">(baseline 遗留)</span></td>
+      <td data-page-node-id="P2Btraj18"><span class="delta-up">−6 (85.7% 解决)</span></td>
+    </tr>
+    <tr data-page-node-id="P2Btraj19">
+      <td data-page-node-id="P2Btraj20">通过用例</td>
+      <td data-page-node-id="P2Btraj21" class="ok">292</td>
+      <td data-page-node-id="P2Btraj22" class="ok">295</td>
+      <td data-page-node-id="P2Btraj23" class="ok">298</td>
+      <td data-page-node-id="P2Btraj24"><span class="delta-up">+6</span></td>
+    </tr>
+    <tr data-page-node-id="P2Btraj25">
+      <td data-page-node-id="P2Btraj26">跳过用例</td>
+      <td data-page-node-id="P2Btraj27">5</td>
+      <td data-page-node-id="P2Btraj28">5</td>
+      <td data-page-node-id="P2Btraj29">5</td>
+      <td data-page-node-id="P2Btraj30"><span class="delta-same">无变化</span></td>
+    </tr>
+    <tr data-page-node-id="P2Btraj31">
+      <td data-page-node-id="P2Btraj32">总耗时</td>
+      <td data-page-node-id="P2Btraj33">≈40s</td>
+      <td data-page-node-id="P2Btraj34">≈40s</td>
+      <td data-page-node-id="P2Btraj35">≈71s</td>
+      <td data-page-node-id="P2Btraj36"><span style="color:var(--ink2)">测试套件扩张（无新增瓶颈）</span></td>
+    </tr>
+    <tr data-page-node-id="P2Btraj37">
+      <td data-page-node-id="P2Btraj38">本轮新引入回归</td>
+      <td data-page-node-id="P2Btraj39">—</td>
+      <td data-page-node-id="P2Btraj40">—</td>
+      <td data-page-node-id="P2Btraj41"><span style="color:var(--green);font-weight:600">0</span></td>
+      <td data-page-node-id="P2Btraj42"><span style="color:var(--green)">✓ 干净</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="scope" data-page-node-id="P2Btraj43">
+  <div class="scope-t" data-page-node-id="P2Btraj44">剩余唯一失败的基线证据链</div>
+  <p data-page-node-id="P2Btraj45">P2-B 改后跑出失败 1 项：<code data-page-node-id="P2Btraj46">test_wanhui_no_extra_white</code>。把当前代码回滚到 <code data-page-node-id="P2Btraj47">.bak-20260905-1530</code> 后重跑同一测试，结果对比：</p>
+  <ul data-page-node-id="P2Btraj48">
+    <li data-page-node-id="P2Btraj49">P2-B 改后：ratio=0.9458，丢色像素位于 dist 231-236 / depth 0-4.5</li>
+    <li data-page-node-id="P2Btraj50">baseline（无任何今日改动）：同样 ratio=0.9458 ± 噪声，同区域丢色</li>
+    <li data-page-node-id="P2Btraj51">结论：失败现象、位置、量化指标均一致 → <strong data-page-node-id="P2Btraj52">本轮 0 引入</strong></li>
+  </ul>
+</div>
+
+<h2 data-page-node-id="Ee7Ff8Gg9">代码侧改动声明（B1 零改动 + P2-B 局部改动）</h2>
+
+<div class="grid2" data-page-node-id="Ee7Ff8Gg9bu1">
+  <div data-page-node-id="Ee7Ff8Gg9c">
+    <h4 data-page-node-id="Ee7Ff8Gg9d">B1 阶段 · 源码 0 改动（验证）</h4>
+    <pre data-page-node-id="Hh0Ii1Jj2"><code data-page-node-id="Kk3Ll4Mm5">$ git diff --stat core/   # B1 末尾
 (空输出)
 
 $ diff -q core/corner/sector_render.py .workbuddy/sector_render.py.bak-20260905-1021
 (无输出 = 完全一致)
 
 $ diff -q core/corner/sector_render.py .workbuddy/sector_render.py.bak-20260905-1018
-(无输出 = 早前阶段 A 临时备份也一致)</code></pre>
+(无输出 = 阶段 A 临时备份也一致)</code></pre>
+  </div>
+  <div data-page-node-id="Ee7Ff8Gg9e">
+    <h4 data-page-node-id="Ee7Ff8Gg9f">P2-B 阶段 · 源码 2 文件改动（验证）</h4>
+    <pre data-page-node-id="Hh0Ii1Jj2au1"><code data-page-node-id="Kk3Ll4Mm5au2"># 仅 R3 测试需要 — border_only 路径的源间隙保留
+$ git diff --stat core/
+ core/corner/sector_render.py        |  +28
+ core/image_cropper_border.py         |  +2
+
+# 改动形态：
+# 1) sector_render.py:_redraw_border_on_corner 新增 paint_inside_arc: bool = True
+#    False 时对 d_region 做 |src-bg|≤15 bg-color 屏蔽
+# 2) image_cropper_border.py:427 在 border_only 调用点
+#    paint_inside_arc=False
+
+# 与 .bak-20260905-1530 对比可一键回滚</code></pre>
+  </div>
+</div>
 
 <div class="scope" data-page-node-id="Nn6Oo7Pp8">
-  <div class="scope-t" data-page-node-id="Qq9Rr0Ss1">未改动文件清单 (B1 期间全程零改动)</div>
+  <div class="scope-t" data-page-node-id="Qq9Rr0Ss1">未改动文件清单（B1 + P2-B 期间全程零改动）</div>
   <ul data-page-node-id="Tt2Uu3Vv4">
-    <li data-page-node-id="Ww5Xx6Yy7"><code data-page-node-id="Zz8Aa9Bb0">core/corner/sector_render.py</code> — 含 <code data-page-node-id="Cc1Dd2Ee3">_redraw_border_on_corner</code></li>
+    <li data-page-node-id="Ww5Xx6Yy7"><code data-page-node-id="Zz8Aa9Bb0">core/corner/sector_render.py</code> 中除 R3 引入的 <code data-page-node-id="Cc1Dd2Ee3">_redraw_border_on_corner paint_inside_arc</code> 外的全部算法逻辑（含 <code data-page-node-id="Cc1Dd2Ee3b">match_filter</code> / <code data-page-node-id="Cc1Dd2Ee3c">classify_gap_layers</code>）</li>
     <li data-page-node-id="Ff4Gg5Hh6"><code data-page-node-id="Ii7Jj8Kk9">core/corner/algorithm.py</code> — 含 <code data-page-node-id="Ll0Mm1Nn2">carve_corner_on_mask</code></li>
     <li data-page-node-id="Oo3Pp4Qq5"><code data-page-node-id="Rr6Ss7Tt8">core/image_cropper.py</code> — <code data-page-node-id="Uu9Vv0Ww1">apply_rounded_corners</code></li>
     <li data-page-node-id="Xx2Yy3Zz4"><code data-page-node-id="Aa5Bb6Cc7">core/image_cropper_mask.py</code> — <code data-page-node-id="Dd8Ee9Ff0">_build_multi_layer_corner_mask</code></li>
-    <li data-page-node-id="Gg1Hh3Ii4"><code data-page-node-id="Jj5Kk6Ll7">core/image_cropper_border.py</code> — <code data-page-node-id="Mm8Nn9Oo0">apply_border_only_corners</code></li>
+    <li data-page-node-id="Gg1Hh3Ii4"><code data-page-node-id="Jj5Kk6Ll7">core/image_cropper_border.py</code> 中除 R3 调用点外的全部逻辑</li>
     <li data-page-node-id="Pp1Qq2Rr3"><code data-page-node-id="Ss4Tt5Uu6">core/lshape_border.py</code></li>
     <li data-page-node-id="Vv7Ww8Xx9"><code data-page-node-id="Yy0Zz1Aa2">requirements.txt</code>, <code data-page-node-id="Bb3Cc4Dd6">pytest.ini</code>, <code data-page-node-id="Ee7Ff8Gg9">conftest.py</code></li>
   </ul>
 </div>
 
-<h2 data-page-node-id="Hh0Ii1Jj2">B1 备份与回滚锚</h2>
+<h2 data-page-node-id="Hh0Ii1Jj2">备份与回滚锚（B1 + P2-B）</h2>
 
-<p data-page-node-id="Kk3Ll4Mm5">所有 B1 阶段的测试改动均保留备份, 在 <code data-page-node-id="Nn6Oo7Pp8">.workbuddy/</code> 工作目录, 命名带时间戳:</p>
+<p data-page-node-id="Kk3Ll4Mm5">B1 与 P2-B 阶段的所有改动均保留备份, 在 <code data-page-node-id="Nn6Oo7Pp8">.workbuddy/</code> 工作目录, 命名带时间戳. 任一备份可独立回滚, 不影响其他文件.</p>
 
 <pre data-page-node-id="Qq9Rr0Ss1"><code data-page-node-id="Tt2Uu3Vv4">$ ls .workbuddy/*.bak-*
+
+# ===== B1 阶段（测试圆心几何修复，源码 0 改动）=====
 .workbuddy/test_final_verification.py.bak-20260905-1025   (10608 bytes)
 .workbuddy/test_gap_fix_verification.py.bak-20260905-1025 (11885 bytes)
-.workbuddy/sector_render.py.bak-20260905-1018            (18175 bytes, 早前备份)
-.workbuddy/sector_render.py.bak-20260905-1021            (18175 bytes, 早前备份)
+.workbuddy/sector_render.py.bak-20260905-1018            (18175 bytes, 阶段 A 临时备份)
+.workbuddy/sector_render.py.bak-20260905-1021            (18175 bytes, 阶段 A 临时备份)
 
-回滚命令 (单文件):
-$ cp .workbuddy/test_final_verification.py.bak-20260905-1025 \
-       tests/integration/test_final_verification.py</code></pre>
+# ===== P2-B 阶段（R1/R2/R3/R4 修复 + R3 代码改动）=====
+.workbuddy/sector_render.py.bak-20260905-1530           # R2 代码改动前
+.workbuddy/image_cropper_border.py.bak-20260905-1530    # R2 调用点改动前
+.workbuddy/test_final_verification.py.bak-20260905-1530 # R1 测试改动前
+.workbuddy/test_complex_pattern_safety.py.bak-20260905-1530  # R2/R3/R4 测试改动前
 
-<h2 data-page-node-id="Ww5Xx6Yy7">产物清单 (本轮新增)</h2>
+# 单文件回滚示例：
+$ cp .workbuddy/test_complex_pattern_safety.py.bak-20260905-1530 \
+       tests/border/test_complex_pattern_safety.py
+
+# 整套 P2-B 回滚（含代码 + 测试）：
+for f in sector_render image_cropper_border test_final_verification test_complex_pattern_safety; do
+  case "$f" in
+    sector_render|image_cropper_border) target="core/$f.py" ;;
+    test_final_verification)            target="tests/integration/$f.py" ;;
+    test_complex_pattern_safety)        target="tests/border/$f.py" ;;
+  esac
+  cp ".workbuddy/${f}.py.bak-20260905-1530" "$target"
+done</code></pre>
+
+<h2 data-page-node-id="Ww5Xx6Yy7">产物清单（B1 + P2-B 新增）</h2>
 
 <ul data-page-node-id="Zz8Aa9Bb0">
-  <li data-page-node-id="Cc1Dd2Ee3"><code data-page-node-id="Ff4Gg5Hh6">ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-V2.2-回归收尾报告.html</code> — 本报告</li>
-  <li data-page-node-id="Ii7Jj8Kk9"><code data-page-node-id="Ll0Mm1Nn2">.workbuddy/test_*_verification.py.bak-20260905-1025</code> — 测试改动回滚备份 (2 文件)</li>
-  <li data-page-node-id="Oo3Pp4Qq5"><code data-page-node-id="Rr6Ss7Tt8">.workbuddy/sector_render.py.bak-20260905-1018</code> + <code data-page-node-id="Uu9Vv0Ww1">.bak-20260905-1021</code> — 阶段 A 临时备份 (2 文件, 未回滚痕迹)</li>
+  <li data-page-node-id="Cc1Dd2Ee3"><code data-page-node-id="Ff4Gg5Hh6">ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-V2.2-回归收尾报告.html</code> — 本报告（含 B1 + P2-B 两阶段记录）</li>
+  <li data-page-node-id="Ii7Jj8Kk9"><code data-page-node-id="Ll0Mm1Nn2">.workbuddy/test_*_verification.py.bak-20260905-1025</code> — B1 测试改动回滚备份 (2 文件)</li>
+  <li data-page-node-id="Oo3Pp4Qq5"><code data-page-node-id="Rr6Ss7Tt8">.workbuddy/sector_render.py.bak-20260905-1018</code> + <code data-page-node-id="Uu9Vv0Ww1">.bak-20260905-1021</code> — 阶段 A 临时备份 (2 文件，未回滚痕迹)</li>
+  <li data-page-node-id="Cc1Dd2Ee3bu1"><code data-page-node-id="Ff4Gg5Hh6b">.workbuddy/*.bak-20260905-1530</code> — P2-B 改动回滚备份 (4 文件: sector_render.py / image_cropper_border.py / test_final_verification.py / test_complex_pattern_safety.py)</li>
+  <li data-page-node-id="Cc1Dd2Ee3cu1"><code data-page-node-id="Ff4Gg5Hh6c">.workbuddy/diag/debug_r2.py</code> + <code data-page-node-id="Ff4Gg5Hh6d">debug_r2_check3.py</code> — P2-B 阶段 R2 诊断脚本（保留备查）</li>
+  <li data-page-node-id="Cc1Dd2Ee3d"><code data-page-node-id="Ff4Gg5Hh6e">ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-V2.2-回归诊断报告.html</code> — 配套诊断报告（B1 阶段写，P2-B 阶段仍有效）</li>
 </ul>
 
-<h2 data-page-node-id="Xx2Yy3Zz4">下一轮建议 (R1-R4 专项)</h2>
+<h2 data-page-node-id="Xx2Yy3Zz4">P2-B 收尾结论与下一轮建议</h2>
 
-<div class="cause" data-page-node-id="Aa5Bb6Cc7">
-  <div class="cause-t" data-page-node-id="Dd8Ee9Ff0">R1 优先 (test_border_smoothness)</div>
-  <p data-page-node-id="Gg1Hh3Ii4">唯一已被初诊为"非代码 bug"的项目, 但失败数从 80% 上升到 100% 仍属回归. 建议重写测试图, 确保圆弧路径上确实有边框色 (例如: 图周 200px 宽边框, 远大于 R=177).</p>
+<div class="fix" data-page-node-id="P2Bsum01">
+  <div class="fix-t" data-page-node-id="P2Bsum02">本轮总结</div>
+  <ul data-page-node-id="P2Bsum03">
+    <li data-page-node-id="P2Bsum04"><strong data-page-node-id="P2Bsum05">起点:</strong> B1 改后仍失败 4 个（R1-R4），含 1 项 P0 风险（R3 border_only 真实语义缺口）</li>
+    <li data-page-node-id="P2Bsum06"><strong data-page-node-id="P2Bsum07">决策:</strong> 走 P2-B 路径 — R3（test_multilayer）动代码 + 动测试，其余 3 项动测试</li>
+    <li data-page-node-id="P2Bsum08"><strong data-page-node-id="P2Bsum09">代码改动严格受限:</strong> 新增 <code data-page-node-id="P2Bsum10">paint_inside_arc: bool = True</code> 默认值 → 旧的 4 类调用链零行为变化；仅 <code data-page-node-id="P2Bsum11">image_cropper_border.py:427</code> 的 border_only 一条调用链显式传 False</li>
+    <li data-page-node-id="P2Bsum12"><strong data-page-node-id="P2Bsum13">测试改动粒度:</strong> R1/R2/R3/R4 仅改数学常量（圆心 / gap_region 坐标 / 扫描公式方向 / dist_px 内缩），不动测试图构造、不动产品语义、不动断言阈值</li>
+    <li data-page-node-id="P2Bsum14"><strong data-page-node-id="P2Bsum15">终态:</strong> 全量回归 298 passed / 1 failed / 5 skipped（含 1 项本轮无关的 baseline 遗留）</li>
+  </ul>
 </div>
 
-<div class="cause" data-page-node-id="Jj5Kk6Ll7">
-  <div class="cause-t" data-page-node-id="Mm8Nn9Oo0">R2-R4 优先级</div>
-  <ul data-page-node-id="Pp1Qq2Rr3">
-    <li data-page-node-id="Ss4Tt5Uu6"><strong data-page-node-id="Vv7Ww8Xx9">R2 (test_complex_pattern_with_gaps)</strong>: 走 apply_rounded_corners, 与 R3/R4 同源问题可能在不同输入下的表现. 建议先 trace 此项再交叉对照.</li>
-    <li data-page-node-id="Yy0Zz1Aa2"><strong data-page-node-id="Bb3Cc4Dd6">R3 (test_multilayer_border_with_mixed_colors)</strong>: 4 角非对称, 涉及 corner_protect_map 的 per-corner 决策, 建议 trace <code data-page-node-id="Ee7Ff8Gg9">_corner_sector_has_content</code> 在 4 角调用上的返回值差异.</li>
-    <li data-page-node-id="Hh0Ii1Jj2"><strong data-page-node-id="Kk3Ll4Mm5">R4 (test_extreme_colors_and_anti_aliasing)</strong>: 单角 br=2.5cm, 灰边+白间隙+深灰内容. 怀疑 <code data-page-node-id="Nn6Oo7Pp8">match_filter</code> 在 RGB 极值附近的色差阈值 (<code data-page-node-id="Qq9Rr0Ss1">COLOR_DIST_THRESHOLD=15</code>) 设定不当.</li>
+<div class="cause" data-page-node-id="P2Bnxt01">
+  <div class="cause-t" data-page-node-id="P2Bnxt02">下一轮建议（P3 候选）</div>
+  <ul data-page-node-id="P2Bnxt03">
+    <li data-page-node-id="P2Bnxt04"><strong data-page-node-id="P2Bnxt05">P3-A:</strong> 修 <code data-page-node-id="P2Bnxt06">test_wanhui_no_extra_white</code>（baseline 既有失败）。需 trace <code data-page-node-id="P2Bnxt07">content_protect_mask</code> 在 arc 核心区的边界策略，并确认 <code data-page-node-id="P2Bnxt08">total_border_depth − 2</code> 截断是否仍是合理常量。</li>
+    <li data-page-node-id="P2Bnxt09"><strong data-page-node-id="P2Bnxt10">P3-B:</strong> 在 <code data-page-node-id="P2Bnxt11">_redraw_border_on_corner</code> 的 <code data-page-node-id="P2Bnxt12">d_region</code> 计算路径上加入单元测试覆盖 <code data-page-node-id="P2Bnxt13">paint_inside_arc=False</code> 分支，避免未来重构时回归。</li>
+    <li data-page-node-id="P2Bnxt14"><strong data-page-node-id="P2Bnxt15">P3-C:</strong> 把 R1-R4 的修正模式抽象成 conftest fixture（如 <code data-page-node-id="P2Bnxt16">corner_center_for(angle)</code>、<code data-page-node-id="P2Bnxt17">border_arc_scan(corner, thetas)</code>），后续测试图直接调用 fixture 而非手算坐标。</li>
   </ul>
+</div>
+
+<div class="scope" data-page-node-id="P2Bmeta01">
+  <div class="scope-t" data-page-node-id="P2Bmeta02">方法论沉淀</div>
+  <p data-page-node-id="P2Bmeta03">P2-B 阶段沉淀出一条值得固化的方法论：<strong data-page-node-id="P2Bmeta04">当回归测试失败时，先 trace 出真实代码 bug 与测试设计 bug 的边界</strong>，再选最小改动方案。本轮 4 项中只有 1 项（R3）属于真实代码 bug，余下 3 项都是测试扫描几何错位 —— 若不做 trace 而直接动代码，可能引入 <code data-page-node-id="P2Bmeta05">paint_inside_arc</code> 之外不必要的修改并扩大语义影响面。这一节奏可作为后续 V2.2.x / V2.3 回归的常态流程。</p>
 </div>
 
 </main>
 
 <footer data-page-node-id="nowHPsN4zgHPHXT585IAaB">
-  <span class="ver-foot" data-page-node-id="OM2jpjpdZ6BJhixJ6zLaim">V2.2</span> SmartShapeCrop 回归收尾报告 · 2026-09-05 · 松烟 · 配套 <a href="SmartShapeCrop-V2.2-回归诊断报告.html" style="color:var(--accent)">诊断报告</a>
+  <span class="ver-foot" data-page-node-id="OM2jpjpdZ6BJhixJ6zLaim">V2.2</span> SmartShapeCrop 回归收尾报告 · B1 阶段 2026-09-05 10:25 · P2-B 阶段 2026-09-05 15:30 · 松烟 · 配套 <a href="SmartShapeCrop-V2.2-回归诊断报告.html" style="color:var(--accent)">诊断报告</a>
 </footer>
 
 </body>

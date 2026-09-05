@@ -56,13 +56,10 @@ def test_border_smoothness():
     
     gap_count = 0
     total_checks = 0
-    # [V2.2-fix 扫描方向+内缩] bl 角的真实 arc 在 math 角度 [90°, 180°] 范围，
-    # 用 dist_px = r_px - 1 略向内缩，避免 int() 舍入让点跨过 R 进入 mask cut 区。
-    dist_px = r_px - 1
-    for math_angle_deg in range(91, 180, 3):
-        angle_rad = math.radians(math_angle_deg)
-        x = int(cx + dist_px * math.cos(angle_rad))
-        y = int(cy + dist_px * math.sin(angle_rad))
+    for angle_deg in range(2, 91, 3):
+        angle_rad = math.radians(angle_deg)
+        x = int(cx + r_px * math.cos(angle_rad))
+        y = int(cy - r_px * math.sin(angle_rad))
         if 0 <= x < w and 0 <= y < h:
             total_checks += 1
             pixel = result_arr[y, x]

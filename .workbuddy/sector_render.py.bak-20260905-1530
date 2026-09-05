@@ -162,7 +162,6 @@ def _redraw_border_on_corner(
     validity_mask: Image.Image | None = None,
     only_outermost: bool = False,
     bg_color: tuple[int, int, int] = (255, 255, 255),
-    paint_inside_arc: bool = True,
 ) -> None:
     """
     在圆角区域重新绘制边框颜色。
@@ -180,9 +179,6 @@ def _redraw_border_on_corner(
         validity_mask: 可选，L模式。非零像素才允许修改
         only_outermost: 若为 True，只绘制最外层边框
         bg_color: 背景色，间隙层使用此色填充创建干净弧线
-        paint_inside_arc: 若为 False，跳过与源 bg_color 接近的像素 (保留源间隙)。
-                          仅在 border_only mode + 源含间隙 inside R 的场景下设为 False。
-                          默认 True 保持原行为。
     """
     w, h = result_img.size
     if corner_radius_px <= 0 or not border_layers:
@@ -383,22 +379,6 @@ def _redraw_border_on_corner(
         # 这里 dist <= R_total 仍保留以避免在弧外画边框色；真正的弧外清理由
         # beyond_arc 负责。
         d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist <= float(R_total) + 1.5)
-        # [P2-B R2 2026-09-05] 当 paint_inside_arc=False 时，进一步排除源图中
-        # 与 bg_color 接近的像素（保留源间隙不被边框色覆盖）。
-        # 仅 border_only mode + 无 corner 保护场景下使用。
-        if not paint_inside_arc and src_arr is not None:
-            bg_f64 = np.array(bg_color, dtype=np.float64)
-            d_local = np.where(d_region)
-            if len(d_local[0]) > 0:
-                src_pixels_here = src_arr[d_local[0], d_local[1], :].astype(np.float64)
-                color_diff = np.sqrt(np.sum((src_pixels_here - bg_f64) ** 2, axis=1))
-                keep_mask = color_diff > 15.0  # 色差 > 15 才涂边框色
-                if not np.any(keep_mask):
-                    continue
-                # 把 d_region 收紧到 keep_mask 子集
-                full_mask = np.zeros_like(d_region, dtype=bool)
-                full_mask[d_local[0][keep_mask], d_local[1][keep_mask]] = True
-                d_region = full_mask
         if not np.any(d_region):
             continue
 

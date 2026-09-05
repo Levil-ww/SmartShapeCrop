@@ -87,11 +87,7 @@ def test_complex_pattern_with_gaps():
     # 检查 1: 间隙区域是否保持为灰色（不是被填充为黑色）
     # 间隙区域：外边框(0-50)和内边框(70-100)之间
     # 检查左下角间隙区域
-    # [V2.2-fix 测试几何] 原 arr[950:1000, 50:70] 实际是 BLACK 边框（arr[-50:] = black）。
-    # 改测顶部间隙 arr[50:70, 50:70]：离 bl 角圆心 (177, 823) 距离 ~782，
-    # 完全在圆角外（mask 不裁），源是真实灰色 (200, 200, 200)，
-    # 算法应保留灰色不被填充为边框色。
-    gap_region_bottom_left = result_arr[50:70, 50:70]  # 顶部真实灰间隙 (远离 bl 角)
+    gap_region_bottom_left = result_arr[950:1000, 50:70]  # 左下角间隙
     # 检查间隙是否被错误填充为黑色（边框颜色）
     is_not_black = (gap_region_bottom_left[:, :, 0] > 50).any() or \
                    (gap_region_bottom_left[:, :, 1] > 50).any()
@@ -121,27 +117,26 @@ def test_complex_pattern_with_gaps():
     # 检查 3: 边框线是否平滑（检查左下角圆角弧线）
     # 在圆角弧线上检查是否有明显的缺口（即背景色的缺口）
     # 检查 1/4 圆区域内的边框连续性
-    # [V2.2-fix 圆心几何 + 扫描方向] bl 角真实圆心 = (r_px, h - r_px)，
-    # arc 在 math 角度 [90°, 180°] (从下方+左方)，原测试扫的是反方向 (上方+右方)。
+    cx, cy = 50, 950  # 左下角圆角的圆心
     r_px = int(3.0 / 2.54 * 150)  # 3cm 转换为像素
-    cx, cy = r_px, h - r_px  # 左下角圆角的真实圆心
-    sample_dist = r_px - 1  # 略内缩避免 int 舍入跨越 R 进入 cut 区
-
+    
     border_gaps_found = False
     gap_count = 0
-    for math_angle_deg in range(91, 180, 5):
-        angle_rad = math.radians(math_angle_deg)
-        # [V2.2-fix 扫描方向] bl 角 arc 在 math 角度 [90°, 180°]，沿 +cos + +sin 方向
-        x = int(cx + sample_dist * math.cos(angle_rad))
-        y = int(cy + sample_dist * math.sin(angle_rad))
-        if 0 <= x < w and 0 <= y < h:
-            pixel = result_arr[y, x]
-            # 仅在弧线绘制带内 (dist_offset ≤ 0) 判定缺口
-            if tuple(pixel) == (255, 255, 255):
-                if not border_gaps_found:
-                    print(f"\n[检查 3] 警告: 在 math angle {math_angle_deg}° 方向的边框区域发现白色像素")
-                    border_gaps_found = True
-                gap_count += 1
+    for angle_deg in range(0, 91, 5):
+        angle_rad = math.radians(angle_deg)
+        # 从圆心向外检查边框
+        for dist_px in range(r_px - 40, r_px + 41):
+            x = int(cx + dist_px * math.cos(angle_rad))
+            y = int(cy - dist_px * math.sin(angle_rad))
+            if 0 <= x < w and 0 <= y < h:
+                pixel = result_arr[y, x]
+                # 如果在边框深度范围内发现背景色，可能是缺口
+                dist_from_edge = abs(dist_px - r_px)
+                if dist_from_edge <= 5 and tuple(pixel) == (255, 255, 255):
+                    if not border_gaps_found:
+                        print(f"\n[检查 3] 警告: 在角度 {angle_deg}° 方向的边框区域发现白色像素")
+                        border_gaps_found = True
+                    gap_count += 1
     
     if not border_gaps_found:
         print(f"\n[检查 3] 边框连续性检查: 未发现明显缺口")
@@ -236,7 +231,7 @@ def test_multilayer_border_with_mixed_colors():
     
     # 检查 3: 圆角弧线是否正确（不应有明显缺口）
     r_px = int(2.0 / 2.54 * 150)  # 2cm 转换为像素
-
+    
     corners_with_issues = []
     for corner, (cx_offset, cy_offset) in [
         ('tl', (r_px, r_px)),
@@ -262,15 +257,12 @@ def test_multilayer_border_with_mixed_colors():
                 else:  # br
                     x = int(cx + dist_px * math.cos(angle_rad))
                     y = int(cy + dist_px * math.sin(angle_rad))
-
+                
                 if 0 <= x < w and 0 <= y < h:
                     pixel = result_arr[y, x]
-                    # [P2-B R2 fix] 仅在弧线绘制带 (dist_offset <= 0) 判定 gap
-                    # dist_offset > 0 是弧外 cut 区 (beyond_arc → bg_color)，
-                    # 自然就是白色，不算缺口。dist_offset <= 0 才在 d_region 涂色区内。
-                    if -5 <= dist_offset <= 0 and tuple(pixel) == (255, 255, 255):
+                    if abs(dist_offset) <= 5 and tuple(pixel) == (255, 255, 255):
                         gap_count += 1
-
+        
         if gap_count > 5:
             corners_with_issues.append((corner, gap_count))
     
@@ -355,10 +347,8 @@ def test_extreme_colors_and_anti_aliasing():
     result_arr = np.array(result)
     
     # 检查 1: 间隙是否保持为白色
-    # [V2.2-fix 测试几何] 原 arr[440:460, 440:460] 在 br 角 arc 附近，被 Step B 补绘涂灰。
-    # 测真实间隙区 arr[35:45, 440:460]：完全在 br 角外 (dist > R=148)，
-    # 也不在 anti-aliasing strips ([30:35], [45:50]) 内，源是初始白色。
-    gap_region = result_arr[35:45, 440:460]  # br 角外的初始白色间隙
+    # 检查右下角附近的间隙区域
+    gap_region = result_arr[440:460, 440:460]  # 右下角间隙
     all_white = (gap_region[:, :, 0] > 245).all() and \
                 (gap_region[:, :, 1] > 245).all() and \
                 (gap_region[:, :, 2] > 245).all()
@@ -373,22 +363,18 @@ def test_extreme_colors_and_anti_aliasing():
     
     # 检查 3: 圆角弧线的颜色准确性
     # 在圆角弧线上，边框应该是浅灰色 (200,200,200)
-    # [V2.2-fix 圆心几何] br 角真实圆心 = (w - r_px, h - r_px)，不是 (469, 469)
-    r_px = int(2.5 / 2.54 * 150)  # 2.5cm 转换为像素 = 148
-    cx, cy = w - r_px, h - r_px  # 右下角圆角真实圆心 = (352, 352)
-    sample_dist = r_px - 1  # 略内缩避免 int 舍入跨越 R 进入 cut 区
-
+    cx, cy = 469, 469  # 右下角圆角圆心
+    r_px = int(2.5 / 2.54 * 150)  # 2.5cm 转换为像素
+    
     border_color_ok = True
     color_deviation_count = 0
-    for math_angle_deg in range(1, 90, 5):
-        angle_rad = math.radians(math_angle_deg)
-        for dist_offset in [-3, -2, -1, 0]:
-            dist_px = sample_dist + dist_offset
-            # [V2-B R3 fix 扫描方向] br 角真实 arc 在 math 角度 [0°, 90°]，
-            # 沿 +cos +sin 方向 (图像中是右+下)。原测试用 -cos -sin 扫的是 tl 方向。
-            x = int(cx + dist_px * math.cos(angle_rad))
-            y = int(cy + dist_px * math.sin(angle_rad))
-
+    for angle_deg in range(0, 91, 5):
+        angle_rad = math.radians(angle_deg)
+        for dist_offset in range(-28, 29):
+            dist_px = r_px + dist_offset
+            x = int(cx - dist_px * math.cos(angle_rad))
+            y = int(cy - dist_px * math.sin(angle_rad))
+            
             if 0 <= x < w and 0 <= y < h:
                 pixel = result_arr[y, x]
                 # 预期边框颜色在 (200,200,200) 附近
