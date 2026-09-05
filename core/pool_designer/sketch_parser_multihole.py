@@ -133,7 +133,7 @@ class MultiHoleParseResult:
 # ======================================================================
 
 
-def _classify_hole_layout(all_rects):
+def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.0):
     """从候选矩形中分类出 1 外框 + N 内框，返回 (outer, inners, layout)。
 
     三阶段算法（抗「联合包围盒/双洞 hull」误识别）：
@@ -142,9 +142,13 @@ def _classify_hole_layout(all_rects):
       Phase C. 从 pool 中剔除「包含 ≥2 个其他 pool 成员」的 hull（联合包围盒）
       Phase D. 从去 hull 的 pool 中贪心地选一组「互不重叠」的真实洞，
                优先选面积接近的（真实洞间面积差通常 ≤50%）
+      Phase D.5 面积预过滤 + 同洞分割否决
+      Phase D.6 洞数一致性验证（剔除远小于真实洞的噪点矩形）
 
     Args:
         all_rects: _find_all_rectangles 返回的列表，每项 (x,y,w,h,score,area)
+        target_outer_w_cm: 目标外框宽度（cm），可选，用于 Phase D.6 几何否决
+        target_outer_h_cm: 目标外框高度（cm），可选，用于 Phase D.6 几何否决
 
     Returns:
         (outer_rect or None, list[inner_rect], layout_str)
@@ -370,6 +374,100 @@ def _classify_hole_layout(all_rects):
         f"[MH Step1-2 PhaseD.5 通过] 面积过滤 {len(substantial)} 个 + "
         f"最大两洞 gap={gap_main:.1f}px → 确认真多洞"
     )
+
+    # ========== Phase D.6: 洞数一致性验证 [FIX 2026-09-05] ==========
+    #
+    # 背景：草图明明只有 2 个洞却识别出 3 个（额外矩形是 OCR 标注框、
+    # 装饰线框等噪点）。Phase D.5 面积过滤阈值 3% 无法完全区分。
+    #
+    # 新方案（纯 ADD-ON，不修改 Phase A-E 任何逻辑）：
+    #
+    # Step 1 - 面积差距否决:
+    #   当 substantial 列表 >= 3 时，按面积降序排列，计算最大候选的面积比
+    #   ratio_max。如果某候选面积比 < ratio_max × 0.25 → 它相对最大洞太小，
+    #   高度疑似噪点（真实洞面积差通常 ≤ 50%）→ 剔除。
+    #
+    # Step 2 - 目标尺寸几何否决（可选，有 target 时启用）:
+    #   若提供了 target_outer_w_cm/h_cm，用像素→cm 换算比估算每个洞的 cm 尺寸。
+    #   横排：mt + Σh_w + Σgap + ml + mr ≈ outer_w
+    #   若最大可能的 N 洞总宽（洞宽和 × 1.1 + gap × (N-1)）超出 outer_w 120%
+    #   → 洞数 N 减 1 并重试（但只做一次，避免过度削减）。
+    # =================================================================
+    if len(inners4) >= 3:
+        _outer_area_check = ow * oh
+        _inners_by_area = sorted(inners4, key=lambda r: r[2] * r[3], reverse=True)
+        _ratio_max = (_inners_by_area[0][2] * _inners_by_area[0][3]) / max(1, _outer_area_check)
+
+        _D6_MIN_RATIO_RATIO = 0.25   # 候选面积比 < 最大候选 × 25% → 噪点
+        _pruned = []
+        for _r in _inners_by_area:
+            _a = _r[2] * _r[3]
+            _ratio = _a / max(1, _outer_area_check)
+            if _ratio >= _ratio_max * _D6_MIN_RATIO_RATIO:
+                _pruned.append(_r)
+            else:
+                logger.info(
+                    f"[MH Step1-2 PhaseD.6 面积差距否决] 剔除候选 rect={_r} "
+                    f"ratio={_ratio:.4f} < max_ratio×0.25={_ratio_max * _D6_MIN_RATIO_RATIO:.4f}"
+                )
+
+        if len(_pruned) >= 2:
+            if len(_pruned) < len(inners4):
+                logger.info(
+                    f"[MH Step1-2 PhaseD.6 后] {len(inners4)} → {len(_pruned)} 个"
+                )
+                inners4 = _pruned
+            # 目标尺寸几何否决（仅当 target 有值且削减后仍 >= 3 时，再尝试进一步削减）
+            if len(inners4) >= 3 and target_outer_w_cm > 0 and target_outer_h_cm > 0:
+                # 像素→cm 换算比
+                _px_per_cm_w = ow / max(1.0, target_outer_w_cm)
+                _px_per_cm_h = oh / max(1.0, target_outer_h_cm)
+                _px_per_cm = (_px_per_cm_w + _px_per_cm_h) / 2.0
+
+                # 判断主轴（用中心坐标）
+                _cxs_d6 = [r[0] + r[2] / 2 for r in inners4]
+                _cys_d6 = [r[1] + r[3] / 2 for r in inners4]
+                _cx_span = max(_cxs_d6) - min(_cxs_d6)
+                _cy_span = max(_cys_d6) - min(_cys_d6)
+
+                _N = len(inners4)
+                _total_hw_cm = sum(r[2] / _px_per_cm for r in inners4)
+                # 假设 gap 平均 10cm（保守估计，实际 gap 通常在 5~20cm）
+                _avg_gap_cm = 10.0
+                _total_gap_cm = _avg_gap_cm * (_N - 1)
+
+                if _cx_span > _cy_span:  # 横排
+                    _cm_span_check = _total_hw_cm + _total_gap_cm
+                    _outer_w_cm = ow / _px_per_cm_w
+                    _cap = _outer_w_cm * 1.20
+                    if _cm_span_check > _cap:
+                        logger.warning(
+                            f"[MH Step1-2 PhaseD.6 几何否决] 横排 {_N} 洞: "
+                            f"洞宽总和 {_total_hw_cm:.1f} + gap估计 {_total_gap_cm:.1f} "
+                            f"= {_cm_span_check:.1f} > 外框宽 {_outer_w_cm:.1f}×1.2={_cap:.1f} "
+                            f"→ 削减为 {_N - 1} 洞"
+                        )
+                        inners4 = inners4[:-1]  # 去掉最小的那个（已按面积降序排序）
+                else:  # 竖排
+                    _total_hh_cm = sum(r[3] / _px_per_cm for r in inners4)
+                    _cm_span_check = _total_hh_cm + _total_gap_cm
+                    _outer_h_cm = oh / _px_per_cm_h
+                    _cap = _outer_h_cm * 1.20
+                    if _cm_span_check > _cap:
+                        logger.warning(
+                            f"[MH Step1-2 PhaseD.6 几何否决] 竖排 {_N} 洞: "
+                            f"洞高总和 {_total_hh_cm:.1f} + gap估计 {_total_gap_cm:.1f} "
+                            f"= {_cm_span_check:.1f} > 外框高 {_outer_h_cm:.1f}×1.2={_cap:.1f} "
+                            f"→ 削减为 {_N - 1} 洞"
+                        )
+                        inners4 = inners4[:-1]
+
+        # 削减后不足 2 → 回退单洞
+        if len(inners4) < 2:
+            logger.warning(
+                f"[MH Step1-2 PhaseD.6 ⇒ 回退单洞] 洞数削减后 < 2 个"
+            )
+            return None, [], ''
 
     # ========== Phase E: 布局分类 + 排序 ==========
     cxs = [ix + iw / 2 for ix, iy, iw, ih in inners4]
@@ -1405,7 +1503,10 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         return {'success': False, 'message': f'矩形候选不足({len(all_rects)}<3)，非多洞布局'}
 
     # ==== Step 2: 布局分类 ====
-    outer, inners, layout = _classify_hole_layout(all_rects)
+    outer, inners, layout = _classify_hole_layout(
+        all_rects,
+        target_outer_w_cm=target_outer_w_cm,
+        target_outer_h_cm=target_outer_h_cm)
     if outer is None or len(inners) < 2:
         return {'success': False, 'message': '无法分类出多洞布局（内框<2个）'}
     n_holes = len(inners)
@@ -1768,7 +1869,10 @@ def try_parse_multi_hole(image_path, target_outer_w_cm=0.0, target_outer_h_cm=0.
             return {'success': False, 'message': 'quick_check: 矩形候选<3',
                     '_fallback_to_single_hole': True}
 
-        outer, inners, layout = _classify_hole_layout(all_rects)
+        outer, inners, layout = _classify_hole_layout(
+            all_rects,
+            target_outer_w_cm=target_outer_w_cm,
+            target_outer_h_cm=target_outer_h_cm)
         if outer is None or len(inners) < 2:
             logger.info("[MH quick_check] 未识别出≥2个内框 → 回退单洞 7 步法 "
                         f"(inners_count={len(inners)})")

@@ -739,6 +739,11 @@ class _PoolBoxMixin:
                                 fake_holes_cm.append({
                                     'x_cm': cursor_x, 'y_cm': y_cm,
                                     'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                                    # [2026-09-05 FIX] 带上每洞 mt/mb/ml/mr 让 UI SpinBox 能回填
+                                    'mt_cm': max(0.0, getattr(h, 'margin_top_cm', mt)),
+                                    'mb_cm': max(0.0, getattr(h, 'margin_bottom_cm', mb)),
+                                    'ml_cm': max(0.0, getattr(h, 'margin_left_cm', ml)),
+                                    'mr_cm': max(0.0, getattr(h, 'margin_right_cm', result.margin_right_cm)),
                                 })
                                 cursor_x += h.w_cm
                         elif layout == 'vertical':
@@ -750,6 +755,10 @@ class _PoolBoxMixin:
                                 fake_holes_cm.append({
                                     'x_cm': x_cm, 'y_cm': cursor_y,
                                     'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                                    'mt_cm': max(0.0, getattr(h, 'margin_top_cm', mt)),
+                                    'mb_cm': max(0.0, getattr(h, 'margin_bottom_cm', mb)),
+                                    'ml_cm': max(0.0, getattr(h, 'margin_left_cm', ml)),
+                                    'mr_cm': max(0.0, getattr(h, 'margin_right_cm', result.margin_right_cm)),
                                 })
                                 cursor_y += h.h_cm
                         else:
@@ -761,6 +770,10 @@ class _PoolBoxMixin:
                                 fake_holes_cm.append({
                                     'x_cm': cursor_x, 'y_cm': y_cm,
                                     'w_cm': max(0.0, h.w_cm), 'h_cm': max(0.0, h.h_cm),
+                                    'mt_cm': max(0.0, getattr(h, 'margin_top_cm', mt)),
+                                    'mb_cm': max(0.0, getattr(h, 'margin_bottom_cm', mb)),
+                                    'ml_cm': max(0.0, getattr(h, 'margin_left_cm', ml)),
+                                    'mr_cm': max(0.0, getattr(h, 'margin_right_cm', result.margin_right_cm)),
                                 })
                                 cursor_x += h.w_cm
                         self._fill_multi_hole_ui(fake_holes_cm, gaps, layout)

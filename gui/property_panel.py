@@ -187,44 +187,91 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         row_inner_corner.addWidget(self._gb_corner)
         self._inner_layout.addLayout(row_inner_corner)
 
-        # 3b) ===== [MULTI-HOLE Add-On 2026-08-29] 多洞参数区（默认隐藏）=====
+        # 3b) ===== [MULTI-HOLE Add-On 2026-08-29 + 2026-09-05 增强] 多洞参数区（默认隐藏）=====
+        # 2026-09-05 FIX: 扩展每洞 6 个 SpinBox（宽、高、上距、下距、左距、右距）
+        # + 添加洞数手动调整按钮（+/-），让用户在识别错误时能手动修正。
         # 单洞模式：永远隐藏 → 视觉和行为零影响；
         # 多洞模式：Worker 完成后按 design.pool_is_multi_hole 显示。
-        # 洞 1~N 尺寸 + N-1 洞间距的 SpinBox。纯加 GroupBox，不改动 gb_inner 任何行。
         self._gb_multihole = QGroupBox("多洞参数（厘米）")
         self._gb_multihole.setObjectName("gb_multihole")
         fm = QFormLayout(self._gb_multihole)
         fm.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        # 标题标签（初始占位，回填 sketch_result 时再写入具体洞数）
+        # 标题标签 + 洞数手动调整按钮（2026-09-05 新增）
+        title_row = QHBoxLayout()
         self._mh_title_label = QLabel("洞数量：0（仅多洞模式生效）")
         self._mh_title_label.setStyleSheet("font-weight:bold; color:#2a6;")
-        fm.addRow(self._mh_title_label)
+        title_row.addWidget(self._mh_title_label, 1)
+        self._mh_btn_add = QPushButton("＋ 添加洞")
+        self._mh_btn_add.setFixedWidth(80)
+        self._mh_btn_add.clicked.connect(self._mh_add_hole)
+        title_row.addWidget(self._mh_btn_add, 0)
+        self._mh_btn_del = QPushButton("－ 删除末洞")
+        self._mh_btn_del.setFixedWidth(80)
+        self._mh_btn_del.clicked.connect(self._mh_del_hole)
+        title_row.addWidget(self._mh_btn_del, 0)
+        title_wrap = QWidget(); title_wrap.setLayout(title_row)
+        fm.addRow(title_wrap)
 
         # 初始化最大洞数=8（常规产品足够；支持更多洞时可 expand 动态增行）
         self._MAX_MH_UI_HOLES = 8
         self._mh_sp_hole_w = []   # list[QDoubleSpinBox]
         self._mh_sp_hole_h = []   # list[QDoubleSpinBox]
+        self._mh_sp_mt = []       # list[QDoubleSpinBox] 每洞上距
+        self._mh_sp_mb = []       # list[QDoubleSpinBox] 每洞下距
+        self._mh_sp_ml = []       # list[QDoubleSpinBox] 每洞左距
+        self._mh_sp_mr = []       # list[QDoubleSpinBox] 每洞右距
         self._mh_sp_gaps = []     # list[QDoubleSpinBox] len = N-1
         self._mh_rows_widgets = []  # list[(QLabel, QWidget)] 用于显隐控制
 
         for idx in range(self._MAX_MH_UI_HOLES):
             i = idx + 1
-            spw = self._dspin(0, 1000, 0.0); spw.setSuffix(" cm")
-            sph = self._dspin(0, 1000, 0.0); sph.setSuffix(" cm")
-            row_w = QHBoxLayout(); row_w.addWidget(QLabel("宽"), 0); row_w.addWidget(spw, 1)
-            row_h = QHBoxLayout(); row_h.addWidget(QLabel("高"), 0); row_h.addWidget(sph, 1)
-            cols = QVBoxLayout(); cols.addLayout(row_w); cols.addLayout(row_h)
-            wrap = QWidget(); wrap.setLayout(cols)
+            # ===== 每洞 6 个 SpinBox：宽、高、上、下、左、右 =====
+            # 使用 QGridLayout 3x2 布局以在有限空间内容纳
+            wrap = QWidget()
+            grid = QGridLayout(wrap)
+            grid.setContentsMargins(2, 2, 2, 2)
+            grid.setHorizontalSpacing(4)
+            grid.setVerticalSpacing(2)
+
+            spw = self._dspin(0, 1000, 0.0); spw.setSuffix("cm")
+            sph = self._dspin(0, 1000, 0.0); sph.setSuffix("cm")
+            sp_mt = self._dspin(0, 500, 0.0); sp_mt.setSuffix("cm")
+            sp_mb = self._dspin(0, 500, 0.0); sp_mb.setSuffix("cm")
+            sp_ml = self._dspin(0, 500, 0.0); sp_ml.setSuffix("cm")
+            sp_mr = self._dspin(0, 500, 0.0); sp_mr.setSuffix("cm")
+
+            # 连接防抖
+            spw.valueChanged.connect(self._schedule_apply_quiet)
+            sph.valueChanged.connect(self._schedule_apply_quiet)
+            sp_mt.valueChanged.connect(self._schedule_apply_quiet)
+            sp_mb.valueChanged.connect(self._schedule_apply_quiet)
+            sp_ml.valueChanged.connect(self._schedule_apply_quiet)
+            sp_mr.valueChanged.connect(self._schedule_apply_quiet)
+
+            # 布局：第 0 行 宽/高，第 1 行 上/下，第 2 行 左/右
+            grid.addWidget(QLabel("宽"), 0, 0); grid.addWidget(spw, 0, 1)
+            grid.addWidget(QLabel("高"), 0, 2); grid.addWidget(sph, 0, 3)
+            grid.addWidget(QLabel("上"), 1, 0); grid.addWidget(sp_mt, 1, 1)
+            grid.addWidget(QLabel("下"), 1, 2); grid.addWidget(sp_mb, 1, 3)
+            grid.addWidget(QLabel("左"), 2, 0); grid.addWidget(sp_ml, 2, 1)
+            grid.addWidget(QLabel("右"), 2, 2); grid.addWidget(sp_mr, 2, 3)
+            grid.setColumnStretch(1, 1); grid.setColumnStretch(3, 1)
+
             lab = QLabel(f"洞{i}")
             fm.addRow(lab, wrap)
             self._mh_sp_hole_w.append(spw)
             self._mh_sp_hole_h.append(sph)
+            self._mh_sp_mt.append(sp_mt)
+            self._mh_sp_mb.append(sp_mb)
+            self._mh_sp_ml.append(sp_ml)
+            self._mh_sp_mr.append(sp_mr)
             self._mh_rows_widgets.append((lab, wrap))
 
             # 间距：N 个洞 → N-1 个间距。最后一个洞之后不加
             if idx < self._MAX_MH_UI_HOLES - 1:
                 spg = self._dspin(0, 1000, 0.0); spg.setSuffix(" cm")
+                spg.valueChanged.connect(self._schedule_apply_quiet)
                 lab_gap = QLabel(f"间距{i}↔{i+1}")
                 fm.addRow(lab_gap, spg)
                 self._mh_sp_gaps.append(spg)
@@ -664,6 +711,13 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 hc = holes_cm[i]
                 _blk(self._mh_sp_hole_w[i]); self._mh_sp_hole_w[i].setValue(max(0.0, float(hc.get('w_cm', 0))))
                 _blk(self._mh_sp_hole_h[i]); self._mh_sp_hole_h[i].setValue(max(0.0, float(hc.get('h_cm', 0))))
+                # [2026-09-05 FIX] 回填每洞 mt/mb/ml/mr SpinBox
+                # holes_cm 来自 sketch 时只有 w/h；来自 design 时有 mt_cm 等
+                # 没有时保持默认 0.0（用户后续可以手动输入）
+                _blk(self._mh_sp_mt[i]); self._mh_sp_mt[i].setValue(max(0.0, float(hc.get('mt_cm', hc.get('margin_top_cm', 0)))))
+                _blk(self._mh_sp_mb[i]); self._mh_sp_mb[i].setValue(max(0.0, float(hc.get('mb_cm', hc.get('margin_bottom_cm', 0)))))
+                _blk(self._mh_sp_ml[i]); self._mh_sp_ml[i].setValue(max(0.0, float(hc.get('ml_cm', hc.get('margin_left_cm', 0)))))
+                _blk(self._mh_sp_mr[i]); self._mh_sp_mr[i].setValue(max(0.0, float(hc.get('mr_cm', hc.get('margin_right_cm', 0)))))
             for i in range(min(len(gaps_cm or []), len(self._mh_sp_gaps))):
                 _blk(self._mh_sp_gaps[i]); self._mh_sp_gaps[i].setValue(max(0.0, float(gaps_cm[i])))
             for sp in signals_blocked:
@@ -684,6 +738,73 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             self._set_multi_hole_row_visibility(0)
         except Exception:
             pass
+
+    def _mh_add_hole(self):
+        """[2026-09-05 新增] 手动添加一个洞（最多 _MAX_MH_UI_HOLES=8）。"""
+        try:
+            cur = int(getattr(self, '_mh_active_count', 0) or 0)
+            if cur >= self._MAX_MH_UI_HOLES:
+                return
+            # 确定新洞的默认值：复制前一个洞的参数
+            new_w = new_h = 40.0
+            new_mt = getattr(self, '_sp_mt', None).value() if hasattr(self, '_sp_mt') else 0.0
+            new_mb = getattr(self, '_sp_mb', None).value() if hasattr(self, '_sp_mb') else 0.0
+            new_ml = getattr(self, '_sp_ml', None).value() if hasattr(self, '_sp_ml') else 0.0
+            new_mr = getattr(self, '_sp_mr', None).value() if hasattr(self, '_sp_mr') else 0.0
+            if cur >= 1:
+                prev = cur - 1
+                new_w = self._mh_sp_hole_w[prev].value()
+                new_h = self._mh_sp_hole_h[prev].value()
+                new_mt = self._mh_sp_mt[prev].value()
+                new_mb = self._mh_sp_mb[prev].value()
+                new_ml = self._mh_sp_ml[prev].value()
+                new_mr = self._mh_sp_mr[prev].value()
+            # 设置新洞的值（blockSignals 避免每个 setValue 都触发防抖）
+            i = cur
+            self._mh_sp_hole_w[i].blockSignals(True); self._mh_sp_hole_w[i].setValue(max(0.0, new_w))
+            self._mh_sp_hole_h[i].blockSignals(True); self._mh_sp_hole_h[i].setValue(max(0.0, new_h))
+            self._mh_sp_mt[i].blockSignals(True); self._mh_sp_mt[i].setValue(max(0.0, new_mt))
+            self._mh_sp_mb[i].blockSignals(True); self._mh_sp_mb[i].setValue(max(0.0, new_mb))
+            self._mh_sp_ml[i].blockSignals(True); self._mh_sp_ml[i].setValue(max(0.0, new_ml))
+            self._mh_sp_mr[i].blockSignals(True); self._mh_sp_mr[i].setValue(max(0.0, new_mr))
+            self._mh_sp_hole_w[i].blockSignals(False)
+            self._mh_sp_hole_h[i].blockSignals(False)
+            self._mh_sp_mt[i].blockSignals(False)
+            self._mh_sp_mb[i].blockSignals(False)
+            self._mh_sp_ml[i].blockSignals(False)
+            self._mh_sp_mr[i].blockSignals(False)
+            # 间距：取前一个间距或默认 10cm
+            if cur >= 1:
+                prev_gap = cur - 1
+                new_gap = self._mh_sp_gaps[prev_gap].value() if prev_gap < len(self._mh_sp_gaps) else 10.0
+                self._mh_sp_gaps[cur].blockSignals(True); self._mh_sp_gaps[cur].setValue(max(0.0, new_gap))
+                self._mh_sp_gaps[cur].blockSignals(False)
+            # 更新激活洞数 + 显隐 + 标题
+            self._mh_active_count = cur + 1
+            self._set_multi_hole_row_visibility(self._mh_active_count)
+            self._mh_title_label.setText(
+                f"共 {self._mh_active_count} 洞（手动调整，点击「生成预览」应用）")
+            # 立即触发一次预览（走防抖）
+            self._schedule_apply_quiet()
+        except Exception as e:
+            import logging as _lg
+            _lg.getLogger(__name__).warning(f"[Multi-hole UI] 添加洞失败: {e}")
+
+    def _mh_del_hole(self):
+        """[2026-09-05 新增] 手动删除最后一个洞（最少保留 2 个）。"""
+        try:
+            cur = int(getattr(self, '_mh_active_count', 0) or 0)
+            if cur <= 2:
+                return  # 最少保留 2 个
+            self._mh_active_count = cur - 1
+            self._set_multi_hole_row_visibility(self._mh_active_count)
+            self._mh_title_label.setText(
+                f"共 {self._mh_active_count} 洞（手动调整，点击「生成预览」应用）")
+            # 立即触发一次预览
+            self._schedule_apply_quiet()
+        except Exception as e:
+            import logging as _lg
+            _lg.getLogger(__name__).warning(f"[Multi-hole UI] 删除洞失败: {e}")
 
     def _pick_file(self, target_edit: QLineEdit, filt: str):
         path, _ = QFileDialog.getOpenFileName(self, "选择文件", "", filt)

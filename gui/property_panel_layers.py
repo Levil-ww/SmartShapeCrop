@@ -205,19 +205,26 @@ class _LayersMixin:
                     for i in range(n_gaps):
                         new_gaps.append(max(0.0, self._mh_sp_gaps[i].value()))
                     # 按 layout 重算绝对坐标（画布相对 cm）
-                    # ===== [PER-HOLE Add-On 2026-08-29] 每洞独立 mt/ml 坐标 =====
-                    # Staff Engineer Mode：不改变外层 if-elif-else 分支结构，只在各分支
-                    # 内部把「共享全局 mt/ml」改为「每洞独立 mt_i/ml_i」。
-                    # 来源优先级：原 pool_holes_cm[i].mt_cm > 设计文件 hole[i].margin_top_cm
-                    # > 全局 inner_margin_top_cm（保证用户手动微调 SpinBox 时不会崩）。
+                    # ===== [PER-HOLE Add-On 2026-08-29 + 2026-09-05 FIX] 每洞独立 mt/ml 坐标 =====
+                    # 2026-09-05 FIX: 优先从 UI SpinBox 直接读取（用户手动编辑的值），
+                    # 再 fallback 到 old_holes 存储值，最后才用全局默认。
                     old_holes = getattr(d, 'pool_holes_cm', []) or []
 
+                    # 防御性检查：SpinBox 列表是否初始化且足够长
+                    _has_mt_sp = (hasattr(self, '_mh_sp_mt') and isinstance(self._mh_sp_mt, list)
+                                  and len(self._mh_sp_mt) > i) if 'i' in dir() else False
+
                     def _mt_i(i, default_mt):
+                        # [2026-09-05] 优先从 UI SpinBox 读取（用户手动编辑）
+                        if (hasattr(self, '_mh_sp_mt') and isinstance(self._mh_sp_mt, list)
+                                and 0 <= i < len(self._mh_sp_mt)):
+                            v = self._mh_sp_mt[i].value()
+                            if v and v > 0:
+                                return v
                         if 0 <= i < len(old_holes):
                             v = old_holes[i].get('mt_cm', 0.0)
                             if v and v > 0:
                                 return v
-                        # 若原 pool_holes_cm 没存：尝试从 sketch hole attr 再 fallback
                         h_attr = getattr(d, '_mh_hole_margins', None)
                         if isinstance(h_attr, list) and 0 <= i < len(h_attr):
                             v = h_attr[i].get('mt_cm', 0.0)
@@ -226,6 +233,12 @@ class _LayersMixin:
                         return default_mt
 
                     def _mb_i(i, default_mb):
+                        # [2026-09-05] 优先从 UI SpinBox 读取
+                        if (hasattr(self, '_mh_sp_mb') and isinstance(self._mh_sp_mb, list)
+                                and 0 <= i < len(self._mh_sp_mb)):
+                            v = self._mh_sp_mb[i].value()
+                            if v and v > 0:
+                                return v
                         if 0 <= i < len(old_holes):
                             v = old_holes[i].get('mb_cm', 0.0)
                             if v and v > 0:
@@ -233,21 +246,31 @@ class _LayersMixin:
                         return default_mb
 
                     def _ml_i(i, default_ml):
+                        # [2026-09-05] 优先从 UI SpinBox 读取
+                        if (hasattr(self, '_mh_sp_ml') and isinstance(self._mh_sp_ml, list)
+                                and 0 <= i < len(self._mh_sp_ml)):
+                            v = self._mh_sp_ml[i].value()
+                            if v and v > 0:
+                                return v
                         if 0 <= i < len(old_holes):
                             v = old_holes[i].get('ml_cm', 0.0)
                             if v and v > 0:
                                 return v
-                        # 洞0 特殊：左距就是全局 ml；其他洞 ml_i=0（由中距保证位置）
                         if i == 0:
                             return default_ml
                         return 0.0
 
                     def _mr_i(i, default_mr):
+                        # [2026-09-05] 优先从 UI SpinBox 读取
+                        if (hasattr(self, '_mh_sp_mr') and isinstance(self._mh_sp_mr, list)
+                                and 0 <= i < len(self._mh_sp_mr)):
+                            v = self._mh_sp_mr[i].value()
+                            if v and v > 0:
+                                return v
                         if 0 <= i < len(old_holes):
                             v = old_holes[i].get('mr_cm', 0.0)
                             if v and v > 0:
                                 return v
-                        # 最后一洞特殊：右距就是全局 mr
                         if i == n_holes - 1:
                             return default_mr
                         return 0.0
