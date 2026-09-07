@@ -208,13 +208,13 @@ def _build_multi_layer_corner_mask(
             border_zone = (((w - 1) - xx) <= T_plus) | (((h - 1) - yy) <= T_plus)
 
         if corner_protect and raw_depth > 0:
-            # 保护模式：只在边框条带内裁切，但弧线外侧（dist > r）必须无条件裁切。
-            # [Fix 2026-08-27] 旧逻辑把弧线外侧也限制在 border_zone 内，
-            # 导致非边框条带区的弧线外侧保留了原图背景色，形成背景色弧形缺口
-            # （中古雨林黑色弧线、塞纳时光米色弧线）。
-            # 修正后：弧线外侧无条件裁切；弧线内侧只在 border_zone 内裁切，
-            # 确保内容区（花纹/图案）保持直角。
-            inner_cut = (dist <= r) & border_zone
+            # [Fix 白色竖线] inner_cut 只裁切边框环带 [r - raw_depth - 2, r]，
+            # 不裁切内容区（dist < r - raw_depth - 2）。
+            # 旧逻辑 inner_cut = (dist <= r) & border_zone 切了 border_zone 内 dist<=r
+            # 的全部像素——包括内容区——这些像素在 ring_region 的保护范围之外，
+            # 被 mask 切白后形成紧贴直边的白色竖线（庄园秘境、有细边框的产品）。
+            border_ring_inner = max(0.0, float(r) - float(raw_depth) - 2.0)
+            inner_cut = (dist <= r) & (dist >= border_ring_inner) & border_zone
             outer_cut = base_cut | inner_cut
         else:
             outer_cut = base_cut
