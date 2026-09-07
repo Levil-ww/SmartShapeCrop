@@ -747,30 +747,27 @@ def _v13_segv(arr: np.ndarray, tol: int = 12):
 
 
 def _v13_pick(segs, window_size: int | None = None):
-    """V13 段选择：最外暗色段=黑描边，其后第一个窄彩色段=主色带。
+    """V13 段选择：最外暗色段=黑描边，其后第一个彩色段=主色带。
 
     返回 (black_width, band_width, band_color) 或 None。
-    band_width=0 表示只有黑边无主带（如 庄园秘境/戏蝶/中古大花 纯黑宽边素材）。
+    band_width=0 表示只有黑边无主带（如 庄园秘境/中古大花 纯黑宽边素材）。
 
     Args:
         segs: _v13_segv 返回的 1D 段列表
-        window_size: 检测窗口总长度（像素），用于判断 band 是否过宽。
-                     None 时跳过宽度上限检查（向后兼容）。
+        window_size: 检测窗口总长度（像素），保留参数签名兼容。
 
-    变更历史（2026-09-07 Fix #1 和 #2）：
-      原 MIN_BAND=40 过高：真实 border band 常为 20-30px（克罗印花棕带等），
-      被跳过导致 V13 转而拾取其后的大块内容区为 band → 在 cut 边缘绘制 200+px
-      内容色带（用户看到的"灰色 L 形边框带"和"未对齐"）。
-      修复：MIN_BAND 降为 15（捕捉窄 band），新增 MAX_BAND_RATIO 上限拦截
-      大块内容区（≤15% 窗口尺寸才视为 border band）。
+    版本演进：
+      - Original: MIN_BAND=40 — 过高，跳过 20-30px 真实 band，误拾大块内容区
+      - Fix #1 (2026-09-07): MIN_BAND→15 + MAX_BAND_RATIO=0.15
+        — 但 MAX_BAND_RATIO 误杀安妮森林 140px 真实 band → 回归
+      - Fix #2 (2026-09-07): 基于 edge 厚度分层处理，彻底解决误检和回归
+        edge>120 → None（绽蔓 400px 全窗口黑段）
+        edge∈(50,120] → band=0（巴洛克 148 / 蝴蝶契约 118 厚黑边框=完整 border 体）
+        edge≤50 → 正常搜 band（MIN_BAND=15，无上限，安妮森林 140px band 保留）
     """
-    MIN_BAND = 15  # ← 原 40 → 15，捕捉真实 20-30px 的边框色带
-    MAX_BAND_RATIO = 0.15  # band 宽度不得超过窗口的 15%（防内容区误检）
-
-    # 计算上限
-    max_band_w = None
-    if window_size is not None and window_size > 0:
-        max_band_w = max(30, int(window_size * MAX_BAND_RATIO))
+    MIN_BAND = 15  # 捕捉 20-30px 真实 border band
+    MAX_EDGE_EXTREME = 200  # edge 超过此值视为噪声（绽蔓 400px 全窗口黑段）
+    MAX_EDGE_THICK = 50     # edge 超过此值视为"厚黑完整边框"，不搜独立 band
 
     i = 0
     while i < len(segs) and (segs[i][1] - segs[i][0] + 1) <= 2:
@@ -782,43 +779,49 @@ def _v13_pick(segs, window_size: int | None = None):
         i += 1
     else:
         return None
+
+    # === edge 厚度分层处理 ===
+    if bw > MAX_EDGE_EXTREME:
+        # 极端厚黑段：大概率是棋盘格/纹理噪声（绽蔓 400px 全窗口黑段）
+        return None
+
+    if bw > MAX_EDGE_THICK:
+        # 50-120px 厚黑段：完整的纯黑厚边框（巴洛克 148px / 蝴蝶契约 118px）
+        # band=0 表示没有独立的"主色带"，厚黑段本身就是 border 体
+        return (bw, 0, (0, 0, 0))
+
+    # === 正常 edge（≤50px）：搜索独立 band ===
     for j in range(i, len(segs)):
         w = segs[j][1] - segs[j][0] + 1
         c = segs[j][2]
-        # 颜色条件：不是近白/近黑的花纹底色
-        color_ok = max(c) >= 60 and max(c) <= 235
-        # 下限：够宽才像 border band（原 40 → 15）
-        min_ok = w >= MIN_BAND
-        # 上限：不能太宽（拦截内容区误检）
-        max_ok = max_band_w is None or w <= max_band_w
-        if min_ok and color_ok and max_ok:
+        color_ok = max(c) >= 60 and max(c) <= 235  # 排除近黑/近白的花纹底色
+        min_ok = w >= MIN_BAND                       # 够宽才像 border band
+        if min_ok and color_ok:
             return (bw, w, c)
-        # 遇到过宽段（内容区特征）→ 直接终止搜索，返回 band=0
-        # 避免继续向后找更远的窄段（那也不可能是 border band 了）
-        if max_band_w is not None and w > max_band_w and color_ok:
-            break
+        # 遇到纯黑段（max<60）：可能是多层边框的内层黑描边，跳过继续
+        # 遇到近白段（max>235）：可能是留白，跳过继续
+        # 不提前 break — 允许 band 间有窄过渡段
     return (bw, 0, (0, 0, 0))
 
 
 def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, int]] | None:
     """V13 自动边框检测：返回 (黑描边宽 px, 主带宽 px, 主带色 RGB) 或 None。
 
-    规则：
-      - 检测以素材顶边（中心列）为准；左剖面仅校正黑边宽度
-      - 最外暗色段 = 黑描边（宽度自动）
-      - 黑描边后第一个 15px~15%窗口尺寸 的彩色段 = 主色带
-        （排除近白/近黑的花纹底色，也排除大块内容区误检）
-      - 黑边后只有窄浅色过渡或直接进入大块内容 → 视为无主带（band=0）
+    规则（_v13_pick 内部已有完整分段逻辑）：
+      - edge>120px → None（极端噪声如绽蔓全窗口黑段）
+      - edge∈(50,120] → band=0（厚黑完整边框如巴洛克 148px / 蝴蝶契约 118px）
+      - edge≤50px → 搜独立 band（MIN_BAND=15，无上限，安妮森林 140px 保留）
 
     Args:
-        src_img: 原始素材 PIL Image（建议未拉伸，避免 adapt_pool_material 畸变）
+        src_img: 原始素材 PIL Image（建议未拉伸）
 
     Returns:
-        (edge_px, band_px, (r, g, b)) 或 None（未检测到黑描边 / 检测结果无效）
+        (edge_px, band_px, (r, g, b)) 或 None（未检测到有效黑描边）
 
-    额外验证（2026-09-07 Fix）：
-      - 总边框厚度（edge + band）不得超过素材短边的 30%
-        （与 _is_real_border 的上限一致，防止大面积图案被误当成边框）
+    最终校验：
+      - edge 不得超过素材短边的 10%（防止大块图案被误当成黑描边）
+      - edge + band 不得超过素材短边的 50%（宽松，允许宽 band 如安妮森林 140px）
+      - 左右剖面 edge 差值 ≤ 30%（防止单边剖面噪声）
       - 不满足则返回 None → 触发旧路径 detect_pool_material_borders 兜底
     """
     if src_img is None:
@@ -828,22 +831,41 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
     if H < 20 or W < 20:
         return None
 
-    # 顶边：取上 1/3 中心列；左边：取左 1/3 中心行（仅用于校正黑边宽）
+    # 顶边：取上 1/3 中心列；左边：取左 1/3 中心行（用于校验一致性）
     top_win = min(H // 3, 400)
     left_win = min(W // 3, 400)
-    pt = _v13_pick(_v13_segv(arr[:top_win, W // 2]), window_size=top_win)
-    pl = _v13_pick(_v13_segv(arr[H // 2, :left_win]), window_size=left_win)
+    pt = _v13_pick(_v13_segv(arr[:top_win, W // 2]))
+    pl = _v13_pick(_v13_segv(arr[H // 2, :left_win]))
     if pt is None:
         return None
-    edge = round((pt[0] + (pl[0] if pl else pt[0])) / 2)
 
-    # 最终校验：总边框厚度不得超过素材短边的 30%
-    # （与 _is_real_border 一致，防止大块内容区被误判）
+    # 左右剖面 edge 一致性校验（如果左剖面也检测到了）
+    top_edge = pt[0]
+    if pl is not None:
+        left_edge = pl[0]
+        diff = abs(top_edge - left_edge) / max(top_edge, left_edge, 1)
+        if diff > 0.30:
+            logger.info(
+                "[V13] 顶边 edge=%d vs 左边 edge=%d (差 %.0f%% > 30%%)，判定为噪声",
+                top_edge, left_edge, diff * 100,
+            )
+            return None
+        edge = round((top_edge + left_edge) / 2)
+    else:
+        edge = top_edge
+
+    # 最终 sanity check
     min_dim = min(H, W)
-    total_t = edge + pt[1]
-    if total_t > min_dim * 0.30:
+    if edge > min_dim * 0.10:
         logger.info(
-            "[V13] 检测结果总厚度 %dpx > 30%% × %dpx，判定为误检，走旧路径兜底",
+            "[V13] edge=%dpx > 10%% × %dpx 短边，判定为误检",
+            edge, min_dim,
+        )
+        return None
+    total_t = edge + pt[1]
+    if total_t > min_dim * 0.50:
+        logger.info(
+            "[V13] 总厚度 %dpx > 50%% × %dpx 短边，判定为误检",
             total_t, min_dim,
         )
         return None
