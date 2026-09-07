@@ -46,7 +46,7 @@ from .sketch_parser_vision import (
     _to_gray,
 )
 
-_ALGO_VERSION = 2  # 2026-09-05: V2 精准识别——bbox 角约束 + cut 比例筛选 + balance disambiguation
+_ALGO_VERSION = 3  # 2026-09-05: V3 cut 尺寸改用 bbox 边界距离（抗数字粘连）
 
 
 @dataclass
@@ -110,7 +110,8 @@ def _detect_lshape_geometry(cv2, gray):
     h, w = gray.shape[:2]
 
     # 多策略二值化（覆盖不同草图风格），选"最大轮廓面积"最优的一张。
-    # 注：不能用全局 MORPH_OPEN 细 L 形笔画只有 3-5px，会被直接腐蚀掉。
+    # 不做 MORPH_CLOSE：闭运算会把数字标注与 L 形轮廓粘连，
+    # 导致伪凹角和缺口检测失效。数字标注是独立轮廓，取最大轮廓即可分离。
     masks = []
     try:
         _, m = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -124,13 +125,10 @@ def _detect_lshape_geometry(cv2, gray):
     except Exception:
         logger.debug("[lshape] 自适应二值化失败", exc_info=True)
 
-    k3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-
     best = None
     for m in masks:
         try:
-            mm = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k3, iterations=2)
-            cnts, _ = cv2.findContours(mm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         except Exception:
             logger.debug("[lshape] findContours 失败", exc_info=True)
             continue
@@ -146,6 +144,260 @@ def _detect_lshape_geometry(cv2, gray):
     if area < w * h * 0.02:
         # 面积过小，排除噪点
         return None
+
+    # ------------------------------------------------------------------
+    # 滑动窗口凹角检测（V3 新增，最高优先级）
+    # ------------------------------------------------------------------
+    # 直接在原始轮廓上找凹角，不依赖 approxPolyDP 的多边形简化。
+    # approxPolyDP 对浅挖角（如 D=2cm）会平滑掉真实凹角，
+    # 滑动窗口通过局部叉积计算能保留浅凹角的弯曲信号。
+    # ------------------------------------------------------------------
+    def _detect_concave_sliding_window(pts, outer_w, outer_h, diag, corners,
+                                       minx, miny, maxx, maxy):
+        n = len(pts)
+        if n < 10:
+            return None
+        # 整体方向
+        sa = 0.0
+        for i in range(n):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % n]
+            sa += x1 * y2 - x2 * y1
+        sa_sign = 1 if sa > 0 else -1
+
+        # bbox 面积 - 轮廓面积 = 缺失面积 ≈ cut_w * cut_h
+        bbox_area = outer_w * outer_h
+        contour_area = abs(sa) / 2.0
+        missing_area = bbox_area - contour_area
+
+        # 多窗口凹度
+        k_values = [max(3, int(n * 0.01)), max(5, int(n * 0.02)),
+                    max(8, int(n * 0.03))]
+        concavity = np.zeros(n)
+        for k in k_values:
+            k = min(k, n // 4)
+            if k < 2:
+                continue
+            for i in range(n):
+                p_prev = pts[(i - k) % n]
+                p_cur = pts[i]
+                p_next = pts[(i + k) % n]
+                a = p_cur - p_prev
+                b = p_next - p_cur
+                cross = a[0] * b[1] - a[1] * b[0]
+                csign = 1 if cross > 0 else -1
+                if csign != sa_sign:
+                    cn = abs(cross) / (np.hypot(a[0], a[1]) * np.hypot(b[0], b[1]) + 1e-6)
+                    concavity[i] += cn
+
+        if concavity.max() < 0.1:
+            return None
+
+        # —— 几何约束筛选后选 concavity 最大 ——
+        # 不直接选 concavity 最大的点（数字粘连伪凹角 concavity 更高），
+        # 而是先要求 cut 比例合理（< 0.50，因为 F=B-cut_w > cut_w），
+        # 再在合理候选中选 concavity 最大的。
+        # 方向判定窗口：用较大的 k，让真实凹角（长直行段）的邻接 cut 接近 bbox cut
+        # 伪凹角（数字笔画短）跨越拐点后邻接 cut 与 bbox cut 不一致 → cf 降低
+        k_dir = max(8, int(min(outer_w, outer_h) * 0.05))
+        k_dir = min(k_dir, n // 6)
+        best_score = -1.0
+        best_pt = None
+        best_corner = None
+
+        for i in range(n):
+            if concavity[i] < 0.1:
+                continue
+            pt = pts[i].astype(float)
+
+            # 位置约束：在 bbox 四角 45% 对角线内
+            min_dist = min(np.hypot(pt[0] - cx, pt[1] - cy) for cx, cy in corners)
+            dist_ratio = min_dist / diag if diag > 0 else 99.0
+            if dist_ratio >= 0.45:
+                continue
+
+            # 用小窗口判定方向（避免跨越拐点导致方向错误）
+            p_prev = pts[(i - k_dir) % n].astype(float)
+            p_next = pts[(i + k_dir) % n].astype(float)
+            dx1, dy1 = float(p_prev[0] - pt[0]), float(p_prev[1] - pt[1])
+            dx2, dy2 = float(p_next[0] - pt[0]), float(p_next[1] - pt[1])
+            if abs(dx1) >= abs(dy1):
+                h_nbr, v_nbr = (dx1, dy1), (dx2, dy2)
+            else:
+                h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
+            sx = 1 if h_nbr[0] > 0 else -1
+            sy = 1 if v_nbr[1] > 0 else -1
+            corner = {(1, -1): 'tr', (1, 1): 'br',
+                      (-1, -1): 'tl', (-1, 1): 'bl'}.get((sx, sy))
+            if corner is None:
+                continue
+
+            # 邻接 cut 尺寸（小窗口）
+            adj_cut_w = max(abs(dx1), abs(dx2))
+            adj_cut_h = max(abs(dy1), abs(dy2))
+
+            # bbox 边界距离 cut 尺寸
+            if corner == 'tr':
+                cut_w = maxx - pt[0]
+                cut_h = pt[1] - miny
+            elif corner == 'tl':
+                cut_w = pt[0] - minx
+                cut_h = pt[1] - miny
+            elif corner == 'br':
+                cut_w = maxx - pt[0]
+                cut_h = maxy - pt[1]
+            else:
+                cut_w = pt[0] - minx
+                cut_h = maxy - pt[1]
+
+            # 硬约束：cut 比例合理 + cut < 外框一半
+            cw_ratio = cut_w / outer_w if outer_w > 0 else 0
+            ch_ratio = cut_h / outer_h if outer_h > 0 else 0
+            if not (0.02 <= cw_ratio <= 0.50 and 0.02 <= ch_ratio <= 0.50):
+                continue
+
+            # 一致性因子：邻接 cut 与 bbox cut 应接近
+            def _agr(a, b):
+                m = max(a, b)
+                return min(a, b) / m if m > 0 else 0.0
+            cf = min(_agr(adj_cut_w, cut_w), _agr(adj_cut_h, cut_h))
+
+            score = concavity[i] * cf
+            if score > best_score:
+                best_score = score
+                best_pt = pt
+                best_corner = corner
+
+        if best_pt is None:
+            return None
+
+        pt = best_pt
+        corner = best_corner
+
+        # 构造 6 顶点多边形，凹角在 index 0
+        if corner == 'tr':
+            verts = np.array([
+                [pt[0], pt[1]], [maxx, pt[1]], [maxx, maxy],
+                [minx, maxy], [minx, miny], [pt[0], miny],
+            ])
+        elif corner == 'tl':
+            verts = np.array([
+                [pt[0], pt[1]], [minx, pt[1]], [minx, maxy],
+                [maxx, maxy], [maxx, miny], [pt[0], miny],
+            ])
+        elif corner == 'br':
+            verts = np.array([
+                [pt[0], pt[1]], [pt[0], maxy], [minx, maxy],
+                [minx, miny], [maxx, miny], [maxx, pt[1]],
+            ])
+        else:
+            verts = np.array([
+                [pt[0], pt[1]], [pt[0], maxy], [maxx, maxy],
+                [maxx, miny], [minx, miny], [minx, pt[1]],
+            ])
+
+        return {
+            'score': best_score * 10000.0,  # 绝对最高优先级
+            'verts': verts,
+            'concave_pt': pt,
+            'corner': corner,
+        }
+
+    # —— V3 凸包差异法（检测缺口角和 cut 尺寸）——
+    # L 形 = 矩形 - 角上小矩形。轮廓的凸包就是 bbox 矩形，
+    # 凸包填充减去轮廓填充 = 缺口区域。缺口区域的 bbox 就是 cut 尺寸。
+    # 对数字粘连鲁棒，因为数字被包含在轮廓内部，不影响凸包差异。
+    def _detect_by_convex_hull():
+        minx, miny = float(global_minx), float(global_miny)
+        maxx, maxy = float(global_maxx), float(global_maxy)
+        W = maxx - minx
+        H = maxy - miny
+        if W <= 0 or H <= 0:
+            return None
+
+        # 创建掩码
+        h = int(H) + 4
+        w = int(W) + 4
+        shifted = (cnt_pts - np.array([minx, miny])).astype(np.int32)
+
+        # 轮廓填充
+        mask_cnt = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillPoly(mask_cnt, [shifted], 1)
+
+        # 凸包填充
+        hull = cv2.convexHull(shifted)
+        mask_hull = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillPoly(mask_hull, [hull], 1)
+
+        # 缺口 = 凸包 - 轮廓
+        gap = mask_hull - mask_cnt
+        if gap.sum() == 0:
+            return None  # 没有缺口（矩形）
+
+        # 缺口区域的 bbox
+        ys, xs = np.where(gap > 0)
+        gx0, gx1 = xs.min(), xs.max()
+        gy0, gy1 = ys.min(), ys.max()
+        cut_w = float(gx1 - gx0 + 1)
+        cut_h = float(gy1 - gy0 + 1)
+
+        # 比例校验
+        cwr = cut_w / W
+        chr_ = cut_h / H
+        if not (0.02 <= cwr <= 0.50 and 0.02 <= chr_ <= 0.50):
+            return None
+
+        # 判断缺口在哪个角
+        cx_gap = (gx0 + gx1) / 2.0
+        cy_gap = (gy0 + gy1) / 2.0
+        cx_bbox = w / 2.0
+        cy_bbox = h / 2.0
+        if cx_gap < cx_bbox and cy_gap < cy_bbox:
+            corner = 'tl'
+        elif cx_gap >= cx_bbox and cy_gap < cy_bbox:
+            corner = 'tr'
+        elif cx_gap < cx_bbox and cy_gap >= cy_bbox:
+            corner = 'bl'
+        else:
+            corner = 'br'
+
+        # 凹角位置
+        if corner == 'tr':
+            cx, cy = maxx - cut_w, miny + cut_h
+        elif corner == 'tl':
+            cx, cy = minx + cut_w, miny + cut_h
+        elif corner == 'br':
+            cx, cy = maxx - cut_w, maxy - cut_h
+        else:
+            cx, cy = minx + cut_w, maxy - cut_h
+
+        if corner == 'tr':
+            verts = np.array([
+                [cx, cy], [maxx, cy], [maxx, maxy],
+                [minx, maxy], [minx, miny], [cx, miny],
+            ])
+        elif corner == 'tl':
+            verts = np.array([
+                [cx, cy], [minx, cy], [minx, maxy],
+                [maxx, maxy], [maxx, miny], [cx, miny],
+            ])
+        elif corner == 'br':
+            verts = np.array([
+                [cx, cy], [cx, maxy], [minx, maxy],
+                [minx, miny], [maxx, miny], [maxx, cy],
+            ])
+        else:
+            verts = np.array([
+                [cx, cy], [cx, maxy], [maxx, maxy],
+                [maxx, miny], [minx, miny], [minx, cy],
+            ])
+
+        return {
+            'score': 200000.0,
+            'verts': verts,
+            'concave_pt': np.array([cx, cy]),
+            'corner': corner,
+        }
 
     # ------------------------------------------------------------------
     # 多边形简化 + 凹角评分（V2：bbox 角约束 + cut 比例合理性）
@@ -188,6 +440,25 @@ def _detect_lshape_geometry(cv2, gray):
         (float(global_maxx), float(global_maxy)),   # br
     ]
 
+    # —— V3 滑动窗口凹角检测（最高优先级）——
+    # 直接在原始轮廓上找凹角，不依赖 approxPolyDP。
+    # approxPolyDP 会把浅挖角（如 D=2cm）平滑掉，而滑动窗口能捕捉到。
+    # 方法：对轮廓每个点 i，取前后 k 步的点，计算叉积判断凹凸性。
+    # 用多个窗口大小 k 取平均凹度，提高鲁棒性。
+    _sliding_result = _detect_concave_sliding_window(
+        cnt_pts, g_outer_w, g_outer_h, g_diag, g_corners,
+        global_minx, global_miny, global_maxx, global_maxy)
+    if _sliding_result is not None:
+        _tier1.append((_sliding_result['score'],
+                       _sliding_result['verts'],
+                       [(1.0, 0)]))
+    # 凸包差异法（最高优先级）
+    _hull_result = _detect_by_convex_hull()
+    if _hull_result is not None:
+        _tier1.append((_hull_result['score'],
+                       _hull_result['verts'],
+                       [(1.0, 0)]))
+
     for eps_f in eps_range:
         eps = max(0.5, eps_f * peri)
         approx = cv2.approxPolyDP(cnt, eps, True)
@@ -212,46 +483,91 @@ def _detect_lshape_geometry(cv2, gray):
                                    v[(i - 1) % n].astype(float),
                                    v[(i + 1) % n].astype(float)))
 
-        # —— V2 硬约束：bbox 退角搜索区域 + cut 比例合理性 ——
-        # (a) cut 比例合理性：水平或垂直至少一个在 [0.03, 0.75]
-        #     下限 0.03 排除纯噪点/文字粘连伪凹角（通常 ratio<0.01）
-        #     上限 0.75 覆盖真实大 L 形挖角（如 sketch3 cut_h_ratio=0.68）
-        # (b) bbox 退角搜索区域：凹角在 bbox 四角各 40% 对角线范围内
-        #     真实挖角凹角不在 bbox 物理角上，而是往里退 cut_w/cut_h 的位置
-        #     所以搜索区域要够大（40% diag），但仍能排除中部/边缘的伪凹角
+        # —— V3 硬约束 + 评分：抗数字粘连 ——
+        # [V3 改进 2026-09-05]
+        # 问题：数字标注与轮廓粘连 → 伪凹角的邻接直行段被拉长（r1+r2 虚高），
+        #       base_score = cn*(r1+r2) 可能超过真实凹角，导致选错。
+        # 方案：
+        #   1. 同时计算邻接 cut（adj_cut）和 bbox 边界距离 cut（bbox_cut）
+        #   2. ratio_ok 用两者的 OR（任一合理即可）—— 防止浅挖角真实凹角被误杀
+        #   3. 一致性因子 cf = adj_cut 与 bbox_cut 的接近程度
+        #      真实凹角：邻接直行段 = 到 bbox 边界距离 → cf ≈ 1.0
+        #      伪凹角（数字粘连）：邻接直行段 >> 到 bbox 边界距离 → cf 很低
+        #   4. 最终 cut 尺寸用 bbox_cut（稳定、不受数字干扰）
         filtered_reflex = []
         for idx, cn, r1, r2, pv, nv in raw_reflex:
             pt = v[idx].astype(float)
-            cut_w_est = max(abs(pv[0] - pt[0]), abs(nv[0] - pt[0]))
-            cut_h_est = max(abs(pv[1] - pt[1]), abs(nv[1] - pt[1]))
 
-            cut_w_ratio = cut_w_est / g_outer_w if g_outer_w > 0 else 0
-            cut_h_ratio = cut_h_est / g_outer_h if g_outer_h > 0 else 0
-            ratio_ok = (0.03 <= cut_w_ratio <= 0.75) or (0.03 <= cut_h_ratio <= 0.75)
-            if not ratio_ok:
+            # 邻接顶点 cut 尺寸（受数字粘连影响）
+            adj_cut_w = max(abs(pv[0] - pt[0]), abs(nv[0] - pt[0]))
+            adj_cut_h = max(abs(pv[1] - pt[1]), abs(nv[1] - pt[1]))
+
+            # 由邻接顶点方向判定 corner
+            dx1, dy1 = float(pv[0] - pt[0]), float(pv[1] - pt[1])
+            dx2, dy2 = float(nv[0] - pt[0]), float(nv[1] - pt[1])
+            if abs(dx1) >= abs(dy1):
+                h_nbr, v_nbr = (dx1, dy1), (dx2, dy2)
+            else:
+                h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
+            sx = 1 if h_nbr[0] > 0 else -1
+            sy = 1 if v_nbr[1] > 0 else -1
+            corner_guess = {(1, -1): 'tr', (1, 1): 'br',
+                            (-1, -1): 'tl', (-1, 1): 'bl'}.get((sx, sy))
+            if corner_guess is None:
                 continue
 
+            # bbox 边界距离 cut 尺寸（稳定、不受数字干扰）
+            if corner_guess == 'tr':
+                bbox_cut_w = global_maxx - pt[0]
+                bbox_cut_h = pt[1] - global_miny
+            elif corner_guess == 'tl':
+                bbox_cut_w = pt[0] - global_minx
+                bbox_cut_h = pt[1] - global_miny
+            elif corner_guess == 'br':
+                bbox_cut_w = global_maxx - pt[0]
+                bbox_cut_h = global_maxy - pt[1]
+            else:  # bl
+                bbox_cut_w = pt[0] - global_minx
+                bbox_cut_h = global_maxy - pt[1]
+
+            # ratio_ok：邻接或 bbox 任一合理即可（保护浅挖角真实凹角）
+            adj_cw_ratio = adj_cut_w / g_outer_w if g_outer_w > 0 else 0
+            adj_ch_ratio = adj_cut_h / g_outer_h if g_outer_h > 0 else 0
+            bbox_cw_ratio = bbox_cut_w / g_outer_w if g_outer_w > 0 else 0
+            bbox_ch_ratio = bbox_cut_h / g_outer_h if g_outer_h > 0 else 0
+            adj_ok = (0.03 <= adj_cw_ratio <= 0.75) or (0.03 <= adj_ch_ratio <= 0.75)
+            bbox_ok = (0.03 <= bbox_cw_ratio <= 0.75) or (0.03 <= bbox_ch_ratio <= 0.75)
+            if not (adj_ok or bbox_ok):
+                continue
+
+            # 位置约束：凹角在 bbox 四角 40% 对角线范围内
             min_dist = min(
                 np.hypot(pt[0] - cx, pt[1] - cy) for cx, cy in g_corners)
             dist_ratio = min_dist / g_diag if g_diag > 0 else 99.0
-            # 真实凹角离最近 bbox 角的距离最多到 40% 对角线
-            # （因为 cut 退角的凹角不在物理角上）
             if dist_ratio >= 0.40:
                 continue
 
-            # 通过筛选 → 计算增强评分
+            # —— 一致性因子 cf ——
+            # 真实凹角的邻接直行长度 ≈ 到 bbox 边界距离 → cf ≈ 1.0
+            # 伪凹角（数字粘连）的邻接直行长度 >> 边界距离 → cf 很低
+            def _agreement(a, b):
+                mx = max(a, b)
+                return min(a, b) / mx if mx > 0 else 0.0
+            cf = min(_agreement(adj_cut_w, bbox_cut_w),
+                     _agreement(adj_cut_h, bbox_cut_h))
+
+            # 评分：base × proximity × ratio × consistency
             base_score = cn * (r1 + r2)
 
-            # proximity_factor：越靠近 bbox 角评分越高
             if dist_ratio < 0.08:
                 pf = 1.0
             elif dist_ratio < 0.20:
                 pf = 0.9
-            else:  # < 0.40
+            else:
                 pf = 0.7
 
-            # ratio_factor：cut 比例在中间区间最合理，两端衰减
-            best_ratio = min(cut_w_ratio, cut_h_ratio) if min(cut_w_ratio, cut_h_ratio) > 0 else max(cut_w_ratio, cut_h_ratio)
+            # 用 bbox cut 比例计算 ratio_factor（更稳定）
+            best_ratio = min(bbox_cw_ratio, bbox_ch_ratio) if min(bbox_cw_ratio, bbox_ch_ratio) > 0 else max(bbox_cw_ratio, bbox_ch_ratio)
             if 0.10 <= best_ratio <= 0.50:
                 rf = 1.0
             elif 0.03 <= best_ratio < 0.10 or 0.50 < best_ratio <= 0.70:
@@ -259,10 +575,8 @@ def _detect_lshape_geometry(cv2, gray):
             else:
                 rf = 0.6
 
-            adj_score = base_score * pf * rf
-            # balance_factor 延迟应用：只在同 epsilon 下有 ≥2 个候选时
-            # 才用它来 disambiguation（见下方 post-processing）
-            filtered_reflex.append((adj_score, idx, r1, r2))
+            adj_score = base_score * pf * rf * cf
+            filtered_reflex.append((adj_score, idx, r1, r2, corner_guess))
 
         if not filtered_reflex:
             continue
@@ -271,18 +585,16 @@ def _detect_lshape_geometry(cv2, gray):
         n_cand = len(filtered_reflex)
         if n_cand >= 2:
             def _scored(entry):
-                s, idx, r1, r2 = entry
+                s, idx, r1, r2, _c = entry
                 bal = min(r1, r2) / max(r1, r2) if max(r1, r2) > 0 else 0.0
-                # 温和惩罚：最低不降过 60%（避免打死极短 cut 的真实凹角）
                 bf = 0.6 + 0.4 * bal
                 return (s * bf, idx)
             final_reflex = [_scored(e) for e in filtered_reflex]
         else:
-            final_reflex = [(s, idx) for s, idx, _, _ in filtered_reflex]
+            final_reflex = [(s, idx) for s, idx, _, _, _ in filtered_reflex]
 
         best_score, best_idx = max(final_reflex, key=lambda t: t[0])
         n_conc = len(final_reflex)
-        # entry 存最终排好序的 (score, idx) 列表 + best_score
         entry = (best_score, v, final_reflex)
 
         if 5 <= n <= 8 and n_conc == 1:
@@ -303,7 +615,9 @@ def _detect_lshape_geometry(cv2, gray):
     p_prev = verts[(concave_idx - 1) % n]
     p_next = verts[(concave_idx + 1) % n]
 
-    # 两个相邻顶点中，一个沿水平轴（dx 主导）、一个沿垂直轴（dy 主导）
+    # —— V3: corner + cut 尺寸统一用 bbox 边界距离 ——
+    # 先用邻接顶点方向判定 corner，再用凹角到 bbox 两条相邻边的距离作为 cut 尺寸。
+    # 这样 cut 尺寸不受 approxPolyDP 顶点偏差 / 数字标注粘连的影响。
     dx1, dy1 = float(p_prev[0] - conc[0]), float(p_prev[1] - conc[1])
     dx2, dy2 = float(p_next[0] - conc[0]), float(p_next[1] - conc[1])
     if abs(dx1) >= abs(dy1):
@@ -311,20 +625,31 @@ def _detect_lshape_geometry(cv2, gray):
     else:
         h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
 
-    sx = 1 if h_nbr[0] > 0 else -1        # 水平方向：+1=右, -1=左
-    sy = 1 if v_nbr[1] > 0 else -1        # 垂直方向：+1=下(图像y增大), -1=上
+    sx = 1 if h_nbr[0] > 0 else -1
+    sy = 1 if v_nbr[1] > 0 else -1
     _CORNER_MAP = {(1, -1): 'tr', (1, 1): 'br', (-1, -1): 'tl', (-1, 1): 'bl'}
     corner = _CORNER_MAP.get((sx, sy))
     if corner is None:
         return None
 
-    cut_w_px = abs(h_nbr[0])
-    cut_h_px = abs(v_nbr[1])
-
     xs = verts[:, 0]
     ys = verts[:, 1]
     minx, maxx = int(xs.min()), int(xs.max())
     miny, maxy = int(ys.min()), int(ys.max())
+
+    cx, cy = float(conc[0]), float(conc[1])
+    if corner == 'tr':
+        cut_w_px = maxx - cx          # 凹角到右边 = E
+        cut_h_px = cy - miny          # 凹角到上边 = D
+    elif corner == 'tl':
+        cut_w_px = cx - minx          # 凹角到左边 = E
+        cut_h_px = cy - miny          # 凹角到上边 = D
+    elif corner == 'br':
+        cut_w_px = maxx - cx          # 凹角到右边 = E
+        cut_h_px = maxy - cy          # 凹角到下边 = D
+    else:  # bl
+        cut_w_px = cx - minx          # 凹角到左边 = E
+        cut_h_px = maxy - cy          # 凹角到下边 = D
 
     return {
         'corner': corner,
@@ -352,6 +677,9 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
     corner = geo['corner']
     minx, miny, maxx, maxy = geo['bbox']
     cx, cy = geo['concave']
+    W_bbox = maxx - minx
+    H_bbox = maxy - miny
+    bbox_area = W_bbox * H_bbox
 
     cut_right = corner in ('tr', 'br')      # 凹角在右侧 → 垂直切边是"右"
     cut_top = corner in ('tr', 'tl')        # 凹角在上侧 → 水平切边是"上"
@@ -360,13 +688,19 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
     buckets = {'top': [], 'bottom': [], 'left': [], 'right': []}
     for val, conf, bbox in ocr_numbers:
         bx, by, bw, bh = bbox
+        # 过滤超大框噪点（多尺度 OCR 整页识别产生的 bbox 覆盖全图）
+        if bw * bh > bbox_area * 0.15:
+            continue
+        # 过滤过小或过大的数值（异常值）
+        if val <= 0 or val > 5000:
+            continue
         nx, ny = bx + bw / 2.0, by + bh / 2.0
         d_top = ny - miny
         d_bottom = maxy - ny
         d_left = nx - minx
         d_right = maxx - nx
         dmin = min(d_top, d_bottom, d_left, d_right)
-        item = (val, nx, ny, dmin, conf)
+        item = (val, nx, ny, dmin, conf, bw * bh)
         if dmin == d_top:
             buckets['top'].append(item)
         elif dmin == d_bottom:
@@ -421,7 +755,8 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
         #   2. 同位置+不同数值 → 高置信度优先（Tesseract 同一文字误识别）
         sorted_items = sorted(items, key=lambda x: -x[4])  # conf desc
         deduped = []
-        for val, nx, ny, dmin, conf in sorted_items:
+        for it in sorted_items:
+            val, nx, ny, dmin, conf = it[0], it[1], it[2], it[3], it[4]
             is_dup = False
             for i, (ev, ex, ey, _, ec) in enumerate(deduped):
                 dx, dy = abs(nx - ex), abs(ny - ey)
@@ -499,6 +834,37 @@ def _resolve_dimensions(geo, roles):
     D = roles.get('D')
     E = roles.get('E')
     F = roles.get('F')
+
+    # —— 数量级校验：A/B 应与 px_h/px_w 同数量级 ——
+    # OCR 可能丢失小数点（如 47.5 → 475），导致 A/B 与像素比例差 10 倍。
+    if A is not None and A > 0 and B is not None and B > 0 and px_w > 0 and px_h > 0:
+        r_cm = A / B
+        r_px = px_h / px_w
+        ratio = r_cm / r_px if r_px > 0 else 1.0
+        # 若 cm 比例是像素比例的约 10 倍或 1/10，修正数量级
+        if 7.0 < ratio < 13.0:
+            A = A / 10.0
+        elif 0.07 < ratio < 0.13:
+            A = A * 10.0
+
+    # —— 几何一致性校验：OCR 数值若与像素比例严重不符，用几何反推 ——
+    # 数字标注与轮廓粘连时 OCR 易误识别或错归属，像素比例是更可靠的约束。
+    if B is not None and B > 0 and E is not None and E > 0 and ratio_cw > 0:
+        r_ocr = E / B
+        if abs(r_ocr - ratio_cw) > 0.10:
+            # OCR 的 E 与几何不符，改用像素比例反推
+            E = B * ratio_cw
+    if A is not None and A > 0 and D is not None and D > 0 and ratio_ch > 0:
+        r_ocr = D / A
+        if abs(r_ocr - ratio_ch) > 0.10:
+            D = A * ratio_ch
+    # F = B - E，C = A - D 的一致性校验
+    if B is not None and B > 0 and F is not None and F > 0 and E is not None and E > 0:
+        if abs(B - (E + F)) > max(2.0, B * 0.05):
+            F = B - E
+    if A is not None and A > 0 and C is not None and C > 0 and D is not None and D > 0:
+        if abs(A - (C + D)) > max(2.0, A * 0.05):
+            C = A - D
 
     outer_w = B
     outer_h = A
