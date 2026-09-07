@@ -140,7 +140,7 @@ def test_wanhui_no_extra_white():
 
 
 def test_xianxu_corner_clean():
-    """CASE 2: 闲叙青釉 — 圆角弧区域裁切干净"""
+    """CASE 2: 闲叙青釉 — 圆角弧区域内内容保留，弧外侧无异常杂色"""
     w, h = 900, 600
     bg = (255, 255, 255)
     orig = _make_bordered_image(w, h, bg, [
@@ -152,22 +152,30 @@ def test_xianxu_corner_clean():
     result = apply_border_only_corners(img, {'tl': 9.0}, dpi=150, bg_color=bg)
     result_arr = np.array(result)
     r_px = int(9.0 * 150 / 2.54)
-    # INV: arc 外侧 (dist > r_px) 不应有内容残留
     from core.corner.algorithm import CORNER_ANGLES
     ang_min, ang_max = CORNER_ANGLES['tl']
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
     dx = xx - r_px; dy = yy - r_px
     dist = np.sqrt(dx*dx + dy*dy)
-    angle = np.mod(np.degrees(np.arctan2(dy,dx)), 360.0)
+    angle = np.mod(np.degrees(np.arctan2(dy, dx)), 360.0)
     valid = (angle >= ang_min) & (angle <= ang_max)
-    outside = valid & (dist > r_px)
-    # 外侧应为白色（背景色）或黑色（边框色），但不应有绿色内容
+
+    # 弧线内侧（dist <= r_px）内容像素应保留（不被裁切/覆盖）
+    inside = valid & (dist <= r_px)
+    content_mask = np.all(orig == (60, 120, 100), axis=2) & inside
+    if np.any(content_mask):
+        kept = np.all(result_arr[content_mask] == (60, 120, 100), axis=1)
+        ratio = float(np.mean(kept))
+        assert ratio >= 0.95, f"CASE2 FAIL: 弧内侧内容保留率 {ratio:.4f}"
+
+    # 弧线外侧（dist > r_px）在角方块 [0, r_px]^2 内的区域应为背景色或边框色，
+    # 不应混入内容色（60, 120, 100）。
+    outside = valid & (dist > r_px) & (xx <= r_px) & (yy <= r_px)
     outside_arr = result_arr[outside]
-    is_bg_or_border = (np.all(outside_arr == 255, axis=1)) | (np.max(outside_arr, axis=1) < 60)
-    not_allowed = ~is_bg_or_border
-    if np.any(not_allowed):
-        ratio = float(np.mean(not_allowed))
-        assert ratio < 0.01, f"CASE2 FAIL: 弧外侧非预期像素 {ratio:.4f}"
+    is_content = np.all(outside_arr == (60, 120, 100), axis=1)
+    if np.any(is_content):
+        ratio = float(np.mean(is_content))
+        assert ratio < 0.01, f"CASE2 FAIL: 弧外侧出现内容像素 {ratio:.4f}"
     print("  CASE2 (闲叙青釉): PASS")
 
 

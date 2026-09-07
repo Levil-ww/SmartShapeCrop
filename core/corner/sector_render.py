@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from .algorithm import CORNER_ANGLES
+from .algorithm import CORNER_ANGLES, _angle_in_corner_sector
 from .detection import (
     classify_gap_layers,
 )
@@ -303,10 +303,9 @@ def _redraw_border_on_corner(
 
     depth = float(R_total) - dist
 
-    if ang_max == 360:
-        valid_angle = (angle >= ang_min) | (angle < 1)
-    else:
-        valid_angle = (angle >= ang_min) & (angle <= ang_max)
+    # [Fix 白色竖线] 统一使用 _angle_in_corner_sector 处理 0°/360° 绕接，
+    # 避免 BR/TR 角在右边缘/上边缘接缝处漏绘形成白线。
+    valid_angle = _angle_in_corner_sector(angle, corner_key, tol=2.0)
     # [Fix 边框线粗细] valid_region 采用 R+2 容差，包含所有 inside_arc 像素
     #   (dist <= R_total + 2)，确保弧-直交界处无 1-2px 白色间隙。
     #   多层结构感知重绘见下方 content_protect_mask（核心区始终绘制，

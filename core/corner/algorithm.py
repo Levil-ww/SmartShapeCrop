@@ -35,6 +35,23 @@ CORNER_ANGLES: dict[str, tuple[int, int]] = {
 }
 
 
+def _angle_in_corner_sector(angle: np.ndarray, corner_key: str, tol: float = 2.0) -> np.ndarray:
+    """
+    判断像素角度是否属于指定圆角扇区，并处理 0°/360° 绕接。
+
+    BR 扇区为 [0°, 90°]，但紧邻 +x 轴上方（angle ≈ 359°）的像素
+    实际仍在右边缘边框条带内，应被纳入；TR 扇区同理处理 0° 附近。
+    TL/BL 不跨越 0°/360°，保持原条件。
+    """
+    ang_min, ang_max = CORNER_ANGLES[corner_key]
+    in_range = (angle >= ang_min) & (angle <= ang_max)
+    if ang_min == 0:  # br
+        in_range = in_range | (angle > 360.0 - tol)
+    elif ang_max == 360:  # tr
+        in_range = in_range | (angle < tol)
+    return in_range
+
+
 def get_corner_square(rect: tuple, corner_key: str, r: int) -> tuple[int, int, int, int]:
     """
     计算指定角落的 r×r 正方形区域（要被挖空的部分）。

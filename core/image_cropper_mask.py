@@ -15,6 +15,7 @@ from .image_ops import load_image_rgb, fit_image_to_rect
 from .psd.loader import is_psd_file, load_psd_flattened
 from .corner.algorithm import (
     CORNER_ANGLES,
+    _angle_in_corner_sector,
     carve_corner_on_mask,
     get_corner_square,
     get_corner_pieslice_bbox,
@@ -192,7 +193,19 @@ def _build_multi_layer_corner_mask(
         # 基础裁切区域：扇形外部（dist > r）
         # [Fix INV-5] 使用 <= ang_max 而非 < ang_max，确保边界像素被裁切，
         # 防止花漾之约等案例出现白色三角伪影
-        base_cut = (angle >= ang_min) & (angle <= ang_max) & (dist > r)
+        # [Fix 绕接] 0°/360° 绕接处纳入 sector，避免右边缘直边边框被误切
+        base_cut = _angle_in_corner_sector(angle, corner_key, tol=2.0) & (dist > r)
+
+        # [Fix 深色弧形缺口] border_zone 无条件定义，用于后续 ring_region 限制
+        T_plus = max(raw_depth + 2, 4)
+        if corner_key == 'tl':
+            border_zone = (xx <= T_plus) | (yy <= T_plus)
+        elif corner_key == 'tr':
+            border_zone = (((w - 1) - xx) <= T_plus) | (yy <= T_plus)
+        elif corner_key == 'bl':
+            border_zone = (xx <= T_plus) | (((h - 1) - yy) <= T_plus)
+        else:
+            border_zone = (((w - 1) - xx) <= T_plus) | (((h - 1) - yy) <= T_plus)
 
         if corner_protect and raw_depth > 0:
             # 保护模式：只在边框条带内裁切，但弧线外侧（dist > r）必须无条件裁切。
@@ -201,15 +214,6 @@ def _build_multi_layer_corner_mask(
             # （中古雨林黑色弧线、塞纳时光米色弧线）。
             # 修正后：弧线外侧无条件裁切；弧线内侧只在 border_zone 内裁切，
             # 确保内容区（花纹/图案）保持直角。
-            T_plus = raw_depth + 2
-            if corner_key == 'tl':
-                border_zone = (xx <= T_plus) | (yy <= T_plus)
-            elif corner_key == 'tr':
-                border_zone = (((w - 1) - xx) <= T_plus) | (yy <= T_plus)
-            elif corner_key == 'bl':
-                border_zone = (xx <= T_plus) | (((h - 1) - yy) <= T_plus)
-            else:
-                border_zone = (((w - 1) - xx) <= T_plus) | (((h - 1) - yy) <= T_plus)
             inner_cut = (dist <= r) & border_zone
             outer_cut = base_cut | inner_cut
         else:
@@ -238,14 +242,19 @@ def _build_multi_layer_corner_mask(
 
             if max_protect > 0:
                 ring_inner_bound = max(0.0, float(r) - float(max_protect))
-                # [Fix 2026-08-31] dist 上界改为 r+1.5，与 Step A d_region 对齐。
-                # 旧值 r+2 会保护 dist ∈ [r+0.5, r+2] 的像素，但 Step A 的 d_region
-                # 只覆盖 dist ≤ r+0.5 → 这些被保护但不被重绘的像素会保持原图颜色，
-                # 在图像边缘（上边/左边）形成黑色直角尾巴。
-                # 0.5 太小，整数像素在圆弧上的 dist 可偏离精确 R 达 ±1.4px（√2），
-                # 所以用 r+1.5 容差：既能覆盖圆弧上所有整数像素，又和 Step A 完全对齐。
-                ring_region = (angle >= ang_min) & (angle <= ang_max) & \
+                ring_region = _angle_in_corner_sector(angle, corner_key, tol=2.0) & \
                               (dist >= ring_inner_bound) & (dist <= float(r) + 1.5)
+                # [Fix 深色弧形缺口] dist > r 的像素必须在 border_zone 内才保护。
+                # 弧线外侧（dist > r 且不在 border_zone）必须被 base_cut 切为白色，
+                # 不能保留原图深色边框色形成弧形缺口线（蔓生花、素锦）。
+                # border_zone 内的直边边框像素仍需保护，保证边框连续。
+                ring_region = ring_region & (~(dist > float(r)) | border_zone)
+                # [Fix 0°/90° 接缝] 弧线内侧（dist <= r）的边框条带像素一律保护，
+                # 避免角落扇区角度边界把右/底直边边框条带误切出白点。
+                # 弧线外侧仍由上方条件约束：必须在 sector 内且位于 border_zone。
+                ring_region = ring_region | (
+                    border_zone & (dist >= ring_inner_bound) & (dist <= float(r))
+                )
             else:
                 ring_region = np.zeros_like(base_cut, dtype=bool)
 
@@ -363,7 +372,8 @@ def _build_multi_layer_corner_mask(
                 # 本层需要恢复的区域（严格不越界）：
                 # [Fix INV-5] 使用 <= ang_max 与 base_cut 保持一致，
                 # 防止花漾之约等案例在 ang_max 边界出现白色扇形角伪影
-                in_ang = (angle >= ang_min) & (angle <= ang_max)
+                # [Fix 绕接] 0°/360° 绕接处纳入 sector
+                in_ang = _angle_in_corner_sector(angle, corner_key, tol=2.0)
                 dist_in_r = (dist > float(R_eff_k)) & (dist <= float(r))  # 严格 <= r，杜绝 > r 的伪保留
                 if R_eff_k <= 0:
                     # 本层及内层应保持直角 → dist ∈ [0, r] 的 in_rect_k 像素全恢复
@@ -670,13 +680,12 @@ def _build_border_paint_mask(
         # 在扇形区域内，覆盖从外边缘到 paint_depth 的所有像素
         # 使用完整边框厚度，确保间隙层也能被重绘逻辑覆盖
         # [Fix 图三] 使用 <= ang_max 包含边界像素，确保角落接缝处的间隙像素被清理
+        # [Fix 绕接] 统一用 _angle_in_corner_sector 处理 0°/360° 绕接
         ring_inner = float(r) - float(paint_depth)
-        if ang_max == 360:
-            paint_region = ((angle >= ang_min) | (angle < 1)) & \
-                           (dist >= ring_inner) & (dist <= float(r) + 2.0)
-        else:
-            paint_region = (angle >= ang_min) & (angle <= ang_max) & \
-                           (dist >= ring_inner) & (dist <= float(r) + 2.0)
+        # [Fix 白色竖线] tol 与 sector_render 保持一致（2.0），避免边界像素
+        # 在 validity_mask 中为 0 却被 redraw 判定覆盖，从而被误清成背景白色。
+        paint_region = _angle_in_corner_sector(angle, corner_key, tol=2.0) & \
+                       (dist >= ring_inner) & (dist <= float(r) + 2.0)
 
         paint_local = paint_arr[y1:y2, x1:x2]
         paint_local[paint_region] = 255
@@ -795,10 +804,8 @@ def _post_cleanup_gap_regions(
         angle = np.mod(angle, 360.0)
         ang_min, ang_max = CORNER_ANGLES[corner_key]
 
-        if ang_max == 360:
-            valid_angle = (angle >= ang_min) | (angle < 1)
-        else:
-            valid_angle = (angle >= ang_min) & (angle <= ang_max)
+        # [Fix 白色竖线] 统一用 _angle_in_corner_sector 处理 0°/360° 绕接
+        valid_angle = _angle_in_corner_sector(angle, corner_key, tol=2.0)
         valid_region = valid_angle & (dist <= r + 2.0)
 
         if validity_mask is not None:

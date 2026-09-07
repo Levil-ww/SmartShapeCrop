@@ -15,6 +15,7 @@ from .image_ops import load_image_rgb, fit_image_to_rect
 from .psd.loader import is_psd_file, load_psd_flattened
 from .corner.algorithm import (
     CORNER_ANGLES,
+    _angle_in_corner_sector,
     carve_corner_on_mask,
     get_corner_square,
     get_corner_pieslice_bbox,
@@ -73,6 +74,7 @@ def _redraw_outer_border_on_corners(
     validity_mask: Image.Image,
     bg_color: tuple = (255, 255, 255),
     skip_outside_arc: bool = False,
+    only_outermost: bool = False,
 ) -> None:
     """
     圆角最外轮廓细边的安全补绘（V1.0 风格简化版）。
@@ -81,6 +83,7 @@ def _redraw_outer_border_on_corners(
     - 保留 V1.0 的 _edge_sample 直边采样特性（正确处理多层边框）
     - 简化安全判定逻辑，直接绘制边框颜色到目标区域
     - 确保边框厚度与原图一致
+    - only_outermost=True 时只补绘最外层边框，避免把内层装饰/间隙带进圆角
     """
     if not corners_px:
         return
@@ -128,7 +131,9 @@ def _redraw_outer_border_on_corners(
         ang_min, ang_max = CORNER_ANGLES[corner_key]
 
         # 只在角度范围 + 外轮廓薄层 + validity_mask 允许区域
-        in_angle = (angle >= ang_min - 2) & (angle <= ang_max + 2)
+        # [Fix 白色竖线] 使用 _angle_in_corner_sector 处理 0°/360° 绕接，
+        # 避免 BR/TR 角在右/上边缘接缝处漏补形成白线。
+        in_angle = _angle_in_corner_sector(angle, corner_key, tol=2.0)
         in_band = (dist >= float(inner_px)) & (dist <= float(r) + 1.5)
 
         # [Fix 非保护模式] Skip outside_arc pixels (dist > r) when requested
@@ -219,6 +224,15 @@ def _redraw_outer_border_on_corners(
         # 简单判定：如果代表色不是背景色（即有边框颜色），就绘制
         bg_arr = np.array(bg_color, dtype=np.uint8)
         is_border_color = np.any(rep_f != bg_arr, axis=1)
+
+        # 当只处理最外层边框时，只补绘与最外层颜色接近的像素，
+        # 防止把内层装饰/间隙色带入圆角弧线区域。
+        if only_outermost and border_layers:
+            outermost_color = np.array(border_layers[0][0], dtype=np.float64)
+            color_diff = np.sqrt(
+                np.sum((rep_f.astype(np.float64) - outermost_color.reshape(1, 3)) ** 2, axis=1)
+            )
+            is_border_color = is_border_color & (color_diff <= 30.0)
 
         if not np.any(is_border_color):
             continue
@@ -341,45 +355,32 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         if samples.shape[0] > 0:
             content_ref_arr = np.median(samples, axis=0)
 
-    # 智能判断每个角是否需要保护内容区
-    # [Fix v8 2026-08-27] 基于真实外背景色判断是否启用保护模式
+    # apply_border_only_corners 语义：仅对外层边框带应用圆角，内部永远保持直角。
+    # 因此所有角统一启用内容区保护模式，不再依赖 _corner_sector_has_content 的
+    # 自动判断（旧自动判断在大半径、纯色背景扇形时会关闭保护，导致内层矩形框、
+    # 装饰带也被圆角化，与“仅边框圆角”语义冲突）。
     #
-    # 根因分析：
-    #   旧逻辑 v6：仅当 r <= 2*raw_depth 时启用保护模式
-    #   问题：当圆角半径较大（如 r=25px, raw_depth=5px）时，r > 2*raw_depth，
-    #         导致 protect=False，整个内容区被圆角化（庄园秘境/塞纳时光问题）
-    #
-    #   旧逻辑 v7：始终启用保护模式
-    #   问题：当圆角外侧实际上只是纯色外背景（无花纹/图案）时，强行启用保护
-    #         会把大面积外背景保留在圆角弧线外侧，形成背景色弧形缺口
-    #         （中古雨林黑色弧线、塞纳时光米色弧线、青芜漫野圆角范围异常）。
-    #
-    # 新策略：基于 _corner_sector_has_content 自动判断
-    #   - 外侧扇形区域含有真实内容（花纹/图案）→ 启用保护，只裁边框条带
-    #   - 外侧扇形区域与外背景一致（纯色背景）→ 不保护，完整裁切扇形
-    #   - 只在边框条带内裁切，内容区保持直角
-    #   - 边框条带定义为两个边框条的并集（T = raw_depth + 4px 容差）
-    raw_depth = sum(t for _, t in border_layers) if border_layers else 0
-    corner_protect_map: dict[str, bool] = {}
-    for corner_key, r_px in corners_px.items():
-        if r_px <= 0:
-            corner_protect_map[corner_key] = False
-            continue
-        # [Fix v8] 按真实外背景判断是否需要保护内容区
-        corner_protect_map[corner_key] = _corner_sector_has_content(
-            img, corner_key, r_px, raw_depth
-        )
+    # [Fix 2026-09-07] 只使用最外层边框构建 mask / validity_mask / 重绘：
+    #   若传入完整 border_layers，raw_depth 会把内层文字带/装饰带也算进
+    #   border_zone，导致大半径时内层内容（如右侧文字带、花纹）被圆角化。
+    #   border_only 模式下只需处理最外层边框，内层图案一律保持直角。
+    outermost_layers = [border_layers[0]] if border_layers else []
+    raw_depth = outermost_layers[0][1] if outermost_layers else 0
+    corner_protect_map: dict[str, bool] = {
+        ck: (r_px > 0) for ck, r_px in corners_px.items()
+    }
 
     # 生成裁切 mask（per-corner protect_content）
+    # 仅使用最外层边框层定义 border_zone，确保内层图案/矩形框/文字带保持直角。
     # [Fix INV-1] 传递实际 bg_color 和 content_ref_arr，确保 classify_gap_layers 判定一致
     mask = _build_multi_layer_corner_mask(
-        w, h, corners_px, border_layers, nested_rects=nested_rects,
+        w, h, corners_px, outermost_layers, nested_rects=nested_rects,
         protect_content=corner_protect_map,
         bg_color=bg_color,
         content_ref_arr=content_ref_arr,
     )
 
-    # 生成独立的 validity_mask 用于边框重绘
+    # 生成独立的 validity_mask 用于边框重绘，只覆盖最外层边框带
     has_any_protect = any(corner_protect_map.values())
     if has_any_protect and raw_depth > 0:
         validity_mask = _build_border_paint_mask(w, h, corners_px, raw_depth)
@@ -414,22 +415,20 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # 注意：若将来需要支持"边框打印 + 内部强制纯白"的严格场景，建议新增
     #   参数显式开启强清空模式，而不是默认破坏绝大多数产品。
 
-    # Step A: 重绘所有边框层在圆弧上（完整 border_layers，不再只取最外层1层）
+    # Step A: 只重绘最外层边框在圆弧上
     #
-    # 由 sector_render.py 的 Smart Gap Check v2 负责智能区分：
-    #   - 真空间隙（墨上花开/塞纳时光米色带，颜色均匀纯色）→ 清空为背景色
-    #   - 装饰间隙（安妮森林文字带 / 花漾之约点状线，含非均匀装饰）→ 保留原贴图
-    #   - 有色边框层 → 结构感知的同心圆弧重绘，保护装饰像素不被覆盖
+    # apply_border_only_corners 的设计语义是“仅处理最外层圆角边框线”，
+    # 不再把内层装饰/间隙/深色带也沿圆弧重绘，避免产生紧贴黑色外框的深色弧形。
     if border_layers and corners_px:
         for corner_key, r_px in corners_px.items():
             if r_px <= 0:
                 continue
             _redraw_border_on_corner(
-                result, corner_key, r_px, border_layers,
+                result, corner_key, r_px, outermost_layers,
                 src_img=img, validity_mask=validity_mask,
-                only_outermost=False,  # 绘制所有边框层（gap层由Smart Gap Check自动跳过）
+                only_outermost=True,  # 仅绘制最外层边框
                 bg_color=bg_color,
-                paint_inside_arc=False,  # [P2-B R2] border_only + 无保护：保留源间隙，避免覆盖源 bg 色像素
+                paint_inside_arc=False,
             )
 
     # Step B: 安全补绘外轮廓
@@ -438,8 +437,9 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # 采样外背景色并误绘到弧线区域，形成背景色弧形缺口（中古雨林黑弧）。
     if corners_px and border_layers:
         _redraw_outer_border_on_corners(
-            result, img, corners_px, border_layers, validity_mask, bg_color,
+            result, img, corners_px, outermost_layers, validity_mask, bg_color,
             skip_outside_arc=True,  # 非保护模式：裁切区域不应重绘边框
+            only_outermost=True,
         )
 
     # Step C: [Fix 多余边框弧线 v2] 兜底间隙清理
@@ -448,7 +448,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     #   使用增强的间隙检测策略确保无遗漏
     if corners_px and border_layers:
         _post_cleanup_gap_regions(
-            result, img, corners_px, border_layers, validity_mask, bg_color,
+            result, img, corners_px, outermost_layers, validity_mask, bg_color,
         )
 
     return result
