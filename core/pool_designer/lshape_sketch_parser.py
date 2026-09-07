@@ -334,12 +334,25 @@ def _detect_lshape_geometry(cv2, gray):
         if gap.sum() == 0:
             return None  # 没有缺口（矩形）
 
-        # 缺口区域的 bbox
-        ys, xs = np.where(gap > 0)
-        gx0, gx1 = xs.min(), xs.max()
-        gy0, gy1 = ys.min(), ys.max()
-        cut_w = float(gx1 - gx0 + 1)
-        cut_h = float(gy1 - gy0 + 1)
+        # 取缺口的最大连通域作为真实挖角区域。
+        # 数字标注若与轮廓分离但落在 bbox 内（如贴边文字），会产生零散 gap 噪点，
+        # 直接对全部 gap 取 bbox 会把挖角 bbox 撑满全图、凹角判反。
+        # 最大连通域即为真实挖角（面积远大于文字噪点）。
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+            gap.astype(np.uint8), connectivity=8)
+        if num_labels <= 1:
+            return None
+        # stats[label] = [x, y, w, h, area]；跳过背景 label=0
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        best_label = 1 + int(np.argmax(areas))
+        gx0 = int(stats[best_label, cv2.CC_STAT_LEFT])
+        gy0 = int(stats[best_label, cv2.CC_STAT_TOP])
+        gw = int(stats[best_label, cv2.CC_STAT_WIDTH])
+        gh = int(stats[best_label, cv2.CC_STAT_HEIGHT])
+        gx1 = gx0 + gw - 1
+        gy1 = gy0 + gh - 1
+        cut_w = float(gw)
+        cut_h = float(gh)
 
         # 比例校验（深挖角场景 cut_h 可达 0.68，上限放宽到 0.75）
         cwr = cut_w / W
@@ -733,140 +746,174 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
     outer_w = _best(buckets[full_h_edge])
     outer_h = _best(buckets[full_v_edge])
 
-    # 切边上的两个数值：靠近凹角一侧 = 挖角尺寸（E / D），另一侧 = F / C
+    # 切边上的数值用「几何比例匹配」分辨挖角尺寸(E/D)与剩余段(F/C)，
+    # 不再依赖凹角 cx/cy 做 near/far 分割——凹角来自 approxPolyDP，
+    # 顶点位置有抖动，会导致 E↔F 互换、E=B−F 算出错值（如把 E 标误当 F）。
+    # 几何比例 cut_w_px/outer_w_px 稳定，能唯一确定哪个值是挖角尺寸。
     cut_h_items = buckets[cut_h_edge]
     cut_v_items = buckets[cut_v_edge]
 
-    def _split_cut(items, is_near, proximity):
-        """从切边候选中分出「靠近凹角」与「远离凹角」的数值。
+    # 几何挖角比例（用于在切边多个数值中识别 E/D）
+    px_outer_w = geo.get('outer_w_px', W_bbox)
+    px_outer_h = geo.get('outer_h_px', H_bbox)
+    px_cut_w = geo.get('cut_w_px', 0.0)
+    px_cut_h = geo.get('cut_h_px', 0.0)
+    geo_ratio_w = (px_cut_w / px_outer_w) if px_outer_w > 0 else 0.0
+    geo_ratio_h = (px_cut_h / px_outer_h) if px_outer_h > 0 else 0.0
 
-        同一侧若有多个候选（如多尺度 OCR 重复或邻近文字误入），
-        取**离凹角最近**的那个——缺口尺寸标注总是紧贴缺口绘制，
-        比单纯按置信度更符合真实草图语义。
-
-        [Fix 2026-09-02] 多候选改进：
-          - 先做位置重叠去重：若两候选中心距离 < 15px 且数值相同（5%内），
-            保留高置信度的（过滤 Tesseract 重复识别）
-          - 每侧按 proximity 升序排，取离凹角最近的一个
-        """
-        # 去重：先按置信度降序排，再逐个判断是否与已有项位置重叠
-        # 两种重叠都要处理：
-        #   1. 同位置+同数值 → 保留一个（多尺度 OCR 重复）
-        #   2. 同位置+不同数值 → 高置信度优先（Tesseract 同一文字误识别）
-        sorted_items = sorted(items, key=lambda x: -x[4])  # conf desc
+    def _dedup_edge(items):
+        """切边候选去重：同位置(<20px)保留置信度高的"""
+        sorted_items = sorted(items, key=lambda x: -x[4])
         deduped = []
         for it in sorted_items:
             val, nx, ny, dmin, conf = it[0], it[1], it[2], it[3], it[4]
-            is_dup = False
-            for i, (ev, ex, ey, _, ec) in enumerate(deduped):
-                dx, dy = abs(nx - ex), abs(ny - ey)
-                if dx < 20 and dy < 20:
-                    # 位置极近 → 保留已有的（置信度更高，因为 sorted）
-                    is_dup = True
-                    break
+            is_dup = any(abs(nx - ex) < 20 and abs(ny - ey) < 20
+                         for _, ex, ey, _, _ in deduped)
             if not is_dup:
                 deduped.append((val, nx, ny, dmin, conf))
+        return deduped
 
-        near_list, far_list = [], []
-        for val, nx, ny, dmin, conf in deduped:
-            prox = proximity(nx, ny)
-            if is_near(nx, ny):
-                near_list.append((prox, -conf, val))
+    def _resolve_cut_pair(items, outer, geo_ratio):
+        """从切边数值中分辨 (挖角尺寸, 剩余段)。
+
+        策略：挖角尺寸 v 应满足 v/outer ≈ geo_ratio（几何像素比例）。
+        - 单值：比较 v 作为挖角 vs 作为剩余段（outer−v 作为挖角），
+          取离 geo_ratio*outer 更近的解释。
+        - 多值：选 v/outer 最接近 geo_ratio 的作为挖角；若存在互补值
+          (v + v2 ≈ outer) 则加权确认。
+        返回 (cut_val, remaining_val)。
+        """
+        if not items or outer is None or outer <= 0:
+            return None, None
+        geo_cut = outer * geo_ratio
+        vals = [it[0] for it in items]
+        if len(vals) == 1:
+            v = vals[0]
+            err_as_cut = abs(v - geo_cut)
+            err_as_rem = abs((outer - v) - geo_cut)
+            if err_as_cut <= err_as_rem:
+                return v, outer - v       # v 是挖角尺寸
             else:
-                far_list.append((prox, -conf, val))
+                return outer - v, v       # v 是剩余段，挖角 = outer − v
+        # 多值：逐个尝试作为挖角，评分 = |v − geo_cut|，有互补值则降权
+        best_cut, best_rem, best_score = None, None, float('inf')
+        for v in vals:
+            score = abs(v - geo_cut)
+            has_complement = any(abs((outer - v) - v2) < outer * 0.05
+                                 for v2 in vals if v2 != v)
+            if has_complement:
+                score *= 0.3
+            if score < best_score:
+                best_score = score
+                best_cut = v
+                best_rem = outer - v
+        return best_cut, best_rem
 
-        # 每侧先按 proximity 升序，再按 -conf 升序（离凹角近优先，同距离高置信度优先）
-        near_list.sort()
-        far_list.sort()
-        near_val = near_list[0][2] if near_list else None
-        far_val = far_list[0][2] if far_list else None
-        return near_val, far_val
+    h_dedup = _dedup_edge(cut_h_items)
+    v_dedup = _dedup_edge(cut_v_items)
+    cut_w, top_w = _resolve_cut_pair(h_dedup, outer_w, geo_ratio_w)
+    cut_h, right_h = _resolve_cut_pair(v_dedup, outer_h, geo_ratio_h)
 
-    # [Fix 2026-09-02] 边界用 >= / <= 防止标注恰好在凹角坐标时被误分
-    #   例：tr 角 cy=66，标注 ny=66 描述 cut_h → 应归 near 侧
-    cut_w, top_w = _split_cut(
-        cut_h_items,
-        is_near=(lambda nx, ny: (nx >= cx) if cut_right else (nx <= cx)),
-        proximity=(lambda nx, ny: abs(nx - cx)))
-    cut_h, right_h = _split_cut(
-        cut_v_items,
-        is_near=(lambda nx, ny: (ny <= cy) if cut_top else (ny >= cy)),
-        proximity=(lambda nx, ny: abs(ny - cy)))
+    # —— 主策略：利用几何不变量推导挖角尺寸 ——
+    # 安全不变量：B = E + F（外宽 = 挖角宽 + 剩余顶段）
+    #           A = D + C（外高 = 挖角高 + 剩余侧段）
+    # F/C（长段）标注在外框切边上，识别最可靠；E/D 用 B-F / A-C 推导，
+    # 比直接读取挖角内部的 E/D 标签更稳健——后者常因标签贴凹角、落在两条
+    # 切边的 edge_tol 重叠区而被互换（E↔D），或因标注在内侧切边(y=cy/x=cx)
+    # 上而被外切边检测漏掉。
+    cut_w = None  # E
+    cut_h = None  # D
+    if outer_w is not None and top_w is not None:
+        derived_e = outer_w - top_w
+        if 0 < derived_e <= outer_w:
+            cut_w = derived_e
+    if outer_h is not None and right_h is not None:
+        derived_d = outer_h - right_h
+        if 0 < derived_d <= outer_h:
+            cut_h = derived_d
 
-    # —— 直接从凹角附近 OCR 提取挖角尺寸（最高优先级）——
-    # 挖角尺寸(E/D)总是标注在凹角紧邻的两条切边上，直接读取比边归属更可靠。
-    # 不依赖 cut_w_px/cut_h_px（几何 cut 检测可能因数字粘连而出错），
-    # 也不依赖边桶归属（数字可能因位置偏差落入错误的边桶）。
-    diag = np.hypot(W_bbox, H_bbox)
-    near_radius = diag * 0.40  # 凹角附近 40% 对角线范围内
-    # 切边容差：标注中心到切边的距离
-    edge_tol = max(15.0, min(W_bbox, H_bbox) * 0.08)
-
-    def _dedup_near(items):
-        """位置去重：同位置(<25px)保留置信度高的"""
-        s = sorted(items, key=lambda x: -x[4])
-        out = []
-        for it in s:
-            v, nx, ny, _, conf = it[0], it[1], it[2], it[3], it[4]
-            dup = any(abs(nx - ex) < 25 and abs(ny - ey) < 25 for _, ex, ey, _, _ in out)
-            if not dup:
-                out.append(it)
-        return out
-
-    e_candidates = []  # 水平切边上、靠近凹角 x 的数值 → E
-    d_candidates = []  # 垂直切边上、靠近凹角 y 的数值 → D
-
-    for it in ocr_numbers:
-        val, conf, bbox = it
-        bx, by, bw, bh = bbox
-        if bw * bh > bbox_area * 0.15:
-            continue
-        if val <= 0 or val > 5000:
-            continue
-        nx, ny = bx + bw / 2.0, by + bh / 2.0
-        dist_to_concave = np.hypot(nx - cx, ny - cy)
-        if dist_to_concave > near_radius:
-            continue
-
-        # 判断是否在水平切边上
-        h_cut_y = miny if cut_top else maxy
-        on_h_cut = abs(ny - h_cut_y) < edge_tol
-        # 判断是否在垂直切边上
-        v_cut_x = maxx if cut_right else minx
-        on_v_cut = abs(nx - v_cut_x) < edge_tol
-
-        if on_h_cut:
-            # 水平切边：仅凹角「切边侧」的数值 = E。
-            # cut_right 时切边侧为 x>=cx；否则 x<=cx。
-            # 必须按侧过滤，否则对侧的 F（长段）若离凹角更近会被误判为 E。
-            e_near_side = (nx >= cx) if cut_right else (nx <= cx)
-            if e_near_side:
-                prox_x = abs(nx - cx)
-                e_candidates.append((prox_x, -conf, val, nx, ny))
-        if on_v_cut:
-            # 垂直切边：仅凹角「切边侧」的数值 = D。
-            # cut_top 时切边侧为 y<=cy；否则 y>=cy。
-            # 必须按侧过滤，否则对侧的 C（剩余段）若离凹角更近会被误判为 D。
-            d_near_side = (ny <= cy) if cut_top else (ny >= cy)
-            if d_near_side:
-                prox_y = abs(ny - cy)
-                d_candidates.append((prox_y, -conf, val, nx, ny))
-
-    e_candidates.sort()
-    d_candidates.sort()
-
-    # 去重并取最近的
+    # —— 兜底：直接从凹角附近/挖角区域 OCR 提取 E/D（仅当不变量推导失败时）——
     e_direct = None
     d_direct = None
-    if e_candidates:
-        e_direct = e_candidates[0][2]
-    if d_candidates:
-        d_direct = d_candidates[0][2]
+    if cut_w is None or cut_h is None:
+        diag = np.hypot(W_bbox, H_bbox)
+        near_radius = diag * 0.40
+        edge_tol = max(15.0, min(W_bbox, H_bbox) * 0.08)
 
-    # 直接提取的 E/D 优先于边归属结果
-    if e_direct is not None:
+        def _dedup_near(items):
+            s = sorted(items, key=lambda x: -x[4])
+            out = []
+            for it in s:
+                v, nx, ny, _, conf = it[0], it[1], it[2], it[3], it[4]
+                dup = any(abs(nx - ex) < 25 and abs(ny - ey) < 25 for _, ex, ey, _, _ in out)
+                if not dup:
+                    out.append(it)
+            return out
+
+        e_candidates = []
+        d_candidates = []
+        for it in ocr_numbers:
+            val, conf, bbox = it
+            bx, by, bw, bh = bbox
+            if bw * bh > bbox_area * 0.15 or val <= 0 or val > 5000:
+                continue
+            nx, ny = bx + bw / 2.0, by + bh / 2.0
+            if np.hypot(nx - cx, ny - cy) > near_radius:
+                continue
+            h_cut_y = miny if cut_top else maxy
+            v_cut_x = maxx if cut_right else minx
+            on_h_cut = abs(ny - h_cut_y) < edge_tol
+            on_v_cut = abs(nx - v_cut_x) < edge_tol
+            if on_h_cut:
+                e_near_side = (nx >= cx) if cut_right else (nx <= cx)
+                if e_near_side:
+                    e_candidates.append((abs(nx - cx), -conf, val, nx, ny))
+            if on_v_cut:
+                d_near_side = (ny <= cy) if cut_top else (ny >= cy)
+                if d_near_side:
+                    d_candidates.append((abs(ny - cy), -conf, val, nx, ny))
+        e_candidates.sort()
+        d_candidates.sort()
+        if cut_w is None and e_candidates:
+            e_direct = e_candidates[0][2]
+        if cut_h is None and d_candidates:
+            d_direct = d_candidates[0][2]
+
+        # 最后兜底：挖角区域内部标注
+        if (cut_w is None and e_direct is None) or (cut_h is None and d_direct is None):
+            if cut_top and cut_right:
+                in_cutout = lambda nx, ny: (cx <= nx <= maxx) and (miny <= ny <= cy)
+            elif cut_top and not cut_right:
+                in_cutout = lambda nx, ny: (minx <= nx <= cx) and (miny <= ny <= cy)
+            elif (not cut_top) and cut_right:
+                in_cutout = lambda nx, ny: (cx <= nx <= maxx) and (cy <= ny <= maxy)
+            else:
+                in_cutout = lambda nx, ny: (minx <= nx <= cx) and (cy <= ny <= maxy)
+            cutout_items = []
+            for it in ocr_numbers:
+                val, conf, bbox = it
+                bx, by, bw, bh = bbox
+                if bw * bh > bbox_area * 0.15 or val <= 0 or val > 5000:
+                    continue
+                nx, ny = bx + bw / 2.0, by + bh / 2.0
+                if in_cutout(nx, ny):
+                    cutout_items.append((val, nx, ny, None, conf))
+            cutout_items = _dedup_near(cutout_items)
+            if cut_w is None and e_direct is None:
+                e_cands = [(abs(nx - cx), -conf, val) for val, nx, ny, _, conf in cutout_items]
+                e_cands.sort()
+                if e_cands:
+                    e_direct = e_cands[0][2]
+            if cut_h is None and d_direct is None:
+                d_cands = [(abs(ny - cy), -conf, val) for val, nx, ny, _, conf in cutout_items]
+                d_cands.sort()
+                if d_cands:
+                    d_direct = d_cands[0][2]
+
+    # 仅在不变量推导失败时，用直接提取结果填充
+    if cut_w is None and e_direct is not None:
         cut_w = e_direct
-    if d_direct is not None:
+    if cut_h is None and d_direct is not None:
         cut_h = d_direct
 
     roles = {}

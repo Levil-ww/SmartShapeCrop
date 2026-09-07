@@ -60,18 +60,32 @@ class _GenerateMixin:
             effective_target_name = target_name_override.strip()
         else:
             effective_target_name = self._pool_target.text().strip()
+        target_name = effective_target_name
 
-        # [Perf-Opt] 如果后台预热扫描仍在进行，等待其完成后再启动渲染 Worker。
-        # 避免两个子线程竞争写 TemplateMatcher（_cache/索引/子目录 mtime）。
-        # 预热完成后内存缓存已就绪，PoolRenderWorker 内的 scan_library 会
-        # 走 quick-skip 路径（毫秒级），总等待时间 = 预热剩余时间而不是从头扫描。
+        # [Perf-Opt] 如果后台预热扫描仍在进行，**不阻塞主线程**等待。
+        # 之前 warmup.wait(30min) 会让 UI 卡死直到 149s 扫描结束。
+        # 改为：把"启动 PoolRenderWorker"的后续动作挂到 warmup.finished 信号上，
+        # 预热完成后自动继续；期间 UI 保持响应，状态栏提示等待。
         warmup = getattr(self, '_warmup_worker', None)
         if warmup is not None and warmup.isRunning():
-            self._set_pool_status("⏳ 模板库预热扫描即将完成…请稍候")
-            QApplication.processEvents()  # 刷新状态栏文字
-            # 使用 wait(30 分钟超时) 等待预热自然结束；极端超时也允许继续（scan_library 会做正确的事）
-            warmup.wait(30 * 60 * 1000)
+            self._set_pool_status("⏳ 模板库预热扫描中…完成后自动生成预览")
+            QApplication.processEvents()
 
+            def _after_warmup(_s=source, _t=target_name):
+                # 预热结束后，内存缓存已就绪，scan_library 会走 quick-skip（毫秒级）
+                self._pool_start_generate_worker(_s, _t)
+
+            try:
+                warmup.finished.connect(_after_warmup)
+            except Exception:
+                # 信号连接失败兜底：直接继续（PoolWorker 内 scan_library 会处理缓存竞争）
+                self._pool_start_generate_worker(source, target_name)
+            return
+
+        self._pool_start_generate_worker(source, target_name)
+
+    def _pool_start_generate_worker(self, source: str, target_name: str):
+        """实际启动 PoolRenderWorker 的逻辑（预热等待结束后或无预热时调用）。"""
         # V2.0 修复：EXE 模式下用户机器可能未安装 Tesseract-OCR，在执行草图解析前
         # 先主动检查引擎状态，给出明确的安装指引，而不是解析后模糊提示"未识别"
         if self._sketch_path and os.path.isfile(self._sketch_path):
@@ -88,7 +102,6 @@ class _GenerateMixin:
             except Exception:
                 pass
 
-        target_name = effective_target_name
         if not target_name:
             self._set_pool_status("请先填写或选择目标文件名", is_error=True)
             return
@@ -99,29 +112,16 @@ class _GenerateMixin:
             return
 
         # [Fix 2026-08-28] 检测用户手动修改的边距值
-        # 当用户在 UI 上修改了边距 SpinBox 值（与草图识别结果不同），
-        # 将修改后的值传递给 Worker，确保 CropDesign 和素材匹配都使用
-        # 用户修正后的内挖尺寸。
         user_margins = self._detect_user_margin_edits()
 
         # ===== [MULTI-HOLE Add-On 2026-08-29] UI 多洞改动 → 传入 Worker =====
-        # 类比单洞 user_margins：只要多洞 GroupBox 处于激活（active_count>=2），
-        # 就把当前 SpinBox 的真值传给 Worker。Worker 内"多洞UI覆盖 Add-On"分支
-        # 再覆盖 sketch 解析的每洞 w/h/间距 + 重算 x/y，保证：
-        #   1) design.pool_holes_cm[i].w/h = 用户修改值
-        #   2) _on_pool_finished_ok 多洞独立素材匹配，自然按覆盖后的 w/h 做匹配
-        #   3) 预览/渲染（_apply_quiet → _collect → image_ops）使用同一套洞几何。
-        # 单洞场景（GroupBox 隐藏，active_count==0）→ 返回 None → Worker 零影响。
         user_multihole_params = self._detect_multihole_edits()
 
-        # ===== [2026-09-03 状态隔离 Safety 2] 记录来源面板，供回调 _on_pool_finished_ok
-        # 判断历史记录写入哪个 TARGET_SRC_* 键。必须在 worker.start() 前写，
-        # 因为 Worker 在子线程发射 finished_ok 信号（排队到主线程），写/读都在主线程无竞争。
+        # ===== [2026-09-03 状态隔离 Safety 2] 记录来源面板 =====
         self._last_generate_source = source
         # 启动 Worker
         self._pool_btn_generate.setEnabled(False)
         self._pool_btn_generate.setText("处理中…请稍候")
-        # ===== [L-Shape Panel Refactor] 同步一键生成按钮状态到 LShapePanel =====
         if self._lshape_panel is not None:
             self._lshape_panel.set_generate_enabled(False, "处理中…请稍候")
         worker = PoolRenderWorker(
@@ -129,11 +129,6 @@ class _GenerateMixin:
             pre_parsed_result=self._sketch_parse_result,
             user_margins=user_margins,
             user_multihole_params=user_multihole_params,
-            # ===== [2026-09-03 双向隔离 Bug B 修复] lshape_params 只在 source='lshape' 时传给 Worker =====
-            # 之前无条件读 LShapePanel._lshape_params：用户先在 L 面板识别过一次 L 形 →
-            # LShapePanel 持有有效参数 → 切到水池面板点生成 → Worker 误进 L 形模式 →
-            # 日志写 "L 形挖角模式" → 水池面板状态栏混入 L 形数据。
-            # 正确：source='pool' 强制 None（矩形/多洞模式），source='lshape' 才读 LShapePanel。
             lshape_params=(self._get_lshape_params() if source == 'lshape' else None),
             parent=self)
         worker.progress.connect(self._on_pool_progress)
@@ -142,7 +137,6 @@ class _GenerateMixin:
         worker.finished.connect(lambda: (
             self._pool_btn_generate.setEnabled(True),
             self._pool_btn_generate.setText("🔍 匹配模板 → 解析草图 → 生成预览"),
-            # ===== [L-Shape Panel Refactor] 恢复 LShapePanel 一键生成按钮 =====
             self._lshape_panel.set_generate_enabled(True, "🔍 生成预览") if self._lshape_panel is not None else None,
         ))
         self._pool_worker = worker

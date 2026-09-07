@@ -231,6 +231,7 @@ class DiskCache:
     idx_ratio: dict = field(default_factory=dict)  # v2 新增
     last_scan_at: float = 0.0
     last_full_walk_at: float = 0.0  # v2 新增：上次真正 os.walk 的时间（用于快速跳过）
+    dir_mtime: float = 0.0  # v3 新增：模板根目录 mtime（用于快速跳过，不持久化则 quick-skip 永远失败）
 
     # ---- 序列化（pickle 优先 + JSON fallback）----
     def save(self, path_without_ext: str):
@@ -247,6 +248,7 @@ class DiskCache:
             "idx_ratio": self.idx_ratio,
             "last_scan_at": self.last_scan_at,
             "last_full_walk_at": self.last_full_walk_at,
+            "dir_mtime": self.dir_mtime,
         }
         # 1) 先写 pickle
         pkl_path = path_without_ext + ".pickle"
@@ -333,6 +335,7 @@ class DiskCache:
             cache.idx_ratio = data.get("idx_ratio") or {}
             cache.last_scan_at = float(data.get("last_scan_at", 0) or 0)
             cache.last_full_walk_at = float(data.get("last_full_walk_at", 0) or 0)
+            cache.dir_mtime = float(data.get("dir_mtime", 0) or 0)
             return cache
         except Exception as e:
             logger.warning(f"磁盘缓存反序列化失败: {e}")
@@ -433,6 +436,7 @@ class TemplateMatcher:
         if updated_full_walk:
             self._last_full_walk_at = dc.last_scan_at
         dc.last_full_walk_at = self._last_full_walk_at
+        dc.dir_mtime = self._dir_mtime
         dc.save(self._cache_path())
 
     # ------------------------------------------------------------
@@ -508,6 +512,7 @@ class TemplateMatcher:
                 self._idx_ratio = dc.idx_ratio
                 self._subdir_mtimes = dc.subdir_mtimes
                 self._last_full_walk_at = dc.last_full_walk_at
+                self._dir_mtime = dc.dir_mtime  # 恢复根目录 mtime，否则 quick-skip 永远失败
                 loaded_from_disk = True
                 self._log(
                     f"💾 加载磁盘缓存成功（{len(self._cache)} 个条目，"
