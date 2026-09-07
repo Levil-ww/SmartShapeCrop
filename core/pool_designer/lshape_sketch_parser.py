@@ -250,10 +250,10 @@ def _detect_lshape_geometry(cv2, gray):
                 cut_w = pt[0] - minx
                 cut_h = maxy - pt[1]
 
-            # 硬约束：cut 比例合理 + cut < 外框一半
+            # 硬约束：cut 比例合理 + cut < 外框 75%（深挖角场景 cut_h 可达 0.68）
             cw_ratio = cut_w / outer_w if outer_w > 0 else 0
             ch_ratio = cut_h / outer_h if outer_h > 0 else 0
-            if not (0.02 <= cw_ratio <= 0.50 and 0.02 <= ch_ratio <= 0.50):
+            if not (0.02 <= cw_ratio <= 0.75 and 0.02 <= ch_ratio <= 0.75):
                 continue
 
             # 一致性因子：邻接 cut 与 bbox cut 应接近
@@ -341,10 +341,10 @@ def _detect_lshape_geometry(cv2, gray):
         cut_w = float(gx1 - gx0 + 1)
         cut_h = float(gy1 - gy0 + 1)
 
-        # 比例校验
+        # 比例校验（深挖角场景 cut_h 可达 0.68，上限放宽到 0.75）
         cwr = cut_w / W
         chr_ = cut_h / H
-        if not (0.02 <= cwr <= 0.50 and 0.02 <= chr_ <= 0.50):
+        if not (0.02 <= cwr <= 0.75 and 0.02 <= chr_ <= 0.75):
             return None
 
         # 判断缺口在哪个角
@@ -793,6 +793,82 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
         is_near=(lambda nx, ny: (ny <= cy) if cut_top else (ny >= cy)),
         proximity=(lambda nx, ny: abs(ny - cy)))
 
+    # —— 直接从凹角附近 OCR 提取挖角尺寸（最高优先级）——
+    # 挖角尺寸(E/D)总是标注在凹角紧邻的两条切边上，直接读取比边归属更可靠。
+    # 不依赖 cut_w_px/cut_h_px（几何 cut 检测可能因数字粘连而出错），
+    # 也不依赖边桶归属（数字可能因位置偏差落入错误的边桶）。
+    diag = np.hypot(W_bbox, H_bbox)
+    near_radius = diag * 0.40  # 凹角附近 40% 对角线范围内
+    # 切边容差：标注中心到切边的距离
+    edge_tol = max(15.0, min(W_bbox, H_bbox) * 0.08)
+
+    def _dedup_near(items):
+        """位置去重：同位置(<25px)保留置信度高的"""
+        s = sorted(items, key=lambda x: -x[4])
+        out = []
+        for it in s:
+            v, nx, ny, _, conf = it[0], it[1], it[2], it[3], it[4]
+            dup = any(abs(nx - ex) < 25 and abs(ny - ey) < 25 for _, ex, ey, _, _ in out)
+            if not dup:
+                out.append(it)
+        return out
+
+    e_candidates = []  # 水平切边上、靠近凹角 x 的数值 → E
+    d_candidates = []  # 垂直切边上、靠近凹角 y 的数值 → D
+
+    for it in ocr_numbers:
+        val, conf, bbox = it
+        bx, by, bw, bh = bbox
+        if bw * bh > bbox_area * 0.15:
+            continue
+        if val <= 0 or val > 5000:
+            continue
+        nx, ny = bx + bw / 2.0, by + bh / 2.0
+        dist_to_concave = np.hypot(nx - cx, ny - cy)
+        if dist_to_concave > near_radius:
+            continue
+
+        # 判断是否在水平切边上
+        h_cut_y = miny if cut_top else maxy
+        on_h_cut = abs(ny - h_cut_y) < edge_tol
+        # 判断是否在垂直切边上
+        v_cut_x = maxx if cut_right else minx
+        on_v_cut = abs(nx - v_cut_x) < edge_tol
+
+        if on_h_cut:
+            # 水平切边：仅凹角「切边侧」的数值 = E。
+            # cut_right 时切边侧为 x>=cx；否则 x<=cx。
+            # 必须按侧过滤，否则对侧的 F（长段）若离凹角更近会被误判为 E。
+            e_near_side = (nx >= cx) if cut_right else (nx <= cx)
+            if e_near_side:
+                prox_x = abs(nx - cx)
+                e_candidates.append((prox_x, -conf, val, nx, ny))
+        if on_v_cut:
+            # 垂直切边：仅凹角「切边侧」的数值 = D。
+            # cut_top 时切边侧为 y<=cy；否则 y>=cy。
+            # 必须按侧过滤，否则对侧的 C（剩余段）若离凹角更近会被误判为 D。
+            d_near_side = (ny <= cy) if cut_top else (ny >= cy)
+            if d_near_side:
+                prox_y = abs(ny - cy)
+                d_candidates.append((prox_y, -conf, val, nx, ny))
+
+    e_candidates.sort()
+    d_candidates.sort()
+
+    # 去重并取最近的
+    e_direct = None
+    d_direct = None
+    if e_candidates:
+        e_direct = e_candidates[0][2]
+    if d_candidates:
+        d_direct = d_candidates[0][2]
+
+    # 直接提取的 E/D 优先于边归属结果
+    if e_direct is not None:
+        cut_w = e_direct
+    if d_direct is not None:
+        cut_h = d_direct
+
     roles = {}
     if outer_w is not None:
         roles['B'] = outer_w
@@ -847,16 +923,17 @@ def _resolve_dimensions(geo, roles):
         elif 0.07 < ratio < 0.13:
             A = A * 10.0
 
-    # —— 几何一致性校验：OCR 数值若与像素比例严重不符，用几何反推 ——
-    # 数字标注与轮廓粘连时 OCR 易误识别或错归属，像素比例是更可靠的约束。
+    # —— 几何一致性校验：仅当 OCR 数值明显异常时才用几何反推 ——
+    # E/D 现在直接从凹角附近 OCR 提取，比几何像素比例更可靠。
+    # 只有当 OCR 值与像素比例差异极大（>40%）时才认为是 OCR 误识别，
+    # 避免几何 cut 检测出错时把正确的 OCR 值覆盖掉。
     if B is not None and B > 0 and E is not None and E > 0 and ratio_cw > 0:
         r_ocr = E / B
-        if abs(r_ocr - ratio_cw) > 0.10:
-            # OCR 的 E 与几何不符，改用像素比例反推
+        if abs(r_ocr - ratio_cw) > 0.40:
             E = B * ratio_cw
     if A is not None and A > 0 and D is not None and D > 0 and ratio_ch > 0:
         r_ocr = D / A
-        if abs(r_ocr - ratio_ch) > 0.10:
+        if abs(r_ocr - ratio_ch) > 0.40:
             D = A * ratio_ch
     # F = B - E，C = A - D 的一致性校验
     if B is not None and B > 0 and F is not None and F > 0 and E is not None and E > 0:
