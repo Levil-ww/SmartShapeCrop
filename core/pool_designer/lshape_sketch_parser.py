@@ -832,6 +832,25 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
         if 0 < derived_d <= outer_h:
             cut_h = derived_d
 
+    # —— 宽高比交叉校验：防止 E↔D 互换 ——
+    # 挖角标签贴凹角时，E(宽)可能落入垂直切边桶、D(高)可能落入水平切边桶，
+    # 导致 _resolve_cut_pair 把两者互换。各自内部虽满足 E+F=B、D+C=A，
+    # 但 E/D 会偏离几何像素比 cut_w_px/cut_h_px。此时交换 E、D 即可纠正。
+    if cut_w is not None and cut_h is not None and cut_w > 0 and cut_h > 0:
+        px_cw = geo.get('cut_w_px', 0.0)
+        px_ch = geo.get('cut_h_px', 0.0)
+        if px_cw > 0 and px_ch > 0:
+            geo_ar = px_cw / px_ch          # 几何宽高比
+            cur_ar = cut_w / cut_h          # 当前宽高比
+            swap_ar = cut_h / cut_w         # 交换后的宽高比
+            cur_err = abs(cur_ar - geo_ar)
+            swap_err = abs(swap_ar - geo_ar)
+            # 仅当交换后：① 误差显著更小（<一半）且 ② 交换后比值确实接近几何比（<50%），才交换
+            if swap_err < cur_err * 0.5 and swap_err < geo_ar * 0.5:
+                cut_w, cut_h = cut_h, cut_w
+                top_w = (outer_w - cut_w) if outer_w is not None else None
+                right_h = (outer_h - cut_h) if outer_h is not None else None
+
     # —— 兜底：直接从凹角附近/挖角区域 OCR 提取 E/D（仅当不变量推导失败时）——
     e_direct = None
     d_direct = None
