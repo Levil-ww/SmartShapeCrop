@@ -746,13 +746,32 @@ def _v13_segv(arr: np.ndarray, tol: int = 12):
     return out
 
 
-def _v13_pick(segs):
-    """V13 段选择：最外暗色段=黑描边，其后第一个 ≥40px 彩色段=主色带。
+def _v13_pick(segs, window_size: int | None = None):
+    """V13 段选择：最外暗色段=黑描边，其后第一个窄彩色段=主色带。
 
     返回 (black_width, band_width, band_color) 或 None。
     band_width=0 表示只有黑边无主带（如 庄园秘境/戏蝶/中古大花 纯黑宽边素材）。
+
+    Args:
+        segs: _v13_segv 返回的 1D 段列表
+        window_size: 检测窗口总长度（像素），用于判断 band 是否过宽。
+                     None 时跳过宽度上限检查（向后兼容）。
+
+    变更历史（2026-09-07 Fix #1 和 #2）：
+      原 MIN_BAND=40 过高：真实 border band 常为 20-30px（克罗印花棕带等），
+      被跳过导致 V13 转而拾取其后的大块内容区为 band → 在 cut 边缘绘制 200+px
+      内容色带（用户看到的"灰色 L 形边框带"和"未对齐"）。
+      修复：MIN_BAND 降为 15（捕捉窄 band），新增 MAX_BAND_RATIO 上限拦截
+      大块内容区（≤15% 窗口尺寸才视为 border band）。
     """
-    MIN_BAND = 40
+    MIN_BAND = 15  # ← 原 40 → 15，捕捉真实 20-30px 的边框色带
+    MAX_BAND_RATIO = 0.15  # band 宽度不得超过窗口的 15%（防内容区误检）
+
+    # 计算上限
+    max_band_w = None
+    if window_size is not None and window_size > 0:
+        max_band_w = max(30, int(window_size * MAX_BAND_RATIO))
+
     i = 0
     while i < len(segs) and (segs[i][1] - segs[i][0] + 1) <= 2:
         i += 1
@@ -766,25 +785,41 @@ def _v13_pick(segs):
     for j in range(i, len(segs)):
         w = segs[j][1] - segs[j][0] + 1
         c = segs[j][2]
-        if w >= MIN_BAND and max(c) >= 60 and max(c) <= 235:
+        # 颜色条件：不是近白/近黑的花纹底色
+        color_ok = max(c) >= 60 and max(c) <= 235
+        # 下限：够宽才像 border band（原 40 → 15）
+        min_ok = w >= MIN_BAND
+        # 上限：不能太宽（拦截内容区误检）
+        max_ok = max_band_w is None or w <= max_band_w
+        if min_ok and color_ok and max_ok:
             return (bw, w, c)
+        # 遇到过宽段（内容区特征）→ 直接终止搜索，返回 band=0
+        # 避免继续向后找更远的窄段（那也不可能是 border band 了）
+        if max_band_w is not None and w > max_band_w and color_ok:
+            break
     return (bw, 0, (0, 0, 0))
 
 
 def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, int]] | None:
     """V13 自动边框检测：返回 (黑描边宽 px, 主带宽 px, 主带色 RGB) 或 None。
 
-    规则（V13 原版）：
+    规则：
       - 检测以素材顶边（中心列）为准；左剖面仅校正黑边宽度
       - 最外暗色段 = 黑描边（宽度自动）
-      - 黑描边后第一个 ≥40px 的彩色段（排除近白/近黑的花纹底色）= 主色带
-      - 黑边后只有窄浅色过渡（≤30px）→ 视为无主带（BW=0）
+      - 黑描边后第一个 15px~15%窗口尺寸 的彩色段 = 主色带
+        （排除近白/近黑的花纹底色，也排除大块内容区误检）
+      - 黑边后只有窄浅色过渡或直接进入大块内容 → 视为无主带（band=0）
 
     Args:
         src_img: 原始素材 PIL Image（建议未拉伸，避免 adapt_pool_material 畸变）
 
     Returns:
-        (edge_px, band_px, (r, g, b)) 或 None（未检测到黑描边）
+        (edge_px, band_px, (r, g, b)) 或 None（未检测到黑描边 / 检测结果无效）
+
+    额外验证（2026-09-07 Fix）：
+      - 总边框厚度（edge + band）不得超过素材短边的 30%
+        （与 _is_real_border 的上限一致，防止大面积图案被误当成边框）
+      - 不满足则返回 None → 触发旧路径 detect_pool_material_borders 兜底
     """
     if src_img is None:
         return None
@@ -794,11 +829,25 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
         return None
 
     # 顶边：取上 1/3 中心列；左边：取左 1/3 中心行（仅用于校正黑边宽）
-    pt = _v13_pick(_v13_segv(arr[:min(H // 3, 400), W // 2]))
-    pl = _v13_pick(_v13_segv(arr[H // 2, :min(W // 3, 400)]))
+    top_win = min(H // 3, 400)
+    left_win = min(W // 3, 400)
+    pt = _v13_pick(_v13_segv(arr[:top_win, W // 2]), window_size=top_win)
+    pl = _v13_pick(_v13_segv(arr[H // 2, :left_win]), window_size=left_win)
     if pt is None:
         return None
     edge = round((pt[0] + (pl[0] if pl else pt[0])) / 2)
+
+    # 最终校验：总边框厚度不得超过素材短边的 30%
+    # （与 _is_real_border 一致，防止大块内容区被误判）
+    min_dim = min(H, W)
+    total_t = edge + pt[1]
+    if total_t > min_dim * 0.30:
+        logger.info(
+            "[V13] 检测结果总厚度 %dpx > 30%% × %dpx，判定为误检，走旧路径兜底",
+            total_t, min_dim,
+        )
+        return None
+
     return (edge, pt[1], pt[2])
 
 
