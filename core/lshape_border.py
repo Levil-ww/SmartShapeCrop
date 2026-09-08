@@ -518,6 +518,61 @@ def apply_lshape_border_completion(
     if detect_img is None:
         return False
 
+    # ===== [2026-09-08 Profile Route] 「描边+色带+细边框」结构检测优先 =====
+    # 背景：蔓生花 / 中古雨林类素材最外层不是黑描边（米色/白色边距 + 细线 +
+    # 点带 + 细框），V13 检测返回 None、旧路径把与中心色接近的层过滤掉，
+    # 导致 L 形挖角无任何边框补全（方形切口观感）。
+    # 新路径（core/lshape_border_route.py，纯加性）：
+    #   - 锚点对齐（抗 1~6px 出血白边）→ 四边层序一致，投票颜色真实
+    #   - 截断到第二条细线 → 描边 + 色带 + 内框线 = 3 层封顶
+    #     （用户明确：点带/文字带及其内侧细线不处理）
+    #   - 几何均值 scale → 对 adapt_pool_material 的 ROTATE_270 稳健
+    # 让位判定 profile_yields_to_v13 在路由层：V13 已验证场景先问 V13，
+    # V13 未命中（庄园秘境：内侧无主色带）Profile 接管。
+    from .lshape_border_route import (
+        _apply_profile_path, detect_border_profile, profile_yields_to_v13,
+    )
+    _profile_layers = detect_border_profile(detect_img)
+    _v13 = None
+    _v13_computed = False
+    if _profile_layers and profile_yields_to_v13(_profile_layers):
+        _v13 = detect_border_v13(detect_img)
+        _v13_computed = True
+        if _v13 is not None:
+            logger.info(
+                "[LShapeBorder] V13 检测命中（Profile 让位）: edge=%dpx band=%dpx color=%s",
+                _v13[0], _v13[1], _v13[2],
+            )
+            return _apply_v13_path(
+                canvas_arr=canvas_arr,
+                material_img=material_img,
+                outer_rect=outer_rect,
+                cut_corner=cut_corner,
+                cut_w_px=cut_w_px,
+                cut_h_px=cut_h_px,
+                src_material_img=src_material_img,
+                scale_x=scale_x,
+                scale_y=scale_y,
+                manual_edge_px=_v13[0],
+                manual_band_px=_v13[1],
+                manual_band_color=_v13[2],
+            )
+        logger.info("[LShapeBorder] Profile 首层厚黑但 V13 未命中，Profile 接管")
+
+    if _profile_layers:
+        if _apply_profile_path(
+            canvas_arr=canvas_arr,
+            outer_rect=outer_rect,
+            cut_corner=cut_corner,
+            cut_w_px=cut_w_px,
+            cut_h_px=cut_h_px,
+            layers_src=_profile_layers,
+            scale_x=scale_x,
+            scale_y=scale_y,
+        ):
+            return True
+        logger.info("[LShapeBorder] Profile 路径绘制失败，回退 V13/旧路径")
+
     # ===== [2026-09-04 检测路由调整] V13 优先 =====
     # 根因：原 detect_pool_material_borders 对「黑描边 + 主色带」结构素材
     # （克罗印花/凯特玫瑰等）会误检出 1 层 ~2px 近黑细线，并被 _is_real_border
@@ -527,7 +582,9 @@ def apply_lshape_border_completion(
     # 修复：自动路径改为「先试 V13 detect_border_v13」——它用 1D 段分析，
     # 对黑描边+主带结构更可靠；V13 检测不到黑描边（返回 None）时再回退旧的
     # detect_pool_material_borders（对纯黑框等结构保持兼容）。
-    v13 = detect_border_v13(detect_img)
+    if not _v13_computed:
+        _v13 = detect_border_v13(detect_img)
+    v13 = _v13
     if v13 is not None:
         logger.info(
             "[LShapeBorder] V13 检测命中: edge=%dpx band=%dpx color=%s，走 V13 路径",
