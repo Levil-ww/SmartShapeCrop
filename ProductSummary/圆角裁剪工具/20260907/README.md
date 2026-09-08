@@ -1,0 +1,37 @@
+# 2026年09月07日 圆角裁剪工具 - 文档索引
+
+## 目录说明
+
+本目录集中收录 2026年9月7日 与「圆角裁剪边框渲染精修」相关的全部产品总结与技术文档。
+
+全日圆角相关 **5 大主题簇**，核心为：only_outermost + protect_content 常驻（仅外层圆角）、angle_in_corner_sector 统一绕接 + 仅最外层构建 mask（消除白线+内层误圆角）、tol 一致性修复、蔓生花/素锦深色弧线 + 南瓜无忧白隙修复、ring_region 限于 border_zone（彻底清除深色弧线残留）。
+
+## 顶层总览
+
+- `ProductSummary/2026-09/20260907-任务分类整理总结.md` — 全日跨模块聚合总结
+- 已有综合验证报告：`ProductSummary/圆角裁剪工具/20260907-四角边框弧线白色空隙修复验证报告.md`
+- 9.7 其余主题（草图三识别 / L 形 GUI 卡死）见 `ProductSummary/水池设计器/20260907/`
+
+## 分主题专项文档
+
+| # | 主题 | 文件名 | 内容摘要 |
+|---|---|---|---|
+| T1 | 仅外层圆角 | `20260907-T1-圆角裁剪仅外层边框圆角化（only_outermost+protect_content常驻）.md` | only_outermost=True 只补最外层；protect_content=True 常驻不再依赖自动判断；内层保持直角 |
+| T2 | 白线+内层圆角 | `20260907-T2-圆角白线与内层误圆角修复（angle_in_corner_sector统一+仅最外层构建mask）.md` | 新增 `_angle_in_corner_sector()` 统一 0°/360° 绕接；apply_border_only_corners 仅用最外层构建 mask/validity/重绘/cleanup |
+| T3 | 白线残留 | `20260907-T3-圆角边界白线残留修复（tol一致性1.0→2.0）.md` | `_build_border_paint_mask` tol 1.0→2.0 与重绘逻辑一致 |
+| T4 | 深色弧+白隙 | `20260907-T4-蔓生花素锦深色弧线+南瓜无忧白隙修复（ring_region收窄+inner_cut限幅）.md` | ring_region r+1.5→r+1.0；最外层绘制 R_total+1.0；inner_cut 限 border ring |
+| T5 | 深色弧未消 | `20260907-T5-深色弧线未消除根因（ring_region限于border_zone）.md` | ring_region 限于 border_zone，弧线外侧切白底；工程约定沉淀 |
+
+## 核心修改文件分布
+
+```
+core/corner/algorithm.py           ← T2 新增 _angle_in_corner_sector()
+core/image_cropper_mask.py         ← T2/T3/T4/T5 angle helper / tol 2.0 / ring_region r+1.0 / inner_cut 限幅 / ring_region 限 border_zone
+core/corner/sector_render.py       ← T2/T4 valid_angle 改 helper / 最外层 R_total+1.0
+core/image_cropper_border.py       ← T1/T2 only_outermost / protect_content / 仅最外层构建 mask
+tests/border/test_user_reported_cases.py ← T1 test_xianxu_corner_clean 更新
+```
+
+## 9.7 圆角相关关键结论一句话
+
+> **圆角裁剪五轮迭代闭环：only_outermost+protect_content 常驻解决内层误圆角，angle_in_corner_sector 统一绕接+tol 一致性消除白线，ring_region 收窄到 r+1.0 并限于 border_zone 彻底清除蔓生花/素锦深色弧线，inner_cut 限 border ring 解决南瓜无忧白隙，64 项测试通过零回归。**
