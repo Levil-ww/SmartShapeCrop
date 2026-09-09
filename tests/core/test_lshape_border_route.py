@@ -304,11 +304,19 @@ class TestPatchLshapeCutLayers:
         with pytest.raises(ValueError):
             patch_lshape_cut_layers(canvas, 'tr', 200, 0, 200, 100, [])
 
-    def test_inner_layers_start_below_top_edge(self):
-        """垂直边内层 y 从自身深度起（与素材顶边结构对齐，不压顶层描边）。"""
+    def test_inner_layers_fill_full_height(self):
+        """垂直边递减：外层延伸到画布顶端，内层从 offs[k] 起不到顶端。
+
+        与水平方向对称：
+          水平: 外层延伸到画布右端 W，内层 W-offs[k] 不到右端
+          垂直: 外层延伸到画布顶端 0，内层 offs[k] 不到顶端
+        特殊情况：offs[k] >= yc 时 y_lo 回退到 0，保证挖角很小时内层不消失。
+        """
         canvas = self._canvas()
         out = patch_lshape_cut_layers(canvas, 'tr', 200, 0, 200, 100, self.LAYERS)
-        # 棕层 x∈[170,190) 从 y=10 开始；y=5 处该 x 尚未铺棕（真实渲染中是素材顶边结构）
+        # LAYERS = [黑10, 棕20, 灰5], offs=[0,10,30,35]
+        # flip 后 yc=100 > offs 全部 → 递减生效
+        # 棕层 k=1 offs=10: y_lo=10, y_hi=100 → y=5 处无棕，y=15 处有棕
         np.testing.assert_array_equal(out[5, 180], [255, 255, 255])
         np.testing.assert_array_equal(out[15, 180], [120, 70, 40])
 

@@ -451,10 +451,16 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     H, W = b.shape[:2]
     T = offs[-1]
 
-    # 垂直切边（保留区在左）：层 k 的 y 从自身深度 offs[k] 起，与素材顶边结构对齐
+    # 垂直切边（保留区在左）：y 从画布顶端向交汇点 yc 递减。
+    # 与水平切边 x 从交汇点 xc 向右端 W 递减对称：
+    #   水平: x_lo=xc(交汇点齐), x_hi=W-offs[k](边缘递减, 内层不到右边缘)
+    #   垂直: y_hi=yc(交汇点齐), y_lo=offs[k](顶端递减, 内层不到顶端)
+    # 特殊处理：offs[k] >= yc 时（挖角太小）y_lo 回退到 0，防止内层消失
+    # （如蔓生花 offs[2]=295, 但挖角 cut_h=200 < 295）
     for k, (color, _t) in enumerate(layers):
         x_lo, x_hi = max(0, xc - offs[k + 1]), min(W, xc - offs[k])
-        y_lo, y_hi = min(offs[k], yc), min(yc, H)
+        y_lo = offs[k] if offs[k] < yc else 0
+        y_hi = min(yc, H)
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
