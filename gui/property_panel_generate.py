@@ -167,6 +167,25 @@ class _GenerateMixin:
                 _resolved_target_name = self._pool_target.text().strip()
             # 1) 把 Worker 构建的设计写回 self.design，并同步到所有 SpinBox / 控件
             self.design = design
+
+            # ==== [2026-09-09 FIX] 用户 SpinBox 参数覆盖 Worker design ====
+            # 根因：PoolRenderWorker 构建 design 时：
+            #   a) 画布宽/高 只从文件名/草图获取，不读取 SpinBox 当前值；
+            #   b) 多洞分支会用 sketch_result 的全局边距覆盖已用 user_margins 设置的边距。
+            # 结果：用户手动修改 SpinBox（画布尺寸/边距/留白）后点大按钮，
+            #   design 不反映用户最新输入 → 内挖素材匹配 + UI 回填 + 预览渲染 全部用旧值。
+            # 修复：Worker 完成后，在任何后续操作之前，从 SpinBox 读取当前值覆盖 design，
+            #   确保用户在界面上看到的值就是系统实际使用的值。
+            # L 形模式跳过边距（L 形语义：边距恒为 0，由 LShapePanel 独立控制）。
+            self.design.canvas_w_cm = self._sp_w.value()
+            self.design.canvas_h_cm = self._sp_h.value()
+            self.design.outer_margin_cm = self._sp_outer_margin.value()
+            if self.design.mode != 'rect_lshape':
+                self.design.inner_margin_top_cm = self._sp_mt.value()
+                self.design.inner_margin_bottom_cm = self._sp_mb.value()
+                self.design.inner_margin_left_cm = self._sp_ml.value()
+                self.design.inner_margin_right_cm = self._sp_mr.value()
+
             # ===== [SINGLE-HOLE Add-On 2026-08-31] 记录草图解析成功时的原始边距 =====
             # render_design 中的 Stale Decor Invalidation Add-On（core/image_ops.py）
             # 需要比对"当前边距 vs 草图解析原始边距"，当差异 > 0.1cm 时清理
