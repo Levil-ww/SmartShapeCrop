@@ -569,6 +569,7 @@ def apply_lshape_border_completion(
             layers_src=_profile_layers,
             scale_x=scale_x,
             scale_y=scale_y,
+            bg_color=bg_color,
         ):
             return True
         logger.info("[LShapeBorder] Profile 路径绘制失败，回退 V13/旧路径")

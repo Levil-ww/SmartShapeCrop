@@ -541,6 +541,7 @@ def _apply_profile_path(*,
                         layers_src: list[tuple[tuple[int, int, int], int]],
                         scale_x: float,
                         scale_y: float,
+                        bg_color: tuple[int, int, int] = (255, 255, 255),
                         ) -> bool:
     """Profile 路径：源图层结构 → 画布坐标 → patch_lshape_cut_layers。
 
@@ -560,12 +561,26 @@ def _apply_profile_path(*,
         scale_avg = 1.0
     scale_avg = max(scale_avg, 0.1)
 
+    # [Fix 2026-09-08 v7] 底色对齐：profile 检测到的"主色带"颜色（如蔓生花
+    # 米色 (243,232,212)）与实际素材底色 (247,231,203) 常有 3~10 的偏差
+    # （边缘抗锯齿 / 段均值拉低）。若直接用检测色画到 cut 边缘，会与周围
+    # 素材底色形成可见色差（用户看到的"L形环带颜色不一致"）。
+    # 对策：与 bg_color 色差 < 30 的层一律替换为精确 bg_color，保证 cut
+    # 边缘的色带与素材底色完全一致。
+    bg = tuple(int(c) for c in bg_color)
     layers_canvas: list[tuple[tuple[int, int, int], int]] = []
     for color, t in layers_src:
         t_canvas = int(round(float(t) * scale_avg))
         if t_canvas < 1:
             t_canvas = 1
-        layers_canvas.append((tuple(int(c) for c in color), t_canvas))
+        c = tuple(int(x) for x in color)
+        d = float(np.linalg.norm(np.array(c, dtype=np.float64) - np.array(bg, dtype=np.float64)))
+        if d < 30.0:
+            c = bg
+        layers_canvas.append((c, t_canvas))
+
+    if not layers_canvas:
+        return False
 
     H, W = canvas_arr.shape[:2]
     ox = max(0, int(round(outer_rect.x)))

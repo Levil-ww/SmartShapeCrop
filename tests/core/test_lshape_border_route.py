@@ -357,6 +357,7 @@ class TestCompletionRouting:
             canvas, src, RectShape(x=0, y=0, w=800, h=610),
             'tr', 200.0, 150.0,
             src_material_img=src, scale_x=1.0, scale_y=1.0,
+            bg_color=(254, 248, 234),
         )
         assert ok is True
         # 探测：cut xc=600，yc=150；垂直边层厚按几何均值（=1.0，scale_x=scale_y=1.0）

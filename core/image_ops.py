@@ -689,6 +689,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     #   (250,245,230 米色) 与素材底色过于接近，挖角视觉上不够明显。
     #   白色也是 JPG 模式下表达"挖空/透明"的行业惯例（与 pool_hole_transparent=True 一致）。
     lshape_cut_done = False
+    # [Fix 2026-09-08 v5] 素材底色采样：给 border completion 当 bg_color 用（用来过滤
+    #   伪边框层，避免把底色当成边框画到 cut 边缘）。与下面的 cut_area 填充颜色无关——
+    #   cut_area 始终填纯白(255,255,255)（用户明确要求 L 形挖空区保持白色）。
+    _lshape_cut_bg_color = None
     if design.mode == 'rect_lshape' and is_pool_with_material:
         from .geometry import build_lshape_mask, compute_inner_corner_radii
         lshape = design.l_shape_px()
@@ -707,12 +711,19 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             inner_corners, fill_value=255)
         cut_area_mask = np.array(full_inner_img, dtype=bool) & ~inner_mask
         if cut_area_mask.any():
-            # [Fix 2026-09-04] 尊重 pool_hole_transparent 开关：
-            #   True  -> 纯白（JPG 模式表达"挖空/透明"的行业惯例）
-            #   False -> 使用用户在 UI 配置的 hole_bg_color。
-            #   此前无论开关如何都无条件填 255，导致该配置项在 L 形挖角下静默失效。
+            # 预先采样素材底色（浅色像素中位数）——给 Step 3.6 border completion 用
+            _light_mask = canvas_arr.mean(axis=2) > 128
+            if _light_mask.any():
+                _sample_color = np.median(canvas_arr[_light_mask], axis=0).astype(np.uint8)
+                _lshape_cut_bg_color = tuple(int(v) for v in _sample_color)
+            else:
+                _lshape_cut_bg_color = (255, 255, 255)
+
             if design.pool_hole_transparent:
-                canvas_arr[cut_area_mask] = 255
+                # [Design] cut 区强制填纯白(255,255,255)：L 形挖空区保持白色，
+                # 与素材底色的对齐由 Step 3.6 border completion 在 cut 边缘画带时保证
+                # （_lshape_cut_bg_color 已正确采样，避免伪边框层）。
+                canvas_arr[cut_area_mask] = np.array([255, 255, 255], dtype=np.uint8)
             else:
                 canvas_arr[cut_area_mask] = np.array(
                     design.hole_bg_color, dtype=np.uint8).reshape(1, 3)
@@ -1071,7 +1082,13 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                 cut_w_px=cut_w_px,
                 cut_h_px=cut_h_px,
                 dpi=design.dpi,
-                bg_color=(255, 255, 255),            # 白色作为 bg 参考，避免误判米色/棕色为 bg
+                # [Fix 2026-09-08 v3] bg_color 从硬编码白色改为实际素材底色：
+                # 白色导致 detect_pool_material_borders 把米色等底色误判为边框层，
+                # 进而 draw_border_layers_on_cut_edges 把"伪边框层"画到 cut 区边缘，
+                # 在用户看到的"L形内环色带"处形成色差。
+                # 现在复用 Step 3 里 cut 区底色采样值（_lshape_cut_bg_color），
+                # 让边框检测正确区分"真实边框"和"素材底色"。
+                bg_color=_lshape_cut_bg_color or (255, 255, 255),
                 # [V13 集成 2026-09-04] 手动边框覆盖参数透传
                 # 默认 None → 走原有 detect_pool_material_borders 路径（向后兼容）
                 # 任一非 None → 走 V13 路径（手动值优先，缺失项用 V13 detect_border_v13 补齐）
