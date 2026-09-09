@@ -471,7 +471,9 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
-    # 内凹角 (xc, yc)：距角点几何 L 分层，各层沿角直角连续
+    # 内凹角 (xc, yc)：距角点 max(dx, dy) 几何 L 分层，保证与水平/垂直切边各层在
+    # [offs[k], offs[k+1]) 区间严格对齐（searchsorted 必须用 full offs 数组 +
+    # side='right'-1，否则 d 恰好落在 offs[k] 边界时层归属会差 1）
     xs = np.arange(max(0, xc - T), xc)
     if xs.size == 0:
         return
@@ -480,7 +482,9 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     y_end = min(H, yc + T)
     for yy in range(max(0, yc), y_end):
         d = np.maximum(xc - xs, yy - yc)
-        k = np.searchsorted(offs_arr[1:], d, side='left')
+        # 关键修复：searchsorted 全 offs 数组 + side='right' - 1
+        # 旧: searchsorted(offs[1:], d, 'left') → d=offs[k] 时 k 少算 1
+        k = np.searchsorted(offs_arr, d, side='right') - 1
         k = np.clip(k, 0, len(layers) - 1)
         b[yy, xs] = colors_arr[k]
 

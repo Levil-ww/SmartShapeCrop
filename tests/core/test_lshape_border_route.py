@@ -271,13 +271,14 @@ class TestPatchLshapeCutLayers:
         np.testing.assert_array_equal(out[50, 300], [255, 255, 255])
 
     def test_reflex_corner_geometric_layering(self):
-        """内凹角 (200,100)：d=max(dx,dy) 分层，边界深度归属外层（与条带一致）。"""
+        """内凹角 (200,100)：d=max(dx,dy) 分层，searchsorted(offs,d,'right')-1
+        保证与水平/垂直切边的层区间 [offs[k], offs[k+1]) 严格对齐。"""
         canvas = self._canvas()
         out = patch_lshape_cut_layers(canvas, 'tr', 200, 0, 200, 100, self.LAYERS)
-        np.testing.assert_array_equal(out[105, 195], [0, 0, 0])      # d=5 → 黑
-        np.testing.assert_array_equal(out[115, 190], [120, 70, 40])  # d=15 → 棕
-        np.testing.assert_array_equal(out[130, 190], [120, 70, 40])  # d=30 → 棕(边界)
-        np.testing.assert_array_equal(out[132, 188], [70, 60, 50])   # d=32 → 深灰
+        np.testing.assert_array_equal(out[105, 195], [0, 0, 0])      # d=5 → 黑 (层0)
+        np.testing.assert_array_equal(out[115, 190], [120, 70, 40])  # d=15 → 棕 (层1)
+        np.testing.assert_array_equal(out[130, 190], [70, 60, 50])   # d=30=offs[2] → 深灰 (层2, 与水平切边对齐)
+        np.testing.assert_array_equal(out[132, 188], [70, 60, 50])   # d=32 → 深灰 (层2)
         np.testing.assert_array_equal(out[140, 170], [255, 255, 255])  # d>35 → 不动
 
     def test_bl_corner_flips(self):
