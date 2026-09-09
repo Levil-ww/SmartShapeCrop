@@ -1556,6 +1556,82 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         ocr_raw, zone_of, excluded_fields, excluded_values,
         n_holes, layout)
 
+    # ===== [DIM-IN-MARGIN Add-On 2026-09-09] per-hole 边距桶里的洞尺寸值拆分 =====
+    # 根因：zone_of 按坐标归属 OCR 标注。当用户把洞宽/洞高标注画在洞外部
+    # （如洞正下方标宽、洞右侧标高）时，大值会混进 per-hole 边距桶
+    # （margin_bottom_i / margin_top_i / margin_left_i / margin_right_i），
+    # 导致对应 inner_w_i / inner_h_i 桶为空 → 洞宽/高识别为 0。
+    #
+    # 启发式（三条件同时满足才搬）：
+    #   1) 目标 inner 桶当前为空或近空（没拿到 OCR 值）
+    #   2) 源边距桶 max/min > 阈值（大值和小值差距明显）
+    #   3) 大值的 cm 大小合理（在 [outer_min*0.2, outer_max*0.6] 范围内）
+    # 搬迁方向：
+    #   横排：margin_top/bottom_{i} 的大值 → inner_w_{i}
+    #          margin_left/right_{i} 的大值 → inner_h_{i}
+    #   竖排：margin_left/right_{i} 的大值 → inner_w_{i}
+    #          margin_top/bottom_{i} 的大值 → inner_h_{i}
+    # Staff Engineer Mode 铁律：纯 ADD-ON，旧 buckets 构建代码一字未改。
+    def _move_big_values_to_inner(per_key, inner_key, axis_limit_lo, axis_limit_hi):
+        src = buckets.get(per_key)
+        if not src or len(src) < 2:
+            return
+        dst = buckets.get(inner_key)
+        if dst and len(dst) >= 1:
+            return  # 目标桶已有候选（洞内部正确归类），不搬
+        src_sorted = sorted(src, key=lambda x: -x[0])  # 降序
+        max_v, min_v = src_sorted[0][0], src_sorted[-1][0]
+        if min_v <= 0:
+            return
+        ratio = max_v / min_v
+        # 阈值：大值至少是小值的 2.0 倍，且在合理范围内
+        if ratio >= 2.0 and axis_limit_lo <= max_v <= axis_limit_hi:
+            # 搬大值到 inner 桶（只搬最大的那个候选）
+            big = src_sorted[0]
+            rest = src_sorted[1:]
+            buckets[inner_key] = [big]
+            buckets[per_key] = rest
+            logger.info(
+                f"[MH Step6-DimInMargin] {per_key} → {inner_key}: "
+                f"move big={big[0]:.1f}@{big[1]:.0f} (ratio={ratio:.1f}), "
+                f"keep rest={[round(r[0],1) for r in rest]}")
+
+    _outer_min = min(target_outer_w_cm, target_outer_h_cm) if target_outer_w_cm > 0 and target_outer_h_cm > 0 else 50.0
+    _outer_max = max(target_outer_w_cm, target_outer_h_cm) if target_outer_w_cm > 0 and target_outer_h_cm > 0 else 300.0
+
+    for _idx in range(n_holes):
+        if layout in ('horizontal', 'mixed'):
+            # 横排：上/下边距桶 → 大值可能是洞宽 inner_w
+            _move_big_values_to_inner(
+                f'margin_top_{_idx}', f'inner_w_{_idx}',
+                _outer_min * 0.2, _outer_max * 0.6)
+            _move_big_values_to_inner(
+                f'margin_bottom_{_idx}', f'inner_w_{_idx}',
+                _outer_min * 0.2, _outer_max * 0.6)
+            # 左/右边距桶 → 大值可能是洞高 inner_h
+            _move_big_values_to_inner(
+                f'margin_left_{_idx}', f'inner_h_{_idx}',
+                _outer_min * 0.15, _outer_max * 0.5)
+            _move_big_values_to_inner(
+                f'margin_right_{_idx}', f'inner_h_{_idx}',
+                _outer_min * 0.15, _outer_max * 0.5)
+        else:  # vertical
+            # 竖排：左/右边距桶 → 大值可能是洞宽 inner_w
+            _move_big_values_to_inner(
+                f'margin_left_{_idx}', f'inner_w_{_idx}',
+                _outer_min * 0.2, _outer_max * 0.6)
+            _move_big_values_to_inner(
+                f'margin_right_{_idx}', f'inner_w_{_idx}',
+                _outer_min * 0.2, _outer_max * 0.6)
+            # 上/下边距桶 → 大值可能是洞高 inner_h
+            _move_big_values_to_inner(
+                f'margin_top_{_idx}', f'inner_h_{_idx}',
+                _outer_min * 0.15, _outer_max * 0.5)
+            _move_big_values_to_inner(
+                f'margin_bottom_{_idx}', f'inner_h_{_idx}',
+                _outer_min * 0.15, _outer_max * 0.5)
+
+
     # ===== [NUMERIC SANITY Add-On 2026-08-29] per-hole 桶 outlier 修正 =====
     # OCR 偶发把「21.7」读成「217」（丢小数点），Step6 Post A 错删了几何包含
     # 的正确值，留下错误的整数。这里在进入 Step7 之前做合理性 cap + 小数点
