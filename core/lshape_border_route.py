@@ -571,22 +571,34 @@ def _apply_profile_path(*,
         scale_avg = 1.0
     scale_avg = max(scale_avg, 0.1)
 
-    # [Fix 2026-09-08 v7] 底色对齐：profile 检测到的"主色带"颜色（如蔓生花
-    # 米色 (243,232,212)）与实际素材底色 (247,231,203) 常有 3~10 的偏差
-    # （边缘抗锯齿 / 段均值拉低）。若直接用检测色画到 cut 边缘，会与周围
-    # 素材底色形成可见色差（用户看到的"L形环带颜色不一致"）。
-    # 对策：与 bg_color 色差 < 30 的层一律替换为精确 bg_color，保证 cut
-    # 边缘的色带与素材底色完全一致。
+    # 底色对齐：profile 检测到的"主色带"颜色（如蔓生花米色 243,232,212）
+    # 与实际素材底色 (247,233,206) 常有 3~10 的偏差（边缘抗锯齿 / 段均值拉低）。
+    # 带层（边距底色层）语义上就是"素材底色带"，必须与素材底色完全一致。
+    # 锚点层（近黑粗描边）和线段层（近黑细框线）颜色不受底色影响，保持
+    # Profile 检测值。
+    # 策略：bg_color 不是默认白色时，所有带层直接替换为精确 bg_color；
+    # bg_color 为白色（上游采样失败 fallback）时回退到原 d<30 模糊匹配。
     bg = tuple(int(c) for c in bg_color)
+    bg_is_default_white = tuple(bg_color) == (255, 255, 255)
     layers_canvas: list[tuple[tuple[int, int, int], int]] = []
     for color, t in layers_src:
         t_canvas = int(round(float(t) * scale_avg))
         if t_canvas < 1:
             t_canvas = 1
         c = tuple(int(x) for x in color)
-        d = float(np.linalg.norm(np.array(c, dtype=np.float64) - np.array(bg, dtype=np.float64)))
-        if d < 30.0:
+        _max_c = max(c)
+        _is_anchor = (_max_c < _BLACK_MAX_CHANNEL and t > _LINE_MAX_THICK)
+        _is_line = (_max_c < _DARK_LINE_MAX_CHANNEL
+                    and _ANCHOR_MIN_THICK <= t <= _LINE_MAX_THICK)
+        if not _is_anchor and not _is_line and not bg_is_default_white:
+            # 带层 + bg_color 有效 → 直接替换为精确底色
             c = bg
+        elif not _is_anchor and not _is_line:
+            # 带层 + bg_color 白色 → 回退原 d<30 逻辑
+            d = _color_dist(c, bg)
+            if d < 30.0:
+                c = bg
+        # 锚点/线段层：不替换，保持 Profile 检测值
         layers_canvas.append((c, t_canvas))
 
     if not layers_canvas:
