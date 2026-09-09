@@ -1,6 +1,6 @@
-# SmartShapeCrop — 智能形状裁剪设计器 V2.1
+# SmartShapeCrop — 智能形状裁剪设计器 V2.2
 
-> 矩形 / L形 / 椭圆 挖水池裁剪设计器，面向印刷行业定制尺寸成品图的等比缩放 + 圆角裁剪 + 多层边框处理 + 水池设计器草图 OCR 智能识别 + 多洞嵌套 + L 形挖角独立设计。
+> 矩形 / L形 / 椭圆 挖水池裁剪设计器，面向印刷行业定制尺寸成品图的等比缩放 + 圆角裁剪 + 多层边框处理 + 水池设计器草图 OCR 智能识别 + 多洞嵌套 + L 形挖角独立设计 + L 形挖角素材边框自动补全。
 
 ## 项目简介
 
@@ -8,7 +8,7 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的桌面工具，核心�
 
 1. **圆角裁剪工具**：将已有成品图（JPG/PSD）按目标尺寸等比缩放，并自动/手动对四角施加圆角裁剪。支持从文件名自动解析尺寸与圆角参数、模板库匹配源图、多层边框自动检测与圆角重绘。
 2. **水池设计器**：参数化生成矩形嵌套、椭圆挖孔等设计稿，支持**手绘草图上传自动识别尺寸**（7 步串行流程）、多层边框、素材填充、边框文字环绕，导出印刷级 JPG。支持**多洞嵌套挖洞**与逐洞独立边距。
-3. **L 形挖角设计器**（V2.1 新增独立面板）：独立承载 L 形挖角的参数设置、草图上传与生成。支持草图自动识别挖角方向（tl/tr/bl/br）、挖角尺寸、外框完整尺寸，含 OCR 降级路径（OCR 不可用时几何推断兜底）。
+3. **L 形挖角设计器**（独立面板）：承载 L 形挖角的参数设置、草图上传与生成。支持草图自动识别挖角方向（tl/tr/bl/br）、挖角尺寸、外框完整尺寸，含 OCR 降级路径；**V2.2 新增素材边框自动补全**——对自带边框的池素材图，在 L 形挖角产生的新边缘上按素材原始边框层次重绘，使成品呈完整 L 形外框。
 
 ### 核心特性
 
@@ -16,6 +16,7 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的桌面工具，核心�
 - **四角独立圆角**：每个角可独立设置圆角半径（0 = 直角），支持单角/双角/四角组合
 - **多层边框自动检测**：通过颜色距离 + 亮度突变双算法识别嵌套边框层，圆角处自动重绘
 - **深色外层边框保护**：最外层深色边框（max RGB ≤ 150）永不判为间隙，确保黑色边框线完整
+- **仅最外层圆角化**：圆角处仅绘制最外层边框圆弧，内层花纹保持直角，避免产生多余弧线/过厚/色差
 - **白色扇形伪影检测**：区分设计白点（散点式）与白色扇形伪影（大面积连续），仅清除伪影
 - **文件名智能解析**：从中文文件名提取产品名、尺寸、方向（横版/竖版）、圆角参数，支持全角/特殊字符容错
 - **模板库匹配**：根据目标文件名自动匹配模板库中的最佳源图（形状+方向关键词严格匹配）
@@ -23,11 +24,14 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的桌面工具，核心�
 - **印刷切割损耗补偿**：自动为目标尺寸加 1cm 扫描余量，圆角半径加 0.5cm 切割损耗
 - **LANCZOS 高质量缩放**：默认 `simple_resize` 模式，不裁剪不留白，最小质量损失
 - **大图性能优化**：圆角重绘采用 ROI（仅处理角区域）+ 向量化运算，支持 1-2 亿像素印刷级大图
-- **GUI 不阻塞**：大图裁剪/导出运行于 QThread 后台线程，带进度反馈，避免界面冻结
+- **GUI 不阻塞**：大图裁剪/导出运行于 QThread 后台线程，带进度反馈，避免界面冻结；UI 参数修改采用防抖渲染（200ms 延迟、800ms 最大等待）
 - **草图智能识别**（水池设计器）：上传手绘草图 → 7 步串行流程（矩形检测→区域划分→多尺度 OCR→小数修复→方向标签锁定→空间映射→几何校验）→ 自动回填外框/内挖/上下左右边距 8 字段
 - **OCR 稳定性投票机制**：位置聚类 + 众数投票，消除偶发误识别
 - **多洞嵌套挖洞**：支持矩形嵌套多洞（包络盒消除 + 逐洞独立边距 + 逐洞 10px 黑色边框）
 - **L 形挖角独立识别**：两矩形减法推断法 + OCR 兜底，自动检测挖角方向与尺寸；OCR 不可用时纯 CV 几何降级
+- **L 形挖角素材边框自动补全**（V2.2）：对自带边框的池素材图，沿 L 形两条新切边在保留区一侧按素材原始边框层次重绘，内凹角用 `max(dx, dy)` 几何分层保证边框沿 L 形轮廓连续
+- **三级边框路由**（V2.2）：Profile 路径 → V13 路径 → 旧 detect_pool_material_borders 路径，任一环节失败自动落到下一环节，向后兼容
+- **模板库缓存预热**（V2.2）：目录 mtime 持久化到磁盘缓存，未变化时快速跳过（2ms）；主线程不阻塞预热，信号槽触发 worker
 - **历史记录功能**：目标文件名 3 天历史记录，三个面板物理隔离独立存储（圆角裁剪/水池设计器/L 形挖角）
 - **预览渲染优化**：预览用 BILINEAR（快 3-5×），导出用 LANCZOS，复用 inner_mask
 - **LOD 智能降采样**：高细节素材采用 scale=0.5 + BILINEAR（避免 0.25/NEAREST 产生马赛克伪影）
@@ -40,8 +44,6 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的桌面工具，核心�
 SmartShapeCrop/
 ├── main.py                         # 应用入口（PyQt5 主窗口 + 3 标签页 + 模板预设 + 全局异常 crash.log）
 ├── process_image.py                # 命令行批处理脚本（等比缩放 + 圆角）
-├── packageV2.1.2.py                # V2.1.2 PyInstaller 打包脚本（唯一入口）
-├── 智能裁剪设计器V2.1.2.spec        # PyInstaller spec 配置
 ├── conftest.py                     # pytest 全局 fixture
 ├── requirements.txt                # Python 依赖（PyQt5/Pillow/numpy/psd-tools/opencv-python-headless/pytesseract/pytest）
 ├── pytest.ini                      # 测试配置
@@ -50,10 +52,12 @@ SmartShapeCrop/
 ├── core/                           # 核心业务逻辑
 │   ├── config.py                   #   统一配置管理（阈值、单位换算、黄金值、硬上限单源管理）
 │   ├── geometry.py                 #   参数化形状定义 + Mask 生成 + compute_inner_corner_radii 模式区分
-│   ├── image_ops.py                #   图像操作（加载/缩放/平铺/边框合成/文字/导出/quality 参数）
+│   ├── image_ops.py                #   图像操作（加载/缩放/平铺/边框合成/文字/导出/quality 参数 + L 形挖角边框补全集成）
 │   ├── image_cropper.py            #   裁剪服务（缩放 + 圆角 + 多层边框重绘 + 内层花纹保护）
 │   ├── image_cropper_border.py     #   裁剪边框相关逻辑（从 image_cropper 拆分）
 │   ├── image_cropper_mask.py       #   裁剪 mask 相关逻辑（从 image_cropper 拆分）
+│   ├── lshape_border.py            #   L 形挖角素材边框补全（apply_lshape_border_completion 入口 + 三级路由）
+│   ├── lshape_border_route.py      #   L 形挖角「描边+色带+细边框」Profile 路由（V2.2 新增，剖面扫描 + 三层封顶）
 │   ├── log_setup.py                #   统一日志配置（控制台 + 滚动文件，默认 INFO 级别）
 │   ├── app_settings.py             #   历史记录存储层（QSettings/JSON 双通道 + 物理隔离）
 │   ├── artifact_cleanup.py         #   产物清理（构建/打包后清理临时文件）
@@ -61,11 +65,11 @@ SmartShapeCrop/
 │   ├── corner/                     #   圆角处理子包
 │   │   ├── algorithm.py            #     单步扇形切割算法（carve_corner_on_mask + fill_value/inverse 参数）
 │   │   ├── detection.py            #     边框层自动检测（颜色距离 + 亮度突变，classify_gap_layers 统一逻辑）
-│   │   └── sector_render.py        #     圆角弧线多层边框重绘（深色外层保护 + 白色扇形伪影检测）
+│   │   └── sector_render.py        #     圆角弧线多层边框重绘（仅最外层 + 深色外层保护 + 白色扇形伪影检测）
 │   │
 │   ├── parser/                     #   文件名解析子包
 │   │   ├── name_parser.py          #     文件名解析（尺寸/方向/圆角/产品名，6 层容错）
-│   │   └── template_matcher.py     #     模板库扫描与匹配引擎（形状+方向关键词严格匹配 + 有方向比例匹配）
+│   │   └── template_matcher.py     #     模板库扫描与匹配引擎（形状+方向关键词严格匹配 + 有方向比例匹配 + mtime 缓存）
 │   │
 │   ├── psd/                        #   PSD 分层文件处理
 │   │   └── loader.py               #     PSD 读取/裁剪/合成
@@ -85,10 +89,10 @@ SmartShapeCrop/
 │       └── __init__.py
 │
 ├── gui/                            # PyQt5 界面（property_panel 模块化拆分）
-│   ├── canvas_widget.py            #   预览画布（全分辨率渲染 + 缩放显示 + 草图直接显示 + quality='preview'）
+│   ├── canvas_widget.py            #   预览画布（全分辨率渲染 + 缩放显示 + 草图直接显示 + quality='preview' + ExportSaveWorker 后台导出）
 │   ├── cropper_panel.py            #   圆角裁剪面板（上传/识别/预览/导出/QThread 后台线程 + 历史记录 TARGET_SRC_CROPPER）
 │   ├── lshape_panel.py             #   L 形挖角独立设计面板（草图上传 + 一键生成 + 历史记录 TARGET_SRC_LSHAPE）
-│   ├── property_panel.py           #   水池设计器属性面板主入口（聚合子模块 + 历史记录 TARGET_SRC_POOL）
+│   ├── property_panel.py           #   水池设计器属性面板主入口（聚合子模块 + 历史记录 TARGET_SRC_POOL + 防抖渲染）
 │   ├── property_panel_widgets.py  #   自定义控件（_SketchDropLabel 草图拖拽等）
 │   ├── property_panel_workers.py  #   QThread Worker（草图解析 / L 形解析 / 渲染）
 │   ├── property_panel_dialogs.py  #   对话框（L 形挖角确认 / 数据回填）
@@ -96,9 +100,18 @@ SmartShapeCrop/
 │   ├── property_panel_layers.py   #   多层边框编辑 UI
 │   └── property_panel_poolbox.py   #   水池模式草图识别与边距回填 + L 形识别按钮调度
 │
-├── tests/                          # 单元测试（按模块分子目录）
+├── tests/                          # 单元测试（按模块分子目录，299 passed / 5 skipped）
 │   ├── conftest.py
-│   ├── core/                       #   核心模块测试（圆角/裁剪/文件名解析/模板匹配/L 形渲染/L 形草图解析）
+│   ├── core/                       #   核心模块测试（圆角/裁剪/文件名解析/模板匹配/L 形渲染/L 形草图解析/L 形边框补全）
+│   │   ├── test_rounded_corner.py
+│   │   ├── test_lshape_render.py
+│   │   ├── test_lshape_sketch_parser.py
+│   │   ├── test_lshape_border.py        #   L 形挖角边框补全端到端测试
+│   │   ├── test_lshape_border_route.py  #   Profile 路由 / 自动路由集成 / 向后兼容测试（V2.2 新增）
+│   │   ├── test_image_cropper.py
+│   │   ├── test_name_parser.py
+│   │   ├── test_template_matcher.py
+│   │   └── test_corner_analysis_simple.py
 │   ├── gui/                        #   GUI 模拟测试
 │   ├── integration/               #   集成测试（F1-F19 修复验证 / 水池-L 形流程 / 配置）
 │   ├── sketch/                     #   草图识别测试（多洞 / 特征 / 输入校验 / 修复 / 诊断 / 验证）
@@ -117,6 +130,7 @@ SmartShapeCrop/
 │   ├── packageV2.0.py
 │   ├── packageV2.1.py
 │   ├── build_exe.bat              #   历史打包批处理
+│   ├── README.md                   #   打包目录说明
 │   └── specs/                     #   失效/历史 .spec 归档
 │
 ├── dist/                           # 打包产物（.exe）
@@ -127,10 +141,10 @@ SmartShapeCrop/
 ├── debug_output/                   # 调试中间图像输出
 └── ProductSummary/                 # 每日程序优化工作总结（按模块/日期分目录）
     ├── 圆角裁剪工具/                 #   圆角裁剪工具工作总结
-    ├── 水池设计器/                   #   水池设计器工作总结（按日期子目录 20260813-20260902）
+    ├── 水池设计器/                   #   水池设计器工作总结（按日期子目录）
     ├── L形挖角设计器/                #   L 形挖角设计修改总结（阶段 1-5 演进文档）
-    ├── SmartShapeCrop分析报告/       #   项目分析报告与修复补丁
-    ├── 2026-08/                     #   8 月任务分类整理总结（7 份）
+    ├── SmartShapeCrop分析报告/       #   项目分析报告与修复补丁（含 V2.2 全面检测报告）
+    ├── 2026-08/                     #   8 月任务分类整理总结
     └── 2026-09/                     #   9 月任务分类整理总结
 ```
 
@@ -174,7 +188,7 @@ python main.py
 - **右侧标签页**：
   - **圆角裁剪工具**：上传成品图 → 自动识别/手动输入参数 → 预览 → 导出
   - **水池设计器**：参数化设计（矩形嵌套/椭圆 + 多层边框）或手绘草图上传 → QThread 后台异步解析 → 红色框显示识别数据 → 自动回填面板 → 生成预览
-  - **L 形挖角设计**（V2.1 新增）：独立承载 L 形挖角参数设置 + 草图上传 + 一键生成；自动识别挖角方向/尺寸/外框
+  - **L形挖角设计**：独立承载 L 形挖角参数设置 + 草图上传 + 一键生成；自动识别挖角方向/尺寸/外框
 
 ### 命令行批处理
 
@@ -212,21 +226,21 @@ python -m pytest tests/core/test_rounded_corner.py -v
 # 草图相关测试
 python -m pytest tests/sketch/ -v
 
-# L 形挖角测试
-python -m pytest tests/core/test_lshape_render.py tests/core/test_lshape_sketch_parser.py -v
+# L 形挖角测试（渲染 + 草图解析 + 边框补全）
+python -m pytest tests/core/test_lshape_render.py tests/core/test_lshape_sketch_parser.py tests/core/test_lshape_border.py tests/core/test_lshape_border_route.py -v
 
 # 集成测试（F1-F19 修复验证）
 python -m pytest tests/integration/ -v
 ```
 
-### V2.1 打包发布
+### 打包发布
 
 ```bash
-# 使用 V2.1.2 打包配置生成 exe
-python packageV2.1.2.py
+# 使用当前打包配置生成 exe
+python packaging/packageV2.1.2.py
 ```
 
-V2.1 版本包含圆角裁剪工具、水池设计器（含多洞）和新增的 L 形挖角独立设计面板，打包时自动收集 OCR 和 PSD 处理等依赖。
+> ⚠️ **打包注意事项（V2.2）**：当前打包入口仍为 `packaging/packageV2.1.2.py`。V2.2 新增的 `core/lshape_border.py` 与 `core/lshape_border_route.py` 通过 `core/image_ops.py` 函数内延迟导入，属 PyInstaller 高风险漏收场景——若未加入打包白名单/hidden imports，漏收时只在用户触发 L 形挖角边框补全时才报错，测试期发现不了。打包前请确认这两个模块已被 PyInstaller 收集（可通过 `--collect-submodules core` 或显式 hidden imports 覆盖）。
 
 ---
 
@@ -258,9 +272,10 @@ V2.1 版本包含圆角裁剪工具、水池设计器（含多洞）和新增的
 R_eff_i = max(0, R_total - cumulative_thickness_i)
 ```
 
-**内层花纹保护（corner_protect 双 mask 机制）**：
-- 当圆角半径 ≤ 2×总边框厚度时 → **仅圆角边框区域**（L 形条带并集），内层花纹保持直角
-- 半径 ≥ 4.0cm 时圆角所有嵌套层，但内层仍按 2×阈值保持直角
+**仅最外层圆角化（only_outermost + protect_content 常驻，V2.2 强化）**：
+- 圆角处**仅绘制最外层边框圆弧**，内层花纹保持直角
+- `protect_content` 常驻开启，确保内层花纹不被误圆角
+- `angle_in_corner_sector` 统一判定角扇区，避免内层被误判为需要圆角
 - 裁剪 mask（边框带限制）与边框重绘有效性 mask（完整扇形）**分离**，防止圆角处边框变薄
 
 **深色外层边框保护机制**：
@@ -268,6 +283,12 @@ R_eff_i = max(0, R_total - cumulative_thickness_i)
 - 仅浅色外层（max RGB > 150）可通过邻居差异判定为间隙
 - 添加 `is_outermost_solid` 标志确保外层边框始终绘制
 - 间隙层判定统一为 `classify_gap_layers` 单一来源，消除多处独立逻辑互相矛盾
+
+**圆角边界白线与深色弧线修复（V2.2）**：
+- `tol` 一致性：圆角 mask 边界容差统一 1.0 → 2.0，消除白线残留
+- `ring_region` 限制在 `border_zone`（直边区），防止保护到圆弧外侧的深色边框残留
+- `inner_cut` 限幅，防止圆角内层误圆角化
+- 白色空隙多层结构感知重绘，保证断触处粗细一致
 
 **白色扇形伪影检测规则**：
 - 总白像素 <20 → 保留所有
@@ -334,14 +355,66 @@ R_eff_i = max(0, R_total - cumulative_thickness_i)
 | `light_cover` | 轻度裁剪（最多裁剪 15%，平衡内容与比例） |
 | `auto` | 智能模式（自动选择 cover 或 contain） |
 
-### 6. 水池设计器草图识别（core/pool_designer/）
+### 6. L 形挖角素材边框补全（core/lshape_border.py + lshape_border_route.py，V2.2）
+
+V2.2 新增子系统。当对带有自绘边框的素材图（如克罗印花的棕色边框+黑色内框、安妮森林的黑色细边框、蔓生花的米色边距+细线）应用 L 形挖角时，挖掉的角落区域的两条新边缘需要绘制与素材图一致的边框层，使 L 形成品在视觉上呈现完整的外框。
+
+#### 三级边框路由（向后兼容）
+
+入口 `apply_lshape_border_completion` 按以下优先级自动路由，任一环节失败自动落到下一环节：
+
+```
+手动参数（manual_*）非 None → V13 路径（黑描边 + 主色带，手动覆盖）
+                              │
+自动路径：Profile 路径（detect_border_profile）
+         ├─ 首层厚黑且 V13 可命中 → 让位 V13 路径（已验证场景）
+         ├─ Profile 命中 → patch_lshape_cut_layers（N 层推广）
+         └─ 绘制失败 → 回退
+                              │
+         V13 路径（detect_border_v13）
+         ├─ 黑描边 + 主色带结构 → patch_lshape_cut
+         └─ 返回 None → 回退
+                              │
+         旧路径（detect_pool_material_borders）
+         └─ 纯黑框等兼容结构 → draw_border_layers_on_cut_edges
+```
+
+#### Profile 路径（core/lshape_border_route.py，V2.2 新增）
+
+针对 V13 / 旧路径都失效的素材（最外层不是黑描边，而是米色/白色边距 + 细线 + 点带 + 细框）：
+
+- **1D 颜色剖面扫描**：素材四条边由外向内扫描（多条扫描线取均值抹平点状花纹）
+- **锚点对齐**：抗 1~6px 出血白边，保证四边层序一致、投票颜色真实
+- **有序层分割**：输出 `[(color, thickness_px), ...]`（外→内，最多 3 层，含外边距层）
+- **截断到第二条细线**：描边 + 色带 + 内框线 = 3 层封顶（点带/文字带及其内侧细线不处理）
+- **厚度按 scale 换算**到画布坐标系后调用 `patch_lshape_cut_layers`（N 层推广）
+- **内凹角几何分层**：用 `max(dx, dy)` 距离映射到层区间 `[offs[k], offs[k+1])`，保证边框沿 L 形轮廓连续
+
+典型素材结构映射：
+
+| 素材 | 剖面结构 | 层数 | 路由 |
+|---|---|---|---|
+| 克罗印花 | 黑描边 + 棕色带（直通内部，限厚） | 2 | Profile 让位 V13 |
+| 蔓生花 | 黑描边 + 米色边距 + 细线 | 3 | Profile（止于最外内框线） |
+| 中古雨林 | 黑描边 + 白边距 + 框线 | 3 | Profile（同上） |
+| 庄园秘境 | 出血白边（锚点跳过）+ 深黑带 + 米底 | 2 | Profile |
+
+#### 关键约束
+
+- **使用原始素材图检测**：避免 `adapt_pool_material` 拉伸造成的边框像素畸变，用 scale 因子换算到画布坐标系
+- **bg_color 用实际素材底色**：白色硬编码会把米色等底色误判为边框层，导致 L 形内环色带色差
+- **厚黑首层让位 V13**：首层近黑且厚度 ≥ `_THICK_BLACK_MIN`（50px）时先问 V13，V13 命中则走 V13（已验证路径）
+- **无边框跳过补全**：`_is_real_border` 判定（边缘-中心色差 < 50 或总厚 > 短边 30% → 非真实边框）
+- **静默失败兜底**：补全过程异常静默跳过，不影响后续渲染
+
+### 7. 水池设计器草图识别（core/pool_designer/）
 
 水池设计器核心子系统。从用户上传的手绘草图自动识别**8 项关键数值**：外框宽/高(total_w/total_h)、内孔宽/高(inner_w/inner_h)、上下左右边距(margin_top/bottom/left/right)。支持**方向标签图**和**无标签双矩形图**两种输入场景。
 
 #### 核心识别管道（7 步串行流程）
 
 ```
-Step1: 矩形检测（嵌套对选择 + 面积3-97%过滤 + 边界伪矩形剔除 + 内框暗色区域回退）
+Step1: 矩形检测（嵌套对选择 + 面积3-97%过滤 + 边界伪矩形剔除 + 内框暗色区域回退 + 凸包差法过滤大bbox）
 Step2: 区域划分（8-zone几何分区 + 角点间隙归属基于间隙宽度判定）
 Step3: 多尺度OCR扫描（多尺度/PSM/预处理组合 + 相邻数字Token合并）
 Step4: 小数修复（3阶段：丢失小数点修复 + 拆分小数点修复 + 严格去重自适应阈值）
@@ -350,7 +423,7 @@ Step6: 空间映射（物理位置映射 + 圆数过滤100/50/25倍数10%范围�
 Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽评分选优）
 ```
 
-#### 模块化拆分（V2.1）
+#### 模块化拆分
 
 草图识别按职责拆分为多个子模块，单一来源、单一职责：
 
@@ -388,6 +461,8 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - **外框完整尺寸**：不受挖角影响，识别完整矩形外框
 - **OCR 兜底路径**：Tesseract 不可用时降级为纯 CV 几何推断（四象限白像素比例 + 像素尺度）
 - **几何驱动标签归属**：避免 OCR 小字符 D/C 误判
+- **三级硬约束筛选**（V2.2）：cut_ratio ∈ [0.03, 0.75]、距离 bbox 角 < 40% 对角线，增强评分 base_score × proximity_factor × ratio_factor + balance_factor 多候选消歧
+- **草图识别精度修复**（V2.2）：删除 MORPH_CLOSE（避免数字注记与 L 形轮廓合并导致假凹角）、凸包差法 + 大 bbox 过滤
 
 #### 关键约束与安全机制
 
@@ -417,6 +492,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - 解析完成后红色矩形框立即显示 8 字段识别结果（外框/内挖/上下左右 + 辅助提示）
 - 生成完成后自动加载预览图 + 兜底补显示
 - `debug["direction_margins"]` 和 `geometry_margins` 存储供 GUI 对比显示
+- **防抖渲染**（V2.2）：UI 参数修改（如 SpinBox 值）采用 200ms 延迟、800ms 最大等待，防止主线程阻塞
 
 #### OCR 硬依赖处理
 
@@ -424,13 +500,14 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - `from PIL import Image as PILImage` 显式导入（避免 NameError 静默吞 OCR 结果）
 - 缺引擎时水池草图尺寸识别将无法完成（无几何降级路径），程序本身不崩溃；L 形挖角可降级为纯 CV 几何推断；圆角裁剪功能不受影响
 
-### 7. 水池模式素材图渲染（core/image_ops.py）
+### 8. 水池模式素材图渲染（core/image_ops.py）
 
 **渲染执行顺序**（确保四边边框完整）：
 1. 保存非白色素材像素
 2. 白色填充内孔区域
 3. 恢复保存的素材像素
 4. 绘制 10px 黑色边框线（最后绘制，确保最上层显示）
+5. **L 形挖角素材边框补全**（V2.2，rect_lshape + 池素材 + 非 tile 时触发，见第 6 节）
 
 **素材适配模式**：
 - 水池模式默认使用 **stretch 模式**（直接拉伸到目标尺寸不裁剪，避免 cover 模式因方向不匹配裁剪边框）
@@ -454,7 +531,14 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - 零半径角保持直角，非零半径角圆角正确
 - 水池模式圆角独立于普通裁剪模式
 
-### 8. 统一配置（core/config.py）
+### 9. 模板库缓存预热（core/parser/template_matcher.py，V2.2）
+
+- **目录 mtime 持久化**：扫描结果缓存到磁盘，根目录 mtime 未变化时快速跳过（2ms）
+- **主线程不阻塞**：预热通过信号槽机制触发 worker，不在主线程阻塞等待
+- **形状+方向关键词严格匹配**：根据目标文件名自动匹配模板库中的最佳源图
+- **有方向比例匹配**：支持有方向素材的比例匹配
+
+### 10. 统一配置（core/config.py）
 
 所有业务常量集中在 `config.py` 单一来源，包括：
 - 边框检测阈值（颜色距离、亮度差分、扫描步长、最大层数等）
@@ -464,7 +548,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - 像素上限（2 亿像素，防御解压缩炸弹）
 - 边距 SpinBox 上限 200cm、OCR ROI 几何过滤系数、自洽判定阈值等
 
-### 9. 历史记录功能（core/app_settings.py）
+### 11. 历史记录功能（core/app_settings.py）
 
 - **3 天保留策略**：保留今天及前 2 天历史记录
 - **每日上限**：每天上限 50 条，自动清理过期记录
@@ -473,10 +557,10 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - **物理隔离**：三个面板历史记录完全独立存储
   - 圆角裁剪工具：`TARGET_SRC_CROPPER`
   - 水池设计器：`TARGET_SRC_POOL`
-  - L 形挖角设计：`TARGET_SRC_LSHAPE`（V2.1 新增第三源）
+  - L 形挖角设计：`TARGET_SRC_LSHAPE`
 - **公共 API**：接受 source 参数以区分不同面板
 
-### 10. 日志系统（core/log_setup.py）
+### 12. 日志系统（core/log_setup.py）
 
 - 控制台 + 滚动文件双输出
 - 默认 **INFO** 级别（调试时设 `LOG_LEVEL=DEBUG`）
@@ -485,7 +569,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - 崩溃日志：exe 同目录 `crash.log`（全局 excepthook 写 traceback，PyInstaller 无控制台时排障关键）
 - 方向字线索日志 + 诊断日志级别调整
 
-### 11. L 形挖角独立设计面板（gui/lshape_panel.py，V2.1 新增）
+### 13. L 形挖角独立设计面板（gui/lshape_panel.py）
 
 把 L 形挖角功能从【水池设计器】拆出，单开一个面板放在【水池设计器】右侧，承载所有 L 形挖角相关 UI 与识别逻辑：
 
@@ -506,7 +590,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 2. **自动匹配**（可选）：输入目标文件名，自动从模板库匹配源图
 3. **参数识别**：自动从文件名解析尺寸和圆角参数，也可手动调整
 4. **预览**：点击"预览"查看裁剪效果
-5. **导出**：点击"导出 JPG"保存印刷级图片
+5. **导出**：点击"导出 JPG"保存印刷级图片（后台线程渲染，界面保持响应）
 6. **历史记录**：可查看目标文件名 3 天历史记录
 
 ### 水池设计器（参数化模式）
@@ -528,13 +612,13 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 5. 点击「生成预览」渲染水池设计图 → 画布显示预览
 6. 菜单 → 文件 → 导出 JPG
 
-### L 形挖角设计（V2.1 新增独立面板）
+### L 形挖角设计（独立面板）
 
-1. 切换到「L 形挖角设计」标签页
+1. 切换到「L形挖角设计」标签页
 2. 设置挖角参数：挖角方向（tl/tr/bl/br 四向单选）、挖角宽高（含 1cm 损耗）、外框宽高、边角圆角半径
 3. 或点击**「上传草图」**自动识别挖角方向与尺寸（OCR 不可用时降级为几何推断）
 4. 输入目标文件名（可选，用于素材匹配与历史记录）
-5. 点击「一键生成」渲染 L 形挖角设计图
+5. 点击「一键生成」渲染 L 形挖角设计图（自带边框的池素材会自动补全 L 形新边缘的边框层次）
 6. 菜单 → 文件 → 导出 JPG
 7. **历史记录**：独立第三源，与水池设计器/圆角裁剪物理隔离
 
@@ -543,7 +627,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 | 模板 | 说明 |
 |---|---|
 | 图 矩形嵌套挖洞 | 3 层边框 + 米色背景 + 边框文字 |
-| 图 L 形挖角 | L 形挖角 + 浅米色 + 简单边框 |
+| 图 L形挖角 | L 形挖角 + 浅米色 + 简单边框 |
 | 图 椭圆嵌套 | 椭圆挖孔 + 3 层边框 + 白色画布 |
 
 ---
@@ -559,6 +643,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - 极坐标→离散像素映射留 2px 容差，避免弧线像素被切掉形成 C 形缺口
 - mask 创建使用 `carve_corner_on_mask`（支持 fill_value/inverse 参数）替代 PIL `rounded_rectangle`
 - 内孔边框使用圆角矩形差集替代 EDT（数学等价，33×加速）保证精确 10px 黑色边线宽度
+- L 形挖角边框补全使用原始素材图检测 + scale 换算，避免拉伸畸变
 
 ### 安全机制
 
@@ -571,6 +656,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 - OCR 数值范围严格校验：0.3-500cm，过滤异常值
 - OCR 全局唯一性检查：差值<0.15 跳过，防止单值占据多字段
 - 边距合理性硬门槛：边距不可能大于短边×80%
+- L 形挖角边框补全静默失败兜底：异常不影响后续渲染
 
 ### 一致性保证
 
@@ -582,6 +668,8 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 统一委托给 `core.corner.algorithm.carve_corner_on_mask`，单一来源。
 
 间隙层判定统一为 `classify_gap_layers` 单一来源，消除多处独立逻辑互相矛盾。
+
+L 形挖角边框补全通过 `apply_lshape_border_completion` 单一入口，三级路由向后兼容。
 
 ---
 
@@ -613,12 +701,14 @@ python -m pytest tests/core/test_rounded_corner.py::TestApplyRoundedCorners -v
 # 草图相关测试
 python -m pytest tests/sketch/test_sketch_parser_logic.py -v
 
-# L 形挖角测试
-python -m pytest tests/core/test_lshape_render.py tests/core/test_lshape_sketch_parser.py -v
+# L 形挖角测试（渲染 + 草图解析 + 边框补全 + Profile 路由）
+python -m pytest tests/core/test_lshape_render.py tests/core/test_lshape_sketch_parser.py tests/core/test_lshape_border.py tests/core/test_lshape_border_route.py -v
 
 # 集成测试
 python -m pytest tests/integration/ -v
 ```
+
+> 提示：若 pytest 退出码非 0 但无 failed 用例，可能是环境批量删除保护干扰收尾清理，用 `--basetemp` 指定独立临时根目录即可拿到干净退出码。
 
 `scripts/diagnose/` 目录下包含诊断脚本（`diagnose_*.py`、`debug_*.py`、`_diag_*.py`），用于特定案例的圆角缺陷诊断 / OCR 识别问题 / 草图解析根因定位。`scripts/verify/` 包含修复验证脚本。
 
@@ -675,7 +765,7 @@ python -m pytest tests/integration/ -v
 | 预览用 BILINEAR | 减少 0.4-1.5 秒渲染时间 |
 | 复用 inner_mask | 省去一次 mask 计算和 corner radii 计算 |
 
-### V2.1 新增优化（2026-09）
+### V2.2 新增优化（2026-09）
 
 | 优化项 | 效果 |
 |---|---|
@@ -683,6 +773,10 @@ python -m pytest tests/integration/ -v
 | LOD 降采样调整（scale=0.5 + BILINEAR） | 消除高细节素材马赛克伪影 |
 | JPG 导出异步化（QThread + 进度对话框 + 可取消） | 消除大图导出 UI 冻结 |
 | 草图识别模块化拆分 | 单一职责，可维护性提升 |
+| GUI 参数修改防抖渲染（200ms 延迟、800ms 最大等待） | 防止 SpinBox 连续改动阻塞主线程 |
+| 模板库 dir_mtime 磁盘缓存 + 信号槽预热 | 未变化时快速跳过（2ms），主线程不阻塞 |
+| L 形挖角边框补全三级路由 | Profile/V13/旧路径自动回退，向后兼容 |
+| Profile 路径锚点对齐 + 三层封顶 | 抗出血白边，V13/旧路径失效素材可补全 |
 
 所有优化通过像素级一致性验证保证几何等价，草图识别逻辑与功能保持不变。
 
@@ -706,6 +800,16 @@ python -m pytest tests/integration/ -v
 | 蔓生花 | 边框厚度不一致 | 边框厚度统一 |
 | 安妮森林 | 白色边框线 + 米色弧形缺口 | 深色外层保护（max RGB ≤ 150） |
 
+### 9.07 圆角裁剪 T1-T5 修复（V2.2）
+
+| 修复 | 问题 | 修复方式 |
+|---|---|---|
+| T1 | 圆角处多层边框都被圆角化 | `only_outermost=True` + `protect_content` 常驻 |
+| T2 | 圆角白线与内层误圆角 | `angle_in_corner_sector` 统一 + 仅最外层构建 mask |
+| T3 | 圆角边界白线残留 | `tol` 一致性 1.0 → 2.0 |
+| T4 | 蔓生花/素锦深色弧线 + 南瓜无忧白隙 | `ring_region` 收窄 + `inner_cut` 限幅 |
+| T5 | 深色弧线未消除根因 | `ring_region` 限于 `border_zone`（直边区） |
+
 ---
 
 ## ProductSummary 目录文档索引
@@ -718,11 +822,16 @@ python -m pytest tests/integration/ -v
   - [20260820-21-任务分类整理总结.md](ProductSummary/20260820-21-任务分类整理总结.md)
   - [20260826-28-任务分类整理总结.md](ProductSummary/20260826-28-任务分类整理总结.md)
   - [20260829-任务分类整理总结.md](ProductSummary/20260829-任务分类整理总结.md)
-  - [20260831-0902-任务分类整理总结.md](ProductSummary/20260831-0902-任务分类整理总结.md)
+  - [20260831-0902-任务分类整理总结.md](ProductSummary/20260831-0902-任务分类整理总结总结.md)
+  - [20260903-任务分类整理总结.md](ProductSummary/2026-09/20260903-任务分类整理总结.md)
+  - [20260904-任务分类整理总结.md](ProductSummary/2026-09/20260904-任务分类整理总结.md)
+  - [20260905-任务分类整理总结.md](ProductSummary/2026-09/20260905-任务分类整理总结.md)
+  - [20260907-任务分类整理总结.md](ProductSummary/2026-09/20260907-任务分类整理总结.md)
 
-- **水池设计器子问题文档**：位于 `ProductSummary/水池设计器/`，按日期子目录组织（20260813-20260902），命名格式「日期-解决同类问题」
+- **水池设计器子问题文档**：位于 `ProductSummary/水池设计器/`，按日期子目录组织（20260813-20260905），命名格式「日期-解决同类问题」
 - **L 形挖角设计器文档**：位于 `ProductSummary/L形挖角设计器/`，按四阶段演进组织（架构设计期→落地实现期→代码审计期→独立面板期）
 - **圆角裁剪工具文档**：位于 `ProductSummary/圆角裁剪工具/`，沿用既有命名规范
+- **V2.2 分析报告**：位于 `ProductSummary/SmartShapeCrop分析报告/`，含 V2.2 全面检测报告、回归诊断报告、回归收尾报告
 
 ---
 
