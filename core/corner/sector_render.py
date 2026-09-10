@@ -393,7 +393,9 @@ def _redraw_border_on_corner(
         # [P2-B R2 2026-09-05] 当 paint_inside_arc=False 时，进一步排除源图中
         # 与 bg_color 接近的像素（保留源间隙不被边框色覆盖）。
         # 仅 border_only mode + 无 corner 保护场景下使用。
-        if not paint_inside_arc and src_arr is not None:
+        # [Fix 圆角边框粗细不一致] 外弧边界 (d=0) 始终绘制边框色，
+        # 不受 paint_inside_arc 跳过逻辑影响，确保圆弧上最外层边框线完整可见。
+        if not paint_inside_arc and src_arr is not None and d > 0:
             bg_f64 = np.array(bg_color, dtype=np.float64)
             d_local = np.where(d_region)
             if len(d_local[0]) > 0:
