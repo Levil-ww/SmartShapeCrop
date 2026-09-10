@@ -125,21 +125,23 @@ SmartShapeCrop/
 │   ├── packageV2.1.2.py           #   V2.1.2 打包脚本（历史）
 │   ├── packageV2.1.py / packageV2.0.py / package.py  # 历史打包脚本（勿用）
 │   ├── build_exe.bat              #   历史打包批处理
-│   └── specs/                     #   历史 .spec 归档（V2.1 / V2.1.2）
+│   └── specs/                     #   .spec 归档（V2.1 / V2.1.2 / V2.2）
+│       └── 智能裁剪设计器V2.2.spec  #     【当前】V2.2 spec（与 packageV2.2.py 同源）
 │
-├── 智能裁剪设计器V2.2.spec         # V2.2 PyInstaller spec（与 packageV2.2.py 同源）
 ├── dist/                           # 打包产物
 │   └── 智能裁剪设计器V2.2.exe      #   V2.2 单文件可执行程序（含内嵌 Tesseract）
-├── build/                          # PyInstaller 中间构建产物（可清理）
+├── build/                          # PyInstaller 中间构建产物（打包时自动重建，可清理）
 ├── images/                         # 应用图标（SmartShapeCrop.ico / logo.png）
 ├── logs/                           # 运行日志 + OCR 诊断截图（自动生成）
 └── ProductSummary/                 # 每日程序优化工作总结
     ├── 2026-08/                    #   8 月任务分类整理总结
     ├── 2026-09/                    #   9 月任务分类整理总结
-    ├── 圆角裁剪工具/               #   圆角裁剪工具工作总结
+    ├── 圆角裁剪工具/               #   圆角裁剪工作总结（按「YYYYMMDD-主题」平铺命名）
     ├── 水池设计器/                 #   水池设计器工作总结（按日期子目录）
-    ├── L形挖角设计器/              #   L 形挖角设计修改总结（阶段 1-5 演进文档）
+    ├── L形挖角设计器/              #   L 形挖角修改总结（阶段 1-5 演进文档 + 按日期命名）
     └── SmartShapeCrop分析报告/      #   项目分析报告（含 V2.2 全面检测/回归诊断/回归收尾报告）
+        ├── assets/                 #     报告配图（由 *.html 以 assets/ 前缀引用）
+        └── patches/                #     安全修复补丁（patch-01 ~ patch-03）
 ```
 
 ---
@@ -257,7 +259,7 @@ python packaging/packageV2.2.py --no-tesseract
 
 - 产物：`dist/智能裁剪设计器V2.2.exe`（单文件，双击运行）
 - 自动内嵌本机 Tesseract-OCR 到 exe 内部，用户机器免安装即可使用草图 OCR
-- 已在 hidden imports 中显式声明 V2.2 全部模块（含 `core.lshape_border` / `core.lshape_border_route` / `gui.lshape_panel`），脚本与根目录 `智能裁剪设计器V2.2.spec` 配置同源
+- 已在 hidden imports 中显式声明 V2.2 全部模块（含 `core.lshape_border` / `core.lshape_border_route` / `gui.lshape_panel`），脚本与 `packaging/specs/智能裁剪设计器V2.2.spec` 配置同源
 - 打包失败时 onefile 自动回退 onedir；崩溃时在 exe 同目录生成 `crash.log` 便于排障
 
 ---
@@ -288,7 +290,7 @@ python packaging/packageV2.2.py --no-tesseract
 - LOD 智能降采样（scale=0.5 + BILINEAR）：消除高细节素材马赛克伪影
 - JPG 导出异步化（QThread 后台 + 可取消）：消除大图导出 UI 冻结
 
-**打包**：`packaging/packageV2.2.py` + `智能裁剪设计器V2.2.spec`，补全 V2.2 新模块 hidden imports，默认内嵌 Tesseract。
+**打包**：`packaging/packageV2.2.py` + `packaging/specs/智能裁剪设计器V2.2.spec`，补全 V2.2 新模块 hidden imports，默认内嵌 Tesseract。
 
 ### V2.1.2
 

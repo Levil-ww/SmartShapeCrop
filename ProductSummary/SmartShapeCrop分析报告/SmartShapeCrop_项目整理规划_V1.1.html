@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="5xDgqn2CgUSatKZ8ZiPr0r">
+<head data-page-node-id="9ntvy09cEeNWYYRXXHzF9H">
+<meta charset="UTF-8" data-page-node-id="DuB3ECpT1Egd0SJJ90gBCi">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="HNdGboBXcS7D1pMIzBC5Vk">
+<title>SmartShapeCrop 项目目录整理规划 V1.1</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#1f2430; --ink2:#5a6478; --ink3:#8b93a5;
+    --line:#e4e7ee; --acc:#2f6fed; --acc-soft:#eaf1ff;
+    --p1:#e5484d; --p1bg:#fdeeee; --p2:#e08700; --p2bg:#fff5e6; --p3:#3e9d5a; --p3bg:#eaf7ee;
+    --mono:'SF Mono',Consolas,'Cascadia Code',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    line-height:1.7;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 28px 72px}
+
+  header{background:linear-gradient(135deg,#2f6fed 0%,#1e4fc4 100%);color:#fff;
+    padding:44px 0 38px;margin-bottom:32px}
+  header .wrap{padding-bottom:0}
+  h1{margin:0 0 10px;font-size:29px;font-weight:650;letter-spacing:-.3px}
+  .sub{opacity:.9;font-size:14.5px;margin-bottom:18px}
+  .metabar{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .meta{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);
+    border-radius:6px;padding:5px 11px;font-size:12.5px;font-family:var(--mono)}
+  .badge-ok{background:#d6f5df;color:#1d6b34;border-color:#a8e6bd}
+
+  h2{font-size:20px;margin:38px 0 16px;padding-bottom:10px;border-bottom:2px solid var(--line);
+    display:flex;align-items:center;gap:9px}
+  h2 .n{background:var(--acc);color:#fff;width:26px;height:26px;border-radius:7px;
+    display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+  h3{font-size:15.5px;margin:22px 0 10px;color:var(--ink)}
+  p{margin:10px 0}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;
+    padding:20px 22px;margin:14px 0;box-shadow:0 1px 3px rgba(20,30,60,.045)}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin:16px 0}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:15px 16px}
+  .kpi .v{font-size:25px;font-weight:660;letter-spacing:-.5px;font-family:var(--mono)}
+  .kpi .l{font-size:12.5px;color:var(--ink2);margin-top:3px}
+  .kpi.red .v{color:var(--p1)} .kpi.amber .v{color:var(--p2)}
+  .kpi.green .v{color:var(--p3)} .kpi.blue .v{color:var(--acc)}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;background:var(--card)}
+  th{background:#f2f4f8;text-align:left;padding:10px 12px;font-weight:600;
+    border-bottom:2px solid var(--line);white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafbfd}
+  td.num,th.num{text-align:right;font-family:var(--mono);white-space:nowrap}
+  code{font-family:var(--mono);background:#f0f2f6;padding:1.5px 5px;border-radius:4px;
+    font-size:12.5px;color:#334;border:1px solid #e6e9f0}
+
+  .bars{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:20px 22px;margin:16px 0}
+  .bar-row{display:grid;grid-template-columns:150px 1fr 78px;align-items:center;gap:12px;margin:7px 0;font-size:13px}
+  .bar-lbl{font-family:var(--mono);font-size:12px;color:var(--ink2);text-align:right;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .bar-track{background:#eef1f6;border-radius:5px;height:19px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:5px;display:flex;align-items:center;
+    padding-left:8px;color:#fff;font-size:11px;font-weight:600}
+  .bar-val{font-family:var(--mono);font-size:12px;color:var(--ink2);text-align:right}
+  .f-build{background:linear-gradient(90deg,#8892a8,#a3acbd)}
+  .f-dist{background:linear-gradient(90deg,#2f6fed,#5b8dfa)}
+  .f-script{background:linear-gradient(90deg,#e08700,#f0a63a)}
+  .f-log{background:linear-gradient(90deg,#8b5cf6,#a78bfa)}
+  .f-doc{background:linear-gradient(90deg,#3e9d5a,#5cb877)}
+  .f-code{background:linear-gradient(90deg,#0d9488,#2dd4bf)}
+
+  .pri{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11.5px;
+    font-weight:700;font-family:var(--mono);white-space:nowrap}
+  .p1{background:var(--p1bg);color:var(--p1)} .p2{background:var(--p2bg);color:var(--p2)}
+  .p3{background:var(--p3bg);color:var(--p3)}
+
+  .issue{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line);
+    border-radius:9px;padding:14px 18px;margin:11px 0}
+  .issue.p1{border-left-color:var(--p1)} .issue.p2{border-left-color:var(--p2)}
+  .issue.p3{border-left-color:var(--p3)}
+  .issue-t{font-weight:640;font-size:14.5px;margin-bottom:6px;display:flex;
+    align-items:center;gap:9px;flex-wrap:wrap}
+  .issue p{margin:6px 0;font-size:13.5px;color:var(--ink2)}
+  .fix{background:#f6f9ff;border:1px dashed #c3d5f7;border-radius:7px;padding:9px 12px;
+    margin-top:9px;font-size:13px;color:#334}
+  .fix b{color:var(--acc)}
+
+  .tree{background:#fbfcfe;border:1px solid var(--line);border-radius:9px;padding:16px 18px;
+    font-family:var(--mono);font-size:12.5px;line-height:2;margin:12px 0;overflow-x:auto}
+  .tree .add{color:#1d7a3e;font-weight:600}
+  .tree .del{color:#b8373a;text-decoration:line-through;opacity:.65}
+  .tree .mv{color:var(--acc);font-weight:600}
+  .tree .dim{color:var(--ink3)}
+
+  .warn{background:#fff8e6;border:1px solid #f0d48a;border-radius:9px;padding:13px 17px;margin:14px 0;font-size:13.5px}
+  .warn b{color:#8a5a00}
+  .note{background:var(--acc-soft);border:1px solid #c7dbfd;border-radius:9px;
+    padding:13px 17px;margin:14px 0;font-size:13.5px}
+  .note b{color:#1e4fc4}
+
+  ul,ol{margin:9px 0;padding-left:22px} li{margin:5px 0;font-size:13.5px}
+  .steps{counter-reset:s;list-style:none;padding-left:0}
+  .steps li{counter-increment:s;position:relative;padding-left:38px;margin:11px 0}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:25px;height:25px;
+    background:var(--acc);color:#fff;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;font-size:13px;font-weight:650}
+
+  footer{border-top:1px solid var(--line);margin-top:44px;padding-top:20px;
+    color:var(--ink3);font-size:12.5px;text-align:center;font-family:var(--mono)}
+  .foot-badge{display:inline-block;border:1px solid var(--line);border-radius:5px;
+    padding:3px 10px;margin:0 4px;background:var(--card)}
+</style>
+</head>
+<body data-page-node-id="GRhJsqhVBsZ1lLjmDAU2Sz">
+
+<header data-page-node-id="yXRE15TyPgnqiF3pary5ix">
+  <div class="wrap" data-page-node-id="UE2yK9LT1qXIjTDecG5e53">
+    <h1 data-page-node-id="DK8ITRe3fohGRBLRLmVN9p">SmartShapeCrop 项目目录整理规划 <span style="font-weight:400;opacity:.85" data-page-node-id="5XDTa3J2t7Zwiz0L9BCHug">V1.1</span></h1>
+    <div class="sub" data-page-node-id="UDXCHz7ajchiHXKJKIxiue">源码零改动前提下的目录诊断 · 四档分级归档方案 · 2026-09-10 只读扫描</div>
+    <div class="metabar" data-page-node-id="VU5PKDAtk45QHMi88v2cYQ">
+      <span class="meta" data-page-node-id="AfXDGDLRZV87lXmi5CInrA">workspace: F:\SmartShapeCrop</span>
+      <span class="meta" data-page-node-id="xPx0KGthmh37e3X2YM1va7">branch: master</span>
+      <span class="meta" data-page-node-id="rFAKaGFBt7GGMXi3ypVMCZ">tracked: 539 files</span>
+      <span class="meta badge-ok" data-page-node-id="mIf4Q3CfnVkJJMWoNEiUeS">✓ 本轮全程只读，零文件改动</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap" data-page-node-id="USsTrgH6HUAyemnYOk0DCm">
+
+<div class="note" data-page-node-id="i2LwjGGcPD0JBMtooS6Cf1">
+<b data-page-node-id="nIWy7U9h3MbvvoOGrOYdha">与 V1.0 的关系：</b>该目录下已存在此前的 <code data-page-node-id="Zmy5bwqoOmLchuX0UAshnH">SmartShapeCrop_项目整理规划_V1.0.html</code>，
+规划结论已产出但未落地，目录至今仍保持杂乱。本版 V1.1 基于今日重新扫描的实测数据重做全量诊断，
+并补上了 V1.0 未覆盖的关键发现 —— <b data-page-node-id="kY9Rf4vAWE8ekE5Lq68f1J">Git 仓库误追踪 81.9 MB</b> 与 <b data-page-node-id="Lct33flaeVBbDkBFAoEUyL">HTML 报告的配图引用链</b>。
+</div>
+
+<h2 data-page-node-id="v1BNAYQ99U6BrYdlmmhI6N"><span class="n" data-page-node-id="twjJnCoyENdLhnZzXVyPSW">1</span>体检概览</h2>
+
+<div class="kpis" data-page-node-id="GwqvFRsEUZzwxVrbieHIeg">
+  <div class="kpi blue" data-page-node-id="EAM1G8UMP3QJjWvLpMIrAy"><div class="v" data-page-node-id="vimHlGOKrNdgsAluPcWdvm">641</div><div class="l" data-page-node-id="fUzanSeYCj4rL7OXoprgK1">纳入扫描文件数</div></div>
+  <div class="kpi amber" data-page-node-id="PwQcrn3SBA2GI2UnGVQnt6"><div class="v" data-page-node-id="KPUzYMoG7TgzWIpbhdVkQB">12</div><div class="l" data-page-node-id="NHkDat4kvnXbEpYJh1GeJr">已识别待处理项</div></div>
+  <div class="kpi red" data-page-node-id="YzYLmMYfcX1RXBrah3G8Au"><div class="v" data-page-node-id="1er3JuFq6eB6qdsHBUuEBe">119 MB</div><div class="l" data-page-node-id="AUAgzwn40hy5N2pwnKDIc9">.git 仓库（含 81.9MB 误追踪）</div></div>
+  <div class="kpi green" data-page-node-id="6QsUPF13GYxZ5EjHXzPIWk"><div class="v" data-page-node-id="yP87Kllhj62ALTDCHEj5zf">220 MB</div><div class="l" data-page-node-id="9xEQDVLBysVu5joeAetM1F">A 档可安全释放</div></div>
+</div>
+
+<p data-page-node-id="P7ZEBiyGQW0tB4gulhhOmo">本轮扫描覆盖 <code data-page-node-id="6tIZbZOl9s1Kd7XfrQrSM1">core/</code> <code data-page-node-id="IirnBFDutH2pUWjQw9JVQU">gui/</code> <code data-page-node-id="LrPJct3xhXTKuoXe6SZg5Q">tests/</code> <code data-page-node-id="GzWYdxQFBYgZmn1M5WUAZv">scripts/</code> <code data-page-node-id="vB0VxAhx00uA5CGHIyCfjU">packaging/</code> <code data-page-node-id="TS8IhCejoQcuuJP30d8FZG">ProductSummary/</code> 及根目录，
+排除 <code data-page-node-id="cyTUFuQ1gLUxhiaWVZUWe3">.venv</code>（457 MB，开发环境不动）、<code data-page-node-id="avJK46AF81oXYWgpLsoiLh">.git</code>、<code data-page-node-id="7CkKnIPdXwaOCcevV4QUwm">.workbuddy</code>、<code data-page-node-id="W24QJ4cB0BPjyHyPdfEWQ4">.idea</code>。</p>
+
+<p data-page-node-id="khLldDleJInYbKsrhoxqK0"><b data-page-node-id="dbbZMqwSM28ffbhhlxjbpo">结论：程序源码干净无冗余，问题集中在两处</b> ——
+「ProductSummary 文档归类体系不一致」与「Git 误追踪大文件」。前者是本次整理的重点，后者决定了仓库能否长期健康。</p>
+
+<h2 data-page-node-id="CM3VaI56tfFlYtPqetNtcR"><span class="n" data-page-node-id="M7xkZ8GqPS3hLDDFzfoxaN">2</span>体积分布</h2>
+
+<div class="bars" data-page-node-id="zbA8rpIGJtMDJYz98pNSKg">
+  <div class="bar-row" data-page-node-id="4VJPLVcR3CQWPyVudLq4P2">
+    <div class="bar-lbl" data-page-node-id="Xt0lpcpGDd2uF43tzTaK2c">build/</div>
+    <div class="bar-track" data-page-node-id="L1cAGyAzFeI7Q7ZePGT6ra"><div class="bar-fill f-build" style="width:100%" data-page-node-id="cqiGCH1nWhWpdJ99Isftb8">PyInstaller 中间产物</div></div>
+    <div class="bar-val" data-page-node-id="ERWGVbinseb6hJjzDWEV6I">213 MB</div>
+  </div>
+  <div class="bar-row" data-page-node-id="rrHTFjlJESypdbdWbKhVun">
+    <div class="bar-lbl" data-page-node-id="zuhI4omvTDcebBAEgXaDxi">dist/</div>
+    <div class="bar-track" data-page-node-id="Tycxta0kSUCrPsOL34FYlj"><div class="bar-fill f-dist" style="width:95%" data-page-node-id="2I6AqZHNC25Hc1JJTka092">V2.2.exe（今日产物·保留）</div></div>
+    <div class="bar-val" data-page-node-id="F1IDauxq9wVGWtBL7r1PDA">203 MB</div>
+  </div>
+  <div class="bar-row" data-page-node-id="x2XuP8fK9gPfsmjzyIqgWE">
+    <div class="bar-lbl" data-page-node-id="pauhFFVAE0maMFpc6HUO6L">scripts/_archive</div>
+    <div class="bar-track" data-page-node-id="R8LThezkum8ojNTrRLYSdU"><div class="bar-fill f-script" style="width:39.4%" data-page-node-id="C445CaPJkYtxxv5AA06TSz">含 78MB 诊断输出图</div></div>
+    <div class="bar-val" data-page-node-id="TPKhYkx7pDM1qH71b4tpVT">84 MB</div>
+  </div>
+  <div class="bar-row" data-page-node-id="mHTxp6iWLDIzY2m6CeJjFt">
+    <div class="bar-lbl" data-page-node-id="Mojny8DltYYAg83ig1Pi2c">logs/</div>
+    <div class="bar-track" data-page-node-id="R6BBOz65immvbkP0tk4HGk"><div class="bar-fill f-log" style="width:6%" data-page-node-id="H2eieIC91GGWqKrfk0Sib4"></div></div>
+    <div class="bar-val" data-page-node-id="BwEPqpFMOzIlVrWP130EDl">7.8 MB</div>
+  </div>
+  <div class="bar-row" data-page-node-id="ke1KjvHrPxg4K3Qi0gx2h3">
+    <div class="bar-lbl" data-page-node-id="iAvFTCsmVciHEnwr0zHvqG">ProductSummary/</div>
+    <div class="bar-track" data-page-node-id="b5ZDwJO3iHp6DUSbJI0xw3"><div class="bar-fill f-doc" style="width:3.5%" data-page-node-id="Yt7j0Jb3CW0dDQmDGWErAp">154 个文档</div></div>
+    <div class="bar-val" data-page-node-id="d4pBwS6qE8b0NTuoF226dP">2.6 MB</div>
+  </div>
+  <div class="bar-row" data-page-node-id="beYcFsvMAqTOwS3djgD9EZ">
+    <div class="bar-lbl" data-page-node-id="wFPvCWqCiAuE5Zv1keaFPI">core/</div>
+    <div class="bar-track" data-page-node-id="4HzGJXx6PHPEA8UlFT6OC2"><div class="bar-fill f-code" style="width:1.9%" data-page-node-id="WmsY1NJmW8WWPdkpdTgcSd"></div></div>
+    <div class="bar-val" data-page-node-id="SGumAQJJKMeD8qR9MrGc1r">1.5 MB</div>
+  </div>
+  <div class="bar-row" data-page-node-id="IrP6qHHph8SaQluM9lXE4B">
+    <div class="bar-lbl" data-page-node-id="SpCMi1N99qfaxKvH46K4yw">tests/ + gui/</div>
+    <div class="bar-track" data-page-node-id="BMhlpl1o7VWJxgGoPmdfLD"><div class="bar-fill f-code" style="width:1.6%" data-page-node-id="Kf8mPPGRbwCOsWD2yaBGah"></div></div>
+    <div class="bar-val" data-page-node-id="B9qMcm1pCNH3RVbKBYiaan">1.9 MB</div>
+  </div>
+  <div class="bar-row" data-page-node-id="wHlCwstFAWEuZZ4uJHUcCq">
+    <div class="bar-lbl" data-page-node-id="GatNZO39dFPclldwjkC3SB">根目录散落</div>
+    <div class="bar-track" data-page-node-id="sbUPu89CAlmstzIeFpjPzS"><div class="bar-fill f-doc" style="width:1%" data-page-node-id="XR8w12jLXgdAO2exuPNa6m">14 个文件</div></div>
+    <div class="bar-val" data-page-node-id="lJMXvb69OD2if2Avqxz3sA">0.8 MB</div>
+  </div>
+</div>
+
+<table data-page-node-id="hPZ3CHncR7G7F2gSPaGEHe">
+  <thead data-page-node-id="8HN3blcrKxoNKJTvqOFtKv"><tr data-page-node-id="RQzsQCHkhj5fbv0ae9WQrQ"><th data-page-node-id="Q48XExzIYY3OpbEtGhTEMk">隐藏目录</th><th class="num" data-page-node-id="n9c8q1qysRSzDIOnJNF9fq">体积</th><th data-page-node-id="0on4gq4IaCZq0EZMTddxBh">状态</th><th data-page-node-id="JpEF2JVH8yKdoCGum9luUQ">说明</th></tr></thead>
+  <tbody data-page-node-id="D2kEaK3pd4ICO0I5kFJDWv">
+    <tr data-page-node-id="EjbQMfmMeGNm1sSu78ZsER"><td data-page-node-id="QOGP3iqmHvRTf6zufyyvwn"><code data-page-node-id="1QGK8bcZzMH7Iwb0LJNntX">.venv/</code></td><td class="num" data-page-node-id="eyxGliAvH7057IsChmPt6R">457 MB</td><td data-page-node-id="gMTfGk2g2gmHTNagSaBXsn"><span class="pri p3" data-page-node-id="8hTgX1WKrQW09Zi1MRQwIZ">不动</span></td><td data-page-node-id="MIcXX7jASDEImKuqgOeEBV">开发虚拟环境</td></tr>
+    <tr data-page-node-id="e8giIglwJzZonCM2dWVvQa"><td data-page-node-id="AhwCSdrLJlByTgavT1s2Fj"><code data-page-node-id="e4r97waM1UsAjV4bAGngRM">.git/</code></td><td class="num" data-page-node-id="LbsAhH5EYcNQGZFFaRAtzp">119 MB</td><td data-page-node-id="QJeD11yd4TdI41AwZ43KiP"><span class="pri p1" data-page-node-id="KRWJsp3TkdiZrXAuEWWAZu">待治理</span></td><td data-page-node-id="Q8RG8F6QEmbOILSJ5LJM0L"><b data-page-node-id="1pRQJBrHEKONGEqQVGOyud">81.9 MB 来自被追踪的 .workbuddy/</b></td></tr>
+    <tr data-page-node-id="Aje041oDDlAP2dGzZnwCWy"><td data-page-node-id="Gyscmx7uLO2hL9zOea0VOg"><code data-page-node-id="8cstNVvZqAeRRqzVrlEfVO">.workbuddy/</code></td><td class="num" data-page-node-id="o9ZrInuhJuuHXoXmslB1CV">83 MB</td><td data-page-node-id="9Ra78rIqsf83160uFGmn9r"><span class="pri p1" data-page-node-id="3yQbIlOejUxW59S0nEnHj4">误入库</span></td><td data-page-node-id="DvVZU8BzpQjeLZroTAXNpd">工具数据，本不应进版本库</td></tr>
+    <tr data-page-node-id="Z235Uv0XAqjbMZwteOCRmZ"><td data-page-node-id="raibHHQTL3QkYdQEK6ixFR"><code data-page-node-id="PXEkbmyOwYgYrwhL8MkL4w">.idea/</code></td><td class="num" data-page-node-id="QMvNsQNX2LboyRaEYXTXMo">213 KB</td><td data-page-node-id="2LyjGlFnfZdGQpbnVyrffd"><span class="pri p3" data-page-node-id="3EmEh7Wna4w7YvlDgAwoQC">已忽略</span></td><td data-page-node-id="FUbIGp627TRgAZaWCiemTx">已在 .gitignore</td></tr>
+  </tbody>
+</table>
+
+<h2 data-page-node-id="VTQ3JO1m0Oqll25iCTGwEP"><span class="n" data-page-node-id="pmYCfYekKlrBlfAjX0nh3m">3</span>问题清单</h2>
+
+<h3 data-page-node-id="ousKg80M8M5GYumAPTfYHh">P1 — 必须处理</h3>
+
+<div class="issue p1" data-page-node-id="ndlQlZcZaxemvIlHbwwGWV">
+  <div class="issue-t" data-page-node-id="3DxnqTMH76lhD2UJRSiBKN">01 · <code data-page-node-id="NETrYfB5w4e3H9AAYUBxeU">.workbuddy/</code> 81.9 MB 被 Git 追踪<span class="pri p1" data-page-node-id="ivAFWhnXVAiS4YrxFHDzH3">P1</span></div>
+  <p data-page-node-id="XrrHwfGgquV1u0VAXQ4Kde">工具数据目录整体进了版本库，是 <code data-page-node-id="y7KHZPEYhsqXdCLPwsntyZ">.git</code> 膨胀到 119 MB 的直接原因。明细：
+    <code data-page-node-id="5OO0B0H6AQ5pDmaGStlte3">wheels_backup/</code> 54.3 MB（PyQt5 的 whl 备份）、<code data-page-node-id="LRwENeBsnkjnR6G8l7JCsQ">tmp_samples/</code> 27 MB（e2e 与 colorfix 临时样本图）。</p>
+  <div class="fix" data-page-node-id="CECXyTtx59LQ1Ivy8uWxGh"><b data-page-node-id="PLO1VGJXVjMiTGYYVhYnRm">处理：</b>D 档 <code data-page-node-id="vbcjkSvAOBqg4qEy0SNnph">git rm --cached .workbuddy/</code> + 补 <code data-page-node-id="bgyCdmFgA4y4QZ0DYDWf1J">.gitignore</code>。不重写历史，已入库 blob 需 <code data-page-node-id="JnXC2YOxQ6UnqMkbEjQUuR">git gc</code> 释放。</div>
+</div>
+
+<div class="issue p1" data-page-node-id="YrtKwdZMSdX807Jn02Wkk5">
+  <div class="issue-t" data-page-node-id="nwr4SDNVIZhgw6HxUWFhSb">02 · 归档图片仍在库内，<code data-page-node-id="u779Vr4cU9pwXCglOlxiGx">_archive/</code> 规则失效<span class="pri p1" data-page-node-id="k6JEFtIpZ0cpfu08VL6rdC">P1</span></div>
+  <p data-page-node-id="SKmHWES7SVc8W1kaso16rf"><code data-page-node-id="tbSvYVc4TczKQj0MJMoUwK">.gitignore</code> 第 37 行的 <code data-page-node-id="ADkZWAHyqSgG4MY1SF6Ysu">_archive/</code> 对<b data-page-node-id="qxquFIPqZZWqev1bHpmduC">已追踪文件无效</b>，实测仍在库里的有：
+    <code data-page-node-id="RZzRY9P68gM9CFalWOsqZv">scripts/_archive/test_cropper_output/</code> 13 张图 4.74 MB、
+    <code data-page-node-id="73qwCdxysDF3tAdAjGJCIb">scripts/diagnose/_archive/output_images/</code> 38 张图 0.43 MB、
+    ProductSummary 配图 1.16 MB。共 94 个疑似误追踪文件，88.1 MB。</p>
+  <div class="fix" data-page-node-id="dnv2pJI4lhwfr8IFCQQhd1"><b data-page-node-id="FIru0Lmc8FspZYZXQFlKTh">处理：</b>D 档对这些路径执行 <code data-page-node-id="zNAt0QKVBcHMZH1MaqxjCW">git rm --cached</code>（只动索引，工作区文件保留）。</div>
+</div>
+
+<div class="issue p1" data-page-node-id="HE27RKqY8fgCoIEFnc4901">
+  <div class="issue-t" data-page-node-id="J6vZPHyL4xl20n017I7ZU4">03 · ProductSummary 双维度目录打架<span class="pri p1" data-page-node-id="nscv5fBPFeM6OM5Jz9HT6X">P1</span></div>
+  <p data-page-node-id="BQAOrFwHAop6CNGt3Z8zBm">154 个文档由两套<b data-page-node-id="xoonDxq0RlGECNGuvC4K1X">正交</b>的分类体系平级混放：按<b data-page-node-id="hWtshMyWATOarUOVMYmCaB">模块</b>（水池设计器 86 / 圆角裁剪工具 26 / L形挖角设计器 11 / 分析报告 20）
+  与按<b data-page-node-id="NRWcP6PVMH8cvPnomEFUTt">日期</b>（2026-08 / 2026-09，共 11 份月度横向总结）。新文档往哪放没有唯一答案，这正是目录持续变乱的根因。</p>
+  <div class="fix" data-page-node-id="6jn016508NBXu6FhSDPOex"><b data-page-node-id="NC83eGAZnUXLY7HOinWcAq">处理：</b>C 档统一定为「模块为主 + 月度总结单列子目录」，需你先拍板用哪种。</div>
+</div>
+
+<h3 data-page-node-id="N5YEbHPYeHPS4GwRXrAmxF">P2 — 文档归类（本次重点）</h3>
+
+<div class="issue p2" data-page-node-id="SFlA6Nh5hDAEqCF4OlE2p5">
+  <div class="issue-t" data-page-node-id="QTYLih4YStChtwwE551SRG">04 · 层级深度不统一<span class="pri p2" data-page-node-id="WAYVr1xe5KIW1Asvb8JFX5">P2</span></div>
+  <p data-page-node-id="3VZxGQCe6ncPBusYXQQ1V6">同属 ProductSummary，三个模块目录结构各不相同：</p>
+  <ul data-page-node-id="OWVflff7RlZ0Z0aRWacaHt">
+    <li data-page-node-id="UUohkFz9qA97IG5pjOMkj9"><code data-page-node-id="vg4DYhOSRhsjZ8rDjiVqy2">水池设计器/</code> — 全部用日期子目录（20260813 ~ 20260905，共 16 个）</li>
+    <li data-page-node-id="x0qOHXsEHrtneqHh1Dm78r"><code data-page-node-id="HbcKZKY9H4kvQp6AJtTN6H">圆角裁剪工具/</code> — 混合：根目录直放 20260803~20260907 的 md，另有 20260905/、20260907/ 两个子目录</li>
+    <li data-page-node-id="XHN1mvgDaGglrbsfciReUa"><code data-page-node-id="idyQbOtJKXsoH3sI8VUti5">L形挖角设计器/</code> — 混合：阶段 1~5 命名文件 + 20260907/ 子目录</li>
+  </ul>
+  <div class="fix" data-page-node-id="6EjyxYDK7gzwSKZ3rfcR50"><b data-page-node-id="pAiOJsJc2Oi7gDYW2Yg72a">处理：</b>B 档统一为 <code data-page-node-id="yOIL6HaYcslkTod7zNI3EQ">&lt;模块&gt;/&lt;YYYYMMDD&gt;/&lt;文档&gt;.md</code>。</div>
+</div>
+
+<div class="issue p2" data-page-node-id="joOIjua1nV72MfeVxeTDmR">
+  <div class="issue-t" data-page-node-id="nPijOiKPkh94zVFhSh4kvh">05 · 根目录两份审查报告未归口<span class="pri p2" data-page-node-id="iC7tB6VZaadHNpahP9CVFm">P2</span></div>
+  <p data-page-node-id="Ao71ZqlRDVZFMfyitjlM3H"><code data-page-node-id="iUaDN1gUXx6pNi9WmvzsvJ">SmartShapeCrop-项目审查报告-20260910.md</code>（28 KB，未追踪）与
+  <code data-page-node-id="fxf4GdkLgeJQZY1GtXU3kF">-复检更新.md</code>（14 KB，已追踪）散在根目录，而归口目录
+  <code data-page-node-id="MW1ARAD8e8TkXZSumbQELi">ProductSummary/SmartShapeCrop分析报告/</code> 就在那里。</p>
+  <div class="fix" data-page-node-id="huTHmvIv7WgkzrLNtrP3gY"><b data-page-node-id="UsakUWIbPvqeh0Mi4n24vw">已完成引用检查：</b>全库 grep 无代码 / 文档引用这两个文件名（仅自查自引）。<b data-page-node-id="vstFo7IRKWaIHt08AmwcHF">可安全移动。</b></div>
+</div>
+
+<div class="issue p2" data-page-node-id="cjhO31zUnnUrcDXniCzvUM">
+  <div class="issue-t" data-page-node-id="4of65RotFf4u3K2QPHDcbR">06 · 分析报告目录内部混装<span class="pri p2" data-page-node-id="xjDEVm1h2k54yk1qqodSVq">P2</span></div>
+  <p data-page-node-id="HboBwaEoVtAYWEGuEIka1j"><code data-page-node-id="K38v8QD8OEXIKWlxVoDKZ5">SmartShapeCrop分析报告/</code> 下 20 个文件 = 10 个 html + 7 张 png + 3 个 <code data-page-node-id="nLoaDi23JxwrXKkJa5oVrx">.patch</code>，主体与配图、补丁未分层。</p>
+  <div class="fix" data-page-node-id="gyfG4GdRHwS333vNFrEqfU"><b data-page-node-id="BesdhITXmip6nd9br2nflp">处理：</b>B 档内部分层 —— html 留根层，7 张图收进 <code data-page-node-id="NMn7AYnFVq6QF04un9R8C1">assets/</code>，3 个 patch 收进 <code data-page-node-id="4KMHdkRXXR1lfenUNm68fK">patches/</code>。</div>
+</div>
+
+<div class="issue p2" data-page-node-id="i3wBvqSdlT5dY7YeCfYhFs">
+  <div class="issue-t" data-page-node-id="NPujoXY4jBABW04mGJw5oD">07 · 跨月文件住错盒子<span class="pri p2" data-page-node-id="aSLOigYb9rHfAhzWnOGnxA">P2</span></div>
+  <p data-page-node-id="HuvBL0zPART7G2QefJuo19"><code data-page-node-id="pKMDlnksYO1ZEHLkian8kG">2026-08/20260831-0902-任务分类整理总结.md</code> 内容跨越 8/31 ~ 9/2，却整份落在 08 目录。</p>
+  <div class="fix" data-page-node-id="rvwAkwP3mxx1y5BBqyAqUO"><b data-page-node-id="wsNzan69mOPoDRf4hL2kMU">处理：</b>C 档若改为「月度总结」单列子目录，此问题自然消解。</div>
+</div>
+
+<h3 data-page-node-id="evaiYTrdhMfDO3TY73g70n">P3 — 生成物与临时物</h3>
+
+<div class="issue p3" data-page-node-id="VFAkWyd2d2GfvKcdoT04Gz">
+  <div class="issue-t" data-page-node-id="0JmV92Sdmfu1BOWEcWP6Ck">08 · <code data-page-node-id="LQnl8OcUBOTKhhszAjViDz">build/</code> 213 MB PyInstaller 中间产物<span class="pri p3" data-page-node-id="Xqu2qtQEHyZNfeuCJAYOU5">P3</span></div>
+  <p data-page-node-id="x57vguVyFonY4W1XRfInlc">下次打包自动重建，可直接删。注意该目录今日 15:04 刚被更新过，删除前需确认打包流程已结束。</p>
+</div>
+
+<div class="issue p3" data-page-node-id="O1dNuu9DlAbGj9WDG1iOWF">
+  <div class="issue-t" data-page-node-id="vFItCLIaIYvcQ6m9Jlb4mM">09 · 日志与临时脚本散落<span class="pri p3" data-page-node-id="pfqBsHQF9seq18F6onSJQb">P3</span></div>
+  <p data-page-node-id="Gp5IyxT7YDCNUHkjM59nEx"><code data-page-node-id="DBueJoSEJCEYdUBBrcjxIC">logs/smartshapecrop.log.1</code> 5.24 MB（9/7 轮转）、根目录 <code data-page-node-id="qOBB6vCHuqYvCwqgIBrmFJ">crash.log</code> 12 KB、
+  根目录 <code data-page-node-id="5YAi8r9d0qRtuCVjhA1MgM">_verify_corners.py</code>（今日 14:38）、<code data-page-node-id="0QGFJsbHuzaO2fmwYlMSzL">Test-multiplhole.py</code>、<code data-page-node-id="bGqndHBnGRIqMgi511Z0ow">_debug_v13.py</code>。<br data-page-node-id="xKSAmesTwyn9MiuUfaWMXi">
+  <b data-page-node-id="KFdUsIlvk5vR8H5kO4fQD2">注意：</b><code data-page-node-id="0rYyD3hgYmMuxihAlPadfb">crash.log</code> 在 <code data-page-node-id="AaBoUHMPzJc0xpPBC0Q9s2">main.py</code> 与 <code data-page-node-id="T27hcGa1BHyxaqTecKa40l">core/artifact_cleanup.py</code> 的保护名单里，属运行时产物，只归档不删除。</p>
+</div>
+
+<div class="issue p3" data-page-node-id="xEv5zbXr8jLVwb8ZlomABG">
+  <div class="issue-t" data-page-node-id="E7OvnKVtmEJ0gVAD4gaAbv">10 · 打包配置散落两处<span class="pri p3" data-page-node-id="wK5R8AyhANsvWJmkMJbxV6">P3</span></div>
+  <p data-page-node-id="Z0j03z6yFo1fvJu2Yvgen0">根目录 <code data-page-node-id="awdIVFfNhzCuPcsjcpE5vP">智能裁剪设计器V2.2.spec</code>（今日生成，未追踪）vs <code data-page-node-id="78fHCPP3rqFj6XNo7cqGts">packaging/specs/</code> 下的 V2.1 / V2.1.2 / SmartShapeCrop.spec；
+  另有 <code data-page-node-id="JFDiJm5cahrBBE7LULlP6V">packaging/</code> 累积的 5 个 <code data-page-node-id="j1EEwO1tHVOKGQrVxOGE2S">packageV*.py</code>（含未追踪的 packageV2.2.py）。</p>
+</div>
+
+<div class="issue p3" data-page-node-id="VxrSHdgKlMVWpz3bEFYzpG">
+  <div class="issue-t" data-page-node-id="eZDmCfIb9MrrEr4jPNCBmk">11 · 缓存与空目录<span class="pri p3" data-page-node-id="ubvjrUtgx6ZZ6RZ8mx6jna">P3</span></div>
+  <p data-page-node-id="rnWOQ1nsahSaRNRURAUsYi"><code data-page-node-id="bct3Hz2tUBnQWOydpQNyOf">__pycache__/</code> 81 个 pyc 散在 core / gui / tests / packaging；<code data-page-node-id="jFDv1aEo0xMr1DkhqObFfW">.pytest_cache/</code>、
+  <code data-page-node-id="BGDpuaIniyj4jGLde667fN">.pytest_tmp/</code>（含 <b data-page-node-id="4AwNcEcnpdZ6YDqGqcUxts">39 个空目录</b>）、<code data-page-node-id="q0UHbaaC3Klb5MXx1uVZyl">scripts/diagnose/_live/output</code>、<code data-page-node-id="hGmzGIkazJihDEDzUmt4mi">tests/gui</code> 空目录。</p>
+</div>
+
+<div class="issue p3" data-page-node-id="SppAzsDw9cZnAvKGcQX1cV">
+  <div class="issue-t" data-page-node-id="dEgBQFPqcuxLvyPy8qGHS2">12 · <code data-page-node-id="j7oZqzZ9BEivuuE8fbuj27">scripts/_archive/_diag_20260904_lshape/</code> 78 MB<span class="pri p3" data-page-node-id="rFPCW8yfmkDGHWNMZuFUlI">P3</span></div>
+  <p data-page-node-id="Rv0ALmhfGjsTpXdTwHMb5F">L 形挖角诊断的原始输出图（11 张 PNG，77.68 MB）。属于一次性排障产物，未进 git。</p>
+</div>
+
+<h2 data-page-node-id="tIwAIQnmpalsC3QVj9GuHC"><span class="n" data-page-node-id="Ot58JugWmSFy5CfBxLTRp1">4</span>目标目录结构</h2>
+
+<p data-page-node-id="RWHpJcUJIRBEqJzIr8DANf">下面以 B 档为例展示改动。<span style="color:#1d7a3e;font-weight:600" data-page-node-id="GkX9P38L1TTxAn9V2NVQmq">绿色</span>=新增，
+<span style="color:#2f6fed;font-weight:600" data-page-node-id="qctJJqsmkZShymGjqG5stG">蓝色</span>=移动目标，<span style="color:#b8373a;text-decoration:line-through" data-page-node-id="zFJ33it1rzF5dmMpn2mbt6">红色删除线</span>=移走。</p>
+
+<div class="tree" data-page-node-id="Q8vqLEn8JtbXm0Qb1s9TS4">
+SmartShapeCrop/
+├── <span class="dim" data-page-node-id="KWqTwkWRZSy92eDrIpiD35">main.py  process_image.py  conftest.py  pytest.ini  requirements.txt  .gitignore</span>
+├── <span class="dim" data-page-node-id="zBh9UMc7QegPPqETudCmaI">README.md</span>
+├── <span class="del" data-page-node-id="BkAeMTxsG4BNtoc58DSfoE">SmartShapeCrop-项目审查报告-20260910.md</span>          <span class="mv" data-page-node-id="yXIWjsTVLUFCEQrhbkJZ86">→ ProductSummary/SmartShapeCrop分析报告/</span>
+├── <span class="del" data-page-node-id="p9qdi2s6RbUR0w2hZkAQFv">SmartShapeCrop-项目审查报告-20260910-复检更新.md</span>  <span class="mv" data-page-node-id="X2teU02u1IT6xCgEId9CeB">→ ProductSummary/SmartShapeCrop分析报告/</span>
+├── <span class="del" data-page-node-id="uqHZjNvnz1Ib3WeJDpfEmu">智能裁剪设计器V2.2.spec</span>                          <span class="mv" data-page-node-id="DUuzrLLjBUrfnfZ9m5Ymeh">→ packaging/specs/</span>
+├── <span class="del" data-page-node-id="jGMMx2vYmn600s7h48I34b">crash.log</span>                                        <span class="mv" data-page-node-id="AfeYUjxJ3HFpiLbJCdjMzK">→ _archive/杂项_20260910/</span>
+├── <span class="del" data-page-node-id="Snhsuc6CmivoqkVKtaQYE7">_verify_corners.py  _debug_v13.py  Test-multiplhole.py</span>  <span class="mv" data-page-node-id="j2zrI1eu9TptfWcj55p6T1">→ _archive/临时脚本_20260910/</span>
+├── <span class="dim" data-page-node-id="ceiV91wv60u3r1fCdnwjAS">core/  gui/  tests/  images/</span>                     <span class="dim" data-page-node-id="CmcLCoy6XWBPwBGg5LRkb7">（源码 — 零改动）</span>
+├── <span class="del" data-page-node-id="NIBwTfJEQgdKIddZjO6jgG">build/</span>                                          <span class="dim" data-page-node-id="S1fkHCeOyeqH4RQNYzWUqK">A 档删除（213 MB）</span>
+├── <span class="dim" data-page-node-id="DIKLqxsf3s4sBWpXSvbh1k">dist/</span>                                           <span class="dim" data-page-node-id="vgMriVKeJXP4yAQ9uNlnA6">保留（V2.2.exe 今日交付物）</span>
+├── packaging/
+│   ├── <span class="dim" data-page-node-id="OMtCeLOESQQMyaeJZh6drC">README.md  build_exe.bat  packageV*.py</span>
+│   └── specs/
+│       ├── <span class="dim" data-page-node-id="XsztNOwz2EUFlHEgu0P7Gd">SmartShapeCrop.spec  V2.1.spec  V2.1.2.spec</span>
+│       ├── <span class="add" data-page-node-id="qWEcERllWXBor8v0I0ZnIc">智能裁剪设计器V2.2.spec</span>                    <span class="dim" data-page-node-id="jw9Pj2lNA3HrrCb9xc1UpK">← 从根目录移入</span>
+│       └── <span class="add" data-page-node-id="fkaERvGC5RwufVGBwAxNut">_legacy/</span>                                   <span class="dim" data-page-node-id="BqQSpEzyHY31hAQIVLJ006">收 V2.0/V2.1/V2.1.2 旧打包脚本</span>
+├── scripts/
+│   ├── <span class="dim" data-page-node-id="6C3eOaUsj2uBMMsZzbnGB0">README.md  diagnose/  verify/</span>
+│   └── <span class="dim" data-page-node-id="ToqhCs1UUIeAZL3ER5uGAj">_archive/</span>                                   <span class="dim" data-page-node-id="6aIMXMY7GTfu7aaWL5mi7M">84 MB，本轮不动（见决策点 4）</span>
+├── logs/
+│   ├── <span class="dim" data-page-node-id="xxs4gB8Tt7M6TMxqtkvKIx">smartshapecrop.log</span>
+│   └── <span class="del" data-page-node-id="u7WIikARDpBsfh30zy7Mtn">smartshapecrop.log.1</span>                        <span class="mv" data-page-node-id="M82IyKNp7YL5aPAAuDCYUS">→ _archive/logs_20260910/</span>
+├── <span class="add" data-page-node-id="4rOVgWWuZ9hCXQFLDEDWMD">_archive/</span>
+│   ├── <span class="dim" data-page-node-id="o3ovLMemEnPFSLB33ew2MB">bak_20260902/  debug_output_20260902/</span>
+│   ├── <span class="add" data-page-node-id="dTOfqHu5K9G5er3gKrsBMg">logs_20260910/</span>                             <span class="dim" data-page-node-id="vgnWJwmCKgDjqJwcwHxVuW">轮转日志</span>
+│   └── <span class="add" data-page-node-id="CpMVDIcFB8GGBHoeRKqmcs">临时脚本_20260910/</span>                          <span class="dim" data-page-node-id="76acZovvURotlg2LSScAnt">根目录临时验证脚本</span>
+└── ProductSummary/
+    ├── <span class="add" data-page-node-id="ftJVGIIPqQKrsQ581TSCzy">月度总结/</span>                                    <span class="dim" data-page-node-id="kANYs7T4kpdydFzXGhTka3">C 档：由 2026-08 / 2026-09 合并（11 个 md）</span>
+    │   ├── <span class="mv" data-page-node-id="6IArSaRwdPvWczmyT8J3lf">20260817-任务分类整理总结.md</span>
+    │   ├── <span class="mv" data-page-node-id="LqeM2YKxiMvj20dONBNiPc">…</span>
+    │   └── <span class="mv" data-page-node-id="y8tBerbdlo1qQVIdxtpkkU">20260907-任务分类整理总结.md</span>
+    ├── SmartShapeCrop分析报告/
+    │   ├── <span class="dim" data-page-node-id="0aYJ3D4oFnkTZrfWCcx2OJ">10 个 *.html（保留根层）</span>
+    │   ├── <span class="mv" data-page-node-id="tdZrpV3Sc0P1jFAp2TC1lA">项目审查报告-20260910.md / -复检更新.md</span>     <span class="dim" data-page-node-id="TxAx0LLc7HJEUyzLAqyikF">← 从根目录移入</span>
+    │   ├── <span class="add" data-page-node-id="gnIStRakAys2fUMdBV62aj">assets/</span>                                  <span class="mv" data-page-node-id="DkA2qkbKICmNbA3BUOPRa2">← 收 7 张 png</span>
+    │   └── <span class="add" data-page-node-id="1d2jzEY3ZBwa87qSMaac8Y">patches/</span>                                 <span class="mv" data-page-node-id="oSJibu8I31EoKZgkgTA3es">← 收 3 个 patch</span>
+    ├── 水池设计器/          <span class="dim" data-page-node-id="N2fQ8KtVF9T4YMHz967Shg">已合规：&lt;日期&gt;/&lt;文档&gt; 共 16 组</span>
+    ├── 圆角裁剪工具/        <span class="add" data-page-node-id="vY7enjgj6ef6JfPjBZkjVg">B 档统一：散落 md 归入日期子目录</span>
+    └── L形挖角设计器/       <span class="add" data-page-node-id="GIRI6LKTAqtBav8y5XU53O">B 档统一：阶段文档与日期子目录同级</span>
+</div>
+
+<div class="warn" data-page-node-id="mTMyYX0IsprKIq0aISlguF">
+<b data-page-node-id="9hOyLOKKVPOewS4DKFXqO5">⚠️ 移动文档会打断两类引用，必须同步修：</b><br data-page-node-id="RnyirTVh0xaJQKcEOoRaHd">
+① <b data-page-node-id="mjMYKn5WgE6UQOfh1gNYmM">README.md 文档索引</b>（第 760 行起）—— 手写了指向 <code data-page-node-id="qQctlBQKgyfkEbZaiPAtyX">ProductSummary/2026-08/</code>、<code data-page-node-id="jEhVZmXV3NI8oFraJrG7Ce">2026-09/</code> 下 <b data-page-node-id="5CYDha5eN3JhAweLQiqPJL">10 个月度总结</b>的相对链接。<br data-page-node-id="GVMYbOqBLvTaRDCkcF7pIT">
+② <b data-page-node-id="kvfqGbhynQWUlekGN3d9DU">HTML 报告配图</b> —— <code data-page-node-id="4xtNIsr0t0Ro4Gs8p0TLbV">SmartShapeCrop分析报告/</code> 下的 html 用 <code data-page-node-id="N1GhBpY5EEBar8GXUtiYwp">src="X.png"</code> 引用那 7 张 png，
+把图移进 <code data-page-node-id="pbgMsdQrbsyefauC7NXNx6">assets/</code> 后需批量改写为 <code data-page-node-id="nCwyfqWw0x9pGhcCIlBNo7">src="assets/X.png"</code>，否则配图全部失效。<br data-page-node-id="ZgINoVSoD05QekmivJubBF">
+这两处是本轮最容易出错的地方，我会改完逐条验证。
+</div>
+
+<h2 data-page-node-id="PG6AaHlmNEQ8e0joUTxO4y"><span class="n" data-page-node-id="gXq6ylEBqLFNiBuH02GWmn">5</span>四档方案（由你勾选组合）</h2>
+
+<table data-page-node-id="jgjzs9v07vwYFVhfSW6lHC">
+  <thead data-page-node-id="sbAZ37oJntdMaeKKFDkQ2o"><tr data-page-node-id="U2OofkFvaZownKyIgcoqm4"><th data-page-node-id="on5Fkf8rVSddZFLJbDViBt">档</th><th data-page-node-id="6OkBg5J3aCt6C4lWtFefdN">名称</th><th data-page-node-id="42Br2x7vNNXLFppkHAt8ur">内容</th><th class="num" data-page-node-id="NIk8wRnfUgwHGUyH48vFbl">收益</th><th data-page-node-id="gziuEznbSwGAIQVXZwl1Sy">风险</th><th data-page-node-id="nDDCuXokegIWbNph3acX9t">建议</th></tr></thead>
+  <tbody data-page-node-id="l15TY1oufSRNYa9aGkTd4Q">
+    <tr data-page-node-id="MACEnTQdjWTUqbtI4uMN9r">
+      <td data-page-node-id="O69nDDjgqFBqQnoNGj9IQv"><span class="pri p3" data-page-node-id="3VpdQ2MJ6q8zVlEOP6IYx6">A</span></td><td data-page-node-id="WagptlNkBr2KMxlU5g7ugm"><b data-page-node-id="8AQZOpHZigxlO6HtaMdTzf">生成物清理</b></td>
+      <td data-page-node-id="yMKQr5Z1xdAYeBzFtdoJ1E">删 <code data-page-node-id="NhiWn1wM2I6rSZAXoJmZMO">build/</code>；清 <code data-page-node-id="ATGQK5rMb9DwPhMuH6hv7z">__pycache__</code>（81 pyc）、<code data-page-node-id="Gfe3c62PG6OUDLUfQRpXFL">.pytest_cache</code>、
+        <code data-page-node-id="M097dlSyV41ZxPHHLlVsvy">.pytest_tmp</code>（39 空目录）；归档 <code data-page-node-id="y4VSqCA5oyFX5f64Ii3kIl">logs/*.log.1</code></td>
+      <td class="num" data-page-node-id="htFujYDmXikw5qFOyHXj9x">~220 MB</td><td data-page-node-id="3rvc3P9qxNMZTIbRjHJ7p2">极低<br data-page-node-id="ssFVUjff4jBe06QVkHEpdR">全部可重建</td><td data-page-node-id="YgT8nsSFAmRDFsAOZRorEm"><b data-page-node-id="jJCUOtKXYtEahCQINrAQfa">建议先做</b></td>
+    </tr>
+    <tr data-page-node-id="KOEDNoC5swTnw7PqRlY3qu">
+      <td data-page-node-id="JyOTYCIzKEFAhhYpWUXb2r"><span class="pri p2" data-page-node-id="lKmqi04RnP8UYTfKcI4bsb">B</span></td><td data-page-node-id="5laAlg6EAvP5cIOz330tZG"><b data-page-node-id="XYxJZZH9N7BENbpfyeJcaD">文档归类</b></td>
+      <td data-page-node-id="tMDjzHG0V1p1ZeolfysBgt">2 份报告归口；分析报告内部分层 assets/patches；统一三个模块的日期层级；
+        spec 进 packaging/specs；临时脚本与 crash.log 入 _archive；<b data-page-node-id="Tt8wgzClAh6EInxfOR0ErN">同步修 README 索引与 html 图链</b></td>
+      <td class="num" data-page-node-id="uvIPJJvOR6HoyDgEgyjJyO">根目录<br data-page-node-id="TQnBj9WRsZB69r2kYmt8BY">14 → 8</td><td data-page-node-id="PEYexHG9CX1fDcRmqLwC1I">低<br data-page-node-id="BEKqcTJU6iO5gVwbCZuz7s">只移动+改链接</td><td data-page-node-id="7fX450iwi17qmynGk37mdB"><b data-page-node-id="b5h7FL7L2s6qnp1xkKc2aV">本次重点<br data-page-node-id="8qlbPJ1m29pYV6CwkncD3h">建议做</b></td>
+    </tr>
+    <tr data-page-node-id="1PW95CM1rl3vtwcPdIOsku">
+      <td data-page-node-id="LJta0P4gAqaoMdnN1QNrho"><span class="pri p1" data-page-node-id="KSVfAEtca9HPJAKfnI30Eq">C</span></td><td data-page-node-id="ZXRglCRJPuik6B2qFnBnO8"><b data-page-node-id="6LOTu1Dg3jQ23ig6Hi84dh">结构治理</b></td>
+      <td data-page-node-id="fLlHqr5VBmndCAWH21NNS4">ProductSummary 双维度 → 单一维度（11 个月度总结移入 <code data-page-node-id="VfiI0ujRI9vD0d2rM6zOHF">月度总结/</code>），
+        更新 README 索引 10 处链接</td>
+      <td class="num" data-page-node-id="5XQOHpaN0RjVj482Tnkp9u">分类唯一</td><td data-page-node-id="DcInREOqTVXD1pBiRPDXli">中<br data-page-node-id="dTb6HtRKV7zZ0rSIxtD6MA">涉及 11 处路径变更</td><td data-page-node-id="G2zrbWnttgT6aXAMcAevII">等你拍板<br data-page-node-id="dJnYjOiashUJMFAaVTNB13">维度选型</td>
+    </tr>
+    <tr data-page-node-id="TQj57jUfMtyi1GkUxLUkcE">
+      <td data-page-node-id="YVoQOPsfLt0oSwdjJScTNK"><span class="pri p1" data-page-node-id="3TR5tN51ZJy71DmqEoCZ2Q">D</span></td><td data-page-node-id="lDAF5GFLuV1jxq1FX5svS6"><b data-page-node-id="E9pVdLSLKA8HttVf6BK0w7">Git 瘦身</b></td>
+      <td data-page-node-id="SV3ncUamk3rtnVvgLo7KFJ"><code data-page-node-id="xvD0wBE89WfzVH1xLjHa7B">git rm --cached .workbuddy/</code> + 各 _archive 图片；补 .gitignore
+        （<code data-page-node-id="W79LZILwf5USpzalEKL3BL">/.workbuddy/</code> <code data-page-node-id="sSqdwCljk9jB2hUZmIf5T2">.pytest_tmp/</code>）；<b data-page-node-id="LkQwT2gL7Jr5sXBobsRuRN">不重写历史</b></td>
+      <td class="num" data-page-node-id="YRmHGehArNZ2SKXMRziwMZ">81.9 MB<br data-page-node-id="s9FpJNgJXAPROKNOshUbVB">止住膨胀</td><td data-page-node-id="1MXezPYrW11GQZdntd9k07">较高<br data-page-node-id="GqgVYeJu8JxofmvTe4C0vQ">需产生 commit</td><td data-page-node-id="xEc6tjzFj7JpVWnZZ7ry70">单独一轮<br data-page-node-id="qr01tWPvPfil2qEg41imIE">需你 commit</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note" data-page-node-id="8SdRIxh0SbVmzlJpt7HnAw">
+<b data-page-node-id="FUFeB94voOwnpFJIK2MOS3">推荐组合：A + B 一次做完</b>（约 220 MB + 文档归类落地），<b data-page-node-id="ee9JgoWVmyjsd4Mg5RSj9E">C 档</b>在你选好分类维度后单独执行，
+<b data-page-node-id="6KYjLPndkZyoPDTCInfPou">D 档</b>最后单独提交。三者的验证与回滚彼此独立，任一档出问题不影响其他档。
+</div>
+
+<h2 data-page-node-id="K3vW2T308CJJA6OHzTWYoi"><span class="n" data-page-node-id="Y0PLhdwwsoXyDD1f4m7pQM">6</span>执行顺序与回滚保障</h2>
+
+<ol class="steps" data-page-node-id="pWU1TLewMLQmB8wcrmrUgV">
+  <li data-page-node-id="zf3qbT5FkqEqfWh1LG5ggJ"><b data-page-node-id="IgOK9tTNw3ezQ5DMgsbEfC">快照基线</b> —— 记录当前 <code data-page-node-id="NdHJIu9RlQBnGWy8SWZPrC">git status --short</code> 与 <code data-page-node-id="Wd5h6F9CyA57hJwK6pObrT">git rev-parse HEAD</code>，
+    导出完整文件清单存进 <code data-page-node-id="3Rz4LXuUlWUcjrDLKZcn1N">_archive/</code> 作为可追溯底稿。</li>
+  <li data-page-node-id="LmEIkilVaxt18cEv04wf4p"><b data-page-node-id="EuTka8s0LxnvRmRjv18phP">A 档执行</b> —— 先 <code data-page-node-id="pY7oSBBUNZOdOByCgEKNGy">ls -1</code> 列出待删清单核对无误再删；空目录用 <code data-page-node-id="eYBmamriR4rt3myAFgHUla">rmdir</code>（非空会失败，天然防护）。
+    <code data-page-node-id="1nE66js4uEVE5zumzqsIFI">dist/</code> 与 <code data-page-node-id="oYbHTC1EtWB9lenkbOuxu9">scripts/_archive/</code> 一律跳过。</li>
+  <li data-page-node-id="3Y7KY5GgmHjWV7u3DmelZG"><b data-page-node-id="qNeFeUAeA6s9z2W84A0XoF">B 档归档</b> —— 全部用 <code data-page-node-id="yi80t4xUOqvIaShvDKZbst">mv</code>，跨目录时把原路径编进文件名；
+    随即改写 README 索引与 html 的 <code data-page-node-id="dHR6BCtxaR5KipDzrLQWm5">src=</code> 图链。</li>
+  <li data-page-node-id="myP1qWuBHViXtzrFMMP1Jh"><b data-page-node-id="o846npdJl0er7Fesf3EQ5X">四项完整性验证</b> —— ① <code data-page-node-id="lVX2LI4cMlzCSlWAej0POl">git diff --stat HEAD -- core gui tests main.py</code> 必须为空（源码零改动证据）
+    ② <code data-page-node-id="iQ2eQmbhgjkdnStD2BUAXD">ast.parse</code> 全量语法校验（不用 py_compile，避免重新生成刚清掉的 pyc）
+    ③ <code data-page-node-id="Irk69W10MQTdATCC3k8Gy4">PYTHONDONTWRITEBYTECODE=1 QT_QPA_PLATFORM=offscreen</code> 下模块导入冒烟
+    ④ 体积与 <code data-page-node-id="YCSvm1NYKFbNXy8sSFTYnB">git status</code> 复核。</li>
+  <li data-page-node-id="WkI0OwqrfZ5Gd5eacpK4vv"><b data-page-node-id="MAgd3iYrywBUEHBoSmsmVo">出报告交付你核对</b> —— 完整变更清单 + 回滚命令，你确认后这一轮才算收尾。</li>
+</ol>
+
+<h3 data-page-node-id="v9ZMVE4XBgb6wIIinDGkj7">回滚手段</h3>
+<table data-page-node-id="td3Sif0Ihauh7Wtq6D3ORn">
+  <thead data-page-node-id="N4E2vr2JxdNedOVjwwzppQ"><tr data-page-node-id="NOuug5TUCMILswtrWjn9zD"><th data-page-node-id="LqLneHe3fIbogaq79Yx9iX">场景</th><th data-page-node-id="wJAE0dGo8Izg2kWoDkGgaf">回滚方式</th></tr></thead>
+  <tbody data-page-node-id="bsGprNMvW7FxuTmx6P14SF">
+    <tr data-page-node-id="X3bAuEgak3paogAN7QBL0q"><td data-page-node-id="yo9Q9he4khYZ59kh0f7Dpm">B 档误移</td><td data-page-node-id="52YAGzLeA9bfNpacwxQg31"><code data-page-node-id="aNdAsMtDxtmwD0Nyvs06iX">mv</code> 反向操作；<code data-page-node-id="HX3CT4sDbFHxEB2qhwCkms">_archive/</code> 内目录按日期分区，随时原样挪回</td></tr>
+    <tr data-page-node-id="DAnZMbUVftdmgl9ChsCWHv"><td data-page-node-id="DkGJivFy1c4JVwCRVUYDwy">README / html 链接改错</td><td data-page-node-id="Dso4JXTALcwo86NvaEbKbi">改前先备份，逐条 diff 复核；Markdown 链接与 HTML 图链分别跑一遍可达性检查</td></tr>
+    <tr data-page-node-id="EjUk4O2wFET4GjSGfFEbE6"><td data-page-node-id="A2L5nOQIMHUDDn7m3ZExGK">D 档需撤销</td><td data-page-node-id="aR7LpEEgsmXX7jqgVzKhgC"><code data-page-node-id="4oZgtqyEXjv0o9DbQcvVEd">git reset</code> 撤回索引变更 + 文件移回；<b data-page-node-id="AD8of2z3bqFjh28EysZMVS">不会自动 commit，由你决定</b></td></tr>
+    <tr data-page-node-id="XCvZCkrGo0WNBDMJF54FA0"><td data-page-node-id="ntOzKy3e7JfIjfeEdCsMyk">A 档删后悔</td><td data-page-node-id="V6F8Fgb3cTTLMUqjmpUdDC">均为可重建产物，重跑 <code data-page-node-id="lgcXrFt16C7ylPBXSRdfFh">packaging/packageV2.2.py</code> 即可</td></tr>
+  </tbody>
+</table>
+
+<h2 data-page-node-id="lUrZjECVdiEatizH3IgyJh"><span class="n" data-page-node-id="iVvdoc8bbrnWzdFrWGRTqh">7</span>待你拍板的决策点</h2>
+
+<div class="card" data-page-node-id="6kNSxGPpTUfgjifqNTiF7n">
+<table data-page-node-id="Kb59odr70Gyq85TBg0pMFX">
+  <thead data-page-node-id="EN6FBLSzwyqbHPNQP8k1o2"><tr data-page-node-id="mvl5YEljpPRLSKWCxJ0SDE"><th style="width:38px" data-page-node-id="yJjRRLMMUt8wJKGkbkamoi">#</th><th data-page-node-id="iJXHZ1pSQDT6NhCFNaOdp9">决策点</th><th data-page-node-id="AeOV05LdjaFBMxEButs511">选项</th></tr></thead>
+  <tbody data-page-node-id="tJIQixoOeEYI4leQw88nZP">
+    <tr data-page-node-id="oMuDxRBs3YmPkQEV73bNsU">
+      <td data-page-node-id="5PznJzXgcvwR6OEFg7aDvg"><b data-page-node-id="SsrF1TUV3hj39IHOzoxgkK">1</b></td><td data-page-node-id="maeLTSPDa4braFCGJktv73"><b data-page-node-id="3JT3lqaFZ41JGaZpEjRxwZ">C 档：ProductSummary 用哪种维度？</b><br data-page-node-id="1kG59fFCCIGeXF74pOR8o0">
+        <span style="color:var(--ink2);font-size:12.5px" data-page-node-id="BV8DC7twZgWfAoh9HluIgA">决定 11 份月度总结的落点与 README 索引的 10 处链接</span></td>
+      <td data-page-node-id="KI6KXI3689B7PgKWEMHAdV">
+        <b data-page-node-id="FDChrARhRTlPKzxGNwo2R3">甲 · 模块为主（推荐）</b>：水池设计器 / 圆角裁剪工具 / L形挖角 / 分析报告 / <b data-page-node-id="dCEGHxJBttKfWF1yV7Zf1T">月度总结</b>单列子目录<br data-page-node-id="3WIbK0IO0vunvDnFfD5Al5">
+        <b data-page-node-id="IQBoy7nR9GvAvJDVNfoC4e">乙 · 日期为主</b>：按 YYYY-MM 铺平，模块信息只体现在文件名前缀<br data-page-node-id="LzchEs8uIoDcewPWARmBsv">
+        <b data-page-node-id="LyXbGHAIuCTRS6JPzUO92u">丙 · 暂不动</b>：本轮只做 B 档，维持现有两套体系
+      </td>
+    </tr>
+    <tr data-page-node-id="AvzpwvPC4DwLS2itLhanAG">
+      <td data-page-node-id="oL20Av8wkiC4ndb5hVw6mg"><b data-page-node-id="VLBI0XavByj4AqkVhB8cO0">2</b></td><td data-page-node-id="ad5ovzLecXSUaFqvlOnULs"><b data-page-node-id="mXmP3Npn06oOSeAwydmXx1"><code data-page-node-id="O908tkyVas2jq0HBPOPkZI">build/</code> 213 MB 现在删吗？</b><br data-page-node-id="9Gj0h3KcnMMcIRmIKnh1Cs">
+        <span style="color:var(--ink2);font-size:12.5px" data-page-node-id="RDNXE5407Aw0HcIWplW4mu">今日 15:04 刚更新，可能仍有打包流程在跑</span></td>
+      <td data-page-node-id="IEjrzoi9S25alEG4kSWGh9"><b data-page-node-id="HWbTtQ5crU8XxUDP8rloX8">删</b>（下次自动重建）／<b data-page-node-id="pMch4DxfDRMVpyPJW4ImGI">保留</b>／<b data-page-node-id="bCGqRqEb2EgKGGyFOPHFnV">移入 _archive 观察一阵</b></td>
+    </tr>
+    <tr data-page-node-id="Ax2pJuhY26Jj3MOcecOuyP">
+      <td data-page-node-id="7r01piQSFDwzZgCKv7lgG0"><b data-page-node-id="nWdKKqNsQt9pVzqmvSBNbj">3</b></td><td data-page-node-id="o3hpeaDbClzygLhzfGYqJW"><b data-page-node-id="aT7NXdzhmjJWfXd94pBi5j">D 档 Git 瘦身本轮做吗？</b><br data-page-node-id="myuWhKCoAqv77aF8KIjl7Y">
+        <span style="color:var(--ink2);font-size:12.5px" data-page-node-id="mJuzhXnOBc1HzQdrbtOdBW">需产生一次 commit；历史 blob 要 <code data-page-node-id="SpVjw8ivIxPG0CXTf1X7Vm">git gc</code> 才真正释放</span></td>
+      <td data-page-node-id="WSIUrAuc70QUDLTFX3oSwJ"><b data-page-node-id="aR9iHn2Q75cg0UxyDuDnEv">做</b>（<code data-page-node-id="ghucUC3xqcpr1XO60CXadc">.workbuddy/</code> 整体移出）／<b data-page-node-id="DNBBajzYVUBcFCoE1pUXiM">不做</b>／
+        <b data-page-node-id="vnhki2FMTUQzcLQa6boDr8">只移出 wheels_backup + tmp_samples，保留 .workbuddy/memory</b></td>
+    </tr>
+    <tr data-page-node-id="ylna3u9dqb3mFJ4roiaFqa">
+      <td data-page-node-id="iUKPNt94qMQFPIOJRQsBD0"><b data-page-node-id="OM6Lp38dKOsW7g5t7vkKDi">4</b></td><td data-page-node-id="5d2ruDPrvjzNF5Ymc7DSq1"><b data-page-node-id="eLXka8bRNemapWIpZhj5BF"><code data-page-node-id="S6DzuuMfGgE3INFIjLVFDs">scripts/_archive</code> 里 84 MB 诊断产物？</b><br data-page-node-id="ylQov79Zk4RdWvss7mDIY6">
+        <span style="color:var(--ink2);font-size:12.5px" data-page-node-id="QdEfYRHRBZRTVHV62XTpc0">其中 78 MB 是 9/4 的 L 形挖角排障输出图</span></td>
+      <td data-page-node-id="UNEXHg7D9xWzLYkFGH37ex"><b data-page-node-id="lvJ4CjxwQHjZTwp1bF6hK2">全留</b>（排障依据）／<b data-page-node-id="1X67T31T2yOtmtMaCP0Cwq">压缩后留</b>／<b data-page-node-id="PbnqC3QTiJtsDbhD0e8d7K">只删 _diag_outputs</b>（77.68 MB）</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note" data-page-node-id="xtLxD17KwxpM7exG87tK63">
+<b data-page-node-id="BhIDXl1PzjxiKR0qhwVqr7">本轮到此为止 —— 没有移动、重命名或删除任何文件。</b>
+工作区与 Git 状态与扫描开始时完全一致（<code data-page-node-id="Jg0QSY8SMby0B7r7bxESiO">master</code>，4 个未追踪条目，无 staged 变更）。
+回复上面 4 个决策点的选择，我再动手。
+</div>
+
+</div>
+
+<footer data-page-node-id="9F7MsSxQMPMu29MmxUagLX">
+  <div style="margin-bottom:8px" data-page-node-id="wX2Jx5F8XWE1LksQRuBfP9">
+    <span class="foot-badge" data-page-node-id="YWz0HnI1yKW5mtKwr6bcVN">SmartShapeCrop 项目整理规划</span>
+    <span class="foot-badge" data-page-node-id="6FszSiyzjnm0bu3ctY5NCD">V1.1</span>
+  </div>
+  生成于 2026-09-10 15:05 · 只读扫描 · 源码零改动 · 待用户确认后执行
+</footer>
+
+</body>
+</html>
