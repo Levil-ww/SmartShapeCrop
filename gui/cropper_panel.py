@@ -678,6 +678,10 @@ class CropperPanel(QWidget):
 
         self._lbl_match_log.setText("正在匹配中...")
 
+        # [Fix 0xC0000409] 安全退役旧 match worker（deleteLater），避免 C++ QThread
+        #   对象在 GC 时析构导致堆损坏
+        self._retire_match_worker()
+
         # 创建异步 Worker
         self._match_worker = AutoMatchWorker(template_dir, target_name, self._matcher)
         self._match_worker.finished_ok.connect(
@@ -688,6 +692,9 @@ class CropperPanel(QWidget):
         self._match_worker.finished_err.connect(self._on_match_err)
         self._match_worker.progress.connect(self._on_progress)
         self._match_worker.log_msg.connect(self._lbl_match_log.setText)
+        # [Fix 0xC0000409] 连接 finished → deleteLater，由 Qt 事件循环
+        #   在线程真正结束后释放对象，避免 GC 析构仍在运行的 QThread
+        self._match_worker.finished.connect(self._match_worker.deleteLater)
 
         self._show_progress("正在匹配模板...")
         self._progress.setRange(0, 100)
@@ -696,7 +703,8 @@ class CropperPanel(QWidget):
     def _on_match_done(self, best, candidates, match_dt, stats, template_dir, target_name):
         """自动匹配完成回调（主线程）。"""
         self._hide_progress()
-        self._match_worker = None
+        # [Fix 0xC0000409] 不再直接置 None；由 _retire_match_worker 在下次创建时
+        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
 
         # 记录到历史（带扫描后的总数），并写默认目录
         total = stats.get("total", 0) if stats else 0
@@ -738,7 +746,8 @@ class CropperPanel(QWidget):
     def _on_match_err(self, err_msg: str):
         """自动匹配异常回调。"""
         self._hide_progress()
-        self._match_worker = None
+        # [Fix 0xC0000409] 不再直接置 None；由 _retire_match_worker 在下次创建时
+        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
         self._lbl_match_log.setText(f"❌ 匹配出错: {err_msg}")
         QMessageBox.critical(self, "匹配失败", err_msg)
 
@@ -943,6 +952,68 @@ class CropperPanel(QWidget):
             max_crop_ratio=max_crop_ratio,
         )
     
+    # ---- [Fix 0xC0000409] worker 生命周期管理 ----
+    # 现象：圆角裁剪工具运行多次后程序异常退出（退出码 -1073740791 / 0xC0000409）。
+    # 根因：CropWorker / AutoMatchWorker（QThread 子类）在每次预览/匹配结束后，
+    #   回调里直接 self._worker = None 丢弃 Python 引用，C++ QThread 对象
+    #   在 GC 时被析构——但此时线程可能尚未完全结束（finished 信号尚未处理），
+    #   导致堆损坏（STATUS_STACK_BUFFER_OVERRUN）。
+    # 修复：照搬 canvas_widget.py 已验证的 _retire_worker 模式：
+    #   - 创建新 worker 前先 _retire_worker()（deleteLater 安全释放旧对象）；
+    #   - 回调里不再直接置 None，由 _retire_worker 在下次创建时统一接管；
+    #   - 连接 finished → deleteLater，由 Qt 事件循环在线程真正结束后释放对象。
+    def _retire_worker(self) -> None:
+        """
+        退役当前裁剪 worker：
+        - 清空 self._worker 引用（新 worker 可以立即启动）；
+        - 若线程仍在运行：requestInterruption() 并连接 finished → deleteLater，
+          保证线程结束后对象才被释放，绝不在运行中析构 QThread；
+        - 若已结束：直接 deleteLater()。
+        """
+        old = self._worker
+        self._worker = None
+        if old is None:
+            return
+        if old.isRunning():
+            old.requestInterruption()
+            try:
+                old.finished.connect(old.deleteLater)
+            except TypeError:
+                old.deleteLater()
+        else:
+            old.deleteLater()
+
+    def _retire_match_worker(self) -> None:
+        """退役当前匹配 worker（同 _retire_worker 逻辑）。"""
+        old = self._match_worker
+        self._match_worker = None
+        if old is None:
+            return
+        if old.isRunning():
+            old.requestInterruption()
+            try:
+                old.finished.connect(old.deleteLater)
+            except TypeError:
+                old.deleteLater()
+        else:
+            old.deleteLater()
+
+    def shutdown(self, timeout_ms: int = 3000) -> None:
+        """
+        应用退出前调用：中断后台裁剪/匹配线程并等待真正结束。
+        避免父窗口析构时销毁仍在运行的 QThread（崩溃/警告根源）。
+        """
+        w = self._worker
+        mw = self._match_worker
+        self._retire_worker()
+        self._retire_match_worker()
+        if w is not None and w.isRunning():
+            if not w.wait(timeout_ms):
+                logger.warning("[CropperPanel] 裁剪线程未在超时内结束，放弃等待")
+        if mw is not None and mw.isRunning():
+            if not mw.wait(timeout_ms):
+                logger.warning("[CropperPanel] 匹配线程未在超时内结束，放弃等待")
+
     def _generate_preview(self):
         """生成预览（异步，不阻塞 UI）"""
         if not self._src_path:
@@ -953,6 +1024,10 @@ class CropperPanel(QWidget):
             QMessageBox.information(self, "提示", "正在处理中，请稍候...")
             return
 
+        # [Fix 0xC0000409] 安全退役旧 worker（deleteLater），避免 C++ QThread
+        #   对象在 GC 时析构导致堆损坏
+        self._retire_worker()
+
         config = self._build_crop_config()
         config.output_path = ""
 
@@ -960,6 +1035,9 @@ class CropperPanel(QWidget):
         self._worker.finished_ok.connect(self._on_preview_done)
         self._worker.finished_err.connect(self._on_crop_error)
         self._worker.progress.connect(self._on_progress)
+        # [Fix 0xC0000409] 连接 finished → deleteLater，由 Qt 事件循环
+        #   在线程真正结束后释放对象，避免 GC 析构仍在运行的 QThread
+        self._worker.finished.connect(self._worker.deleteLater)
 
         self._show_progress("正在生成预览...")
         self._worker.start()
@@ -968,7 +1046,8 @@ class CropperPanel(QWidget):
         self._hide_progress()
         self._last_result = result
         self.image_cropped.emit(result)
-        self._worker = None
+        # [Fix 0xC0000409] 不再直接置 None；由 _retire_worker 在下次创建时
+        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
         self._record_target_name_history()
 
         QMessageBox.information(
@@ -1004,6 +1083,10 @@ class CropperPanel(QWidget):
         if not path:
             return
 
+        # [Fix 0xC0000409] 安全退役旧 worker（deleteLater），避免 C++ QThread
+        #   对象在 GC 时析构导致堆损坏
+        self._retire_worker()
+
         config = self._build_crop_config()
         config.output_path = path
 
@@ -1011,6 +1094,9 @@ class CropperPanel(QWidget):
         self._worker.finished_ok.connect(lambda _: self._on_export_done(path, config))
         self._worker.finished_err.connect(self._on_crop_error)
         self._worker.progress.connect(self._on_progress)
+        # [Fix 0xC0000409] 连接 finished → deleteLater，由 Qt 事件循环
+        #   在线程真正结束后释放对象，避免 GC 析构仍在运行的 QThread
+        self._worker.finished.connect(self._worker.deleteLater)
 
         self._show_progress("正在导出 JPG...")
         self._worker.start()
@@ -1018,7 +1104,8 @@ class CropperPanel(QWidget):
     def _on_export_done(self, path: str, config: CropConfig):
         self._hide_progress()
         self._last_result = None
-        self._worker = None
+        # [Fix 0xC0000409] 不再直接置 None；由 _retire_worker 在下次创建时
+        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
         self._record_target_name_history()
 
         QMessageBox.information(
@@ -1029,7 +1116,8 @@ class CropperPanel(QWidget):
 
     def _on_crop_error(self, err_msg: str):
         self._hide_progress()
-        self._worker = None
+        # [Fix 0xC0000409] 不再直接置 None；由 _retire_worker 在下次创建时
+        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
         import traceback
         traceback.print_exc()
         QMessageBox.critical(self, "裁剪失败", err_msg)

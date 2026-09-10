@@ -458,9 +458,14 @@ class MainWindow(QMainWindow):
         原先仅靠 main() 中的 app.aboutToQuit → canvas.shutdown 处理渲染线程，
         导出线程无人接管。此处补齐：若正在导出则先中断并等待其结束，
         再交由画布清理渲染线程，避免关闭瞬间析构仍在运行的 QThread。
+
+        [Fix 0xC0000409] 补齐 cropper.shutdown()：裁剪面板的 CropWorker /
+        AutoMatchWorker 同样是 parentless QThread，关闭时若仍运行也会触发
+        堆损坏崩溃。
         """
         if self._is_saving:
             self._retire_save_worker()
+        self.cropper.shutdown()
         self.canvas.shutdown()
         super().closeEvent(event)
 
@@ -518,6 +523,9 @@ def main():
     w = MainWindow()
     w.show()
     # [F16 修复] 退出前等待后台渲染线程结束，避免 "QThread destroyed while running"
+    # [Fix 0xC0000409] 同步接管裁剪面板线程，避免 CropWorker/AutoMatchWorker
+    #   在退出时被析构导致堆损坏
+    app.aboutToQuit.connect(w.cropper.shutdown)
     app.aboutToQuit.connect(w.canvas.shutdown)
     sys.exit(app.exec_())
 
