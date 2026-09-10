@@ -683,7 +683,7 @@ class CropperPanel(QWidget):
         self._retire_match_worker()
 
         # 创建异步 Worker
-        self._match_worker = AutoMatchWorker(template_dir, target_name, self._matcher)
+        self._match_worker = AutoMatchWorker(template_dir, target_name, self._matcher, parent=self)
         self._match_worker.finished_ok.connect(
             lambda best, candidates, dt, stats: self._on_match_done(
                 best, candidates, dt, stats, template_dir, target_name
@@ -703,8 +703,8 @@ class CropperPanel(QWidget):
     def _on_match_done(self, best, candidates, match_dt, stats, template_dir, target_name):
         """自动匹配完成回调（主线程）。"""
         self._hide_progress()
-        # [Fix 0xC0000409] 不再直接置 None；由 _retire_match_worker 在下次创建时
-        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
+        # [Fix 0xC0000409-v2] 置 None 安全（parent=self 托管 C++ 对象）
+        self._match_worker = None
 
         # 记录到历史（带扫描后的总数），并写默认目录
         total = stats.get("total", 0) if stats else 0
@@ -746,8 +746,8 @@ class CropperPanel(QWidget):
     def _on_match_err(self, err_msg: str):
         """自动匹配异常回调。"""
         self._hide_progress()
-        # [Fix 0xC0000409] 不再直接置 None；由 _retire_match_worker 在下次创建时
-        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
+        # [Fix 0xC0000409-v2] 置 None 安全（parent=self 托管 C++ 对象）
+        self._match_worker = None
         self._lbl_match_log.setText(f"❌ 匹配出错: {err_msg}")
         QMessageBox.critical(self, "匹配失败", err_msg)
 
@@ -1031,7 +1031,7 @@ class CropperPanel(QWidget):
         config = self._build_crop_config()
         config.output_path = ""
 
-        self._worker = CropWorker(config)
+        self._worker = CropWorker(config, parent=self)
         self._worker.finished_ok.connect(self._on_preview_done)
         self._worker.finished_err.connect(self._on_crop_error)
         self._worker.progress.connect(self._on_progress)
@@ -1046,8 +1046,11 @@ class CropperPanel(QWidget):
         self._hide_progress()
         self._last_result = result
         self.image_cropped.emit(result)
-        # [Fix 0xC0000409] 不再直接置 None；由 _retire_worker 在下次创建时
-        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
+        # [Fix 0xC0000409-v2] 有 parent=self 托管后，置 None 是安全的：
+        #   C++ 对象由 parent 持有，不会被 GC 立即析构；deleteLater 会清理。
+        #   必须置 None，否则 deleteLater 删除 C++ 对象后，Python 引用变悬空，
+        #   下次 isRunning() 访问已删除对象 → RuntimeError → 按钮无响应。
+        self._worker = None
         self._record_target_name_history()
 
         QMessageBox.information(
@@ -1090,7 +1093,7 @@ class CropperPanel(QWidget):
         config = self._build_crop_config()
         config.output_path = path
 
-        self._worker = CropWorker(config)
+        self._worker = CropWorker(config, parent=self)
         self._worker.finished_ok.connect(lambda _: self._on_export_done(path, config))
         self._worker.finished_err.connect(self._on_crop_error)
         self._worker.progress.connect(self._on_progress)
@@ -1104,8 +1107,8 @@ class CropperPanel(QWidget):
     def _on_export_done(self, path: str, config: CropConfig):
         self._hide_progress()
         self._last_result = None
-        # [Fix 0xC0000409] 不再直接置 None；由 _retire_worker 在下次创建时
-        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
+        # [Fix 0xC0000409-v2] 置 None 安全（parent=self 托管 C++ 对象）
+        self._worker = None
         self._record_target_name_history()
 
         QMessageBox.information(
@@ -1116,8 +1119,8 @@ class CropperPanel(QWidget):
 
     def _on_crop_error(self, err_msg: str):
         self._hide_progress()
-        # [Fix 0xC0000409] 不再直接置 None；由 _retire_worker 在下次创建时
-        #   统一 deleteLater，避免 QThread C++ 对象在 GC 时析构导致堆损坏
+        # [Fix 0xC0000409-v2] 置 None 安全（parent=self 托管 C++ 对象）
+        self._worker = None
         import traceback
         traceback.print_exc()
         QMessageBox.critical(self, "裁剪失败", err_msg)
