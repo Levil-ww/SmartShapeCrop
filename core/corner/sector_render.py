@@ -348,7 +348,15 @@ def _redraw_border_on_corner(
         # 空间判断：过渡区内容保护只作用于靠近直边的像素（xx/yy 接近 ROI 边缘）。
         #   圆角内部（远离两边直边）的过渡区始终绘制——否则圆角内层边框末端缺像素。
         #   直边附近的过渡区保护紧贴边框的花纹/文字（婉卉 CASE4）。
-        near_edge = (xx <= float(total_border_depth) * 1.5) | (yy <= float(total_border_depth) * 1.5)
+        T = float(total_border_depth) * 1.5
+        if corner_key == 'tl':
+            near_edge = (xx <= T) | (yy <= T)
+        elif corner_key == 'tr':
+            near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy <= T)
+        elif corner_key == 'bl':
+            near_edge = (xx <= T) | (yy >= float(roi_h) - 1.0 - T)
+        else:  # br
+            near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy >= float(roi_h) - 1.0 - T)
         in_transition_zone = near_edge & (depth >= float(CORE_BORDER_DEPTH)) & (depth < float(total_border_depth))
         outside_border_zone = (depth >= float(total_border_depth))
         content_protect_mask = is_content_pixel & (in_transition_zone | outside_border_zone)
