@@ -452,38 +452,37 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     T = offs[-1]
 
     # 垂直切边（保留区在左）：y 从画布顶端向交汇点 yc 递减。
-    # 层 k 的 dx 范围 = xc - x，其中 x ∈ [xc-offs[k+1], xc-offs[k]) → dx ∈ (offs[k], offs[k+1]]
-    # （右闭左开），与水平层 dy ∈ [offs[k], offs[k+1])（左闭右开）不完全对称。
-    # 关键修复：x_hi 设为 xc-offs[k]+1（包含 cut 区边界 xc 本身），确保交汇点处
-    # 垂直层覆盖到 cut 边界，避免 BR/TR 角 flipx=False 时内凹角与垂直层之间留 1px 缝。
-    # BL/TL 角 flipx=True 时翻回后边界会自然对齐，但 flipx=False 时必须显式包含。
+    # 层 k 的 dx 范围 = xc - x，其中 x ∈ [xc-offs[k+1], xc-offs[k]) → dx ∈ [offs[k], offs[k+1])
+    # 垂直边框紧贴 cut 区左边界 xc 的左侧（保留区侧），y 覆盖 [0, yc] 整个切边高度。
+    # 关键：y_hi = yc+1（包含交汇点行），这样垂直边框能精确到达交汇点 (xc, yc-1) 的正左方。
     for k, (color, _t) in enumerate(layers):
-        x_lo, x_hi = max(0, xc - offs[k + 1]), min(W, xc - offs[k] + 1)
+        x_lo, x_hi = max(0, xc - offs[k + 1]), min(W, xc - offs[k])
         y_lo = offs[k] if offs[k] < yc else 0
-        y_hi = min(yc, H)
+        y_hi = min(yc + 1, H)
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
-    # 水平切边（保留区在下）：层 k 的 x 到 W - offs[k] 止，避开右缘外层结构
+    # 水平切边（保留区在下）：层 k 从交汇点 yc 向下延伸，x 严格从 xc 开始向右。
+    # 水平边框紧贴 cut 区下边界 yc 的下侧（保留区侧），不能画到 y<=yc 的 cut 区里。
+    # 关键：y 从 yc+1 起算，offest 基于 yc+1 而非 yc。
     for k, (color, _t) in enumerate(layers):
-        y_lo, y_hi = max(0, yc + offs[k]), min(H, yc + offs[k + 1])
+        y_lo = max(0, yc + 1 + offs[k])
+        y_hi = min(H, yc + 1 + offs[k + 1])
         x_lo, x_hi = max(0, xc), max(0, min(W - offs[k], W))
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
     # 内凹角 (xc, yc)：距角点 max(dx, dy) 几何 L 分层，保证与水平/垂直切边各层在
-    # offs 边界尽量对齐。searchsorted(offs, d, 'right')-1 让 d=offs[k] 归层 k（左闭），
-    # 与水平层 dy ∈ [offs[k], offs[k+1]) 对齐；但与垂直层 dx ∈ (offs[k], offs[k+1]]
-    # 存在 offs 边界处的 off-by-one，需要在使用时注意。
-    # 关键修复：xs 上界改为 xc+1（包含 xc 本身），与修改后的垂直层 x_hi 对齐。
-    # 确保 BR/TR 角 flipx=False 时 (xc, yc) 附近的内凹角能覆盖到 cut 边界。
-    xs = np.arange(max(0, xc - T), xc + 1)
+    # offs 边界精确对齐。searchsorted(offs, d, 'right')-1 让 d=offs[k] 归层 k（左闭）。
+    # 关键：xs 不含 xc（避免覆盖 cut 区边界），yy 从 yc+1 起（保留区侧），
+    # 仅在保留区角落 [xc-T, xc) × [yc+1, yc+1+T) 填充，绝对不溢出 cut 区。
+    xs = np.arange(max(0, xc - T), xc)
     if xs.size == 0:
         return
     offs_arr = np.array(offs, dtype=np.int64)
     colors_arr = np.array([c for c, _t in layers], dtype=np.uint8)
-    y_end = min(H, yc + T)
-    for yy in range(max(0, yc), y_end):
+    y_end = min(H, yc + 1 + T)
+    for yy in range(max(0, yc + 1), y_end):
         d = np.maximum(xc - xs, yy - yc)
         k = np.searchsorted(offs_arr, d, side='right') - 1
         k = np.clip(k, 0, len(layers) - 1)
