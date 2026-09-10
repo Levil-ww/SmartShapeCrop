@@ -755,25 +755,31 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         # [Fix 2026-09-10] L 形 + 池素材：cut 角应延伸到 canvas 边缘，而不只是
         #   inner_rect 内部。否则 outer_margin 区域的素材外框会残留在 cut 区的
         #   canvas 边缘，视觉上出现"挖角没切到底"的效果。
-        cut_top_y = int(round(inner_rect.bottom - lshape.cut_h))
-        cut_right_x = int(round(inner_rect.x + lshape.cut_w))
+        _ir_x, _ir_y = int(round(inner_rect.x)), int(round(inner_rect.y))
+        _ir_r, _ir_b = int(round(inner_rect.right)), int(round(inner_rect.bottom))
+        _cw, _ch = int(round(lshape.cut_w)), int(round(lshape.cut_h))
+        _extra = np.zeros((H, W), dtype=bool)
         if lshape.corner == 'bl':
-            # 左下角 cut：扩展到 canvas 左边缘 (x=0) 和底边缘 (y=H)
-            _extra = np.zeros((H, W), dtype=bool)
-            _extra[cut_top_y:H, 0:cut_right_x] = True
-            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+            # 水平切边 y=_ir_b - _ch, 垂直切边 x=_ir_x + _cw
+            _top = _ir_b - _ch
+            _right = _ir_x + _cw
+            _extra[_top:H, 0:_right] = True
         elif lshape.corner == 'br':
-            _extra = np.zeros((H, W), dtype=bool)
-            _extra[cut_top_y:H, cut_right_x:W] = True
-            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+            # 水平切边 y=_ir_b - _ch, 垂直切边 x=_ir_r - _cw
+            _top = _ir_b - _ch
+            _left = _ir_r - _cw
+            _extra[_top:H, _left:W] = True
         elif lshape.corner == 'tl':
-            _extra = np.zeros((H, W), dtype=bool)
-            _extra[0:cut_top_y, 0:cut_right_x] = True
-            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+            # 水平切边 y=_ir_y + _ch, 垂直切边 x=_ir_x + _cw
+            _bottom = _ir_y + _ch
+            _right = _ir_x + _cw
+            _extra[0:_bottom, 0:_right] = True
         elif lshape.corner == 'tr':
-            _extra = np.zeros((H, W), dtype=bool)
-            _extra[0:cut_top_y, cut_right_x:W] = True
-            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+            # 水平切边 y=_ir_y + _ch, 垂直切边 x=_ir_r - _cw
+            _bottom = _ir_y + _ch
+            _left = _ir_r - _cw
+            _extra[0:_bottom, _left:W] = True
+        cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
         if cut_area_mask.any():
             # 预先采样素材底色——给 Step 3.6 border completion 当 bg_color 用
             # （用来把"带层"颜色对齐到素材底色，避免伪边框层）。
