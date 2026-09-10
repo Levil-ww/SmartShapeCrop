@@ -560,6 +560,39 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
       - 例如 scale=0.25 时，border_width_px 会相应缩小
     """
     W, H = design.canvas_w_px, design.canvas_h_px
+    # === [DEBUG 2026-09-10] 调试日志：全参数快照 ===
+    import os as _os  # 避免与已有的 os 覆盖
+    _dbg = False  # 临时开关，问题定位后改 False
+    if _dbg:
+        _has_pool_outer = bool(
+            getattr(design, 'pool_outer_material_image', None)
+            and _os.path.isfile(design.pool_outer_material_image))
+        _has_pool_inner = bool(
+            getattr(design, 'pool_inner_material_image', None)
+            and _os.path.isfile(getattr(design, 'pool_inner_material_image', '')))
+        _has_outer_bg = bool(
+            getattr(design, 'outer_bg_image', None)
+            and _os.path.isfile(design.outer_bg_image))
+        _cached = getattr(design, '_cached_outer_image', None) is not None
+        logger.info(
+            f"[DEBUG-RD] ========= render_design() 开始 =========")
+        logger.info(
+            f"[DEBUG-RD] mode={design.mode!r} quality={quality!r} "
+            f"W={W} H={H} outer_margin={design.outer_margin_cm} "
+            f"inner_margin_t/b/l/r={design.inner_margin_top_cm}/{design.inner_margin_bottom_cm}/"
+            f"{design.inner_margin_left_cm}/{design.inner_margin_right_cm} "
+            f"l_corner={getattr(design,'l_corner',None)} "
+            f"l_cut_w={getattr(design,'l_cut_w_cm',None)} "
+            f"l_cut_h={getattr(design,'l_cut_h_cm',None)} "
+            f"pool_hole_transparent={getattr(design,'pool_hole_transparent',None)}")
+        logger.info(
+            f"[DEBUG-RD] pool_outer_material={_has_pool_outer} "
+            f"pool_inner_material={_has_pool_inner} "
+            f"outer_bg_image={_has_outer_bg} "
+            f"cached_outer_image={_cached} "
+            f"outer_bg_color={design.outer_bg_color} "
+            f"hole_bg_color={design.hole_bg_color}")
+    # ===============================================
     # 固定像素值按比例缩放（用于 LOD 渲染）
     # 最小 2 像素，确保边框在低分辨率下仍可见
     import math
@@ -635,10 +668,16 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         and os.path.isfile(getattr(design, 'pool_inner_material_image', ''))
     )
     is_pool_with_material = has_outer_pool_material or has_inner_pool_material
-
+    if _dbg:
+        logger.info(
+            f"[DEBUG-RD] STEP1 判定: is_pool_with_material={is_pool_with_material} "
+            f"(outer={has_outer_pool_material} inner={has_inner_pool_material}) "
+            f"mode={design.mode!r}")
     # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
     # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color
     if design.mode == 'rect_lshape' and not is_pool_with_material:
+        if _dbg:
+            logger.info("[DEBUG-RD] STEP1.1 命中 rect_lshape + 非池素材 → 填outer_bg_color遮罩")
         from .geometry import build_lshape_mask
         has_outer_img = design.outer_bg_image and os.path.isfile(design.outer_bg_image)
         if has_outer_img:
@@ -694,6 +733,8 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     #   cut_area 始终填纯白(255,255,255)（用户明确要求 L 形挖空区保持白色）。
     _lshape_cut_bg_color = None
     if design.mode == 'rect_lshape' and is_pool_with_material:
+        if _dbg:
+            logger.info("[DEBUG-RD] STEP3 命中 rect_lshape + 池素材 → L形挖角处理路径")
         from .geometry import build_lshape_mask, compute_inner_corner_radii
         lshape = design.l_shape_px()
         inner_rect = design.inner_rect_px()
@@ -709,13 +750,65 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             (W, H), inner_rect, lshape.corner,
             0, 0,
             inner_corners, fill_value=255)
-        cut_area_mask = np.array(full_inner_img, dtype=bool) & ~inner_mask
+        full_inner_mask = np.array(full_inner_img, dtype=bool)
+        cut_area_mask = full_inner_mask & ~inner_mask
+        # [Fix 2026-09-10] L 形 + 池素材：cut 角应延伸到 canvas 边缘，而不只是
+        #   inner_rect 内部。否则 outer_margin 区域的素材外框会残留在 cut 区的
+        #   canvas 边缘，视觉上出现"挖角没切到底"的效果。
+        cut_top_y = int(round(inner_rect.bottom - lshape.cut_h))
+        cut_right_x = int(round(inner_rect.x + lshape.cut_w))
+        if lshape.corner == 'bl':
+            # 左下角 cut：扩展到 canvas 左边缘 (x=0) 和底边缘 (y=H)
+            _extra = np.zeros((H, W), dtype=bool)
+            _extra[cut_top_y:H, 0:cut_right_x] = True
+            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+        elif lshape.corner == 'br':
+            _extra = np.zeros((H, W), dtype=bool)
+            _extra[cut_top_y:H, cut_right_x:W] = True
+            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+        elif lshape.corner == 'tl':
+            _extra = np.zeros((H, W), dtype=bool)
+            _extra[0:cut_top_y, 0:cut_right_x] = True
+            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+        elif lshape.corner == 'tr':
+            _extra = np.zeros((H, W), dtype=bool)
+            _extra[0:cut_top_y, cut_right_x:W] = True
+            cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
         if cut_area_mask.any():
-            # 预先采样素材底色（浅色像素中位数）——给 Step 3.6 border completion 用
-            _light_mask = canvas_arr.mean(axis=2) > 128
-            if _light_mask.any():
-                _sample_color = np.median(canvas_arr[_light_mask], axis=0).astype(np.uint8)
-                _lshape_cut_bg_color = tuple(int(v) for v in _sample_color)
+            # 预先采样素材底色——给 Step 3.6 border completion 当 bg_color 用
+            # （用来把"带层"颜色对齐到素材底色，避免伪边框层）。
+            # [Fix 2026-09-10] 旧方案取全画布浅色像素中位数 → 花田/内容区浅色像素
+            #   占多数，中位数被拉成内容色（如蔓生花米底被拉成花田褐），导致 cut 边
+            #   的米色色带被错误替换成内容色。改为只在 inner_rect 边缘内侧的环带
+            #   采样——这里是素材真正的"边距底色带"（黑描边内侧），语义正确。
+            _ir_x0 = max(0, int(round(inner_rect.x)))
+            _ir_y0 = max(0, int(round(inner_rect.y)))
+            _ir_x1 = min(W, int(round(inner_rect.right)))
+            _ir_y1 = min(H, int(round(inner_rect.bottom)))
+            _ir_w = _ir_x1 - _ir_x0
+            _ir_h = _ir_y1 - _ir_y0
+            # 环带深度：短边 3%~12%（跳过最外黑描边，落在米/白色边距带内）
+            _d_lo = max(3, int(round(min(_ir_w, _ir_h) * 0.03)))
+            _d_hi = max(_d_lo + 1, int(round(min(_ir_w, _ir_h) * 0.12)))
+            _band_pixels = []
+            if _ir_w > 2 * _d_hi and _ir_h > 2 * _d_hi:
+                # 四条边内侧的环带像素
+                _band_pixels.append(
+                    canvas_arr[_ir_y0 + _d_lo:_ir_y0 + _d_hi, _ir_x0:_ir_x1].reshape(-1, 3))
+                _band_pixels.append(
+                    canvas_arr[_ir_y1 - _d_hi:_ir_y1 - _d_lo, _ir_x0:_ir_x1].reshape(-1, 3))
+                _band_pixels.append(
+                    canvas_arr[_ir_y0:_ir_y1, _ir_x0 + _d_lo:_ir_x0 + _d_hi].reshape(-1, 3))
+                _band_pixels.append(
+                    canvas_arr[_ir_y0:_ir_y1, _ir_x1 - _d_hi:_ir_x1 - _d_lo].reshape(-1, 3))
+            if _band_pixels:
+                _band_all = np.vstack(_band_pixels)
+                _light_mask = _band_all.mean(axis=1) > 128
+                if _light_mask.any():
+                    _sample_color = np.median(_band_all[_light_mask], axis=0).astype(np.uint8)
+                    _lshape_cut_bg_color = tuple(int(v) for v in _sample_color)
+                else:
+                    _lshape_cut_bg_color = (255, 255, 255)
             else:
                 _lshape_cut_bg_color = (255, 255, 255)
 
@@ -1036,7 +1129,18 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         border_mask = inner_mask & ~eroded
 
     if border_mask.any():
-        canvas_arr[border_mask] = BLACK_RGB
+        # [Fix 2026-09-10] L 形 + 池素材：素材已拉伸到 inner_rect，其自身边框
+        #   已落在 inner_rect 边缘；统一 10px 黑框会叠加在素材边框上导致黑框
+        #   过粗，且会覆盖 cut 角处的米色色带直角交点。故跳过统一黑框，改由
+        #   border completion 沿 cut 边绘制与素材一致的边框层。
+        _skip_unified = design.mode == 'rect_lshape' and is_pool_with_material
+        if _dbg:
+            logger.info(
+                f"[DEBUG-RD] STEP3.5 border_mask={border_mask.sum()}px "
+                f"skip_unified_black={_skip_unified} "
+                f"(mode={design.mode!r} is_pool={is_pool_with_material})")
+        if not _skip_unified:
+            canvas_arr[border_mask] = BLACK_RGB
 
     # ===== [L-Shape Border Completion 2026-09-03] L 形挖角处的素材边框补全 =====
     # 当素材图自带边框（如克罗印花的棕色+黑色双层边框、安妮森林的细黑边框），
@@ -1045,20 +1149,39 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     # 使 cut 边缘的边框层次与素材外边缘一致，视觉上形成完整 L 形外框。
     #
     # 仅在 rect_lshape + 池素材 + 非 tile（tile 无边框）时触发。
-    if design.mode == 'rect_lshape' and is_pool_with_material and not _looks_like_tile(
-            design.pool_outer_material_image or ''):
+    _is_tile = _looks_like_tile(design.pool_outer_material_image or '')
+    _do_completion = design.mode == 'rect_lshape' and is_pool_with_material and not _is_tile
+    if _dbg:
+        logger.info(
+            f"[DEBUG-RD] STEP3.6 border_completion={_do_completion} "
+            f"(mode={design.mode!r} is_pool={is_pool_with_material} tile={_is_tile})")
+    if _do_completion:
         try:
             from .lshape_border import apply_lshape_border_completion
 
             inner_rect = design.inner_rect_px()
             lshape = design.l_shape_px()
             cut_corner = lshape.corner
-            cut_w_px = lshape.cut_w
-            cut_h_px = lshape.cut_h
+            # cut 扩展到 canvas 边缘后的绝对尺寸（border completion 需要这个
+            # 来正确在 outer_margin 区域补边）
+            _ir_x, _ir_y = inner_rect.x, inner_rect.y
+            _ir_r, _ir_b = inner_rect.right, inner_rect.bottom
+            if cut_corner == 'bl':
+                cut_w_px = lshape.cut_w + _ir_x
+                cut_h_px = lshape.cut_h + (H - _ir_b)
+            elif cut_corner == 'br':
+                cut_w_px = lshape.cut_w + (W - _ir_r)
+                cut_h_px = lshape.cut_h + (H - _ir_b)
+            elif cut_corner == 'tl':
+                cut_w_px = lshape.cut_w + _ir_x
+                cut_h_px = lshape.cut_h + _ir_y
+            else:  # tr
+                cut_w_px = lshape.cut_w + (W - _ir_r)
+                cut_h_px = lshape.cut_h + _ir_y
 
             # 使用原始素材图（cached_img）做边框检测，避免 adapt_pool_material
             # 的简单拉伸可能造成的边框像素畸变影响检测精度。
-            # scale = canvas尺寸 / 原始尺寸，用于把检测到的厚度换算到画布坐标系。
+            # 素材已铺满整个 canvas，所以 scale = canvas.size / 原始尺寸。
             _src_img = cached_img
             _scale_x = 1.0
             _scale_y = 1.0
@@ -1071,13 +1194,18 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                     _scale_x = float(W) / float(_sw)
                     _scale_y = float(H) / float(_sh)
 
+            # border completion 绘制要覆盖到 canvas 边缘（cut 已扩展到 canvas 边缘），
+            # 所以 outer_rect 必须是整个 canvas，不能是 inner_rect。
+            from core.geometry import RectShape
+            _canvas_rect = RectShape(0, 0, W, H)
+
             _completion_ok = apply_lshape_border_completion(
                 canvas_arr=canvas_arr,
                 material_img=canvas,                # 画布图 —— 检测和绘制都要参考
                 src_material_img=_src_img,           # 原始素材图 —— 更精确的边框检测
                 scale_x=_scale_x,
                 scale_y=_scale_y,
-                outer_rect=inner_rect,               # cut 区相对于 inner_rect
+                outer_rect=_canvas_rect,             # 整个 canvas（cut 已扩展到边缘）
                 cut_corner=cut_corner,
                 cut_w_px=cut_w_px,
                 cut_h_px=cut_h_px,
@@ -1216,6 +1344,14 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         pil = Image.fromarray(canvas_arr, 'RGB')
         _draw_border_text(pil, design)
         canvas_arr = np.array(pil, dtype=np.uint8)
+
+    if _dbg:
+        _final_blacks = (canvas_arr.max(axis=2) < 50).sum()
+        _final_whites = (canvas_arr.min(axis=2) > 200).sum()
+        logger.info(
+            f"[DEBUG-RD] STEP-END total_blacks={_final_blacks} "
+            f"total_whites={_final_whites} total_pixels={canvas_arr.shape[0]*canvas_arr.shape[1]}")
+        logger.info("[DEBUG-RD] ========= render_design() 结束 ==========")
 
     return Image.fromarray(canvas_arr, 'RGB')
 
