@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop 多洞面板拆分可行性分析 V1.0</title>
+<style>
+:root{
+  --bg:#f6f8fa; --card:#ffffff; --text:#1f2328; --muted:#656d76;
+  --border:#d8dee4; --border-soft:#eaeef2;
+  --p0:#cf222e; --p0bg:#fff5f5;
+  --p1:#bc4c00; --p1bg:#fff8f0;
+  --p2:#0969da; --p2bg:#f0f6ff;
+  --ok:#1a7f37; --okbg:#edf9f0;
+  --accent:#0969da;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.7;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
+header{
+  background:linear-gradient(135deg,#1f4e9c 0%,#2b6cb0 100%);
+  color:#fff;border-radius:12px;padding:30px 34px;margin-bottom:26px;
+}
+header h1{margin:0 0 8px;font-size:26px;font-weight:650;letter-spacing:.3px}
+header .sub{opacity:.9;font-size:13.5px}
+header .meta{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px}
+header .meta span{
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+  padding:4px 12px;border-radius:20px;font-size:12.5px;
+}
+h2{
+  font-size:19px;margin:34px 0 14px;padding-left:11px;
+  border-left:4px solid var(--accent);font-weight:640;
+}
+h3{font-size:15.5px;margin:22px 0 10px;font-weight:620;color:#24292f}
+h4{font-size:14px;margin:16px 0 8px;font-weight:620;color:#24292f}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:20px 22px;margin-bottom:16px;
+}
+.verdict{
+  background:var(--card);border:1px solid var(--border);border-left:5px solid var(--p1);
+  border-radius:10px;padding:18px 22px;margin-bottom:22px;
+}
+.verdict b{color:var(--p1)}
+.verdict.ok{border-left-color:var(--ok)}
+.verdict.ok b{color:var(--ok)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-bottom:20px}
+.kpi{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:15px 16px;text-align:center;
+}
+.kpi .v{font-size:25px;font-weight:680;line-height:1.25;letter-spacing:-.5px}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:5px}
+.kpi .n{font-size:11px;margin-top:5px}
+.g{color:var(--ok)} .r{color:var(--p0)} .o{color:var(--p1)} .b{color:var(--p2)} .m{color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+th,td{border:1px solid var(--border-soft);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:#f0f3f6;font-weight:620;color:#24292f;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr:nth-child(even){background:#fbfcfd}
+.issue{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  margin-bottom:14px;overflow:hidden;
+}
+.issue .hd{padding:13px 18px;display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.issue .hd .tag{
+  font-size:11px;font-weight:700;padding:2.5px 9px;border-radius:5px;
+  color:#fff;letter-spacing:.5px;flex-shrink:0;
+}
+.issue .hd .t{font-weight:640;font-size:14.5px}
+.issue .bd{padding:0 18px 16px}
+.p0 .hd{background:var(--p0bg);border-bottom:1px solid #ffd7d5}
+.p0 .tag{background:var(--p0)}
+.p1 .hd{background:var(--p1bg);border-bottom:1px solid #ffe0c2}
+.p1 .tag{background:var(--p1)}
+.p2 .hd{background:var(--p2bg);border-bottom:1px solid #cfe3ff}
+.p2 .tag{background:var(--p2)}
+.p3 .hd{background:#f2f7f2;border-bottom:1px solid #d6ecd9}
+.p3 .tag{background:var(--ok)}
+.field{margin:11px 0 0}
+.field .k{
+  font-size:12px;font-weight:660;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;
+}
+.field .val{font-size:13.2px}
+pre{
+  background:#f6f8fa;border:1px solid var(--border-soft);border-radius:7px;
+  padding:11px 13px;overflow-x:auto;font-size:12.2px;line-height:1.6;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  margin:6px 0 0;color:#24292f;white-space:pre;
+}
+code{
+  background:#f0f3f6;padding:1.5px 5px;border-radius:4px;font-size:12.4px;
+  font-family:"SFMono-Regular",Consolas,monospace;
+}
+pre code{background:none;padding:0}
+.phase{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:16px 20px;margin-bottom:13px;
+}
+.phase .ph{font-weight:660;font-size:14.5px;margin-bottom:9px;color:#24292f;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.phase .ph .no{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;
+  font-size:12.5px;font-weight:700;flex-shrink:0;
+}
+.phase ul{margin:6px 0 0;padding-left:20px}
+.phase li{margin:5px 0;font-size:13.2px}
+.risk{font-size:11.5px;padding:1.5px 8px;border-radius:4px;margin-left:8px;font-weight:620}
+.risk.lo{background:var(--okbg);color:var(--ok)}
+.risk.mid{background:var(--p1bg);color:var(--p1)}
+.risk.hi{background:var(--p0bg);color:var(--p0)}
+.flow{
+  display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:14px 0;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px 16px;
+}
+.flow .node{
+  flex:1;min-width:132px;border:1px solid var(--border);border-radius:8px;
+  padding:10px 11px;background:#fbfcfd;font-size:12.4px;
+}
+.flow .node .nt{font-weight:650;font-size:12.8px;margin-bottom:3px;color:#24292f}
+.flow .node .nd{color:var(--muted);font-size:11.6px;line-height:1.5}
+.flow .arrow{
+  display:flex;align-items:center;justify-content:center;
+  padding:0 7px;color:var(--muted);font-size:17px;flex-shrink:0;
+}
+.flow .node.hi{border-color:#cfe3ff;background:var(--p2bg)}
+.flow .node.warn{border-color:#ffe0c2;background:var(--p1bg)}
+.chk{list-style:none;padding-left:0;margin:8px 0}
+.chk li{padding-left:26px;position:relative;margin:7px 0;font-size:13.2px}
+.chk li:before{
+  content:"✓";position:absolute;left:0;top:0;
+  width:17px;height:17px;line-height:17px;text-align:center;border-radius:4px;
+  background:var(--okbg);color:var(--ok);font-size:11px;font-weight:700;
+}
+footer{
+  margin-top:44px;padding-top:20px;border-top:1px solid var(--border);
+  font-size:12.3px;color:var(--muted);display:flex;justify-content:space-between;
+  flex-wrap:wrap;gap:10px;
+}
+.toc{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:16px 22px;margin-bottom:22px;
+}
+.toc .tt{font-weight:640;font-size:13.5px;margin-bottom:8px;color:#24292f}
+.toc ol{margin:0;padding-left:22px;columns:2;column-gap:30px}
+.toc li{margin:4px 0;font-size:13px}
+.toc a{color:var(--accent);text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.note{
+  background:var(--p2bg);border:1px solid #cfe3ff;border-radius:8px;
+  padding:11px 15px;font-size:12.8px;margin:12px 0;
+}
+.note.warn{background:var(--p1bg);border-color:#ffe0c2}
+.note b{color:#24292f}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>SmartShapeCrop 多洞面板拆分可行性分析</h1>
+  <div class="sub">水池设计器「单洞 / 多洞」分类改造 —— 复杂度评估与实施方案</div>
+  <div class="meta">
+    <span>报告版本 V1.0</span>
+    <span>日期 2026-09-11</span>
+    <span>项目版本 V2.2</span>
+    <span>基线 commit 1232ce1</span>
+    <span>性质：只读分析 · 未改动任何代码</span>
+    <span>⚠️ 工作区存在 7 文件未提交改动</span>
+  </div>
+</header>
+
+<div class="toc">
+  <div class="tt">目录</div>
+  <ol>
+    <li><a href="#s1">结论摘要</a></li>
+    <li><a href="#s2">现状：多洞 UI 的挂载方式</a></li>
+    <li><a href="#s3">耦合点全量清单</a></li>
+    <li><a href="#s4">参照范式：L 形面板拆分</a></li>
+    <li><a href="#s5">关键决策：_collect() 的两种搬法</a></li>
+    <li><a href="#s6">实施步骤清单</a></li>
+    <li><a href="#s7">零功能变更保证措施</a></li>
+    <li><a href="#s8">风险清单与验收标准</a></li>
+    <li><a href="#s9">工作量估算</a></li>
+  </ol>
+</div>
+
+<!-- ============ 1 ============ -->
+<h2 id="s1">1. 结论摘要</h2>
+
+<div class="verdict">
+  <b>复杂度判定：中等偏上。</b> 比 L 形挖角那次拆分更难，但远非重写。<br>
+  项目内已有 <code>gui/lshape_panel.py</code> 这一成功先例，<b>拆分范式可以直接照抄</b>；
+  真正的额外难度来自一个 L 形没有的问题 —— 多洞参数并非自成一套，
+  而是<b>寄生在水池面板内部，且被四条链路穿透读写</b>。
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="v o">中等偏上</div><div class="l">实现复杂度</div></div>
+  <div class="kpi"><div class="v b">约 400 行</div><div class="l">预计改动总量</div><div class="n m">其中 300 行为搬运</div></div>
+  <div class="kpi"><div class="v g">4 个</div><div class="l">涉及文件数</div><div class="n m">新建 1 + 修改 3</div></div>
+  <div class="kpi"><div class="v g">0 行</div><div class="l">core/ 层改动</div><div class="n m">几何算法完全不动</div></div>
+</div>
+
+<div class="card">
+  <h3>一句话结论</h3>
+  <p style="margin:6px 0">
+    <b>值得做，建议按「保守方案 A」分批推进。</b>
+    拆分的本质是「把一组控件及其状态从 PropertyPanel 搬到独立 QWidget，
+    再通过信号委托把操作转发回 PropertyPanel 的同一套实现」——
+    这正是 L 形面板已验证过的路径。
+    唯一需要人为克制的是：<b>不要顺手重构 <code>_collect()</code> 那 190 行坐标换算代码</b>，
+    那属于功能改动，与「不能改变程序功能逻辑」的约束直接冲突。
+  </p>
+</div>
+
+<!-- ============ 2 ============ -->
+<h2 id="s2">2. 现状：多洞 UI 的挂载方式</h2>
+
+<div class="card">
+  <h3>2.1 单洞与多洞当前混在同一面板</h3>
+  <p style="margin:6px 0">
+    水池设计器的多洞参数区（<code>_gb_multihole</code>）并不是一个独立区域，
+    它是<b>追加</b>在 <code>PropertyPanel._inner_layout</code>（水池抽屉）末尾的一个
+    <code>QGroupBox</code>，靠 <code>hide()</code> / <code>show()</code> 切换：
+  </p>
+  <pre><code># gui/property_panel.py  L197 / L285-286
+self._gb_multihole = QGroupBox("多洞参数（厘米）")
+...
+self._set_multi_hole_row_visibility(0)
+self._gb_multihole.hide()          # 启动时默认隐藏（单洞模式）
+self._inner_layout.addWidget(self._gb_multihole)</code></pre>
+  <p style="margin:6px 0">
+    也就是说：<b>单洞/多洞共用一个面板、一套 <code>design</code>、一条生成链路</b>，
+    仅靠可见性开关区分。这正是本次要拆的根。
+  </p>
+</div>
+
+<div class="card">
+  <h3>2.2 多洞 UI 的构成</h3>
+  <table>
+    <thead><tr><th>组成</th><th>数量</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>洞尺寸行</td><td>8 组</td><td>每组 6 个 QDoubleSpinBox：宽 / 高 / 上距 / 下距 / 左距 / 右距</td></tr>
+      <tr><td>洞间距行</td><td>7 组</td><td>N 个洞 → N−1 个间距</td></tr>
+      <tr><td>洞数调整按钮</td><td>2 个</td><td>「＋ 添加洞」/「－ 删除末洞」（最小 2，最大 8）</td></tr>
+      <tr><td>标题标签</td><td>1 个</td><td><code>_mh_title_label</code>，显示当前激活洞数</td></tr>
+      <tr><td>合计控件</td><td>约 50 个</td><td>全部为 <code>_mh_sp_*</code> 系列列表持有</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <b>关键机制：</b>预分配 8 个洞的控件只是 UI 占位。
+    真正决定「写回几个洞」的是 <code>_mh_active_count</code> ——
+    <code>0</code> 表示单洞模式，<code>≥2</code> 表示多洞模式，且写回范围严格按它截断，
+    避免把 8 个预分配的 0 值洞整体写进 <code>design</code>。
+  </div>
+</div>
+
+<div class="card">
+  <h3>2.3 多洞数据流全景</h3>
+  <div class="flow">
+    <div class="node"><div class="nt">草图上传</div><div class="nd">用户拖入 / 选择 sketch 图片</div></div>
+    <div class="arrow">→</div>
+    <div class="node hi"><div class="nt">草图解析</div><div class="nd">检测 is_multi_hole<br>与 holes / gaps</div></div>
+    <div class="arrow">→</div>
+    <div class="node warn"><div class="nt">UI 回填</div><div class="nd">_fill_multi_hole_ui()<br>写入 SpinBox + 置 active_count</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="nt">用户微调</div><div class="nd">手动改 SpinBox<br>或增删洞</div></div>
+    <div class="arrow">→</div>
+    <div class="node warn"><div class="nt">采集写回</div><div class="nd">_collect()<br>→ design.pool_holes_cm</div></div>
+    <div class="arrow">→</div>
+    <div class="node hi"><div class="nt">生成渲染</div><div class="nd">_detect_multihole_edits()<br>→ PoolRenderWorker</div></div>
+  </div>
+  <p style="margin:6px 0">
+    橙色节点是拆分时必须跨面板桥接的环节；蓝色节点是 core 层逻辑，<b>本次完全不动</b>。
+  </p>
+</div>
+
+<!-- ============ 3 ============ -->
+<h2 id="s3">3. 耦合点全量清单</h2>
+
+<p>以下为全项目扫描得到的多洞状态读写点，共 <b>5 类 / 6 个文件</b>：</p>
+
+<div class="issue p0">
+  <div class="hd"><span class="tag">最重</span><span class="t">_collect() 直接读多洞 SpinBox —— 190 行坐标换算</span></div>
+  <div class="bd">
+    <div class="field"><div class="k">位置</div>
+      <div class="val"><code>gui/property_panel_layers.py</code> L167–356</div></div>
+    <div class="field"><div class="k">职责</div>
+      <div class="val">
+        把 UI SpinBox 的值转换成 <code>design.pool_holes_cm</code>，内含四件事：<br>
+        ① 按 <code>_mh_active_count</code> 严格截断写入范围<br>
+        ② 按 <code>layout</code> 重算每洞绝对坐标（horizontal / vertical / mixed 三分支）<br>
+        ③ 继承旧洞的素材字段（<code>inner_material_path</code> / <code>_cached_inner_image</code> 等）<br>
+        ④ 用 <code>_mt_i / _mb_i / _ml_i / _mr_i</code> 四个闭包做三重 fallback（UI → old_holes → 全局默认）
+      </div></div>
+    <div class="field"><div class="k">为什么棘手</div>
+      <div class="val">
+        它的<b>输出要写进 <code>design</code>，而 <code>design</code> 归 PropertyPanel 管</b>。
+        不能整块搬走，否则等于把设计数据的装配权也搬走了。
+      </div></div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="hd"><span class="tag">状态</span><span class="t">_mh_active_count 被两个模块共写</span></div>
+  <div class="bd">
+    <table>
+      <thead><tr><th>文件</th><th>行</th><th>动作</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="5">gui/property_panel.py</td><td>L98</td><td>初始化 <code>= 0</code></td></tr>
+        <tr><td>L686</td><td><code>_fill_multi_hole_ui</code> 中赋值</td></tr>
+        <tr><td>L743</td><td><code>_hide_multi_hole_ui</code> 中置 0</td></tr>
+        <tr><td>L791</td><td><code>_mh_add_hole</code> 中 +1</td></tr>
+        <tr><td>L807</td><td><code>_mh_del_hole</code> 中 −1</td></tr>
+        <tr><td>gui/property_panel_layers.py</td><td>L179</td><td><b>只读</b>，用于决定写回几个洞</td></tr>
+      </tbody>
+    </table>
+    <div class="field"><div class="k">改造方向</div>
+      <div class="val">状态变量<b>唯一归属新面板</b>；<code>_collect()</code> 改为通过 API 读取，不再自己维护副本。</div></div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="hd"><span class="tag">链路</span><span class="t">_detect_multihole_edits() —— 生成链路的读取入口</span></div>
+  <div class="bd">
+    <div class="field"><div class="k">位置</div>
+      <div class="val"><code>gui/property_panel_generate.py</code> L621</div></div>
+    <div class="field"><div class="k">被谁调用</div>
+      <div class="val">
+        <code>_pool_start_generate_worker()</code>（L118）→ 结果传入 <code>PoolRenderWorker</code>
+      </div></div>
+    <div class="field"><div class="k">职责</div>
+      <div class="val">
+        读 <code>_mh_active_count</code> / <code>_mh_sp_hole_w/h</code> / <code>_mh_sp_gaps</code>，
+        返回 <code>{'active_count', 'holes_wh', 'gaps_cm', 'layout_type'}</code>
+      </div></div>
+    <div class="field"><div class="k">改造方向</div>
+      <div class="val">改为一行委托：<code>return self._multihole_panel.get_multihole_params()</code>，
+      返回结构保持不变。</div></div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="hd"><span class="tag">回填</span><span class="t">_fill_multi_hole_ui() 有两条调用路径</span></div>
+  <div class="bd">
+    <table>
+      <thead><tr><th>路径</th><th>位置</th><th>触发时机</th></tr></thead>
+      <tbody>
+        <tr><td>生成完成回填</td><td><code>_generate.py</code> L281</td><td><code>_on_pool_finished_ok</code> 内，按 <code>design.pool_is_multi_hole</code> 判断</td></tr>
+        <tr><td>草图解析后回填</td><td><code>_poolbox.py</code> L791</td><td>草图识别完成，且 <code>is_multi_hole=True</code> 且 holes ≥ 2</td></tr>
+      </tbody>
+    </table>
+    <div class="note warn">
+      这条链路同时碰了单洞与多洞分支 ——
+      <code>_poolbox.py</code> L726–830 的单洞分支里有 <code>_hide_multi_hole_ui()</code> 调用，
+      <b>改的时候要格外小心别把单洞语义带走</b>。
+    </div>
+  </div>
+</div>
+
+<div class="issue p2">
+  <div class="hd"><span class="tag">次要</span><span class="t">_set_multi_hole_row_visibility() 等辅助方法</span></div>
+  <div class="bd">
+    <div class="field"><div class="k">位置</div>
+      <div class="val"><code>gui/property_panel.py</code> L656–815（4 个方法 + 1 个辅助）</div></div>
+    <div class="field"><div class="k">说明</div>
+      <div class="val">
+        纯 UI 显隐控制，按 <code>isinstance(wgt, QDoubleSpinBox)</code> 区分 hole 行与 gap 行。
+        <b>随控件整体搬入新面板即可，无跨模块耦合。</b>
+      </div></div>
+  </div>
+</div>
+
+<!-- ============ 4 ============ -->
+<h2 id="s4">4. 参照范式：L 形面板拆分</h2>
+
+<div class="verdict ok">
+  <b>这是本次拆分的模板。</b>
+  <code>gui/lshape_panel.py</code> 已经完整验证了「Mixin + 信号委托」这条路：
+  子面板保留自己的 UI，所有业务操作通过 <code>pyqtSignal</code> 委托回 <code>PropertyPanel</code> 的同一套实现，
+  <b>子面板内没有任何重复的渲染逻辑</b>。
+</div>
+
+<div class="card">
+  <h3>4.1 L 形的桥接契约（可直接复用的形态）</h3>
+  <pre><code># main.py —— 创建两个面板后注入
+self.lshape_panel = LShapePanel()
+self.panel.set_lshape_panel(self.lshape_panel)   # 注入引用 + 连接信号
+
+# gui/property_panel.py L421 —— 注入入口
+def set_lshape_panel(self, panel) -> None:
+    self._lshape_panel = panel
+    panel.lshape_params_changed.connect(self._on_lshape_params_changed)
+    panel.lshape_applied.connect(self._on_lshape_applied)
+    panel.generate_requested.connect(_lshape_run_generate)   # 委托到 _pool_run_generate
+    panel.save_requested.connect(self.save_requested.emit)   # 导出走既有流程
+    panel.sketch_pick_requested.connect(lambda: self._pool_pick_sketch(source='lshape'))
+    ...</code></pre>
+</div>
+
+<div class="card">
+  <h3>4.2 已沉淀的隔离不变式（多洞拆分同样适用）</h3>
+  <table>
+    <thead><tr><th>编号</th><th>不变式</th><th>多洞拆分如何沿用</th></tr></thead>
+    <tbody>
+      <tr><td>Safety 1</td><td>目标文件名文本两面板独立，不同步</td><td>多洞面板若带目标名输入框，同样独立持有</td></tr>
+      <tr><td>Safety 2</td><td>历史记录按 source 隔离写入</td><td>维持 <code>source='pool'</code>，不新增 source</td></tr>
+      <tr><td>Safety 3/4</td><td>草图操作传 source，决定是否更新本面板缩略图</td><td>多洞面板的草图请求委托时传 <code>source='pool'</code></td></tr>
+      <tr><td>—</td><td>信号连接用 <code>lambda _checked=False</code> 吞掉 <code>clicked(bool)</code></td><td>新面板按钮同样处理</td></tr>
+      <tr><td>—</td><td><code>shutdown()</code> 在 <code>closeEvent</code> 登记</td><td>新面板必须有 <code>shutdown()</code></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>4.3 多洞比 L 形多出的难点</h3>
+  <table>
+    <thead><tr><th>维度</th><th>L 形</th><th>多洞</th></tr></thead>
+    <tbody>
+      <tr><td>参数归属</td><td>自成一套，独立于水池</td><td>寄生在水池 <code>design</code> 内，与单洞共用一个字段族</td></tr>
+      <tr><td>状态变量</td><td>面板内自洽</td><td><code>_mh_active_count</code> 被 layers 模块共写</td></tr>
+      <tr><td>回填路径</td><td>较单一</td><td>两条（生成完成 + 草图解析）</td></tr>
+      <tr><td>与旧模式关系</td><td>与单洞互斥切换</td><td>单洞是默认态，多洞是叠加态，<b>hide/show 切换</b></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 5 ============ -->
+<h2 id="s5">5. 关键决策：_collect() 的两种搬法</h2>
+
+<p>这是整个改造中<b>唯一需要你拍板</b>的技术选择。两种搬法功能等价性风险差异明显：</p>
+
+<div class="issue p3">
+  <div class="hd"><span class="tag">方案 A · 保守</span><span class="t">190 行留在 _collect()，只改数据来源</span><span class="risk lo">推荐</span></div>
+  <div class="bd">
+    <div class="field"><div class="k">做法</div>
+      <div class="val">
+        <code>_collect()</code> 内的坐标换算代码<b>一行不动</b>，
+        仅把「读哪个 SpinBox」改成先从新面板取一个值快照：
+        <pre><code># 改造前
+wv = self._mh_sp_hole_w[i].value()
+# 改造后（仅此一行变化）
+wv = _mh_vals['holes_wh'][i][0]</code></pre>
+        其中 <code>_mh_vals = self._multihole_panel.get_raw_values()</code>。
+      </div></div>
+    <div class="field"><div class="k">优点</div>
+      <div class="val">
+        坐标算法、素材继承、layout 三分支<b>一行不改</b>；
+        <code>git diff</code> 只涉及「数据来源」这一个概念，
+        回归面极小，<b>与「不能改变功能逻辑」的约束最贴合</b>。
+      </div></div>
+    <div class="field"><div class="k">代价</div>
+      <div class="val">新面板不持有完整业务逻辑（仅持有 UI 与状态）。但这不构成问题 ——
+      L 形面板同样不持有渲染逻辑。</div></div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="hd"><span class="tag">方案 B · 彻底</span><span class="t">190 行整体搬进新面板</span><span class="risk hi">不建议本次采用</span></div>
+  <div class="bd">
+    <div class="field"><div class="k">做法</div>
+      <div class="val">
+        把 L167–356 整体迁入 <code>MultiHolePanel.build_hole_dicts(design)</code>，
+        <code>_collect()</code> 只调一行。
+      </div></div>
+    <div class="field"><div class="k">优点</div>
+      <div class="val">职责最干净，新面板自包含。</div></div>
+    <div class="field"><div class="k">缺点</div>
+      <div class="val">
+        移动 190 行密集数值代码，需逐一验证 horizontal / vertical / mixed
+        三个分支 + 四个闭包的三重 fallback 行为完全一致，
+        <b>回归风险显著高于方案 A</b>。
+      </div></div>
+    <div class="field"><div class="k">结论</div>
+      <div class="val">方案 B 属于「顺手重构」，与本次约束相抵触。
+      <b>建议列为后续独立任务，不并入本次拆分。</b></div></div>
+  </div>
+</div>
+
+<!-- ============ 6 ============ -->
+<h2 id="s6">6. 实施步骤清单</h2>
+
+<div class="note">
+  以下步骤<b>尚未执行</b>。建议分两批推进：第一批只做面板拆分与信号桥接，
+  第二批单独做 <code>_collect()</code> 数据源改造。每批完成后立即用同一张多洞草图做渲染比对。
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">1</span>新建 gui/multihole_panel.py <span class="risk mid">新增文件</span></div>
+  <ul>
+    <li>定义 <code>class MultiHolePanel(QWidget)</code></li>
+    <li><b>迁入</b>：<code>_gb_multihole</code> 构建块（源 <code>property_panel.py</code> L192–286，含 8 洞 × 6 SpinBox + 7 间距 + 增删按钮）</li>
+    <li><b>迁入</b>：<code>_set_multi_hole_row_visibility</code> / <code>_fill_multi_hole_ui</code> / <code>_hide_multi_hole_ui</code> / <code>_mh_add_hole</code> / <code>_mh_del_hole</code>（L654–815）</li>
+    <li><b>迁入</b>：<code>_mh_active_count</code>、<code>_MAX_MH_UI_HOLES</code>、<code>_mh_sp_*</code> 全部状态变量（<b>唯一归属</b>）</li>
+    <li>复制 <code>_dspin()</code> 工厂方法（现为 PropertyPanel 私有，L404）</li>
+    <li><b>对外 API</b>：
+      <ul>
+        <li><code>get_multihole_params()</code> → 返回 <code>{active_count, holes_wh, gaps_cm, layout_type}</code>（供 <code>_detect_multihole_edits</code> 用）</li>
+        <li><code>get_raw_values()</code> → 返回 SpinBox 值快照（供 <code>_collect()</code> 用，方案 A）</li>
+        <li><code>set_multihole_params(holes_cm, gaps_cm, layout)</code>（供两条回填路径用）</li>
+        <li><code>hide_multihole()</code>（替代 <code>_hide_multi_hole_ui</code>）</li>
+        <li><code>shutdown()</code>（线程退役登记）</li>
+      </ul>
+    </li>
+    <li>定义 <code>pyqtSignal</code>：<code>generate_requested</code> / <code>sketch_pick_requested</code> / <code>sketch_clear_requested</code> / <code>save_requested</code></li>
+    <li>按钮连接一律用 <code>lambda _checked=False: ...</code> 吞掉 <code>clicked(bool)</code></li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">2</span>PropertyPanel 增桥接（与 set_lshape_panel 同构）<span class="risk mid">~80 行</span></div>
+  <ul>
+    <li><code>__init__</code> 增 <code>self._multihole_panel = None</code>（紧邻 L93 的 <code>_lshape_panel</code>）</li>
+    <li>新增 <code>def set_multihole_panel(self, panel)</code>，写在 L412 那节桥接代码旁</li>
+    <li>信号委托清单：
+      <ul>
+        <li><code>generate_requested</code> → 转发到 <code>_pool_run_generate(source='pool')</code>，<b>不新建生成链路</b></li>
+        <li><code>sketch_pick_requested</code> → <code>_pool_pick_sketch(source='pool')</code></li>
+        <li><code>sketch_clear_requested</code> → <code>_pool_clear_sketch(source='pool')</code></li>
+        <li><code>save_requested</code> → <code>self.save_requested.emit</code></li>
+      </ul>
+    </li>
+    <li><b>删除</b>原 L192–286 构建块 + L654–815 的 5 个方法（已迁出）</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">3</span>原 5 处调用点改为委托（签名保持不变）<span class="risk lo">~10 行</span></div>
+  <ul>
+    <li><code>_detect_multihole_edits()</code>（<code>_generate.py</code> L621）→ <code>self._multihole_panel.get_multihole_params()</code>，返回结构不变</li>
+    <li><code>_fill_multi_hole_ui(...)</code>（<code>_generate.py</code> L281、<code>_poolbox.py</code> L791）→ <code>self._multihole_panel.set_multihole_params(...)</code></li>
+    <li><code>_hide_multi_hole_ui()</code>（<code>_generate.py</code> L287、<code>_poolbox.py</code> L793）→ <code>self._multihole_panel.hide_multihole()</code></li>
+    <li>所有委托点加 <code>if self._multihole_panel is not None:</code> 空值防御（对齐 L 形写法）</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">4</span>_collect() 数据源改造（方案 A）<span class="risk hi">关键决策点 · 第二批</span></div>
+  <ul>
+    <li>在 L171 的 <code>try</code> 块开头取一次值快照：<code>_mh_vals = self._multihole_panel.get_raw_values()</code></li>
+    <li>L179 <code>active_count</code> 改从快照读</li>
+    <li>L200–206 的 <code>self._mh_sp_hole_w[i].value()</code> 等改从快照读</li>
+    <li>L219–276 四个闭包 <code>_mt_i/_mb_i/_ml_i/_mr_i</code> 内的 SpinBox 读取改从快照读</li>
+    <li><b>L290–356 的坐标换算逻辑一行不动</b></li>
+    <li>整套 <code>try/except</code> 静默失败包装保持原样</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">5</span>main.py 挂载与生命周期 <span class="risk lo">~6 行</span></div>
+  <ul>
+    <li>实例化 <code>self.multihole_panel = MultiHolePanel()</code></li>
+    <li><code>self.panel.set_multihole_panel(self.multihole_panel)</code>（注入引用 + 连接信号）</li>
+    <li><code>self._tabs.addTab(self.multihole_panel, "多洞设计")</code></li>
+    <li><code>closeEvent</code> 中补 <code>self.multihole_panel.shutdown()</code>（对齐 <code>lshape_panel.shutdown()</code>）</li>
+    <li><code>_sync_panel_from_design</code> 补多洞同步分支</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">6</span>验证与证据归档 <span class="risk lo">收尾</span></div>
+  <ul>
+    <li><code>git diff --stat</code> 应只列 <b>4 个文件</b>（新建 1 + 修改 3）</li>
+    <li><code>git diff --stat core/</code> 必须为空</li>
+    <li>同一张多洞草图改前改后渲染比对（含 horizontal / vertical 两种 layout）</li>
+    <li>单洞回归：确认单洞流程完全不受影响</li>
+    <li>手动增删洞、间距调整、导出 JPG 全链路走一遍</li>
+  </ul>
+</div>
+
+<!-- ============ 7 ============ -->
+<h2 id="s7">7. 零功能变更保证措施</h2>
+
+<ul class="chk">
+  <li><b>core/ 零改动</b> —— 多洞几何算法（<code>geometry.py</code> / <code>image_ops.py</code> / <code>sketch_parser_multihole.py</code>）本次完全不碰</li>
+  <li><b>状态变量唯一归属</b> —— <code>_mh_active_count</code> 等全部迁入新面板，PropertyPanel 只通过 API 读，不再自己维护副本</li>
+  <li><b>信号委托不复制逻辑</b> —— 新面板「生成预览」必须转发到 <code>_pool_run_generate(source='pool')</code>，不新建渲染链路（L 形面板就是这么做的，其内部无任何重复渲染代码）</li>
+  <li><b>返回值结构冻结</b> —— <code>get_multihole_params()</code> 必须返回与现 <code>_detect_multihole_edits()</code> 完全相同的 dict 结构，<code>PoolRenderWorker</code> 侧零改动</li>
+  <li><b>_collect() 坐标算法零改动</b> —— 方案 A 只换数据来源，不换算法</li>
+  <li><b>交互范式保持</b> —— 多洞 SpinBox 的 <code>valueChanged</code> 已于 2026-09-05 全部 DISCONNECTED，改为手动生成按钮驱动；拆分后<b>不得恢复实时渲染连接</b></li>
+  <li><b>静默失败包装保留</b> —— <code>_collect()</code> 与 <code>_detect_multihole_edits</code> 的 <code>try/except</code> 容错语义原样保留</li>
+  <li><b>可验证证据</b> —— 完成后提供 <code>git diff --stat</code> 输出 + 渲染比对图</li>
+</ul>
+
+<!-- ============ 8 ============ -->
+<h2 id="s8">8. 风险清单与验收标准</h2>
+
+<table>
+  <thead><tr><th>#</th><th>风险点</th><th>等级</th><th>缓解措施</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>R1</td>
+      <td><code>_poolbox.py</code> L726–830 的两段回填同时含单洞与多洞分支，改时可能带跑单洞语义</td>
+      <td><span class="risk hi">高</span></td>
+      <td>只改多洞分支内的调用点，单洞分支的 <code>_hide_multi_hole_ui()</code> 调用保持语义等价；改后专项回归单洞</td>
+    </tr>
+    <tr>
+      <td>R2</td>
+      <td><code>_mh_active_count</code> 迁移过程中出现「双份状态」不同步</td>
+      <td><span class="risk mid">中</span></td>
+      <td>迁移时同步删除 PropertyPanel 侧的初始化与赋值，确保全项目仅一处定义</td>
+    </tr>
+    <tr>
+      <td>R3</td>
+      <td>新面板创建时 PropertyPanel 尚未注入引用 → <code>None</code> 崩溃</td>
+      <td><span class="risk mid">中</span></td>
+      <td>所有委托点加 <code>is not None</code> 防御；启动时默认隐藏，与现有单洞默认态一致</td>
+    </tr>
+    <tr>
+      <td>R4</td>
+      <td>误恢复 SpinBox 的 <code>valueChanged</code> 实时连接，破坏 2026-09-05 的交互范式</td>
+      <td><span class="risk mid">中</span></td>
+      <td>搬运时保留原注释块，明确标注 DISCONNECTED</td>
+    </tr>
+    <tr>
+      <td>R5</td>
+      <td>顺手把方案 B 一起做了，引入 190 行代码回归风险</td>
+      <td><span class="risk hi">高</span></td>
+      <td>本次严格限定为方案 A；方案 B 单独立项</td>
+    </tr>
+    <tr>
+      <td>R6</td>
+      <td>新面板未登记 <code>shutdown()</code>，关闭时线程残留</td>
+      <td><span class="risk lo">低</span></td>
+      <td>照抄 <code>lshape_panel.shutdown()</code> 的退役实现</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>验收标准</h3>
+<table>
+  <thead><tr><th>项</th><th>通过条件</th></tr></thead>
+  <tbody>
+    <tr><td>源码范围</td><td><code>git diff --stat</code> 仅 4 个文件；<code>core/</code> 无变更</td></tr>
+    <tr><td>多洞渲染</td><td>同一草图 horizontal / vertical 两种 layout 渲染结果与改前逐像素一致</td></tr>
+    <tr><td>单洞回归</td><td>单洞流程（矩形 / 椭圆 / L 形）行为与改前完全一致</td></tr>
+    <tr><td>手动增删洞</td><td>2→8 洞范围内增删、间距调整、生成预览全链路可用</td></tr>
+    <tr><td>导出链路</td><td>新面板导出 JPG 走既有保存流程，输出与水池面板一致</td></tr>
+    <tr><td>关闭无残留</td><td>关闭应用无线程告警，<code>shutdown()</code> 正常执行</td></tr>
+  </tbody>
+</table>
+
+<!-- ============ 9 ============ -->
+<h2 id="s9">9. 工作量估算</h2>
+
+<table>
+  <thead><tr><th>项</th><th class="num">行数</th><th>性质</th></tr></thead>
+  <tbody>
+    <tr><td>新建 <code>gui/multihole_panel.py</code></td><td class="num">≈ 300</td><td>绝大部分为搬运，新写逻辑少</td></tr>
+    <tr><td><code>property_panel.py</code> 增桥接 + 删搬运源</td><td class="num">≈ 80</td><td>净变更</td></tr>
+    <tr><td><code>property_panel_layers.py</code> _collect() 改数据源</td><td class="num">≈ 10</td><td>方案 A</td></tr>
+    <tr><td><code>property_panel_generate.py</code> 3 处委托</td><td class="num">≈ 10</td><td>签名不变</td></tr>
+    <tr><td><code>main.py</code> addTab + shutdown</td><td class="num">≈ 6</td><td>—</td></tr>
+    <tr style="background:#f0f6ff;font-weight:640"><td>合计</td><td class="num">≈ 400</td><td>其中 300 行为搬运而非新写</td></tr>
+  </tbody>
+</table>
+
+<div class="card">
+  <h3>推进建议</h3>
+  <p style="margin:6px 0">
+    分两批交付，每批独立可验证：
+  </p>
+  <table>
+    <thead><tr><th>批次</th><th>内容</th><th>验证方式</th></tr></thead>
+    <tbody>
+      <tr><td>第一批</td><td>步骤 1–3 + 5（面板拆分、桥接、委托、挂载）</td><td>多洞渲染比对 + 单洞回归</td></tr>
+      <tr><td>第二批</td><td>步骤 4（<code>_collect()</code> 数据源改造）</td><td>_collect 输出与改前逐字段比对</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <b>实施前置条件：工作区当前不干净。</b>
+    勘察时发现工作区存在 <b>7 个文件 / 86 行未提交改动</b>，标记为 <code>Fix N-P0-02</code>
+    （PropertyPanel / LShapePanel / main.py 的后台线程退役修复，以及 4 个 core 层草图解析文件）。
+    本报告基线为 HEAD commit <code>1232ce1</code>。
+    <b>建议先决策这批改动（提交或暂存）再启动拆分</b>，
+    否则拆分的 diff 会与既有改动混杂，无法给出干净的「零功能变更」证据。
+  </div>
+</div>
+
+<footer>
+  <div>SmartShapeCrop · 多洞面板拆分可行性分析 · 报告版本 V1.0</div>
+  <div>2026-09-11 · 基线 1232ce1 · 只读分析，未改动代码</div>
+</footer>
+
+</div>
+</body>
+</html>
