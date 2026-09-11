@@ -559,6 +559,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
       - 默认 1.0（全分辨率），LOD 渲染时使用 < 1.0 的值
       - 例如 scale=0.25 时，border_width_px 会相应缩小
     """
+    design.validate()
     W, H = design.canvas_w_px, design.canvas_h_px
     # === [DEBUG 2026-09-10] 调试日志：全参数快照 ===
     import os as _os  # 避免与已有的 os 覆盖

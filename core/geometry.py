@@ -218,6 +218,49 @@ class CropDesign:
     def cm2px(self, cm: float) -> float:
         return cm * self.dpi / 2.54
 
+    _VALID_MODES = frozenset({'rect_hole', 'rect_lshape', 'ellipse_hole'})
+    _VALID_CORNERS = frozenset({'tl', 'tr', 'bl', 'br'})
+
+    def validate(self) -> None:
+        """校验设计参数，非法值抛出 ValueError。"""
+        if self.canvas_w_cm <= 0:
+            raise ValueError(f"canvas_w_cm 必须为正数，当前值: {self.canvas_w_cm}")
+        if self.canvas_h_cm <= 0:
+            raise ValueError(f"canvas_h_cm 必须为正数，当前值: {self.canvas_h_cm}")
+        if self.dpi <= 0:
+            raise ValueError(f"dpi 必须为正整数，当前值: {self.dpi}")
+        if self.mode not in self._VALID_MODES:
+            raise ValueError(f"mode 无效: {self.mode!r}，有效值: {sorted(self._VALID_MODES)}")
+        if self.outer_margin_cm < 0:
+            raise ValueError(f"outer_margin_cm 不能为负数，当前值: {self.outer_margin_cm}")
+        if self.inner_margin_top_cm < 0:
+            raise ValueError(f"inner_margin_top_cm 不能为负数，当前值: {self.inner_margin_top_cm}")
+        if self.inner_margin_bottom_cm < 0:
+            raise ValueError(f"inner_margin_bottom_cm 不能为负数，当前值: {self.inner_margin_bottom_cm}")
+        if self.inner_margin_left_cm < 0:
+            raise ValueError(f"inner_margin_left_cm 不能为负数，当前值: {self.inner_margin_left_cm}")
+        if self.inner_margin_right_cm < 0:
+            raise ValueError(f"inner_margin_right_cm 不能为负数，当前值: {self.inner_margin_right_cm}")
+        for name in ('corner_tl_cm', 'corner_tr_cm', 'corner_bl_cm', 'corner_br_cm'):
+            v = getattr(self, name)
+            if v < 0:
+                raise ValueError(f"{name} 不能为负数，当前值: {v}")
+            half = min(self.canvas_w_cm, self.canvas_h_cm) / 2.0
+            if v > half:
+                raise ValueError(f"{name}={v}cm 超过画布尺寸的一半 ({half:.1f}cm)")
+        if self.mode == 'ellipse_hole':
+            if not (0.0 < self.ellipse_rx_ratio <= 1.0):
+                raise ValueError(f"ellipse_rx_ratio 必须在 (0, 1] 范围内，当前值: {self.ellipse_rx_ratio}")
+            if not (0.0 < self.ellipse_ry_ratio <= 1.0):
+                raise ValueError(f"ellipse_ry_ratio 必须在 (0, 1] 范围内，当前值: {self.ellipse_ry_ratio}")
+        if self.mode == 'rect_lshape':
+            if self.l_corner not in self._VALID_CORNERS:
+                raise ValueError(f"l_corner 无效: {self.l_corner!r}，有效值: {sorted(self._VALID_CORNERS)}")
+            if self.l_cut_w_cm <= 0:
+                raise ValueError(f"l_cut_w_cm 必须为正数，当前值: {self.l_cut_w_cm}")
+            if self.l_cut_h_cm <= 0:
+                raise ValueError(f"l_cut_h_cm 必须为正数，当前值: {self.l_cut_h_cm}")
+
     @property
     def canvas_w_px(self) -> int:
         return int(round(self.cm2px(self.canvas_w_cm)))

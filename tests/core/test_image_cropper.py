@@ -143,3 +143,102 @@ class TestCropImageIntegration:
         )
         result = crop_image(cfg)
         assert result is not None
+
+
+class TestCropConfigValidate:
+    """CropConfig.validate() 参数校验"""
+
+    def _valid(self, **kw):
+        base = dict(src_path="/tmp/x.jpg", target_w_cm=41.0, target_h_cm=55.0,
+                    corners={'br': 2.0}, mode='simple_resize', dpi=150)
+        base.update(kw)
+        return CropConfig(**base)
+
+    # —— 正常值不抛异常 ——
+    def test_valid_config_passes(self):
+        self._valid().validate()
+
+    def test_none_corners_passes(self):
+        self._valid(corners=None).validate()
+
+    def test_empty_corners_passes(self):
+        self._valid(corners={}).validate()
+
+    def test_zero_corner_passes(self):
+        self._valid(corners={'br': 0.0}).validate()
+
+    # —— 宽高 ——
+    def test_zero_w_raises(self):
+        with pytest.raises(ValueError, match='target_w_cm'):
+            self._valid(target_w_cm=0).validate()
+
+    def test_negative_w_raises(self):
+        with pytest.raises(ValueError, match='target_w_cm'):
+            self._valid(target_w_cm=-1.0).validate()
+
+    def test_zero_h_raises(self):
+        with pytest.raises(ValueError, match='target_h_cm'):
+            self._valid(target_h_cm=0).validate()
+
+    def test_negative_h_raises(self):
+        with pytest.raises(ValueError, match='target_h_cm'):
+            self._valid(target_h_cm=-5.0).validate()
+
+    # —— DPI ——
+    def test_zero_dpi_raises(self):
+        with pytest.raises(ValueError, match='dpi'):
+            self._valid(dpi=0).validate()
+
+    def test_negative_dpi_raises(self):
+        with pytest.raises(ValueError, match='dpi'):
+            self._valid(dpi=-150).validate()
+
+    # —— mode ——
+    def test_invalid_mode_raises(self):
+        with pytest.raises(ValueError, match='mode'):
+            self._valid(mode='bogus').validate()
+
+    def test_all_valid_modes_pass(self):
+        for m in ('simple_resize', 'cover', 'contain', 'light_cover', 'auto'):
+            self._valid(mode=m).validate()
+
+    # —— max_crop_ratio ——
+    def test_negative_ratio_raises(self):
+        with pytest.raises(ValueError, match='max_crop_ratio'):
+            self._valid(max_crop_ratio=-0.1).validate()
+
+    def test_ratio_over_1_raises(self):
+        with pytest.raises(ValueError, match='max_crop_ratio'):
+            self._valid(max_crop_ratio=1.5).validate()
+
+    def test_ratio_boundary_zero_passes(self):
+        self._valid(max_crop_ratio=0.0).validate()
+
+    def test_ratio_boundary_one_passes(self):
+        self._valid(max_crop_ratio=1.0).validate()
+
+    # —— corners ——
+    def test_invalid_corner_key_raises(self):
+        with pytest.raises(ValueError, match='corners 键'):
+            self._valid(corners={'xx': 2.0}).validate()
+
+    def test_negative_corner_raises(self):
+        with pytest.raises(ValueError, match="corners\\['br'\\]"):
+            self._valid(corners={'br': -1.0}).validate()
+
+    def test_corner_exceeds_half_size_raises(self):
+        # min(41, 55)/2 = 20.5; 25 > 20.5
+        with pytest.raises(ValueError, match='超过目标尺寸的一半'):
+            self._valid(corners={'br': 25.0}).validate()
+
+    def test_corner_at_half_passes(self):
+        self._valid(corners={'br': 20.0}).validate()
+
+    # —— bg_color ——
+    def test_bad_bg_color_raises(self):
+        with pytest.raises(ValueError, match='bg_color'):
+            self._valid(bg_color=(255, 255)).validate()
+
+    def test_non_tuple_bg_color_raises(self):
+        with pytest.raises(ValueError, match='bg_color'):
+            self._valid(bg_color='white').validate()

@@ -89,6 +89,33 @@ class CropConfig:
     # 自动缩放：是否允许放大源图到比原图更大
     allow_upscale: bool = True
 
+    _VALID_MODES = frozenset({'simple_resize', 'cover', 'contain', 'light_cover', 'auto'})
+    _VALID_CORNER_KEYS = frozenset({'tl', 'tr', 'bl', 'br'})
+
+    def validate(self) -> None:
+        """校验配置参数，非法值抛出 ValueError。"""
+        if self.target_w_cm <= 0:
+            raise ValueError(f"target_w_cm 必须为正数，当前值: {self.target_w_cm}")
+        if self.target_h_cm <= 0:
+            raise ValueError(f"target_h_cm 必须为正数，当前值: {self.target_h_cm}")
+        if self.dpi <= 0:
+            raise ValueError(f"dpi 必须为正整数，当前值: {self.dpi}")
+        if self.mode not in self._VALID_MODES:
+            raise ValueError(f"mode 无效: {self.mode!r}，有效值: {sorted(self._VALID_MODES)}")
+        if not (0.0 <= self.max_crop_ratio <= 1.0):
+            raise ValueError(f"max_crop_ratio 必须在 [0, 1] 范围内，当前值: {self.max_crop_ratio}")
+        if self.corners is not None:
+            for k, v in self.corners.items():
+                if k not in self._VALID_CORNER_KEYS:
+                    raise ValueError(f"corners 键无效: {k!r}，有效值: {sorted(self._VALID_CORNER_KEYS)}")
+                if v < 0:
+                    raise ValueError(f"corners[{k!r}] 不能为负数，当前值: {v}")
+                half = min(self.target_w_cm, self.target_h_cm) / 2.0
+                if v > half:
+                    raise ValueError(f"corners[{k!r}]={v}cm 超过目标尺寸的一半 ({half:.1f}cm)，几何上无法实现")
+        if not (isinstance(self.bg_color, (tuple, list)) and len(self.bg_color) == 3):
+            raise ValueError(f"bg_color 必须为 3 元组 (R, G, B)，当前: {self.bg_color!r}")
+
 
 # 向后兼容别名：旧测试脚本可能直接 from core.image_cropper import 这些常量。
 # 内部统一使用 core.config 的定义，此处只是重导出。
@@ -276,6 +303,7 @@ def crop_image(config: CropConfig) -> Image.Image:
     Returns:
         裁剪后的 PIL Image
     """
+    config.validate()
     # 1. 加载源图
     src = load_source_image(config.src_path)
 
