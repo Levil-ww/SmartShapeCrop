@@ -96,7 +96,7 @@ SmartShapeCrop/
 │   ├── property_panel_layers.py   #   多层边框编辑 UI
 │   └── property_panel_poolbox.py   #   多洞参数面板 + 草图识别与边距回填调度
 │
-├── tests/                          # 单元测试（pytest，实测 320 passed / 5 skipped）
+├── tests/                          # 单元测试（pytest，以实跑结果为准；2026-09-11 实测 374 passed / 5 skipped）
 │   ├── conftest.py
 │   ├── core/                       #   核心模块测试（圆角/裁剪/文件名解析/模板匹配/L 形渲染/草图解析/边框补全）
 │   │   ├── test_rounded_corner.py
@@ -106,12 +106,15 @@ SmartShapeCrop/
 │   │   ├── test_lshape_border_route.py   #   Profile 路由 / 向后兼容测试（V2.2 新增）
 │   │   ├── test_image_cropper.py
 │   │   ├── test_name_parser.py
-│   │   ├── test_template_matcher.py
-│   │   └── test_corner_analysis_simple.py
+│   │   └── test_template_matcher.py
 │   ├── integration/               #   集成测试（F1-F19 修复验证 / 水池-L 形流程 / 配置）
-│   ├── sketch/                     #   草图识别测试（多洞 / 特征 / 输入校验 / 修复 / 诊断 / 验证）
-│   ├── border/                     #   边框测试（边框修复 / 复杂花纹安全 / 间隙分析 / 用户案例）
+│   ├── sketch/                     #   草图识别测试（多洞 / 特征 / 输入校验 / 修复）
+│   ├── border/                     #   边框测试（边框修复 / 复杂花纹安全 / 用户案例）
 │   └── gui/                        #   GUI 测试（预留目录）
+│
+│   注：混入 tests/ 的诊断脚本（原 test_gap_detail_analysis / test_corner_analysis_simple /
+│       test_diagnose / test_sketch_fix / test_verify）已于 2026-09-11 全部移至
+│       scripts/diagnose/_diag_*.py，tests/ 下不再有任何非用例的 test_*.py。
 │
 ├── scripts/                        # 人工诊断/验证脚本（不进 CI）
 │   ├── README.md                   #   脚本组织规范与命名约定

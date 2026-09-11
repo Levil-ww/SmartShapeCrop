@@ -1,4 +1,22 @@
+"""批量验证 6 张草图的识别结果（几何自洽 + 期望值比对，开发诊断脚本，非 pytest 用例）。
+
+历史说明：
+  本文件原位于 tests/sketch/test_verify.py。因文件名匹配 pytest 的 test_*.py
+  规则会被收集，而其顶层代码在 import 阶段即批量调用 parse_sketch 执行真实 OCR
+  解析，既拖慢收集，又存在"未来若改为抛异常会导致整个测试套件无法收集"的风险
+  （2026-08-26 起由 tests/conftest.py 的 collect_ignore 屏蔽）。
+  2026-09-11 移出 tests/ 并改为 _diag_ 前缀，确保不再被 pytest 收集。
+
+运行方式（项目根目录）：
+  python scripts/diagnose/_diag_sketch_verify.py
+"""
 import logging, sys
+from pathlib import Path
+
+# 以文件位置定位项目根，避免依赖当前工作目录
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 logging.basicConfig(level=logging.WARNING, stream=sys.stdout, format='%(message)s')
 from core.pool_designer.sketch_parser import parse_sketch
 import os

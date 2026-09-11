@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="bYnuiDYvFe9Q7ZzDcDnYvn">
+<head data-page-node-id="xizQnVRnvHke2BIs3p3jih">
+<meta charset="UTF-8" data-page-node-id="hPGPFZR4NmZqgPqCoicCIw">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="NfA5vmne49BymRpbNaRbSN">
+<title>SmartShapeCrop V2.2 项目全面检测报告</title>
+<style>
+:root{
+  --bg:#f6f8fa; --card:#ffffff; --text:#1f2328; --muted:#656d76;
+  --border:#d8dee4; --border-soft:#eaeef2;
+  --p0:#cf222e; --p0bg:#fff5f5;
+  --p1:#bc4c00; --p1bg:#fff8f0;
+  --p2:#0969da; --p2bg:#f0f6ff;
+  --ok:#1a7f37; --okbg:#edf9f0;
+  --accent:#0969da;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.7;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
+header{
+  background:linear-gradient(135deg,#1f4e9c 0%,#2b6cb0 100%);
+  color:#fff;border-radius:12px;padding:30px 34px;margin-bottom:26px;
+}
+header h1{margin:0 0 8px;font-size:26px;font-weight:650;letter-spacing:.3px}
+header .sub{opacity:.9;font-size:13.5px}
+header .meta{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px}
+header .meta span{
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+  padding:4px 12px;border-radius:20px;font-size:12.5px;
+}
+h2{
+  font-size:19px;margin:34px 0 14px;padding-left:11px;
+  border-left:4px solid var(--accent);font-weight:640;
+}
+h3{font-size:15.5px;margin:22px 0 10px;font-weight:620;color:#24292f}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:20px 22px;margin-bottom:16px;
+}
+.verdict{
+  background:var(--card);border:1px solid var(--border);border-left:5px solid var(--p1);
+  border-radius:10px;padding:18px 22px;margin-bottom:22px;
+}
+.verdict b{color:var(--p1)}
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-bottom:20px}
+.kpi{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:15px 16px;text-align:center;
+}
+.kpi .v{font-size:25px;font-weight:680;line-height:1.25;letter-spacing:-.5px}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:5px}
+.kpi .n{font-size:11px;margin-top:5px}
+.g{color:var(--ok)} .r{color:var(--p0)} .o{color:var(--p1)} .b{color:var(--p2)} .m{color:var(--muted)}
+/* table */
+table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+th,td{border:1px solid var(--border-soft);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:#f0f3f6;font-weight:620;color:#24292f;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr:nth-child(even){background:#fbfcfd}
+/* issue */
+.issue{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  margin-bottom:14px;overflow:hidden;
+}
+.issue .hd{padding:13px 18px;display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.issue .hd .tag{
+  font-size:11px;font-weight:700;padding:2.5px 9px;border-radius:5px;
+  color:#fff;letter-spacing:.5px;flex-shrink:0;
+}
+.issue .hd .t{font-weight:640;font-size:14.5px}
+.issue .bd{padding:0 18px 16px}
+.p0 .hd{background:var(--p0bg);border-bottom:1px solid #ffd7d5}
+.p0 .tag{background:var(--p0)}
+.p1 .hd{background:var(--p1bg);border-bottom:1px solid #ffe0c2}
+.p1 .tag{background:var(--p1)}
+.p2 .hd{background:var(--p2bg);border-bottom:1px solid #cfe3ff}
+.p2 .tag{background:var(--p2)}
+.field{margin:11px 0 0}
+.field .k{
+  font-size:12px;font-weight:660;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;
+}
+.field .val{font-size:13.2px}
+pre{
+  background:#f6f8fa;border:1px solid var(--border-soft);border-radius:7px;
+  padding:11px 13px;overflow-x:auto;font-size:12.2px;line-height:1.6;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  margin:6px 0 0;color:#24292f;white-space:pre;
+}
+code{
+  background:#f0f3f6;padding:1.5px 5px;border-radius:4px;font-size:12.4px;
+  font-family:"SFMono-Regular",Consolas,monospace;
+}
+pre code{background:none;padding:0}
+/* score bar */
+.score-row{display:flex;align-items:center;gap:13px;margin:9px 0}
+.score-row .nm{width:96px;flex-shrink:0;font-size:13px;font-weight:600}
+.score-row .bar{flex:1;height:20px;background:#eef1f4;border-radius:5px;overflow:hidden}
+.score-row .fill{height:100%;border-radius:5px;transition:width .4s}
+.score-row .vv{width:78px;flex-shrink:0;text-align:right;font-size:13px;font-weight:660;font-variant-numeric:tabular-nums}
+.total-score{
+  display:flex;align-items:baseline;gap:12px;margin:6px 0 18px;
+  padding:16px 20px;background:var(--card);border:1px solid var(--border);border-radius:10px;
+}
+.total-score .big{font-size:44px;font-weight:700;line-height:1}
+.total-score .desc{font-size:13.5px;color:var(--muted)}
+/* roadmap */
+.phase{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:16px 20px;margin-bottom:13px;
+}
+.phase .ph{font-weight:660;font-size:14.5px;margin-bottom:9px;color:#24292f}
+.phase ul{margin:6px 0 0;padding-left:20px}
+.phase li{margin:5px 0;font-size:13.2px}
+.risk{font-size:11.5px;padding:1.5px 8px;border-radius:4px;margin-left:8px;font-weight:620}
+.risk-h{background:#fff5f5;color:var(--p0);border:1px solid #ffd7d5}
+.risk-m{background:#fff8f0;color:var(--p1);border:1px solid #ffe0c2}
+.risk-l{background:#f0f6ff;color:var(--p2);border:1px solid #cfe3ff}
+footer{
+  margin-top:44px;padding-top:20px;border-top:1px solid var(--border);
+  color:var(--muted);font-size:12.3px;line-height:1.9;text-align:center;
+}
+.foot-ver{
+  display:inline-block;background:#eef2f7;border:1px solid var(--border);
+  padding:3px 13px;border-radius:15px;font-weight:640;color:#3d4852;margin-bottom:9px;
+}
+.note{
+  background:#fffbe6;border:1px solid #ffe9a8;border-radius:8px;
+  padding:12px 16px;font-size:13px;margin:12px 0;
+}
+ul.tight{margin:8px 0;padding-left:20px}
+ul.tight li{margin:4px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-page-node-id="MXBUFVCLnNvvHBNMDxl9s7">
+<div class="wrap" data-page-node-id="3Grx89diqiat6UFWdIiIxl">
+
+<header data-page-node-id="FMfcFJ0NACDJlPvAvqRuyf">
+  <h1 data-page-node-id="wSB4r0Vr6miYAKtd84vDrp">SmartShapeCrop V2.2 — 项目全面检测报告</h1>
+  <div class="sub" data-page-node-id="sJsu8Bn7nl89mZH6JUjvGH">六维只读体检 · 规模结构 / 代码质量 / 测试体系 / 依赖打包 / 仓库卫生 / 文档安全</div>
+  <div class="meta" data-page-node-id="L0VIo20OFLwJq4cZnOlUV1">
+    <span data-page-node-id="28CbxdS4oRPiBmPlaANYBe">检测日期 2026-09-11</span>
+    <span data-page-node-id="MlPyqEzuQ7S3JObJ9IpEwj">版本 V2.2</span>
+    <span data-page-node-id="HxGSRdUJWBvmCuuejJlp0Q">HEAD 9b710fe · v2.2-修复线程退役不完整问题</span>
+    <span data-page-node-id="mxdHQGtTjMPqHHG2TAiENC">Python 3.13.14 · pytest 9.1.1</span>
+    <span data-page-node-id="g8WHPF421N8BvFp8BRHclG">全程只读，未修改任何源码</span>
+  </div>
+</header>
+
+<!-- ===== 结论摘要 ===== -->
+<h2 data-page-node-id="gw4j5sNyEWYKH4PTbpNjbX">一、结论摘要</h2>
+
+<div class="verdict" data-page-node-id="98A24mDiEk4tlpcHDsQSa7">
+  <b data-page-node-id="zn0iJGITZuqey6a8MJFnni">一句话判断：</b>工程底座扎实——379 个用例零失败、打包白名单 42/42 零漏收、无密钥泄露、README 与版本同步；
+  真正的风险不在代码正确性，而在<b data-page-node-id="fx8ACneXDW7HW1nBjjWDDM">发布链路与仓库卫生</b>：PyInstaller 未安装、<code data-page-node-id="TUA8pjKxOa5XaptoUXthHC">build_exe.bat</code> 路径失效、dist 产物已落后于最新提交，
+  以及 69MB 二进制（<code data-page-node-id="7YnITLeqoqbdJTfhfHW8b6">.workbuddy/</code>、<code data-page-node-id="Dq6PZYCOWWDIysQw6jsA5m">.dumate/</code>）被误纳入版本库且 <code data-page-node-id="5e4CDy77JHFGhCJfMwEB3B">.gitignore</code> 对其无效。
+  <b data-page-node-id="yJjdmECmETSvegtpO1akQR">当前状态：可继续开发，不建议直接发布。</b>
+</div>
+
+<div class="kpis" data-page-node-id="NusHIyKieXnKXKuos8fQnL">
+  <div class="kpi" data-page-node-id="QjrmsgpqqfaxudJgf49sLl"><div class="v g" data-page-node-id="lmF0kXy3YW5IzGyibeCG9Z">374<span style="font-size:14px;color:var(--muted)" data-page-node-id="lBEYfToZWhRzHns3cT3EES">/379</span></div><div class="l" data-page-node-id="fRYF2O9iObdGI3ocYCZ3DB">测试通过</div><div class="n g" data-page-node-id="5HOaW9NaFksqVWcJ5sEyK7">0 失败 · 5 跳过</div></div>
+  <div class="kpi" data-page-node-id="eXhwXaLAulW7LzMBKfWQ6N"><div class="v g" data-page-node-id="kT6hnNrsdpF2AZZcC56msL">0</div><div class="l" data-page-node-id="sMuP30vb2NBCEGpHC8S08u">源码编译错误</div><div class="n m" data-page-node-id="J6nmfGzr5cLtpM0G3uQQFL">8 处均在 _archive</div></div>
+  <div class="kpi" data-page-node-id="55dXN7EHs9d9MQWd2kHTW0"><div class="v g" data-page-node-id="c9keFEinYxdhd406RjKgea">0</div><div class="l" data-page-node-id="brBCQrA8fr1cWQezhOlD8a">打包模块漏收</div><div class="n g" data-page-node-id="bdFs9maBYMCbprCqWfYEI9">42/42 全覆盖</div></div>
+  <div class="kpi" data-page-node-id="bQW4AyHqB7rOJAeujHJJg3"><div class="v g" data-page-node-id="WKTLk88UAxKs6chZHJPTv6">0</div><div class="l" data-page-node-id="YHCq9KEPYzxMmVsNUBxoe3">硬编码密钥</div><div class="n m" data-page-node-id="ri6RG0fZuI6fDzxRIr5ePK">安全扫描通过</div></div>
+  <div class="kpi" data-page-node-id="GimKZ8htXyqoG300L2Imxp"><div class="v r" data-page-node-id="AbNp0WqYUmH08gyBAjco1E">69<span style="font-size:14px" data-page-node-id="NHQHbFsd655HDo1IaIEWav">MB</span></div><div class="l" data-page-node-id="HyXfQwhwotdLGmgEParcEr">误跟踪二进制</div><div class="n r" data-page-node-id="RBrpDwrEQdw49SMgAfsl4W">60 个文件已入库</div></div>
+  <div class="kpi" data-page-node-id="Xv0cB77hFaXwVyndDrqI3B"><div class="v r" data-page-node-id="Dmu8v9J6uRtQlhRgXqGDyT">过期</div><div class="l" data-page-node-id="Bh8gmC8GdW2a2VDOyxBQT3">dist 产物</div><div class="n r" data-page-node-id="ibXNAB5q4nlA9lYX6SB2Sh">落后 8 个源文件</div></div>
+  <div class="kpi" data-page-node-id="GMJVPLgXk00jZMMb7fOk46"><div class="v o" data-page-node-id="bcuyhegUVTSHjth9TZ9eA8">587</div><div class="l" data-page-node-id="r0vZA2gcigCMNLj4IxgT81">未使用导入</div><div class="n m" data-page-node-id="DA6lQXdkMNaPkW7ECKcUs8">集中在 gui mixin</div></div>
+  <div class="kpi" data-page-node-id="7FicO2ffSArPysEZzj2mfa"><div class="v o" data-page-node-id="d7SEl61yG3MJfcnZ1fOwQQ">98</div><div class="l" data-page-node-id="4y4HzI81D6rDl4Nn5e9wuK">超长函数(&gt;80行)</div><div class="n m" data-page-node-id="jTgOTBDFAWkvfe9za0S3R6">最长 816 行</div></div>
+</div>
+
+<!-- ===== 问题清单 ===== -->
+<h2 data-page-node-id="ntJvXS5zBqlnxeaULIMzN9">二、问题清单（按优先级）</h2>
+
+<div class="issue p0" data-page-node-id="gqUIYMGG7tB1MTkddnMSMW">
+  <div class="hd" data-page-node-id="GLo6Z52hvSLQwb4JcRMVOV"><span class="tag" data-page-node-id="iiZhGWUfq3VMRNT6YcObsZ">P0</span><span class="t" data-page-node-id="wrpcQ09aTS9O7Pj0sWEYiH">dist 产物已过期：exe 落后于最新提交</span></div>
+  <div class="bd" data-page-node-id="t2gQvHow9qKvbFojoodFBn">
+    <div class="field" data-page-node-id="cvg3EFYJPoFFSDS40msreX"><div class="k" data-page-node-id="K60AN6P8AUCcDKoNqpVMN5">现状</div><div class="val" data-page-node-id="NFjWUGGDLlF3GcD7uzTaDz">
+      <code data-page-node-id="FaFtCKXCvwlMZ3JM1c55bt">dist/智能裁剪设计器V2.2.exe</code> 构建于 <b data-page-node-id="KDrxW6PQIZELHrpjCi2sA8">09:30</b>；此后 <b data-page-node-id="xnJT75emaIE5Un90bYMtjr">8 个源文件</b>发生变更并提交，
+      HEAD 提交时间为 <b data-page-node-id="CNCsidfiPhhFshfe8JvcWq">10:54</b>（v2.2-修复线程退役不完整问题）。exe 未包含这批改动。
+    </div></div>
+    <div class="field" data-page-node-id="OQWbD4Yp3LCXSCpUFMMk8F"><div class="k" data-page-node-id="AZY4v9Pyawo1bWhbP2TMCG">证据</div><pre data-page-node-id="6K0tXlxiKzgdX9xSBLd1oV"><code data-page-node-id="4JnAKuDHhBbPWrhfeFY51B">$ ls -la --time-style=long-iso dist/*.exe
+  2026-09-11 09:30  智能裁剪设计器V2.2.exe
+
+$ find core gui main.py -name "*.py" -newermt "2026-09-11 09:30"
+  core/geometry.py        core/image_cropper.py     core/image_ops.py
+  core/psd/loader.py      core/psd/__init__.py      core/__init__.py
+  gui/lshape_panel.py     gui/property_panel_poolbox.py
+
+$ git log -1 --format="%cd %h %s"
+  Fri Sep 11 10:54:37 2026 +0800  9b710fe  v2.2-修复线程退役不完整问题</code></pre></div>
+    <div class="field" data-page-node-id="XOtVL6hNpdFMHYrjH5n63X"><div class="k" data-page-node-id="JRZRFy8texuQbSObJLa530">影响</div><div class="val" data-page-node-id="CEik9dxb98kPPdSepYcOnB">
+      交付给用户的 exe 缺少「线程退役」等关键修复，属于<b data-page-node-id="j5N6IjxSKPZgCREKndrpzg">功能与修复不同步</b>。若直接分发，用户会遇到已修复但 exe 中仍存在的问题。
+    </div></div>
+    <div class="field" data-page-node-id="DPaD3nMvXWn2Pa3xDv27k2"><div class="k" data-page-node-id="iLn5xgxOmwIgVxWqPCMFR4">建议动作</div><div class="val" data-page-node-id="gaBBQ7CyAv0AvLoBpipbJU">补齐 PyInstaller 后重新打包（见下条），并在打包前确认工作区干净。建议把「打包产物时间戳 vs 最新提交时间」纳入发布检查清单。</div></div>
+  </div>
+</div>
+
+<div class="issue p0" data-page-node-id="cCQSH95Uum1FaqUBHn7PIr">
+  <div class="hd" data-page-node-id="Owkx0ZrMUDImkN5B2YDroG"><span class="tag" data-page-node-id="Azo7kj09e8bxle9RfnHI3R">P0</span><span class="t" data-page-node-id="X96W4UFtpkaywjRH9jMfke">PyInstaller 未安装，当前环境无法构建发布包</span></div>
+  <div class="bd" data-page-node-id="IMONXPE72TKUf48O6DICDw">
+    <div class="field" data-page-node-id="LJpm8jq1TmnOlH6GGo1pw3"><div class="k" data-page-node-id="8V8UD32EK4oytkSxP9RP0W">现状</div><div class="val" data-page-node-id="XEyLtyno2ZwKFFZxmMHf7i">
+      项目解释器中 <code data-page-node-id="C9sSDOBcADPrNWlBmFBBfT">PyInstaller</code> 缺失，但 <code data-page-node-id="UGH0MTyo0vuofBkk2huI6k">dist/</code> 里存在今天 09:30 构建的 exe，说明构建发生在<b data-page-node-id="BqZ0aSCK7Fb8sWy7uEFzxl">另一个环境</b>或已被卸载。
+    </div></div>
+    <div class="field" data-page-node-id="fkrqHaf2gGgOTPxNTxedXP"><div class="k" data-page-node-id="o7SLeQfq6BFlFErkSGtaTX">证据</div><pre data-page-node-id="Ge4bh2nDHMJgPGP7xte4bG"><code data-page-node-id="JHBz8Q5scOW97nBy7V2oLF">$ python -c "import importlib; importlib.import_module('PyInstaller')"
+  MISSING PyInstaller  -> ModuleNotFoundError: No module named 'PyInstaller'
+
+$ pip list | grep -i pyinstaller
+  (无输出)
+
+运行时依赖全部就绪：
+  OK  PyQt5 5.15.11   Pillow 12.3.0   numpy 2.5.2   psd-tools 1.18.0
+  OK  opencv-python-headless 5.0.0.93   pytesseract</code></pre></div>
+    <div class="field" data-page-node-id="ZBklgLLVdJykU8n6kECpGU"><div class="k" data-page-node-id="sq1YoMmBoV6t8sBEHZg4vq">影响</div><div class="val" data-page-node-id="pzSjHRH8gaIXzP70Xx09OK">
+      发布链路在当前机器上<b data-page-node-id="4DYE6iNNlGaQB9CB0yUHkj">不可复现</b>。任何人接手都无法重建这个 exe，构建过程依赖某台特定机器——典型的「只在一台机器上能打包」风险。
+    </div></div>
+    <div class="field" data-page-node-id="cs6ZBEgoDCguBxUiCuwRfz"><div class="k" data-page-node-id="IdaF093Zpiv36MqWOthAYD">建议动作</div><div class="val" data-page-node-id="Yog7uC7GMpsP4aqpmxJjA0">
+      新增 <code data-page-node-id="xcmpgs2jPRNMRHL1eeciiW">requirements-dev.txt</code> 固化构建依赖（<code data-page-node-id="6RP0HSh7DbdL7DFXojogwt">pyinstaller</code>、<code data-page-node-id="3TvLeGuPhl86f5oIgkBCBS">pywin32</code>），与运行时 <code data-page-node-id="OVjx9I7eKyPgZeDqct2jCI">requirements.txt</code> 分离；
+      并在 README「快速开始」补一句构建前置条件。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p0" data-page-node-id="wJK3i7GZ9qtynuWTE7rH71">
+  <div class="hd" data-page-node-id="zANIHSOahOePGkgAVJ41mv"><span class="tag" data-page-node-id="9AGnhBhHSOAk5GBQurBbJk">P0</span><span class="t" data-page-node-id="uGwgdNw32CYtZ9XZbCEmr6">69MB 二进制被 git 跟踪，且 .gitignore 对其无效</span></div>
+  <div class="bd" data-page-node-id="wBBHNjXVkBiEwFGbscU447">
+    <div class="field" data-page-node-id="XYJfFjE3ij5YGV4zgdXLiL"><div class="k" data-page-node-id="50EApB8F7xHN7EEA2FsjoX">现状</div><div class="val" data-page-node-id="TEGfJcJoEoQQM2y7idpDG0">
+      <code data-page-node-id="DGNjl4dvhDKRfjsqqAtitH">.workbuddy/</code>（47 个文件）与 <code data-page-node-id="tZxq3wcL7GsEkH6T5yLhaE">.dumate/</code>（13 个文件）<b data-page-node-id="oUx29k9hMa1ARVCjnhdxJh">已被纳入版本库</b>，
+      其中含 47.76MB 的 PyQt5_Qt5 wheel、6.55MB 的 PyQt5 wheel、3 张 7.30MB 的测试图。
+      这是 <code data-page-node-id="fimPBVeyclVw4R3OeEBWY6">.git</code> 膨胀到 <b data-page-node-id="yXWkepUDiibTyql0GVtajg">149MB</b> 的主因。
+    </div></div>
+    <div class="field" data-page-node-id="qEgDAjBpg3ObGAREkeP9QC"><div class="k" data-page-node-id="YZTpEvhyWu1BUayL7X9jta">证据</div><pre data-page-node-id="HM3CyDdkXsUNyfqsXbmCZM"><code data-page-node-id="7fN0SMIz80cYRsk3RhURL6">$ git ls-files .workbuddy | wc -l   →  47
+$ git ls-files .dumate    | wc -l   →  13
+
+git 跟踪的最大文件 TOP5：
+   47.76 MB  .workbuddy/wheels_backup/PyQt5_Qt5-5.15.2-py3-none-win_amd64.whl
+    7.30 MB  .dumate/inbox/test_result_full.jpg
+    7.30 MB  .dumate/inbox/test_current.jpg
+    7.30 MB  .dumate/inbox/test_result_after_fix.jpg
+    6.55 MB  .workbuddy/wheels_backup/PyQt5-5.15.11-cp38-abi3-win_amd64.whl
+
+$ git check-ignore -v .workbuddy   →  (空，未被忽略)
+$ git check-ignore -v .dumate      →  (空，未被忽略)
+$ du -sh .git                      →  149M
+
+跟踪文件总数 385 个，合计 84.6MB，其中 &gt;1MB 的有 5 个，全部来自上述两个目录。</code></pre></div>
+    <div class="field" data-page-node-id="hsHt2NRYVZeF47Ez2Q2MW3"><div class="k" data-page-node-id="EivSiWnvg75aXoJjnrcCb7">影响</div><div class="val" data-page-node-id="AjKddgfH5rzrQju7RmLefz">
+      每个 clone 都要拖 149MB 历史；wheel 属于可从 PyPI 重新下载的产物，入库毫无价值。
+      <b data-page-node-id="T9jHoLtHfHRONC3hyEKlwZ">关键陷阱：</b>现在往 <code data-page-node-id="thlNMlhHuJ5sHFfeVwtChc">.gitignore</code> 补这两条<b data-page-node-id="CmnbIeQCxy90OBS7FZyUFa">不会移除已入库的文件</b>——忽略规则只对未跟踪文件生效，必须执行 <code data-page-node-id="ct6OXTQouWzItI771TVY6B">git rm --cached</code> 才能真正生效。
+    </div></div>
+    <div class="field" data-page-node-id="CRqguRJoBWA46Kfeqf9yFD"><div class="k" data-page-node-id="8qans6w3pTnCGO9D6DJaNT">建议动作（需你确认后执行，本次未动）</div><div class="val" data-page-node-id="46KTgMshiQbbRrRhIxjqok">
+      <ul class="tight" data-page-node-id="viG2pNOsND7A6JrKKUqXHX">
+        <li data-page-node-id="9WTBWBZOILH2hpZAdRsL3k">在 <code data-page-node-id="zPW8X2KqYYlY0fTU1VSwBt">.gitignore</code> 追加 <code data-page-node-id="1U55ljFYUK0QjxqAaZg5Hh">.dumate/</code>、<code data-page-node-id="SPBiS3Aq7zr9OsM3ZxoydX">.workbuddy/</code>、<code data-page-node-id="KJsQUohRYMnqm8flHBqZTF">.pytest_cache/</code></li>
+        <li data-page-node-id="qiFMhRgxqcTR75Dj35ZEu9">执行 <code data-page-node-id="ZluUmeOMbJBxtfvdNFgArd">git rm -r --cached .workbuddy .dumate</code>（<b data-page-node-id="D3eV33SHiWFvPQZ5MzYfU0">只退跟踪，不删本地文件</b>）</li>
+        <li data-page-node-id="DJol2fMCt5BEGknusLxibf">提交后如需真正瘦身 <code data-page-node-id="fsH5CTSkvCil1aVieu7V7P">.git</code>，还需历史重写（filter-repo / BFG）。<b data-page-node-id="EzmdfYWafMn2d2UD9G9rqc">此步有风险，须先 <code data-page-node-id="bAJTL5hokhHXxm650FQCuj">cp -r .git .git.bak</code> 物理备份</b>——本机此前发生过 <code data-page-node-id="0Xhfk7trpQfHEqlWPDFEps">git gc</code> 导致 <code data-page-node-id="SJn6nNs7FxxN90K9uegirY">.git</code> 清空的事故</li>
+      </ul>
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p1" data-page-node-id="CfpyCeBv8S0VCpE1dTvALb">
+  <div class="hd" data-page-node-id="YyAN4NeERJgVfQ5WjugmC6"><span class="tag" data-page-node-id="1C262nm4n573j0TyvowZw3">P1</span><span class="t" data-page-node-id="AFBWvOEYS3BDSl5A0EIcI1">build_exe.bat 双重路径失效，双击即报错</span></div>
+  <div class="bd" data-page-node-id="e53eugPGFASUH1SrjcGbEW">
+    <div class="field" data-page-node-id="EttPdVH9XMQwAasUXK4gOS"><div class="k" data-page-node-id="GxV1oOOvedHusgcjuVR1xv">现状</div><div class="val" data-page-node-id="Z6uWSJsHKId5HAmrhanGD5">
+      脚本先 <code data-page-node-id="t7HYz4PVMKb4wRcsvcHFQJ">cd /d "%~dp0"</code> 进入 <code data-page-node-id="rhqogcdZSOA2Gcy46cbFQG">packaging/</code>，随后检查 <code data-page-node-id="ED2nD3gmfMIC4ocg4PxAe8">images\SmartShapeCrop.ico</code>
+      并调用 <code data-page-node-id="kT6J3giHJAt7dsqhH3CQkG">SmartShapeCrop.spec</code>——这两个路径在 <code data-page-node-id="XlFEJL23sn7K5A8tFABJdT">packaging/</code> 下<b data-page-node-id="YEJoXji3ArKG2tmaaqFHpp">都不存在</b>（ico 在项目根 <code data-page-node-id="CIWhJP3l7dzNtU1prLIbEt">images/</code>，spec 在 <code data-page-node-id="ygR8o4mqzculbAm0BFGuLU">packaging/specs/</code>）。
+      第 [1/3] 步就会直接退出。
+    </div></div>
+    <div class="field" data-page-node-id="puBYOSkzFTDppZvpHnco5Y"><div class="k" data-page-node-id="hhBZMiCnMPfDP767uJdL40">证据</div><pre data-page-node-id="Up7lmDe60hJpwEo5w4DQae"><code data-page-node-id="7TsMuZ3QpFf2KNPlNdh3jp">$ ls packaging/images
+  ls: cannot access 'packaging/images': No such file or directory
+
+$ ls packaging/SmartShapeCrop.spec
+  ls: cannot access 'packaging/SmartShapeCrop.spec': No such file or directory
+
+$ ls packaging/specs/SmartShapeCrop.spec
+  packaging/specs/SmartShapeCrop.spec      ← 实际在这里</code></pre></div>
+    <div class="field" data-page-node-id="aRcz74hngsxTT5J7sViTnY"><div class="k" data-page-node-id="BnGAAy7hVOlKGtjh4aH80e">影响</div><div class="val" data-page-node-id="cTDtt0yAXapPosjjsUMuzL">
+      README 已将其标注为「历史打包批处理」，但脚本仍留在目录中且没有任何失效提示，容易被误当成可用入口。
+      真正的主力入口是 <code data-page-node-id="zhNfStjNRlR7SoVtLGYEq4">packaging/packageV2.2.py</code>。
+    </div></div>
+    <div class="field" data-page-node-id="HCVXGZgUCgCecgcYhXAWHa"><div class="k" data-page-node-id="QW7BRunLhDqHa3rB80UhvH">建议动作</div><div class="val" data-page-node-id="GDupqIFsHGDVfNkSjk4ptA">二选一：修正 bat 中的相对路径；或在文件头加醒目失效声明（推荐，避免与 packageV2.2.py 双入口维护）。</div></div>
+  </div>
+</div>
+
+<div class="issue p1" data-page-node-id="niau1xsNObVVXLxrvf7qxL">
+  <div class="hd" data-page-node-id="MfecBtP7iNqIxBMwhsFYPk"><span class="tag" data-page-node-id="AnpdMgBgHc4CBQzzXvfgEh">P1</span><span class="t" data-page-node-id="zhhHxZT7I59G7REc2olxVO">5 个空壳测试文件：552 行代码，0 个 test_ 函数</span></div>
+  <div class="bd" data-page-node-id="TgjpbrC601hLv6VEdPiXhV">
+    <div class="field" data-page-node-id="4t5JZlZMoMnyDRJUb0OlKJ"><div class="k" data-page-node-id="cQFGForFtWcaOYiWYOs9E0">现状</div><div class="val" data-page-node-id="ir6rxSXUxRm81DxwOEKG1i">
+      5 个文件命名符合 <code data-page-node-id="CB9nSB8dUgh1cXKVTCh6BZ">test_*.py</code> 但内部<b data-page-node-id="LgJpBJmIdFf89K2cpX5A12">没有任何测试函数</b>，全是脚本式 <code data-page-node-id="DjWgSdYT3y3SVGI78Dgirz">print</code> + 顶层执行代码。
+      它们不会被计入用例数，但<b data-page-node-id="31QQ58hD38ZsJHJS41tmay">在收集阶段仍会被 import，顶层代码会真实执行</b>。
+    </div></div>
+    <div class="field" data-page-node-id="3PKvSBfvVrMAMSWrbzE3mH"><div class="k" data-page-node-id="afCs44lstKWEsWqDTQGbEY">证据</div><pre data-page-node-id="VxO5cRAmG4Foxa9wlogW14"><code data-page-node-id="94M4FRtidxlxgyRW5UV1iv">文件                                          行数   test_函数
+tests/border/test_gap_detail_analysis.py       128       0
+tests/core/test_corner_analysis_simple.py       91       0
+tests/sketch/test_diagnose.py                  173       0
+tests/sketch/test_sketch_fix.py                 85       0
+tests/sketch/test_verify.py                     75       0
+                                    合计:      552       0
+
+收集结果：379 items（这 5 个文件未贡献任何用例）
+其中 4 个文件顶层就是 print / 业务逻辑，仅 test_diagnose.py 有
+if __name__ == "__main__" 保护。</code></pre></div>
+    <div class="field" data-page-node-id="P2m9ks2NQ0htvLZIpyIGQG"><div class="k" data-page-node-id="CNNd3aLvwZcnznvWWMbuo9">影响</div><div class="val" data-page-node-id="YxMgS1gesonErH8vAoZ7ZF">
+      <b data-page-node-id="Dr6EHPjvdMky9oJcwh1Wt5">定时炸弹。</b>目前它们依赖的外部文件缺失时只是静默失败，但一旦某个依赖变更导致顶层代码抛异常，
+      <b data-page-node-id="qq5Ud9cOLMbTWDzkkl6MAq">整个测试套件在收集阶段就会崩掉</b>，379 个用例全部无法运行。
+      同时这 552 行代码伪装成测试，给人「覆盖充分」的错觉。
+    </div></div>
+    <div class="field" data-page-node-id="BiDY41TEpc5I57z0vC2GQB"><div class="k" data-page-node-id="qj4tEcixHDeAZZjhxIgzh7">建议动作</div><div class="val" data-page-node-id="fAJKF8rwEBv3EraGCYsw4B">
+      移出 <code data-page-node-id="Pg2sJb5diO4ALP2bnzlMnf">tests/</code>（改名为 <code data-page-node-id="J4RjTe0MSWKNAJr6yk8gQX">diag_*.py</code> 放 <code data-page-node-id="JBA4udWahi46CfXGUPEPGw">scripts/diagnose/</code>），
+      或给每个文件加 <code data-page-node-id="Ifj45j5P6jLor2zoInMMmD">if __name__ == "__main__":</code> 保护。<b data-page-node-id="5gqtMVH9B6qBQYxAcoIWTE">推荐前者</b>——诊断脚本不该待在测试目录。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p1" data-page-node-id="x8kuqips201yZbB6JED7Ju">
+  <div class="hd" data-page-node-id="cNoVLzcEnVYXfvtuYoEUfr"><span class="tag" data-page-node-id="pEQhMyAbqIdi811kZvjNSP">P1</span><span class="t" data-page-node-id="05raDsq878hl1Bbo0FxdQT">GUI 层 6578 行源码，测试覆盖为 0</span></div>
+  <div class="bd" data-page-node-id="O50DNLO0wg2I8ZsuqCrayo">
+    <div class="field" data-page-node-id="hrDedcsPGdtP3i5NsclRvT"><div class="k" data-page-node-id="1geunEHi9B374WEDQgfvp7">现状</div><div class="val" data-page-node-id="ELPytVtkCq4JSbTIs7Pkb4">
+      <code data-page-node-id="QCoupJBLxtDG0f3t5ewAJX">tests/gui/</code> 是<b data-page-node-id="Gj2JThPH3mHFL1yvxOM9WS">空目录</b>，379 个用例全部集中在 core / integration / sketch / border 四层，GUI 零覆盖。
+    </div></div>
+    <div class="field" data-page-node-id="zRfXJZyXRZDAszsOveaF2I"><div class="k" data-page-node-id="LwJdKV8L7cjTmA4ltaB4Ak">证据</div><pre data-page-node-id="hfRPdrO4bw3bi6rUadQJMV"><code data-page-node-id="Bu6Y7EHijbHl9EiVsb5Hwt">用例分布（精确统计，非肉眼数进度条）：
+  core          220
+  integration    77
+  sketch         67
+  border         15
+  gui             0   ← tests/gui/ 为空目录
+  总计           379
+
+gui/ 源码 6,578 行，其中 6 个大类，最大 CropperPanel 达 1030 行 / 48 个方法。</code></pre></div>
+    <div class="field" data-page-node-id="cZDtbTmFyS9XQ9k9KVwKBZ"><div class="k" data-page-node-id="j6rqqZgPa3sV1eHY5rvIIA">影响</div><div class="val" data-page-node-id="Jrp9DchLAH9vnUtdFwRHUG">
+      GUI 是用户直接接触的一层，且集中了最多的大类和超长函数（<code data-page-node-id="zoRZejPjiQDPXeQqLrJ7tM">_build_ui</code> 296 行、
+      <code data-page-node-id="47sE2UaNUG7nu6s2dCUgrn">run</code> 512 行）。零覆盖意味着信号槽连接、线程启停这类问题只能靠手工点击发现。
+      README 已注明是「预留目录」，属于<b data-page-node-id="0qN9TuSeXzchcDEEa3xjYB">已知技术债</b>而非意外。
+    </div></div>
+    <div class="field" data-page-node-id="h7063TyLWyxWQzMLIBTZCa"><div class="k" data-page-node-id="DrMq59HTvDwrd0R8iGtQ1y">建议动作</div><div class="val" data-page-node-id="8BIDzA7ueablPfPX91d0JJ">
+      优先对 6 个大类做「能否实例化 + 信号是否连通」的冒烟测试，成本低、能抓住 PyQt5 最常见的崩溃点。
+      不必追求像素级 UI 测试。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p1" data-page-node-id="ipnjcd90QLMLIqZ4CZamUF">
+  <div class="hd" data-page-node-id="i58fvlAPAqIRL3B10HLOTM"><span class="tag" data-page-node-id="b68LNKEWRMqEclGsEcTmCl">P1</span><span class="t" data-page-node-id="GVu9YcLv6FgUW6qWg6nEoz">587 处未使用导入，集中在属性面板拆分残留</span></div>
+  <div class="bd" data-page-node-id="GguTVYSHVCr4rgA1a2yQU9">
+    <div class="field" data-page-node-id="OoihhHTnHXFBU4BKr8oqmk"><div class="k" data-page-node-id="NO6oHXEHkLfbPb6fCwsD7F">现状</div><div class="val" data-page-node-id="BcAVBPgTQ3njeFvubcJAtG">
+      未使用导入 587 处，<b data-page-node-id="TSQY1a1DnB4iQGGOhIcViM">高度集中在 <code data-page-node-id="Zpf9Hq78ZnVNxUBIMJYNeU">gui/property_panel_*.py</code> 六个 mixin 文件</b>——
+      这是当初把大 <code data-page-node-id="kAUmVOvwseZYZcPmpHbi3t">property_panel.py</code> 拆分时，整块 import 头被复制到每个子文件所致。
+    </div></div>
+    <div class="field" data-page-node-id="DLIt9UAlehuCQeVqAskA1F"><div class="k" data-page-node-id="zgNXzAjioF3JV3lmncZ6ZG">证据</div><pre data-page-node-id="jHFuy3v6jd0lRrvCOZPhLK"><code data-page-node-id="v4XyNHRSxdVpj9NK9DxqIf">按文件统计 TOP8：
+   45  scripts/verify/_archive/_refactor_selfcheck.py   (归档)
+   40  gui/property_panel_layers.py
+   37  gui/property_panel_generate.py
+   35  gui/property_panel_widgets.py
+   33  gui/property_panel_workers.py
+   29  core/image_cropper_border.py
+   29  core/image_cropper_mask.py
+   26  gui/property_panel.py
+
+抽样核验 gui/property_panel_layers.py 顶部 import 区：
+   11  from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize, QTimer
+   12  from PyQt5.QtGui import QColor, QPixmap
+   20  from PIL import Image
+   22  from core.geometry import CropDesign, BorderLayer, BorderText
+   23  from core.parser.name_parser import parse_filename
+   24  from core.parser.template_matcher import TemplateMatcher
+   26  from core.pool_designer import validate_sketch_file
+   —— 其中 QThread / QColor / Image / CropDesign / BorderLayer /
+      parse_filename / TemplateMatcher / validate_sketch_file 等
+      在该文件中均未使用，确为拆分时的复制残留。</code></pre></div>
+    <div class="field" data-page-node-id="0mlPUzaSPcudCIG3CN0WBq"><div class="k" data-page-node-id="FNOQ67ADG9utIjujuXM9aM">影响</div><div class="val" data-page-node-id="q3toGt4vq9GRj06KWC41zg">
+      不影响运行，但显著抬高阅读成本——读者无法判断哪些依赖是真实契约。
+      <b data-page-node-id="U649xYreYXOYqjBZQz6fe0">对 PyInstaller 是实打实的负担</b>：无用导入会被拖入依赖图，直接推高包体（当前 exe 已达 202MB）。
+    </div></div>
+    <div class="field" data-page-node-id="G2ifwmlpBfoEBBVFGtr785"><div class="k" data-page-node-id="AZa7VZq0KMkPfwxs8cG21i">建议动作</div><div class="val" data-page-node-id="PpYHjaBmzUwoZUAYoqjrJ8">
+      用 <code data-page-node-id="F5B4YDHMZd8FlDfu0AWiXR">autoflake --remove-all-unused-imports</code> 或 <code data-page-node-id="hZKhVvRpTVAAxRdfnjzB2r">ruff F401</code> 一次性清理，
+      <b data-page-node-id="Ac4TBHTs7iF7dTpdDUaMGf">清理后必须重跑全量测试</b>（379 个用例是安全网）。建议顺手接入 <code data-page-node-id="qdODFshEjVeRUkuOWNDXUA">ruff</code> 做 CI 门禁。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p1" data-page-node-id="7ii3WSDnDZTppoet4vfErM">
+  <div class="hd" data-page-node-id="M1NHleEUTNAJcDER8GwZpK"><span class="tag" data-page-node-id="sEM63QEEev5slsfk26tFoz">P1</span><span class="t" data-page-node-id="9636rHkOCIQdBpsTpLa9Du">232 处宽泛异常捕获，掩盖真实故障</span></div>
+  <div class="bd" data-page-node-id="bIQmGrNpdr6oq4PP3grkjz">
+    <div class="field" data-page-node-id="fAtXOSe1tRUfH9XSLylVdC"><div class="k" data-page-node-id="6aQNMs6MchztMdE6NGfJVN">现状</div><div class="val" data-page-node-id="H5voTl9Gc41tVuLaI28MSN">
+      232 处 <code data-page-node-id="CgACz7mfV5yFuwWWclLei6">except Exception</code> / <code data-page-node-id="KmUmM6l8oenxqmpvmDZpmF">except BaseException</code>，另有 15 处裸 <code data-page-node-id="8o3HqmNiXfpNLtpVmmrWek">except:</code>（全部在 <code data-page-node-id="CIYdtBjIiS9TCPzxHfzyRI">scripts/_archive</code>，影响有限）。
+      草图识别模块是重灾区。
+    </div></div>
+    <div class="field" data-page-node-id="TAGTscwKyFJ25rCGchx45A"><div class="k" data-page-node-id="JVRbPMJI1eWxEb7YXU5hM9">证据</div><pre data-page-node-id="qmzXtUlA0CmyO8ECGMZHhz"><code data-page-node-id="JH7beQnVAmE0Pg9Q0vcwhR">broad except 按文件 TOP8：
+   24  core/pool_designer/sketch_parser_vision.py
+   13  core/pool_designer/sketch_parser_multihole.py
+   13  gui/property_panel_generate.py
+   12  core/pool_designer/sketch_parser_numbers.py
+   11  gui/property_panel_poolbox.py
+    9  core/image_ops.py
+    7  core/parser/template_matcher.py
+    7  gui/property_panel.py
+
+bare except: 15 处，全部位于 scripts/diagnose/_archive/ 与 scripts/verify/_archive/</code></pre></div>
+    <div class="field" data-page-node-id="wSNC63pHOGk5GZ3hdakO1p"><div class="k" data-page-node-id="npbYADJoj6bzr1WlF9tcsK">影响</div><div class="val" data-page-node-id="WFORo4vqDf8yHtScYpqAzm">
+      草图识别是<b data-page-node-id="x79RgKD3Hu7vbgjLTYH4y3">多阶段容错流程</b>，宽泛捕获本身有设计合理性（任一环节失败落到下一路径）。
+      但 232 处的量级意味着<b data-page-node-id="rZMmLlaDYxAAzHPk9TMeae">真正的 bug 会以「识别结果不准」的形式呈现，而不是报错</b>，排障成本极高。
+    </div></div>
+    <div class="field" data-page-node-id="wnh8aPzjHDa4xNSWmQ62M8"><div class="k" data-page-node-id="dc83RASwPD4Ka5hrW2jBre">建议动作</div><div class="val" data-page-node-id="y4kLCv2bhpEcg3kHPrCzeB">
+      不必全清。重点在宽泛捕获处补<b data-page-node-id="Y0k9ZDUfWrnZXK4EtEVOfj">分类日志</b>（记录异常类型与阶段名），让静默降级变得可观测。
+      这是投入产出比最高的改法。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="EXC43BRmsZIjwZWvqC4grL">
+  <div class="hd" data-page-node-id="vxHaaataGQISh9jyoMV0IE"><span class="tag" data-page-node-id="0FlukcTWIJZj1ZwUzYYLSG">P2</span><span class="t" data-page-node-id="YHYPbdC4pYyY7iK5oKSivJ">98 个超长函数 / 63 个高复杂度函数 / 6 个大类</span></div>
+  <div class="bd" data-page-node-id="gmjmL8IhVbPwmu45YcLRMq">
+    <div class="field" data-page-node-id="v2z8XwQycPB9HR6Adi4RwJ"><div class="k" data-page-node-id="9R9RXxMQCeE4aO3my51tNw">现状</div><div class="val" data-page-node-id="ySSmjxkm0fcCmjjk0mrrWN">
+      结构复杂度集中在草图识别与渲染两条主线上，少数函数已接近不可维护。
+    </div></div>
+    <div class="field" data-page-node-id="2qTnaCFxiBjOfJzgAMNj3v"><div class="k" data-page-node-id="THUlbZIiUjBuSpojDIIApy">证据</div><pre data-page-node-id="FdQBXFBLYCPQw1bVcQ6Dj7"><code data-page-node-id="d6vTVhlEGRcEEj7DFS4XrZ">超长函数 TOP6（&gt;80 行，共 98 个）：
+   816 行  core/image_ops.py:548                     render_design
+   709 行  core/pool_designer/sketch_parser_numbers.py:274   _extract_direction_label_numbers
+   574 行  core/pool_designer/lshape_sketch_parser.py:104    _detect_lshape_geometry
+   512 行  gui/property_panel_workers.py:127         run
+   425 行  gui/property_panel_generate.py:156        _on_pool_finished_ok
+   413 行  core/pool_designer/sketch_parser_multihole.py:1487  _9step_multi_hole_parse
+
+高复杂度 TOP4（圈复杂度 &gt;20，共 63 个）：
+  cx=180  len=709  sketch_parser_numbers.py:274   _extract_direction_label_numbers
+  cx=142  len=392  sketch_parser_margins.py:191   _validate_and_fix_margins
+  cx=126  len=816  image_ops.py:548               render_design
+  cx=119  len=512  property_panel_workers.py:127  run
+
+大类（6 个）：
+  1030 行 / 48 方法  gui/cropper_panel.py:122          CropperPanel
+   999 行 / 25 方法  core/parser/template_matcher.py:360  TemplateMatcher
+   915 行 / 27 方法  gui/property_panel_poolbox.py:34   _PoolBoxMixin
+   857 行 / 21 方法  gui/property_panel.py:37           PropertyPanel
+   788 行 / 38 方法  gui/lshape_panel.py:38             LShapePanel
+   643 行 /  7 方法  gui/property_panel_generate.py:34  _GenerateMixin
+
+超大文件：24 个 .py 超过 500 行，最大 sketch_parser_multihole.py 1968 行。</code></pre></div>
+    <div class="field" data-page-node-id="AYZkgtce68LSZ7HLu0RAqJ"><div class="k" data-page-node-id="0m3IgzRiK4SQxFKqgCEYvJ">影响</div><div class="val" data-page-node-id="i3fA7X2VOy6V2Xym8w1pI8">
+      <code data-page-node-id="tNxmdHAECXoVQBIXQM4gm6">_extract_direction_label_numbers</code>（709 行 / cx=180）是全局最难点——
+      这类函数改一处可能牵动整条 OCR 链路，且<b data-page-node-id="74PThtX1nNLGNEQQDzyq3I">现有测试无法定位到它内部的哪一段出错</b>。
+    </div></div>
+    <div class="field" data-page-node-id="3LPCEyoWSScNW4a1rDidFl"><div class="k" data-page-node-id="1OttTQMITgr1UBe1aeiO4c">建议动作</div><div class="val" data-page-node-id="xjgkhjbiP4g8VqaAJE4Dei">
+      不要一次性重构。按「先补测试再动刀」的顺序，优先拆 <code data-page-node-id="UfnCeiYWgaAWyffimjM48G">render_design</code>（816 行）和
+      <code data-page-node-id="AWqOh6CcYgaLe9ivNUVVnm">_extract_direction_label_numbers</code>（709 行），这两个覆盖了渲染与 OCR 两条主线。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="oFTIDgJmSqZ17qOfRrvJy2">
+  <div class="hd" data-page-node-id="qnrxftNErwhTzyEq9HnwBp"><span class="tag" data-page-node-id="gaCpg8iQ4F3JFYxh0a6Rjy">P2</span><span class="t" data-page-node-id="QutnZ0XD4bsbmrqwwI5VDO">README 测试数据过期：320 → 实为 374</span></div>
+  <div class="bd" data-page-node-id="fUg7IwQZp2mXWvpnyZ3iui">
+    <div class="field" data-page-node-id="1gXpiQVODiHfnpcRt4i87M"><div class="k" data-page-node-id="UWSGsXBIbgoWfTIdcx8Ll3">现状</div><div class="val" data-page-node-id="8bRO1Ys2XUnkX4N85s3EMP">
+      README 目录树中写着「实测 320 passed / 5 skipped」，实测为 <b data-page-node-id="7jtn8KYmLJ7LpPuOaevlzV">374 passed / 5 skipped</b>，低估了 54 个用例。
+    </div></div>
+    <div class="field" data-page-node-id="OH4YH8RE5lh0dE7AGlJsXJ"><div class="k" data-page-node-id="mnZXIkkQOG7T5HxczXdma1">证据</div><pre data-page-node-id="n623cOh6nX4nxKZLtdF0oy"><code data-page-node-id="9SHz28T4Kr8gKnLblqGPoB">README.md:99
+  ├── tests/    # 单元测试（pytest，实测 320 passed / 5 skipped）
+
+实测（2026-09-11）：
+  ==== 374 passed, 5 skipped in 68.12s (0:01:08) ====
+  收集 379 items，退出码 0</code></pre></div>
+    <div class="field" data-page-node-id="l2kl9lQYHcgUx1PsZvpeUC"><div class="k" data-page-node-id="DYUtXUxRvTcnbdu6lKxulh">影响</div><div class="val" data-page-node-id="j5jQCuqzaagvB4CekglVtU">轻微。README 整体质量很高（46KB，版本同步在 V2.2，目录树与实际基本一致），仅此数字滞后。</div></div>
+    <div class="field" data-page-node-id="hcmS5wdOwCtvINpSQgMIvY"><div class="k" data-page-node-id="RIlNGIYAK2xxynoBCSOiYx">建议动作</div><div class="val" data-page-node-id="WpKMZEIwsbKpg4V5KwbP8S">
+      更新为 374。更根本的做法是<b data-page-node-id="i8Ibn3TmD0gNICylbSBDng">不要在文档里写死数字</b>，改为「见 pytest 实跑结果」，避免再次过期。
+      顺带补充 <code data-page-node-id="SnAKfnsBLwLM5r2AlipIUF">.workbuddy/</code>、<code data-page-node-id="PEXlGnTwoXWa08CkyGole1">.dumate/</code> 说明（当前目录树未含）。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="eJc3bpBgWz5Gfcjks05UUp">
+  <div class="hd" data-page-node-id="TuwxUrNf4ZOPvWq2KjDvAx"><span class="tag" data-page-node-id="08t8Gz2ICp9C808yS6bgtc">P2</span><span class="t" data-page-node-id="bjqhT3lc7kQJDbd0NpUOED">打包脚本版本蔓延：5 套脚本 + 4 个 spec 并存</span></div>
+  <div class="bd" data-page-node-id="VbBPDliYA4dazTe9Al77ZA">
+    <div class="field" data-page-node-id="e162aik3C1grhFwANY65xm"><div class="k" data-page-node-id="j7jqbd9ymDZnHCvNErCE7X">现状</div><div class="val" data-page-node-id="XhObmJzk1s9echoYtKuyug">
+      <code data-page-node-id="mJk81s5wL7bdy1KAXnZ4zV">packaging/</code> 下同时存在 <code data-page-node-id="uOrwbhLdKGTUEY2ZXz8wby">package.py</code>、<code data-page-node-id="9Je1hbqgNxt6JMnXUUjBol">packageV2.0.py</code>、<code data-page-node-id="fRSQay6nciD1m5mruqC517">packageV2.1.py</code>、
+      <code data-page-node-id="KKXTqdvfXkFd7DCAEFZrDm">packageV2.1.2.py</code>、<code data-page-node-id="9qGLzlwweAfCp1ATxAbeSu">packageV2.2.py</code>，加上 <code data-page-node-id="YFS1DvaR4hQTFB7gXOLGwd">specs/</code> 里 4 个 spec。
+      另有失效的 <code data-page-node-id="agKKedgCE3C1frltLb8kWy">build_exe.bat</code>。
+    </div></div>
+    <div class="field" data-page-node-id="WC7Lf65slwUugTu2Yhm9nN"><div class="k" data-page-node-id="TPWQBMSd1KFgrAOzeDLRk1">证据</div><pre data-page-node-id="Y6VlbjhKyyLK8pnB1vJFh7"><code data-page-node-id="tGrreh3USlkobDndGcX5Ng">packaging/
+  package.py        8,898 B   Aug 13
+  packageV2.0.py   16,051 B   Aug 27
+  packageV2.1.py   17,412 B   Aug 27
+  packageV2.1.2.py 19,495 B   Sep  9
+  packageV2.2.py   21,132 B   Sep 10   ← 当前入口
+  build_exe.bat     2,268 B   Aug 13   ← 路径已失效
+  specs/
+    SmartShapeCrop.spec          Aug 13
+    智能裁剪设计器V2.1.spec       Aug 28
+    智能裁剪设计器V2.1.2.spec     Sep  2
+    智能裁剪设计器V2.2.spec       Sep 10  (根目录另有一份同名副本)</code></pre></div>
+    <div class="field" data-page-node-id="bMsGsrcj4zfA0thSG6hPFC"><div class="k" data-page-node-id="ZtPiuyEosPJuE58n2bctSv">影响</div><div class="val" data-page-node-id="zimRTwV3I1oQSTJpai9eOq">
+      历史脚本已通过 README 标注「勿用」，风险可控；但根目录与 <code data-page-node-id="2BjgcyRa8hHXxYiKsN56MG">specs/</code> 各有一份 V2.2 spec，
+      修改时容易只改一处造成不同步。
+    </div></div>
+    <div class="field" data-page-node-id="x6oOxRW5LQPI79Zhh7xbGA"><div class="k" data-page-node-id="U35dSCCL1nkS2eG08LQORM">建议动作</div><div class="val" data-page-node-id="3C7uUMwvFn81YGZIET1g2Z">
+      删除根目录的 spec 副本（保留 <code data-page-node-id="7u84PYKQHBNKOJ9Tm1H4SN">specs/</code> 下的唯一副本），历史 packageV2.0/V2.1 可移入 <code data-page-node-id="NfKsfI0ttC6EguGjsJBzoy">_archive/</code>。
+      <b data-page-node-id="dP5plep0TBJTrVYm7HiGuy">需你确认后执行。</b>
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="joU3cIddSIFdgHRnUyj2I6">
+  <div class="hd" data-page-node-id="fJPQNtkiU0DkOaCmNzrvg7"><span class="tag" data-page-node-id="GUUmHafKYzJzdnWSUFxsgp">P2</span><span class="t" data-page-node-id="X0GKEn0OJHvTcspMkVXvvt">打包 spec 硬编码机器路径，可移植性差</span></div>
+  <div class="bd" data-page-node-id="pgKYFYdg34U8l2eaMzzaYF">
+    <div class="field" data-page-node-id="c5qDFZqPGycxs5nytLRGea"><div class="k" data-page-node-id="Pvv509GsehXH4PxfrbsTcc">现状</div><div class="val" data-page-node-id="S0cIgJsCJCE5keaKBRHvTv">
+      spec 中写死 <code data-page-node-id="MVpvIDzrrSjiMtXLQldKll">F:/SmartShapeCrop/...</code> 与 <code data-page-node-id="JWXBcmEd286rYEaauUxxBT">D:/Programs/Tesseract-OCR</code>，换机器即失效。
+    </div></div>
+    <div class="field" data-page-node-id="PuxA8e58tTESaiJgmdUPGE"><div class="k" data-page-node-id="uqhNpiRQpoTcaOQ6GnwbxU">证据</div><pre data-page-node-id="g1WDrFxvF3o93VxLjTCf1I"><code data-page-node-id="eV2Gh84YvEYB6Ga4gh3SeN">智能裁剪设计器V2.2.spec:6
+  datas = [('F:/SmartShapeCrop/images/logo.png', 'images'),
+           ('D:/Programs/Tesseract-OCR', 'tesseract')]
+智能裁剪设计器V2.2.spec:22   ['F:/SmartShapeCrop/main.py'],
+智能裁剪设计器V2.2.spec:55   icon=['F:/SmartShapeCrop/images/SmartShapeCrop.ico'],
+
+对比：core/config.py:166 已明确注释
+  "# [F12] 不再硬编码 D:/E:/F: 等作者机器盘符"
+—— 运行时代码已治理，打包脚本尚未跟上。</code></pre></div>
+    <div class="field" data-page-node-id="DTU1vPIZcxipgwFdBW91t9"><div class="k" data-page-node-id="GSXr0nLuAEuRf77SyMQnF0">影响</div><div class="val" data-page-node-id="VbX1HsDaaVno3X0sWL5HBZ">只能在当前机器打包，与「PyInstaller 未安装」叠加后，发布链路完全绑定在单台机器上。</div></div>
+    <div class="field" data-page-node-id="iaGdHwSp7toEFRXvACHHNP"><div class="k" data-page-node-id="DF1OYCOGaiK4b84grDxzSf">建议动作</div><div class="val" data-page-node-id="wIu74ejFe2vpwqJGoL74Vm">
+      改为基于 <code data-page-node-id="M1zFkHKYCrlorNXb9ueM2i">SPECPATH</code> 的相对路径，Tesseract 路径复用 <code data-page-node-id="Zt2pXH6JXOnPxRAyjuzKNH">packageV2.2.py</code> 里已有的多路径探测逻辑（它已能探测 D/E/F 盘）。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="BHIzvUv2zgWF14deh9RweR">
+  <div class="hd" data-page-node-id="q6OMS3JGqWrCp9vKPOFOyn"><span class="tag" data-page-node-id="EGecTjxAYHZXuTAXUUv3Hs">P2</span><span class="t" data-page-node-id="3bVgcuSG9GrQuDWEvebHLl">5 个用例因缺失源图被跳过</span></div>
+  <div class="bd" data-page-node-id="TI7QwZeNg3iUqeTrzoC92V">
+    <div class="field" data-page-node-id="V7r7fVBmo6rTr49Rj7XQxY"><div class="k" data-page-node-id="LxNhQ8lxNKzDADpqnXbrsg">现状</div><div class="val" data-page-node-id="Y4MKVpCmXcmI6OqCR9EXxT">
+      <code data-page-node-id="KGuFBnQrpIGAxTBiDSFPbO">tests/border/test_border_fix.py</code> 全部 5 个用例跳过，原因是依赖的源图文件不存在。
+    </div></div>
+    <div class="field" data-page-node-id="gsQ6fj2260oj63UWxNSMTc"><div class="k" data-page-node-id="EPwCKWFKb61q5UmdZF9fsg">证据</div><pre data-page-node-id="GRsvbyiNfFzFbKzitbRP8U"><code data-page-node-id="hQaEzpLCIbfqLCflpogNZV">SKIPPED [1] tests/border/test_border_fix.py:54:
+  需要源图才能运行此测试（未找到:
+  F:\SmartShapeCrop\tests\psd_demo\双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg）
+（5 条相同原因）</code></pre></div>
+    <div class="field" data-page-node-id="mFaNIbGyffWFFfOW5SemTM"><div class="k" data-page-node-id="VCzddpz7UWMxIdiw6VGBBm">影响</div><div class="val" data-page-node-id="fPqBRQZvkJMT3H0kUROlYo">
+      这 5 个用例<b data-page-node-id="dui1LCwgJPWW1bqeex3bvY">长期处于未验证状态</b>。跳过机制本身设计合理（找不到图就跳而非失败），
+      但意味着 border 目录实际只有 15 个用例中的 10 个在真正跑。
+    </div></div>
+    <div class="field" data-page-node-id="dy7Q360BCdP6YkiMy94Dyv"><div class="k" data-page-node-id="oULES7P6ZPrglkGMPfhGxF">建议动作</div><div class="val" data-page-node-id="nQDZNomYfEErVBkEQw0Hds">
+      补一张体积小的替代源图，或把图片纳入测试固件（fixture）自动生成。
+      注意文件名含全角分号 <code data-page-node-id="E2gLkCGOWrEz84z1Ln7qiI">；</code> 与中文，跨平台时易出问题。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="wuASA8SbE8Z8rIDATqnMjI">
+  <div class="hd" data-page-node-id="3FKDtlK4FPxW3J8PAL4Ljo"><span class="tag" data-page-node-id="NjGEHvtLkyBo0lg2FLC6fS">P2</span><span class="t" data-page-node-id="Mx8cTbkJEGiZd8qc05GiTv">8 个归档脚本存在 BOM 导致的语法错误</span></div>
+  <div class="bd" data-page-node-id="jP9QxHmJtZt8oeSgZWwUcy">
+    <div class="field" data-page-node-id="5DgFFXPwCf872Hmd0JBjRs"><div class="k" data-page-node-id="JanNQNkLjAp1jFMUP75VGD">现状</div><div class="val" data-page-node-id="doqhSHlbtukkpsvEpXXAew">
+      8 个 <code data-page-node-id="e9WJZ9u23JpCev9RQz1uu5">scripts/**/_archive/</code> 下的文件首字节为 <code data-page-node-id="LW8Lk1iqgBuJOVDgxKbpf9">U+FEFF</code>，Python 无法编译。
+    </div></div>
+    <div class="field" data-page-node-id="APZsJIykh8pfv8BmFiwz22"><div class="k" data-page-node-id="p8b61lR5GLhYBzwkjHfvxl">证据</div><pre data-page-node-id="b98siVIHRtaWCNXYsi3Zzj"><code data-page-node-id="JJ8efxhH0E3pOeTTXSLk0c">invalid non-printable character U+FEFF
+  scripts/diagnose/_archive/ocr_scripts/_diagnose_corner_issues.py
+  scripts/diagnose/_archive/ocr_scripts/_diagnose_huayang_5cm.py
+  scripts/diagnose/_archive/ocr_scripts/_diagnose_huayang_compat.py
+  scripts/diagnose/_archive/ocr_scripts/_diagnose_multi_layer_border.py
+  scripts/diagnose/_archive/ocr_scripts/_diagnose_sainashiguang_4cm.py
+  scripts/diagnose/_archive/ocr_scripts/_diagnose_thick_black_border.py
+  scripts/diagnose/_archive/ocr_scripts/_diagnose_user_report.py
+  scripts/verify/_archive/_verify_mask_shear.py
+
+核心源码（core/ gui/ main.py tests/）编译错误：0</code></pre></div>
+    <div class="field" data-page-node-id="aKjtNmSuacUMoZzs0mMpg4"><div class="k" data-page-node-id="5J6rtJIHFITDe4NkphPCEw">影响</div><div class="val" data-page-node-id="JfyqxvnibDTe6iT5OyTyzw">
+      零影响——全部在归档目录，不参与运行与测试。<b data-page-node-id="vNiYZHWkAzffD4Ni8GSmEh">记录在此是为了说明「8 个编译错误」不是源码问题</b>。
+    </div></div>
+    <div class="field" data-page-node-id="7XX9w1rz3FcxNNCWctrZ6b"><div class="k" data-page-node-id="kEtD6THaap9ScnclC1Ur35">建议动作</div><div class="val" data-page-node-id="DdiuFN7bsro5uwvt1T2yLi">无需处理。若归档脚本 30 天观察期结束要清理，一并删除即可。</div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="0SonpNWxamn6aEtnK2l5Vq">
+  <div class="hd" data-page-node-id="9l5sDaGruPkB6Vkwihz2bS"><span class="tag" data-page-node-id="2u9xovzDGvHtDaKowPyzZE">P2</span><span class="t" data-page-node-id="ixO7Ztg2wL9t61Y29hOmka">_archive 215 个文件仍被跟踪，.gitignore 规则形同虚设</span></div>
+  <div class="bd" data-page-node-id="w1WWqg2uxkPGq6UQuEOPCi">
+    <div class="field" data-page-node-id="mSTxJDGySYQJ5DNqvBMRAw"><div class="k" data-page-node-id="NaCcqwLsPHUjlkeZEilsun">现状</div><div class="val" data-page-node-id="GIoUyjAJ3qb7mXAHQV9Cj8">
+      <code data-page-node-id="QoveGt0i6YMzzPVDvrgzYE">.gitignore</code> 已写 <code data-page-node-id="nhu5nvz3IzokiT2mZ8SnAh">_archive/</code>，但仍有 <b data-page-node-id="JbDN751df40iXsGA7PBc2O">215 个 <code data-page-node-id="j0vpzsyPdLKXMOOs2XnUGk">_archive/</code> 路径下的文件被跟踪</b>（主要在 <code data-page-node-id="j0VGmj512Qw8fCCBc6qFXC">scripts/_archive/</code>）。
+    </div></div>
+    <div class="field" data-page-node-id="nn62S8CnjpMcFv4APGOfFG"><div class="k" data-page-node-id="cMkJp3r3jhW4OoBUn612Cs">证据</div><pre data-page-node-id="8DKqMsxwfOtrwGhpXKvDQO"><code data-page-node-id="yBvgoTaiqmp70SIwRle8qJ">$ git ls-files | grep -c "_archive/"   →  215
+$ git ls-files | grep -cE "^(dist|build)/"  →  0   ← dist/build 忽略生效
+
+典型：scripts/_archive/test_cropper_output/*.jpg （62 张图，最大 0.58MB）</code></pre></div>
+    <div class="field" data-page-node-id="TU7WvdZVAu6UsQIOtGXh8t"><div class="k" data-page-node-id="uFLLN5yzlL99RP0c3ATu2C">影响</div><div class="val" data-page-node-id="v8VgfhCqz2VDLJsQsQ84Kk">
+      单个文件不大，但 215 个累积推高历史体积。同样遵循「<code data-page-node-id="8F8ML3JOKXj2t5uZUUDrGB">.gitignore</code> 对已跟踪文件无效」的陷阱。
+    </div></div>
+    <div class="field" data-page-node-id="qv91yPKY3IXG1o67gjDDqd"><div class="k" data-page-node-id="s0Ev0FeBiE5tffRz0J0D41">建议动作</div><div class="val" data-page-node-id="JwqONW6PWKiHtBlqBVdYPg">
+      与 P0 第三条合并处理：<code data-page-node-id="aKBGQ9Na70nKiSD5IBmGcM">git rm -r --cached scripts/_archive</code>（保留本地文件）。
+      <b data-page-node-id="tiYQV0ojS6G9Oxy811bOkm">需你确认后执行。</b>
+    </div></div>
+  </div>
+</div>
+
+<!-- ===== 六维详情 ===== -->
+<h2 data-page-node-id="qjZi3Jo2Ro0BiDDgr3r0uX">三、六维检测详情</h2>
+
+<h3 data-page-node-id="j3TtjTd7Df3lcDRKngZV9S">维度 1 · 规模结构</h3>
+<div class="card" data-page-node-id="ztR7uZj9qcAI725b6SLGNJ">
+<table data-page-node-id="rw10y74lyQWC6vdPIRnKcn">
+<thead data-page-node-id="p1ZL3OaxhYtull3c4jjspT"><tr data-page-node-id="sM49zLSxZCpc7vhz8dZW8U"><th data-page-node-id="eCIpMa39XB08oaoVgEqDDS">目录</th><th class="num" data-page-node-id="sbi4JvvGQsDQbzeeA3xcac">文件数</th><th class="num" data-page-node-id="6oW7C9YAfGATqmqWTNYHza">代码行</th><th class="num" data-page-node-id="JmjQy69tQAW3zIXbcb8JuN">体积</th><th data-page-node-id="rQk41mo33t5i0ZLG5rVGEI">说明</th></tr></thead>
+<tbody data-page-node-id="QuQrjT0HaCynrVIge8vSyc">
+<tr data-page-node-id="bKoFc6b0l0r6i4mqsthnAS"><td data-page-node-id="D737aF37ve6cFzzUAvRKxO"><code data-page-node-id="O5jZ9kIIoJmfZPMIvvC2CD">scripts/</code></td><td class="num" data-page-node-id="VBiZRkQJ4E8rCBPJg8HvlY">260</td><td class="num" data-page-node-id="wUlqU2K8to6x9U12fNlodb">23,711</td><td class="num" data-page-node-id="MSwbCsdMjumj1AZIUVCphQ">84.0 MB</td><td data-page-node-id="ix0LlOEQvCbQHlNHcsFHDe">人工诊断/验证脚本，不进 CI；体积主要来自 78 张诊断图</td></tr>
+<tr data-page-node-id="eKITI8CzOkGAj1RXoHB8Sb"><td data-page-node-id="MDVNdFCiLsmfcrJ75NEc5M"><code data-page-node-id="GybbnyeIJ0apRRVUBF4kPV">ProductSummary/</code></td><td class="num" data-page-node-id="Pl0v203GMnTVkhHKrECxcT">175</td><td class="num" data-page-node-id="YwbQd9mlXLD33TgTyXFmRO">—</td><td class="num" data-page-node-id="v6Al5xPzQ0CIxz02KWN3su">3.5 MB</td><td data-page-node-id="Rf4nyxT1kVlWwMciwxztqx">148 篇 md + 14 份 html 报告</td></tr>
+<tr data-page-node-id="5WDouJcjWnBvvCL1F6nnBp"><td data-page-node-id="h3BShkjPKywXmmpHKONbez"><code data-page-node-id="LTOlnrP3OwWO4ttjRcTMiJ">tests/</code></td><td class="num" data-page-node-id="VowAajWYeLiaVrd9bQFLUl">35</td><td class="num" data-page-node-id="09DZQtO2HPU2P8pRumwjdz">7,946</td><td class="num" data-page-node-id="5Bdarv4XoUpbxVKjFQS53D">1.5 MB</td><td data-page-node-id="yHaMSo2bPH8DPknYGKKZyw">注释率 16.7%</td></tr>
+<tr data-page-node-id="GHCj1joRImh2EqgxZXLYDR"><td data-page-node-id="dviZXEUwq0t6zCyD0HPuLF"><code data-page-node-id="ba2361WJqGFyi1IsyH81vt">core/</code></td><td class="num" data-page-node-id="DaoSjJLf1UXx6MQCDs2pGO">31</td><td class="num" data-page-node-id="BNzSoin9kaa1ftf1PAhsjs">17,704</td><td class="num" data-page-node-id="mknOiukPn86FzbXAveEBXI">1.7 MB</td><td data-page-node-id="lVxJLvAEey2zLzPf8YcWDF">核心业务，注释率 19.7%</td></tr>
+<tr data-page-node-id="4YGqsuSOcLDGFy970PFFWy"><td data-page-node-id="NMSAPjAzH5QDhEjOPu3gXb"><code data-page-node-id="Adm1sl5p5EHydFFhklXxVc">_archive/</code></td><td class="num" data-page-node-id="LvemqvGGToXOol9uYZQ8H4">25</td><td class="num" data-page-node-id="EwBfN33TqPu3vbRpTLePSC">189</td><td class="num" data-page-node-id="EUYtMSeWXOLzqIBCBZwkd9">5.9 MB</td><td data-page-node-id="BpRHjmGe6BSM65ZCCULbRL">技术债归档（顶层）</td></tr>
+<tr data-page-node-id="0TrsP2ICdh4aE43AzmomkZ"><td data-page-node-id="JNkAAUvJCduTglCp9u9Ib1"><code data-page-node-id="R0vfmD64mwbVcpC7LOBrh6">gui/</code></td><td class="num" data-page-node-id="ICwZR6LpVdvh6gEmmnEaqt">11</td><td class="num" data-page-node-id="hukHaMxkyGyubNfzzN8VlC">6,578</td><td class="num" data-page-node-id="cVYwHquXkcIBuvfbZB0XsP">777 KB</td><td data-page-node-id="uVDHFdrK99ENAn4a5SOpO5">PyQt5 界面，零测试覆盖</td></tr>
+<tr data-page-node-id="4YxvyzK8rcQB5jrlxJgQBU"><td data-page-node-id="Xm5YFQVGz49MEqsptQtoeP"><code data-page-node-id="F6N0bfQjBK6DP8h5hT5qpE">packaging/</code></td><td class="num" data-page-node-id="rrKl56IUH0ASHcD5WqrFqz">11</td><td class="num" data-page-node-id="kbdfS0DzjERyJEQo0cRoDb">2,098</td><td class="num" data-page-node-id="kZkjMr9kzpI3pnTcXl9doP">120 KB</td><td data-page-node-id="Zpz0AR3Y63LnEkFcg7kcrI">5 套打包脚本 + 4 个 spec</td></tr>
+<tr data-page-node-id="IdDCe5rzLeb9LVGGTqMNML"><td data-page-node-id="qIeMjhzIrCELLebljsIiE9"><code data-page-node-id="RHtGFZkn4XmvNEMxnl95Cv">dist/</code></td><td class="num" data-page-node-id="WRYMGeS2Gn4bhgdF2oEbuX">1</td><td class="num" data-page-node-id="fWkc9yUY6FetSD8hpZ6nDH">—</td><td class="num" data-page-node-id="kKCSrAx3cxOKSgBMY3iIuo">203 MB</td><td data-page-node-id="tFr4ZJf1jnG5gWdRSlEqNA">V2.2 exe（已过期）</td></tr>
+</tbody>
+</table>
+<p style="margin:12px 0 4px" data-page-node-id="SVpDMliiohWKOglZAAx8ax"><b data-page-node-id="N51YGl5vS1WqMGlMqr0yiQ">Python 文件构成：</b>共 266 个 —— 源码 206 / 测试 57 / 归档 3。
+源码 46,879 行，注释率 <b data-page-node-id="iQ5or1Vd8EqjlzXKE7dIeV">19.7%</b>（注释 + 文档字符串 9,243 行）。</p>
+<p style="margin:4px 0" data-page-node-id="wKIeqIUcqENHERaOikCBsh"><b data-page-node-id="w9FRSTJqeifEHeiSaqT07C">超大文件（&gt;500 行）：</b>24 个，最大 <code data-page-node-id="XrdUFbyNonIVILZ9jkYrDE">core/pool_designer/sketch_parser_multihole.py</code> 1,968 行。
+<b data-page-node-id="jxnEiX3ja0kw0dC5gaydsz">空文件：</b>1 个（<code data-page-node-id="NsjeG46CKD7wGUN36xNtwU">tests/__init__.py</code>，符合预期）。</p>
+</div>
+
+<h3 data-page-node-id="PpoEJkqxCHlp3csdvgL1t0">维度 2 · 代码质量</h3>
+<div class="card" data-page-node-id="X0Fvp6oEGo1fcI2GZlkuFc">
+<table data-page-node-id="EeeVExRa4EYOxfnTZkcpiE">
+<thead data-page-node-id="SxditpYJFF4s1Gy5OqHOyn"><tr data-page-node-id="2Z8Gm9QsMWzK02xcq7AQ5b"><th data-page-node-id="oL7UVpwIFuqGare6kbFxhq">检查项</th><th class="num" data-page-node-id="Kyy5McmgNNENlPsjpmyoVu">数量</th><th data-page-node-id="I9EWTgZ7c6O7EgilaKL2mw">分布与说明</th></tr></thead>
+<tbody data-page-node-id="1ZFJhkBG1Vs0SLWbyBYxb5">
+<tr data-page-node-id="LYBBTYaamWMOeJYP9kk1bj"><td data-page-node-id="bsTomw35Joktr9Q6xc5P8p">源码编译错误</td><td class="num g" data-page-node-id="bSXHp7Y8mkEXiqyMd1SGM9">0</td><td data-page-node-id="VoLAgovIRHLUB8EdFBrAHY">core / gui / main.py / tests 全部通过；8 处错误均在 <code data-page-node-id="eVVGvbT7o9Ov5nzdo12HPS">scripts/**/_archive</code>（BOM）</td></tr>
+<tr data-page-node-id="ymhjXDNDQ4Ic3JwwdzxGlh"><td data-page-node-id="DrlqCPLyI56BcB5aEB1Nyl">未使用导入</td><td class="num o" data-page-node-id="F1DAZtLpcesnm22kcTTCK9">587</td><td data-page-node-id="bhakNSvboXUENaP9IjDpCD">集中在 <code data-page-node-id="DYjgHD5eQ7MZY72SurG4RL">gui/property_panel_*.py</code> 六个 mixin（拆分残留）</td></tr>
+<tr data-page-node-id="LmTUU9G7RBbv2RzD6FnCVD"><td data-page-node-id="vljEPKUxo6IXvbRsIc8zU8">broad except</td><td class="num o" data-page-node-id="SpC04u0CQLsvlpaUcPt6tW">232</td><td data-page-node-id="qmBYvNdN2VC3gCmSWV3L3N">草图识别模块为主，多阶段容错设计所致</td></tr>
+<tr data-page-node-id="EQBtBRHtVnpVHGUcA7eSth"><td data-page-node-id="xgKN3HtQh0AJTSGQGhe1bs">bare except</td><td class="num m" data-page-node-id="MkGnDEwnvy0f5U4noSV7Fx">15</td><td data-page-node-id="BHViG2DBdcHeUbaZ2NG6FI">全部在 <code data-page-node-id="lKaDSRc18usvYBVUyZn6Bk">scripts/_archive</code>，影响有限</td></tr>
+<tr data-page-node-id="3vvfUCojIlCJ38UDBUYTFv"><td data-page-node-id="6AanA7ZkfG0SuV90FzMd4q">超长函数（&gt;80 行）</td><td class="num o" data-page-node-id="Dt0Z1PwJeaYkEyEimQ5VpP">98</td><td data-page-node-id="d8TOMpMjy0x4GVaee0dYzk">最长 816 行 <code data-page-node-id="txEfg01UQXfbQ0s4r21LLx">render_design</code></td></tr>
+<tr data-page-node-id="jMt3hravypVkrN3hu3D4iC"><td data-page-node-id="LtIHXCerPkmqEppdUQhViD">高复杂度（cx&gt;20）</td><td class="num o" data-page-node-id="YujnqrGYtrPXd3yCJ89Mnz">63</td><td data-page-node-id="5Xee11r3IHV6lqlNxnnC2H">最高 cx=180 <code data-page-node-id="1gCHdc0BGHs6LaYlz1NWOW">_extract_direction_label_numbers</code></td></tr>
+<tr data-page-node-id="bt8CvKH5z3jnGp5L2YXFT4"><td data-page-node-id="gyV1VURdimehLcyxODbK64">大类</td><td class="num o" data-page-node-id="IuJKvMlQYvh7G5aSvypg2E">6</td><td data-page-node-id="dXGoJQ32O7BzcDXlTWQgFX">最大 <code data-page-node-id="gFwTSJXvZ4XejEnprimQX4">CropperPanel</code> 1030 行 / 48 方法</td></tr>
+<tr data-page-node-id="2pKXJVfebSCDjbWxKc09JG"><td data-page-node-id="9eWwoZj9oIALJURH9v8QAD">函数内延迟导入</td><td class="num m" data-page-node-id="8qc16QDBWMZ2XGfCuDdLw2">247</td><td data-page-node-id="H3lcqerHkICe9BKpt1Bmm6">PyInstaller 漏收高发区（目前白名单已覆盖，见维度 4）</td></tr>
+<tr data-page-node-id="GIstc2dYLcjBGUGaFbKIub"><td data-page-node-id="G7UtjSLipeQHEJZZwSWMT6">TODO / FIXME / HACK</td><td class="num m" data-page-node-id="T34dnKJCjpM9em65sm2lLD">18</td><td data-page-node-id="7OwP7cyntSKO9Dl9h3XLEE">多为「临时」字样注释，非真实待办</td></tr>
+<tr data-page-node-id="xbkaVdWfT3n4xhJG1bJLbb"><td data-page-node-id="WJeUqQIdgzhaB6BHoYuzhs">可变默认参数</td><td class="num g" data-page-node-id="H3YB923ea0S6crsC0Em3gg">0</td><td data-page-node-id="3uHx33P8X8TwR3DkkyrXTg">无</td></tr>
+<tr data-page-node-id="4aEKMFrEQCnWqHreYPhAVd"><td data-page-node-id="xhDiPTPgpFTPKs7CXyrwzz">star import</td><td class="num g" data-page-node-id="9XCjDSNqXYj5Ni9cQ9IOdw">0</td><td data-page-node-id="3owwdXHE9vJDml0tCFPZRv">无</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 data-page-node-id="a3o05nQMlcr4wuTI9YdWd9">维度 3 · 测试体系</h3>
+<div class="card" data-page-node-id="QZlBNE82EyoU6IFcxicKoL">
+<pre data-page-node-id="3EsdMrzEiStCoq84svBaMn"><code data-page-node-id="X47ATP1yZan9JkNAKW3QAM">$ pytest tests/ -q --tb=short -p no:cacheprovider --basetemp=...
+
+tests\border\test_border_fix.py                  sssss    [  1%]
+tests\border\test_complex_pattern_safety.py      ...      [  2%]
+...
+tests\sketch\test_sketch_parser_logic.py    ............  [100%]
+
+=========== 374 passed, 5 skipped in 68.12s (0:01:08) ===========
+退出码 0</code></pre>
+<div class="grid2" style="margin-top:14px" data-page-node-id="svuErW5J2NCMWpKEBFDeJH">
+<div data-page-node-id="ZB7Gdyxkr4yXPh1tCCiY0F">
+<p style="margin:0 0 8px" data-page-node-id="OU4bLqfANyvj4BAMiYGrSw"><b data-page-node-id="7MM5QKE82M80C5uQk1uPu3">用例分布（精确统计）</b></p>
+<table data-page-node-id="VrzuPDt8VQU95rpMyGv21j">
+<thead data-page-node-id="hRuNgp6E9QnGEJ8FBG7CmK"><tr data-page-node-id="w784CGIC8Q1WyjaXZmQcZl"><th data-page-node-id="HUYfRDYIsP9I8GjDqzbR2w">子目录</th><th class="num" data-page-node-id="1dKzH36JDo9Mr7AYNxx1PT">用例数</th></tr></thead>
+<tbody data-page-node-id="ETT9nF3qSH2xIeS3V8asWb">
+<tr data-page-node-id="qQ1gvz2seCzltjtZDHxKbj"><td data-page-node-id="mhRjPTLa2eZScOOCD7thqt"><code data-page-node-id="DZ92bil348n6YyJngTCKXS">core/</code></td><td class="num" data-page-node-id="EIgrAEIcxkSuL0FD8gZml4">220</td></tr>
+<tr data-page-node-id="fu6xiL2CiWrHWPpKcfm2hF"><td data-page-node-id="z8FCPIRuRUl9mFzIgHiEbG"><code data-page-node-id="B05fZPfvghFVPVykHE1GWh">integration/</code></td><td class="num" data-page-node-id="wcRWXS0VUv9PEjZl9MV0DG">77</td></tr>
+<tr data-page-node-id="x8D7k5C36BaWS31AuBcDyr"><td data-page-node-id="6LUaHbwJeu3SWqlsHcoRGd"><code data-page-node-id="sdMu1rW56f2Hxenqwz1SVL">sketch/</code></td><td class="num" data-page-node-id="pzWHI7ADQeoCdub2n3KOoE">67</td></tr>
+<tr data-page-node-id="ghmSKMQS18VA0CXXWc8sRS"><td data-page-node-id="yamyJCVCE3m5Ock8BC3buX"><code data-page-node-id="6COFJpRiGbhH8Shkrchkqj">border/</code></td><td class="num" data-page-node-id="t15h9kvXqgssfh3owe8Bvw">15</td></tr>
+<tr data-page-node-id="udg696bBWc1aepCQKArEgU"><td data-page-node-id="l0LRnZDnBmROEHC7QG8ZEc"><code data-page-node-id="MtuX1jDGU3vfbQWAjqtuuN">gui/</code></td><td class="num r" data-page-node-id="r6cS6AdQlNmxtG3WbLsjuH">0</td></tr>
+<tr data-page-node-id="sxIvQVuOfepTsZ4GAHFz4R"><td data-page-node-id="LGwJWbzVv1KLbNvWhScBjY"><b data-page-node-id="gNDU8w6jDV5A5KZCbh7ee6">合计</b></td><td class="num" data-page-node-id="TFpq7kx0Y3iMHUme6vlIHb"><b data-page-node-id="d6CNbuG8IjFGZZgNAoTWOZ">379</b></td></tr>
+</tbody>
+</table>
+</div>
+<div data-page-node-id="xY6eAdgCQ3f666RHRM8ifS">
+<p style="margin:0 0 8px" data-page-node-id="uSZqfWuh1Eew2tSIoVoJyW"><b data-page-node-id="odpAqN8KKmVlXFtB5kFKAI">质量评价</b></p>
+<ul class="tight" data-page-node-id="pkjo9crMEWc40iU8k6gDjw">
+<li data-page-node-id="OqcdKyz3O1NzuFZ0MGQF0f"><b class="g" data-page-node-id="UvQbXX2lI7rgbtCai44uJE">通过率 98.7%</b>（374/379），零失败</li>
+<li data-page-node-id="mCRgi2IWkRIDOmIFcuEn4E"><b class="g" data-page-node-id="Za8AzRgoKdM3gAIvYBelbj">失效断言已根治</b>：<code data-page-node-id="ermegrAF65yw3YUL7HqbSE">pytest.ini</code> 已将 <code data-page-node-id="vFRdv3sSEu6Tci4hduyeoc">PytestReturnNotNoneWarning</code> 升为 ERROR，此前 17 个 <code data-page-node-id="cXxvuXpzsK0H1YPESEZBrQ">return</code> 冒充 <code data-page-node-id="yd2urJfsuucfIGrDQK7KxC">assert</code> 的问题不会再复发</li>
+<li data-page-node-id="UPjqdRctWrsoZEPDqfEj2G"><b class="r" data-page-node-id="XAMjY1QGjpWUAlCBIzIkss">5 个空壳文件</b>：552 行 0 用例，收集期会真实执行顶层代码</li>
+<li data-page-node-id="IAbUWC83cRLk2ZnJQpNglD"><b class="r" data-page-node-id="GJGy8sF1WJzUs4TLLt5gWj">GUI 零覆盖</b>：<code data-page-node-id="gDkE95lLQfHkaFFQOBaF97">tests/gui/</code> 为空目录</li>
+<li data-page-node-id="ETtGYOSMEs1YYcuCETTCrn"><b class="o" data-page-node-id="mGzxRNceic26WY5B5dLfTe">5 个用例跳过</b>：缺失源图 <code data-page-node-id="AXqQ8VUtcpPXDKqa3eIHIb">tests/psd_demo/双面格-...54x41.2cm.jpg</code></li>
+</ul>
+</div>
+</div>
+</div>
+
+<h3 data-page-node-id="SIljQB7bu6djURQN5qVY8o">维度 4 · 依赖与打包</h3>
+<div class="card" data-page-node-id="u0X9HeCVnoE2NqES6Hikjr">
+<p style="margin:0 0 10px" data-page-node-id="o3yPWEIpGzBQFoBk5uhGuu"><b data-page-node-id="0jUiTC7Gwi82tFwSDH4RmW">运行时依赖：全部就绪 ✓</b></p>
+<pre data-page-node-id="JopX1HjARCjhHd4vyUvJTx"><code data-page-node-id="7XvJTlPnW7sh2oNYCT2KPK">requirements.txt 声明 6 项，均已安装且满足版本下限：
+  PyQt5 5.15.11  ✓        Pillow 12.3.0              ✓
+  numpy 2.5.2    ✓        psd-tools 1.18.0           ✓
+  opencv-python-headless 5.0.0.93  ✓                 pytesseract ✓
+
+构建依赖：
+  PyInstaller  ✗ 未安装        pywin32  ✗ 未安装</code></pre>
+<p style="margin:14px 0 8px" data-page-node-id="0ykib0MXmsfSZyu8p3WHsb"><b data-page-node-id="rd0ECwbqrKycHNH6MpYqVJ">PyInstaller 漏收检测：0 漏收 ✓</b>（本次发布前最高风险项，结果良好）</p>
+<pre data-page-node-id="knw571WStj1hKAx3OrHo6h"><code data-page-node-id="eR4QNpgDpaPCj3Aw15sH8H">hiddenimports 白名单中 core/gui 模块数: 42
+实际 core/gui 模块数:                  42
+
+漏收（实际有 / 白名单无）:  无
+僵尸条目（白名单有 / 实际无）: 无
+
+—— 白名单维护得很到位，无一处遗漏，也无一处指向已删除的模块。</code></pre>
+<div class="note" style="margin:14px 0 0" data-page-node-id="STMHlYuKJECjXFGwtqQfO6">
+<b data-page-node-id="kz7qR3kc2vozP3Mv4IA6vx">值得注意：</b>全项目有 <b data-page-node-id="7FPTZMrJrZ4LNExgrtjqNF">247 处函数内延迟导入</b>（如 <code data-page-node-id="bU6y3vWPYRMjeVYm89mwq2">main.py:513 from core.artifact_cleanup</code>、
+<code data-page-node-id="3lnzBtuKGStuMZiTjFzTvY">core/image_ops.py:1697 from psd.loader</code>）。这类导入是 PyInstaller 静态分析的盲区，
+通常也是漏收事故的高发地。当前白名单已把它们逐个显式列出，所以安全；
+但这是<b data-page-node-id="J2ilq2hBBORnzwXpx43h7n">靠人工维护换来的安全</b>——新增模块时必须同步更新白名单，否则只在用户触发对应功能时才暴露。
+</div>
+</div>
+
+<h3 data-page-node-id="KnK3utvfyVCvB9D8MYNQn7">维度 5 · 仓库卫生</h3>
+<div class="card" data-page-node-id="fUeeeZJggxmkDQ1q9Q4U32">
+<table data-page-node-id="5M9weFbKSICkF99PWfKmHg">
+<thead data-page-node-id="BGGxofQ9alEe96DeIBaz9l"><tr data-page-node-id="oQAvxRQz6gWw20UrYtI4BO"><th data-page-node-id="Nd7ckk3c6LW4GwXccAMQc6">项目</th><th class="num" data-page-node-id="4wnk3oXmm7odN98BU8UMs5">占用</th><th data-page-node-id="9uauJQTU62G6lly6N7qXAE">状态</th><th data-page-node-id="ihRcgYgbusg2kDh9qgjiyi">说明</th></tr></thead>
+<tbody data-page-node-id="cLZ4WvTR2yHp8FsYcEYACV">
+<tr data-page-node-id="y3S67NcCAwhubsTACVKWz1"><td data-page-node-id="5WDWFDTj4Q012QPewgyPZm"><code data-page-node-id="Pfu1hjKI7Xh1q46gpeMBW5">.git/</code></td><td class="num" data-page-node-id="BLsFOPnxKivfEWbf3m5B8x">149 MB</td><td class="r" data-page-node-id="g4B33CgcINfa5Opr4bHB45">膨胀</td><td data-page-node-id="VxyUWVK5jRkX9GhmafTZ2K">主因：69MB 二进制被跟踪</td></tr>
+<tr data-page-node-id="IFHZ9cuDjk0U7rTETAR7yM"><td data-page-node-id="lZmuXiDlDHdelzhGw4exBW"><code data-page-node-id="SV9pFtnwAJqZspqzUWqSpi">build/</code></td><td class="num" data-page-node-id="N18tONaopptNedy6EUt4Gm">213 MB</td><td class="g" data-page-node-id="iiwIDejcHtXvdL3dhN0IBH">已忽略</td><td data-page-node-id="DUy0mp03iEzFYDuODLEgDj">PyInstaller 中间产物，可清理</td></tr>
+<tr data-page-node-id="GR13UMFmgnYmjLx9MtMnHS"><td data-page-node-id="UxW9VL71tphGkOV8yiwQXD"><code data-page-node-id="LC1Pz716B0msfWPSJ7X0uL">dist/</code></td><td class="num" data-page-node-id="hLHkx0NvWLU6PrspHgCtQZ">203 MB</td><td class="g" data-page-node-id="r5McSGEg6jENQq8Lj3eiKf">已忽略</td><td data-page-node-id="vHQ0eFY0DLcWmvTzHUAMnH">exe 已过期（见 P0）</td></tr>
+<tr data-page-node-id="MuUUWYdWOH7f96EuiS561V"><td data-page-node-id="nEswUzJUKm4UAc7bG6ZuwH"><code data-page-node-id="NJgW5GmEimhp3DvG7Q3D6K">scripts/</code></td><td class="num" data-page-node-id="Lf144tPnbgQlsqeRfciyrr">85 MB</td><td class="m" data-page-node-id="1DndVbBKygsdQkbjr09QsD">已跟踪</td><td data-page-node-id="Mi65Rv4xnQt4Tr9hIHdSed">78 张诊断图，单张最大 12MB</td></tr>
+<tr data-page-node-id="ElguHBJEYACdgLnR9cZSfM"><td data-page-node-id="H4K6MB928aipkxikc5KAC4"><code data-page-node-id="omA194ZKClZD4FRtiw0AAp">.workbuddy/</code></td><td class="num" data-page-node-id="k2b6Ef50QxFmRfvtM5Wq92">83 MB</td><td class="r" data-page-node-id="MoVkidNqJdHp1DrDGNRR1e">误跟踪 47 文件</td><td data-page-node-id="lzyMDM5Xs6li8LQV7X1CY6">含 47.76MB wheel</td></tr>
+<tr data-page-node-id="O55Dfv7uSmqXI9qMbnYupX"><td data-page-node-id="8AMFJqF9fYyMZa8ZLbY0TH"><code data-page-node-id="sM38R5K06WfTt3LfwdQMqm">_archive/</code></td><td class="num" data-page-node-id="8hVFZWk5TnZuT2Zu4xaDoX">5.9 MB</td><td class="r" data-page-node-id="RQGDx2oii9kjyvDRKuCR7G">误跟踪 215 文件</td><td data-page-node-id="NpU2g52bh8DJtLCoQOdyvW">.gitignore 规则对已跟踪文件无效</td></tr>
+<tr data-page-node-id="D7lqrigfhS5tIadH4Tj7CL"><td data-page-node-id="HpiCN2mRlg3LqKVqW4JSkQ"><code data-page-node-id="kuE4AqSbcR4AZBhMXDTLwA">.dumate/</code></td><td class="num" data-page-node-id="Kk0uPu7Vp2z6DLlEQ6CW9x">37 MB</td><td class="r" data-page-node-id="Yr17gSR8g5c9yPmvCfDLmP">误跟踪 13 文件</td><td data-page-node-id="YcAWFM1f0eFY6I1UZHAgqL">3 张 7.3MB 测试图</td></tr>
+<tr data-page-node-id="jYG7EFA8mZI1115jpjr4BB"><td colspan="2" data-page-node-id="IFPo7wEubcbJ9TjO6LfXbH"><b data-page-node-id="6KiZYDdDxCkz8Zyvp6CV3u">项目总计</b></td><td colspan="2" data-page-node-id="iMkbm3dKCRflWCABCo38CE"><b data-page-node-id="zjrR2bsXQZjbFAosyyu3Uu">781 MB</b></td></tr>
+</tbody>
+</table>
+<p style="margin:12px 0 0" data-page-node-id="W3az3N1ht0PJpECB8MyXWs"><b data-page-node-id="4butxwIyG2gNEXxJO1RQ4Z"><code data-page-node-id="qTkcWBjBClH01zU3tfKXVG">.gitignore</code> 有效性：</b>
+<code data-page-node-id="r5Bt9MZyoFBA2eX35AxI0K">dist/</code> <code data-page-node-id="MosFIFYnPn0rAwoIt4Ot8r">build/</code> <code data-page-node-id="06EBPYbYvGEk2Fx51amhvR">logs/</code> <code data-page-node-id="HzpL4A7WdWykKO53xj9AwD">__pycache__/</code> <code data-page-node-id="31oVq6D2TSdVMdc1nRcdKW">*.pyc</code> 均已正确忽略且无跟踪文件（<code data-page-node-id="jfDniZE5CmsEwM6hZ0NqL6">dist/build</code> 跟踪数 = 0 ✓）；
+<code data-page-node-id="q1GpzHYMUTaCbd4fh4DN8L">.dumate/</code>、<code data-page-node-id="10C2CZkhTbEMpO6fDmmpPN">.workbuddy/</code> 未被忽略且已误跟踪；<code data-page-node-id="sgNGwWlx9WAP6okbgAkYNH">.pytest_cache/</code> 依赖自身 <code data-page-node-id="pTBtEU4UhODkFAcRGLVeSH">.gitignore</code> 兜底，建议显式补上。</p>
+</div>
+
+<h3 data-page-node-id="V0XUFDoHzLpODtvPYu2Oua">维度 6 · 文档与安全</h3>
+<div class="card" data-page-node-id="XFjz47yIaasCPxcd6zLjpm">
+<table data-page-node-id="zO8WaLrxHr6DkwGjs69vAm">
+<thead data-page-node-id="QuYyITuIBvHJBpE7B3B9sg"><tr data-page-node-id="KaPFCMGoGz3DV4MAsF95yK"><th data-page-node-id="GgGd366ugUPncLey8MyAKm">检查项</th><th data-page-node-id="NkjUDiHIzxEIgEXNagmzay">结果</th><th data-page-node-id="4n7z1jgfjfok5UCr0GYYHH">说明</th></tr></thead>
+<tbody data-page-node-id="txyj4tduPPOg870PwM6gCp">
+<tr data-page-node-id="McgPafMOyfvvBeJ8KLgnLr"><td data-page-node-id="ApOv055wFzV2KmdO5QAn9j">README 版本同步</td><td class="g" data-page-node-id="P8svcEifXVW84czWzImQH9">✓ V2.2</td><td data-page-node-id="VWyxar71i4jiJcarK6NAqr">46KB 详尽文档，含完整目录树与模块职责说明</td></tr>
+<tr data-page-node-id="sMBMNVH2NxcbACPJLj0Chh"><td data-page-node-id="FT7dwMGFcE5QV8Ee198I0l">目录树与实际一致性</td><td class="g" data-page-node-id="m9HdVEcSrladnea6IRPE5i">✓ 基本一致</td><td data-page-node-id="ipU8xukY8N8pj4ogLzgcCD">仅缺 <code data-page-node-id="Gaq04gr4CKCrl2FEYMtXxi">.workbuddy/</code>、<code data-page-node-id="qzXZRkaI0hzejnLLPTqKh9">.dumate/</code></td></tr>
+<tr data-page-node-id="wfzDrQgWKFBHtJRzwXiIIf"><td data-page-node-id="BaFHNT6kRCkWXlsxiis3bx">测试数字时效性</td><td class="o" data-page-node-id="8b2CqGx0vKVaNJq3ORNX1f">△ 过期</td><td data-page-node-id="pCa2LnFIK55O0wIo1LGLx5">写「320 passed」，实测 374</td></tr>
+<tr data-page-node-id="xEe7JA5VxP0m7KCu8vWLhk"><td data-page-node-id="jsyyZTFRfTyIAMVmMlmHz4">硬编码密钥</td><td class="g" data-page-node-id="ZF4AW88D0q5uPjCgEUjzco">✓ 0 处</td><td data-page-node-id="ytnSWd069rK45Uk3TVVmrA">扫描 api_key / secret / password / token 等模式，无命中</td></tr>
+<tr data-page-node-id="3wqQz2L4v4KHRbulmRA14F"><td data-page-node-id="OGiu8Gl29uNhDqILsQp7tP">网络外联</td><td class="g" data-page-node-id="b0HWzpLOH7kIbljH17Nmzj">✓ 1 处</td><td data-page-node-id="MivxYy81vFqUxl4qgDXGBw">仅 OCR 提示文案中的 GitHub 下载地址，非实际请求</td></tr>
+<tr data-page-node-id="ZeHG2i1GMwKrYfUamkkqwh"><td data-page-node-id="zarPoHXtW9YGaKnQmB7e23"><code data-page-node-id="AVi6Ltm9dUJeFpNR8vZDS9">subprocess</code> 调用</td><td class="g" data-page-node-id="ocvx8M8waEfnKIUJY0Op3Q">✓ 20 处</td><td data-page-node-id="4T38UEqTSs47BxE51b18tb">全部在 <code data-page-node-id="8DQiQt5N6SQEHIi7IaJ0R1">packaging/</code>，用于调用 PyInstaller，符合预期</td></tr>
+<tr data-page-node-id="2SgaStz2EzdfbODzcDoVEf"><td data-page-node-id="bS6aP2fKz9hmCjINiVR5W6"><code data-page-node-id="XKiBEl5nREV91e9Ql0ChUG">pickle.load</code></td><td class="m" data-page-node-id="dUm9GcmrAJ3BEBUvSjeMjT">△ 1 处</td><td data-page-node-id="APua4DgN0XidAHugh1Mtng"><code data-page-node-id="kwDSB2wbz3274Ou2dUkCvv">core/parser/template_matcher.py:294</code>，读取本地模板缓存。若缓存目录可被他人写入则有反序列化风险，当前风险低</td></tr>
+<tr data-page-node-id="vXOX8uYHVPY85DpQsiGAZW"><td data-page-node-id="t2AMlgakrh7FXEwPVBPiRi"><code data-page-node-id="cGDEYyBc4PY56uYAyu3rnK">hashlib.md5</code></td><td class="g" data-page-node-id="tJfFJTCUma1aKDlDSMgldX">✓ 1 处</td><td data-page-node-id="1qfWMvnnq9ZDZTw11y8OiG"><code data-page-node-id="GWklaD07qdipD7u1lXW2PM">template_matcher.py:348</code> 用作目录缓存键，非安全用途，可接受</td></tr>
+<tr data-page-node-id="uv6YlmD8XP0ShOhDC6a4Jk"><td data-page-node-id="RKgLyDwT4GVAfn00CPVD7V">硬编码绝对路径</td><td class="o" data-page-node-id="9cTU0uIa4rOFW3LDdfT6EY">△ 22 处</td><td data-page-node-id="JVnlXveGFAygkiuBJ6DNu3">spec 中 <code data-page-node-id="eFHRYEprEyspt5vLxmVm5H">F:/SmartShapeCrop</code>、<code data-page-node-id="54Jes94pie4Ylgobc8RxsR">D:/Programs/Tesseract-OCR</code>；运行时代码已治理（core/config.py F12），打包脚本未跟上</td></tr>
+<tr data-page-node-id="zzjfMeXyCXdHnIIqm6EwFV"><td data-page-node-id="t0jFPPUzFNxtWlYWEpEODU">eval / exec</td><td class="m" data-page-node-id="gLPj9k9hJPWSkenSp3uBnh">△ 16 处</td><td data-page-node-id="eD012mUVgtqpUQ7uFEAFrs">3 处在 <code data-page-node-id="oYbPuNXzMsZrCTcLnFwUIa">core/config.py</code>（<code data-page-node-id="qsmwNpBJO8c6mbM4sIoDPF">os.system</code>/<code data-page-node-id="NSpuDicGc1HXgXQyAtLLrO">popen</code>），13 处在 <code data-page-node-id="bBO3D4XlpByxn2dZFW9GlZ">scripts/_archive</code> 的 <code data-page-node-id="wrAWIy5qFpbuEodwAPKY5H">__import__</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ===== 健康度评分 ===== -->
+<h2 data-page-node-id="yCY0RG3L8qwvHrhTZqfBYH">四、健康度评分</h2>
+<div class="card" data-page-node-id="iM71MmO4cuISrMOVH5ezCY">
+<div class="total-score" data-page-node-id="eWu0zeoolsZvW6Yaj9NsRP">
+  <div class="big o" data-page-node-id="ZoFwwl8EinB938yHFyBsm0">66</div>
+  <div data-page-node-id="41pVsfAV7186BVueJfawVw">
+    <div style="font-size:16px;font-weight:640;color:var(--p1)" data-page-node-id="WTfEdPP7FTuwZDL59d1Pk4">总体健康度 66 / 100 — 合格，但发布链路有硬伤</div>
+    <div class="desc" data-page-node-id="qDECDaeDklqZFeQ2Vf5Bcz">代码正确性与文档质量优秀；扣分项集中在可复现构建、仓库卫生与结构复杂度。</div>
+  </div>
+</div>
+
+<div class="score-row" data-page-node-id="h1heffN69q0TxGlwQC0uOt"><div class="nm" data-page-node-id="YDZgrSytLywmlPYADpja4q">测试体系</div><div class="bar" data-page-node-id="oHMlHIhSUgVy329QzlE16a"><div class="fill" style="width:78%;background:#1a7f37" data-page-node-id="onJ0L51FnuphOVKMejQxdr"></div></div><div class="vv g" data-page-node-id="7t6s6guqoD5WC935AGRZHh">78</div></div>
+<div class="score-row" data-page-node-id="cWaHC0ps7L1RLWOMxiRQIR"><div class="nm" data-page-node-id="XzoAryt5qAySSISAHhD1Bi">文档安全</div><div class="bar" data-page-node-id="Wv5iS5KkkOF7wnhD9bMbuT"><div class="fill" style="width:82%;background:#1a7f37" data-page-node-id="kCrdEw8zhkYl6Pi5BUzzq7"></div></div><div class="vv g" data-page-node-id="BcCHVTbtEhxj1QBUviPh9X">82</div></div>
+<div class="score-row" data-page-node-id="vRkFWLAMJdFvftCDIcaQ6k"><div class="nm" data-page-node-id="vqYwnY4kvedtzms4D4egqh">规模结构</div><div class="bar" data-page-node-id="uDW6vAzBoGguJ95DZSptR3"><div class="fill" style="width:70%;background:#2b6cb0" data-page-node-id="XEygtfrWBqVYaakRjQrDLn"></div></div><div class="vv b" data-page-node-id="4Ke3vQatMEvrEHTy4ajMvF">70</div></div>
+<div class="score-row" data-page-node-id="VvTHVV6BRbSTUMN2kGOiBf"><div class="nm" data-page-node-id="63U3j6tAlR3t8uPNflAWvy">依赖打包</div><div class="bar" data-page-node-id="wEAwQjXVZz4ibis1d8BOE4"><div class="fill" style="width:65%;background:#bc4c00" data-page-node-id="8Gna0ClH0rBvE7OhM3J7na"></div></div><div class="vv o" data-page-node-id="n9DeuU0qp3b30p6YkIgCL9">65</div></div>
+<div class="score-row" data-page-node-id="zf10GiHkeLiDMtXWxu6eCT"><div class="nm" data-page-node-id="zfL59hnJO8GEqA84iAMSTe">代码质量</div><div class="bar" data-page-node-id="pyKqAEnZ8Qa1SEzEjRDtiF"><div class="fill" style="width:62%;background:#bc4c00" data-page-node-id="2aH3BjqqhPC2ITFia36uAi"></div></div><div class="vv o" data-page-node-id="PMNAxwut8OiQTX7CrWHWmi">62</div></div>
+<div class="score-row" data-page-node-id="CoDxDmtSnUrKgCeF1TMwja"><div class="nm" data-page-node-id="0nyGyiO70nFYt15CDSDTgS">仓库卫生</div><div class="bar" data-page-node-id="tiWYM2X8LL1hCsAEsHQesr"><div class="fill" style="width:55%;background:#cf222e" data-page-node-id="Dy3eVvVAlquDaRFGP4rAZa"></div></div><div class="vv r" data-page-node-id="CPnPZ9QRXx9pua1G4iFd1l">55</div></div>
+
+<p style="margin:16px 0 0;font-size:13px;color:var(--muted)" data-page-node-id="jhWjfvwcThQkdQnrwiLZU2">
+评分口径：测试体系按通过率 / 覆盖广度 / 防复发机制；依赖打包按依赖完整性 / 漏收风险 / 构建可复现性；
+仓库卫生按 .gitignore 有效性 / 误跟踪规模 / 缓存残留；代码质量按编译通过率 / 静态问题密度 / 结构复杂度。
+</p>
+</div>
+
+<!-- ===== 行动路线 ===== -->
+<h2 data-page-node-id="lo4qXVs0Ey2Ey4WWXP6AhV">五、分阶段行动路线</h2>
+
+<div class="phase" data-page-node-id="BDfMi83rlEbpzVPpb8Cjhp">
+  <div class="ph" data-page-node-id="lvQK268PBdJId9ALt819Bo">阶段一 · 打通发布链路<span class="risk risk-h" data-page-node-id="M2neGxNKgNHJ7qiKMOf6GU">高风险，必须先做</span></div>
+  <ul data-page-node-id="uSEm3DbAeUcjJwADt3wrJR">
+    <li data-page-node-id="pPGEF338ZMDWlsiHwrm1hT">安装 <code data-page-node-id="dMWaoSwSwifPhfrQTuy9rw">pyinstaller</code>、<code data-page-node-id="OPCcgUHPNXShDZSZQejipq">pywin32</code>，新建 <code data-page-node-id="EiUHokYN2ndGzXQU6sPM8l">requirements-dev.txt</code> 固化构建依赖</li>
+    <li data-page-node-id="Oy9jmdrV1rFA7GLuDu5w64">修正 spec 中的硬编码路径为相对路径，复用 <code data-page-node-id="7JjVGit4c7IEIt24RVIwz8">packageV2.2.py</code> 的 Tesseract 多路径探测</li>
+    <li data-page-node-id="txVZ3iXkQgdQTrYJSdsDtC">重新打包并验证：工作区干净 → 构建 → 冒烟测试</li>
+    <li data-page-node-id="UHaqmNUXJU0A10UaMPQmLo">处理 <code data-page-node-id="Bip6MVzfyAAWNKxyqDKEaI">build_exe.bat</code>：修正路径或加失效声明，避免双入口</li>
+  </ul>
+</div>
+
+<div class="phase" data-page-node-id="dA8qnHtNRWogOtqDlmhBlQ">
+  <div class="ph" data-page-node-id="kEeu40zB8joZz3DBQwERTS">阶段二 · 仓库瘦身<span class="risk risk-h" data-page-node-id="KfP4fEZ14o6G8QfHYQ2E4J">涉及 .git，须先备份</span></div>
+  <ul data-page-node-id="LTZntnRK2Lv0E8uCjzkjFo">
+    <li data-page-node-id="cHgXAubMGCjD3H7Nevrl6M"><b data-page-node-id="1WEj8vAFeBPcLQcjHIoHUH">前置：</b><code data-page-node-id="LtoMuMaWAgsT8Bo7UPkW26">cp -r .git .git.bak</code> 物理备份（本机曾发生 <code data-page-node-id="3AROTCvTgRrzGSuxYzdq1l">git gc</code> 清空 <code data-page-node-id="Zcm6BGIe15Z90pQyDY57T3">.git</code> 的事故）</li>
+    <li data-page-node-id="eKb8ZvBnP4Sq57SR4ub5J6"><code data-page-node-id="fAPfVOrrYK9DocnbvPan5s">.gitignore</code> 追加 <code data-page-node-id="moAM8FvZdeTtJemjB3EJTr">.dumate/</code>、<code data-page-node-id="Tb2Elbuf6f9mFrBHBKEnDp">.workbuddy/</code>、<code data-page-node-id="xk7yzSWXFlxShFRp4ICjsy">.pytest_cache/</code></li>
+    <li data-page-node-id="4JNgvsDFtGhmt8s5picL78"><code data-page-node-id="muACsGxZspnQSIWtHCBWc4">git rm -r --cached .workbuddy .dumate scripts/_archive</code>（只退跟踪，不删本地文件）</li>
+    <li data-page-node-id="Dk3t7R2RiYVw0KRukuQOrR">提交并确认工作区仍干净、379 个用例仍全绿</li>
+    <li data-page-node-id="51QOpmpJFmFebhP8aR0YaT">如需真正压缩 149MB 历史，再评估 filter-repo / BFG——<b data-page-node-id="7A8VoZrR0ozXmQ9EvLfv7D">此步单独确认，不在本次范围</b></li>
+  </ul>
+</div>
+
+<div class="phase" data-page-node-id="A7hXTQF8BLFizI99HUFatc">
+  <div class="ph" data-page-node-id="hNm89zdrpD0LFNBt4tW4Y4">阶段三 · 测试网加固<span class="risk risk-m" data-page-node-id="yCzAEuCQ2Dra33pMH1JKzM">中风险，改动集中在 tests/</span></div>
+  <ul data-page-node-id="8WEQT3sktAlIHMbpHrAtPO">
+    <li data-page-node-id="7Qxf24iCQettbWV3yKhkHd">5 个空壳文件（552 行）移出 <code data-page-node-id="baTrrsdVwteB9Xb7XjVy6p">tests/</code> → <code data-page-node-id="xxzsVrnQ3ENwqes23L7SoU">scripts/diagnose/</code>，改名为 <code data-page-node-id="38WOWftUe9u9dBHRbr1zvE">diag_*.py</code></li>
+    <li data-page-node-id="e8mGG36VEJaLlwzaQh6dm1">补齐 <code data-page-node-id="u2ujpOSjbSdrW09gYz7Dgn">tests/psd_demo/</code> 缺失源图，让 5 个跳过用例真正跑起来</li>
+    <li data-page-node-id="PmV5z04bNaU2xGtDiY4XFj">为 6 个 GUI 大类补实例化冒烟测试，<code data-page-node-id="hNko5sBpODRkC0Pq1HjYL6">tests/gui/</code> 不再空置</li>
+    <li data-page-node-id="OsVVG7IWjJapo0d5tfq0Cy">接入 <code data-page-node-id="WRha1AYfKibCrIavpqz37t">ruff</code> 做 CI 门禁，防未使用导入与裸异常回潮</li>
+  </ul>
+</div>
+
+<div class="phase" data-page-node-id="BAR1F7JpEL9QVIXZcnunJH">
+  <div class="ph" data-page-node-id="WMVlwqZXZoAEsAN027XAGn">阶段四 · 结构复杂度治理<span class="risk risk-l" data-page-node-id="RxlVwEQEVvaPtA9ArNikH7">低风险，长期项</span></div>
+  <ul data-page-node-id="UlJBfLjGn0NQZ0PAo8RHLY">
+    <li data-page-node-id="l2BcRwwdq4cZU6IUualvXW">用 <code data-page-node-id="H0N0HgZxgKP91F1KpFTDXw">autoflake</code> / <code data-page-node-id="XQeSYG9zIMe69lGeESSPYK">ruff F401</code> 清理 587 处未使用导入，<b data-page-node-id="MvSCrGPA2R4FEkNq7cULzE">清理后必须重跑全量测试</b></li>
+    <li data-page-node-id="KAOVO4MdIb3oxnZZxXsxXJ">232 处宽泛捕获补分类日志，让静默降级可观测（不必全清）</li>
+    <li data-page-node-id="TQuHxSHm8IAfENsHKZAQwJ">按「先补测试再动刀」顺序拆分 <code data-page-node-id="vA4kyQ284TGPxjwoDfrEa5">render_design</code>（816 行）与 <code data-page-node-id="zYHrBf0VV6G3dNbMtoF9gU">_extract_direction_label_numbers</code>（709 行 / cx=180）</li>
+    <li data-page-node-id="We0f25gBhgOxTz4ooqqzfw">README 测试数据改为「见 pytest 实跑结果」，避免再次过期</li>
+  </ul>
+</div>
+
+<div class="note" data-page-node-id="zFm9e19onWT2thjTbXElwW">
+<b data-page-node-id="sO6uEQ8XHRgDi4tCMbDJrm">本次检测未执行任何写操作。</b>以上路线中，阶段一（环境安装与打包）与阶段二（<code data-page-node-id="XAg0yvoBbCWt8cybzj6SIL">git rm --cached</code>）
+均需你明确确认后才会动手。阶段二涉及 <code data-page-node-id="5IVHXaliDX8zEoETIzSfG8">.git</code> 文件系统操作，执行前必定先做物理备份。
+</div>
+
+<footer data-page-node-id="nljFvWBeB3LIjXI2j3X8CR">
+  <div class="foot-ver" data-page-node-id="kJ3nVZN0CP0NqWl5X2VTcF">SmartShapeCrop V2.2 · 全面检测报告 v1.0</div><br data-page-node-id="f60YRBAXqO1GhdDYpO5MCa">
+  生成时间 2026-09-11 &nbsp;·&nbsp; 检测基线 HEAD 9b710fe（v2.2-修复线程退役不完整问题）<br data-page-node-id="9AWyKFADi19ajo03irR5ol">
+  全程只读扫描，未修改任何源码文件 &nbsp;·&nbsp; 报告位置 ProductSummary/SmartShapeCrop分析报告/
+</footer>
+
+</div>
+</body>
+</html>

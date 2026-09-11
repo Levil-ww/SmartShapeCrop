@@ -1,6 +1,22 @@
-"""Test sketch parser with fixes."""
+"""验证草图解析修复效果（对比期望值与识别值，开发诊断脚本，非 pytest 用例）。
+
+历史说明：
+  本文件原位于 tests/sketch/test_sketch_fix.py。因文件名匹配 pytest 的 test_*.py
+  规则会被收集，而其顶层代码在 import 阶段即调用 parse_sketch 执行真实 OCR 解析
+  （并依赖可能缺失的 _test_sketch1.png），既污染测试环境，又存在"未来若改为抛异常
+  会导致整个测试套件无法收集"的风险（2026-08-26 起由 tests/conftest.py 的
+  collect_ignore 屏蔽）。2026-09-11 移出 tests/ 并改为 _diag_ 前缀。
+
+运行方式（项目根目录）：
+  python scripts/diagnose/_diag_sketch_fix.py
+"""
 import sys, os, time
-sys.path.insert(0, '.')
+from pathlib import Path
+
+# 以文件位置定位项目根，避免依赖当前工作目录
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 

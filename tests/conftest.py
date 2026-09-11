@@ -13,11 +13,15 @@ tests/conftest.py
 - test_gui_sim.py 已通过 git mv 移至 scripts/diagnose/_gui_sim_diag.py
   （双保险：1. 文件不在 tests/ 下；2. 下划线前缀不匹配 test_*.py 规则），
   故从本忽略列表中移除。
+
+2026-09-11 更新：
+- 剩余 5 个脚本已全部通过 git mv 移至 scripts/diagnose/，本列表清空：
+    tests/border/test_gap_detail_analysis.py  -> scripts/diagnose/_diag_border_gap_detail.py
+    tests/core/test_corner_analysis_simple.py -> scripts/diagnose/_diag_corner_analysis_simple.py
+    tests/sketch/test_diagnose.py             -> scripts/diagnose/_diag_sketch_recognition.py
+    tests/sketch/test_sketch_fix.py           -> scripts/diagnose/_diag_sketch_fix.py
+    tests/sketch/test_verify.py               -> scripts/diagnose/_diag_sketch_verify.py
+- 列表保留为空列表（而非删除本文件）：若将来再有诊断脚本混入 tests/，
+  在此追加文件名即可立即生效，无需重新查证该机制。
 """
-collect_ignore = [
-    "test_corner_analysis_simple.py",
-    "test_diagnose.py",
-    "test_gap_detail_analysis.py",
-    "test_sketch_fix.py",
-    "test_verify.py",
-]
+collect_ignore = []
