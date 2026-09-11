@@ -143,6 +143,11 @@ class TestCropImageIntegration:
         )
         result = crop_image(cfg)
         assert result is not None
+        # [2026-09-11 修复] 原先只有上面这句空值检查，几乎恒真，无法发现尺寸错误。
+        # 与同文件 test_simple_resize_mode 保持一致，补上尺寸校验。
+        assert result.size[0] > 0 and result.size[1] > 0, (
+            f'crop_image 返回空尺寸: {result.size}'
+        )
 
 
 class TestCropConfigValidate:

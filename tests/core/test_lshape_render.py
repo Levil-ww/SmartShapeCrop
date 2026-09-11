@@ -63,6 +63,11 @@ def test_lshape_with_corners():
     )
     result = render_design(design, quality='export')
     print(f'  Size: {result.size}')
+    # [2026-09-11 修复] 原先只 print('PASSED') 而无任何校验，属冒烟测试伪装成用例。
+    # 补最小断言：渲染结果尺寸必须有效（不改变被测逻辑，仅让失效可被发现）。
+    assert result.size[0] > 0 and result.size[1] > 0, (
+        f'render_design 返回空尺寸: {result.size}'
+    )
     print('  PASSED')
 
 
@@ -88,6 +93,10 @@ def test_lshape_with_border_bands():
     )
     result = render_design(design, quality='export')
     print(f'  Size: {result.size}')
+    # [2026-09-11 修复] 同 test_lshape_with_corners，补最小尺寸断言。
+    assert result.size[0] > 0 and result.size[1] > 0, (
+        f'render_design 返回空尺寸: {result.size}'
+    )
     print('  PASSED')
 
 

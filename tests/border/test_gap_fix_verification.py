@@ -295,7 +295,15 @@ def test_small_radius_preserves_content():
         print(f"  ✅ 通过: 内部花纹保持完整")
     else:
         print(f"  ⚠️  警告: 部分内容可能被裁剪")
-    
+
+    # [2026-09-11 修复] 原实现算出了 content_preserved 却只 print 不校验，
+    # 导致无论内部花纹是否被裁剪，pytest 都判定 PASSED（假绿灯）。
+    # 现补上真正的断言；上方 print 保留作诊断输出，不再作为唯一结论。
+    assert content_preserved, (
+        f"小圆角半径下内部花纹被裁剪: 蓝色内容像素仅保留 "
+        f"{blue_count}/{total_pixels} ({blue_count / total_pixels:.1%})，低于 90% 阈值"
+    )
+
     # 观察型检查（沿用原语义：小圆角测试不参与成败判定）：
     # 小半径下内容裁剪容忍度因素材而异，此处仅输出提示、不做硬断言，
     # 避免历史案例以外的新素材产生误报失败。

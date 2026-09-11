@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="MuCg36cVpCoAQOj7bqHFwE">
+<head data-page-node-id="EUFkj5AQ20fDxi0XBr8Rba">
+<meta charset="UTF-8" data-page-node-id="gSapHNeZaQjVl1eUva5YvG">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="AXUhw78zIIJIB9tTgDeCg5">
+<title>SmartShapeCrop V2.2 失效测试清理报告</title>
+<style>
+:root{
+  --bg:#f6f8fa; --card:#ffffff; --text:#1f2328; --muted:#656d76;
+  --border:#d8dee4; --border-soft:#eaeef2;
+  --p0:#cf222e; --p0bg:#fff5f5;
+  --p1:#bc4c00; --p1bg:#fff8f0;
+  --p2:#0969da; --p2bg:#f0f6ff;
+  --ok:#1a7f37; --okbg:#edf9f0;
+  --accent:#0969da;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;padding:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px;line-height:1.7;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
+header{
+  background:linear-gradient(135deg,#1f4e9c 0%,#2b6cb0 100%);
+  color:#fff;border-radius:12px;padding:30px 34px;margin-bottom:26px;
+}
+header h1{margin:0 0 8px;font-size:26px;font-weight:650;letter-spacing:.3px}
+header .sub{opacity:.9;font-size:13.5px}
+header .meta{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px}
+header .meta span{
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+  padding:4px 12px;border-radius:20px;font-size:12.5px;
+}
+h2{font-size:19px;margin:34px 0 14px;padding-left:11px;border-left:4px solid var(--accent);font-weight:640}
+h3{font-size:15.5px;margin:22px 0 10px;font-weight:620;color:#24292f}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px 22px;margin-bottom:16px}
+.verdict{
+  background:var(--card);border:1px solid var(--border);border-left:5px solid var(--p1);
+  border-radius:10px;padding:18px 22px;margin-bottom:22px;
+}
+.verdict b{color:var(--p1)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:15px 16px;text-align:center}
+.kpi .v{font-size:25px;font-weight:680;line-height:1.25;letter-spacing:-.5px}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:5px}
+.kpi .n{font-size:11px;margin-top:5px}
+.g{color:var(--ok)} .r{color:var(--p0)} .o{color:var(--p1)} .b{color:var(--p2)} .m{color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+th,td{border:1px solid var(--border-soft);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:#f0f3f6;font-weight:620;color:#24292f;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr:nth-child(even){background:#fbfcfd}
+.issue{background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.issue .hd{padding:13px 18px;display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.issue .hd .tag{font-size:11px;font-weight:700;padding:2.5px 9px;border-radius:5px;color:#fff;letter-spacing:.5px;flex-shrink:0}
+.issue .hd .t{font-weight:640;font-size:14.5px}
+.issue .bd{padding:0 18px 16px}
+.p0 .hd{background:var(--p0bg);border-bottom:1px solid #ffd7d5}
+.p0 .tag{background:var(--p0)}
+.p1 .hd{background:var(--p1bg);border-bottom:1px solid #ffe0c2}
+.p1 .tag{background:var(--p1)}
+.p2 .hd{background:var(--p2bg);border-bottom:1px solid #cfe3ff}
+.p2 .tag{background:var(--p2)}
+.ok .hd{background:var(--okbg);border-bottom:1px solid #b7e4c7}
+.ok .tag{background:var(--ok)}
+.field{margin:11px 0 0}
+.field .k{font-size:12px;font-weight:660;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px}
+.field .val{font-size:13.2px}
+pre{
+  background:#f6f8fa;border:1px solid var(--border-soft);border-radius:7px;
+  padding:11px 13px;overflow-x:auto;font-size:12.2px;line-height:1.6;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  margin:6px 0 0;color:#24292f;white-space:pre;
+}
+code{background:#f0f3f6;padding:1.5px 5px;border-radius:4px;font-size:12.4px;font-family:"SFMono-Regular",Consolas,monospace}
+pre code{background:none;padding:0}
+.phase{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:13px}
+.phase .ph{font-weight:660;font-size:14.5px;margin-bottom:9px;color:#24292f}
+.phase ul{margin:6px 0 0;padding-left:20px}
+.phase li{margin:5px 0;font-size:13.2px}
+.risk{font-size:11.5px;padding:1.5px 8px;border-radius:4px;margin-left:8px;font-weight:620}
+.risk-h{background:#fff5f5;color:var(--p0);border:1px solid #ffd7d5}
+.risk-m{background:#fff8f0;color:var(--p1);border:1px solid #ffe0c2}
+.risk-l{background:#f0f6ff;color:var(--p2);border:1px solid #cfe3ff}
+footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--border);color:var(--muted);font-size:12.3px;line-height:1.9;text-align:center}
+.foot-ver{display:inline-block;background:#eef2f7;border:1px solid var(--border);padding:3px 13px;border-radius:15px;font-weight:640;color:#3d4852;margin-bottom:9px}
+.note{background:#fffbe6;border:1px solid #ffe9a8;border-radius:8px;padding:12px 16px;font-size:13px;margin:12px 0}
+.confirm{background:#fff5f5;border:2px solid #ffc9c9;border-radius:10px;padding:18px 22px;margin:20px 0}
+.confirm .hd{font-size:16px;font-weight:680;color:var(--p0);margin-bottom:10px}
+ul.tight{margin:8px 0;padding-left:20px}
+ul.tight li{margin:4px 0}
+.chk{font-size:13.5px;margin:8px 0}
+.chk input{margin-right:8px;transform:scale(1.1)}
+</style>
+</head>
+<body data-page-node-id="aZhbzNqQlpkQbIAs6oAPQZ">
+<div class="wrap" data-page-node-id="cU98VaM3c86cwkNrbCt2jd">
+
+<header data-page-node-id="UzIqvXfQbnZ9mfskqy2fGc">
+  <h1 data-page-node-id="eCSc0NYv4NBKGPPVjCDCkq">SmartShapeCrop V2.2 — 失效测试清理报告</h1>
+  <div class="sub" data-page-node-id="QT6PtuAD8OGNAd26rKv3FS">九类失效模式只读扫描 · 空壳 / 空函数 / 同名覆盖 / 无断言 / 永久跳过 / 恒真断言 / 过期引用 / 位置不当 / 空文件</div>
+  <div class="meta" data-page-node-id="QxCjxEsTy1r0wpp8GctZbc">
+    <span data-page-node-id="JSgbGvtsKvBwPjpTAhfS0h">检测日期 2026-09-11</span>
+    <span data-page-node-id="V34N2HepetLlTnKBk3wu64">版本 V2.2</span>
+    <span data-page-node-id="t58DnbcK0BQrXQGd5uZXRP">基线 HEAD 28c8ab5</span>
+    <span data-page-node-id="A0vnkARy5btS82ZVoOPKLO">tests/ 28 文件 · 347 个 test 函数</span>
+    <span data-page-node-id="iQFUmN0RGGNCPrbS4kuws1">只读扫描，未修改任何文件</span>
+  </div>
+</header>
+
+<h2 data-page-node-id="3y4Tnf7JF04TD73fEBzDDo">一、结论摘要</h2>
+
+<div class="verdict" data-page-node-id="WZGpMCZGrSUvnE9caW4rqK">
+  <b data-page-node-id="rkEE0JXM1KwxRuOM8amHrp">一句话判断：</b>测试体系整体<b data-page-node-id="btCKtXMC5gODChEp5uAup0">比预想健康得多</b>——空壳、空函数、同名覆盖、过期引用四类均为 <b data-page-node-id="RlmFHCA8JeX7HlkycqdkvM">0</b>（上一轮已清掉 5 个空壳文件，本轮复核确认无残留）。
+  真正需要动的是 <b data-page-node-id="Izz3BXR5gJ418xLDUcgJkM">6 项</b>：其中 <b data-page-node-id="UPT2yqDSobVNAwxUiXAZ5U">1 个假测试</b>（算完不校验、永远绿灯）和 <b data-page-node-id="rEPJUut6ba5T4m6iVKJVVP">5 个从未真正执行过的用例</b>（依赖的源图全项目不存在）是重点。
+  其余为弱断言、命名不规范等低风险项。
+</div>
+
+<div class="kpis" data-page-node-id="IcwzAnvcoVXJ0Epi5punVd">
+  <div class="kpi" data-page-node-id="ghDfFKgttDNrtpClbPNBKD"><div class="v g" data-page-node-id="lXowW5mAxuDLqwHboRIYuI">0</div><div class="l" data-page-node-id="WT5ZVIcgWzEBWHvHeHhFQa">空壳文件</div><div class="n g" data-page-node-id="d3qx022e8ZhLZ9odWIsv7Z">上轮已清理</div></div>
+  <div class="kpi" data-page-node-id="TU42FeWX3MSjiUmD4pSiDD"><div class="v g" data-page-node-id="jqMXY1rx3mq8CTaCIgS0eN">0</div><div class="l" data-page-node-id="2wPekAWrQsDjySQ3qIb1Nf">空函数体</div><div class="n m" data-page-node-id="n1c987ZWf7qf998l8Ev9wJ">无</div></div>
+  <div class="kpi" data-page-node-id="rP9L6lsyON0tJ4lj77Jc0s"><div class="v g" data-page-node-id="p1Ij0qqhVB2qyAabklcY8P">0</div><div class="l" data-page-node-id="1p9M3jBexLGSUdMLnhvmLu">同名覆盖</div><div class="n m" data-page-node-id="9HBU4cdFudufwGaWx6uYkt">无</div></div>
+  <div class="kpi" data-page-node-id="G4tAdSlk8kYnAKc9G0guI0"><div class="v g" data-page-node-id="GUPqs11MN5BKHVn2cRAGh2">0</div><div class="l" data-page-node-id="FxLxC7vvXk0JcUOWhCnSFC">过期引用</div><div class="n m" data-page-node-id="pYFitt7RL5GLy3F1pAlwPp">core/gui 符号全在</div></div>
+  <div class="kpi" data-page-node-id="v0me92lpew3lNVw16CXeZK"><div class="v r" data-page-node-id="wtQ9dxlMV6lCJDEY6yFzLS">1</div><div class="l" data-page-node-id="27GMZJuiJtibSstJEHIzN5">假测试</div><div class="n r" data-page-node-id="nfBCYDFLahcGjpDyGIzVs1">算完不校验</div></div>
+  <div class="kpi" data-page-node-id="FmtbXESjrAmES8OClRDRwR"><div class="v r" data-page-node-id="v9s1vFIcTjjOP3muJLJ1Ww">5</div><div class="l" data-page-node-id="P7k1aKD8AneoB0o2RveeYh">从未执行的用例</div><div class="n r" data-page-node-id="qebUyKXEgwRKBsyGAOHxC9">源图不存在</div></div>
+  <div class="kpi" data-page-node-id="aVbGqx8mJJn1faeb34iRFY"><div class="v o" data-page-node-id="GBDHWHI4jcl8uIF2aVFsJP">2</div><div class="l" data-page-node-id="3nQ2U7qIj4Q88SVGw31YES">冒烟伪装用例</div><div class="n m" data-page-node-id="8dFI6YPXukqEKOpuTQB7Rl">仅 print PASSED</div></div>
+  <div class="kpi" data-page-node-id="GPCaRdRzBK5yuDK5fR4D1M"><div class="v o" data-page-node-id="FO6vUrseLT9prIBk8YQ15s">2</div><div class="l" data-page-node-id="tk2Gs3Uq3ivSTwqYLVxzRK">命名违规脚本</div><div class="n m" data-page-node-id="aBdDzUxRcBdAUfcoNSazaL">scripts/verify/ 下</div></div>
+</div>
+
+<h2 data-page-node-id="F7mEbldLrJaXCSjZNs9ywy">二、需处理项（6 项）</h2>
+
+<div class="issue p1" data-page-node-id="rP4aagVo4ZHhCUpD3JOjN4">
+  <div class="hd" data-page-node-id="fEQZUcr1LdkL3F6Um4umZB"><span class="tag" data-page-node-id="TMOM9RAdjJ31FJGgS0tb4x">P1</span><span class="t" data-page-node-id="PNXyl6SdGfyQs4PTuHp4TE">假测试：算出结论却不校验，永远绿灯</span></div>
+  <div class="bd" data-page-node-id="o6A0CsOuatjQ9VWwwG440y">
+    <div class="field" data-page-node-id="kgDINY0kWvMYrmUPrKXyoC"><div class="k" data-page-node-id="MYriTHe0NReH0d1xw2PhPc">现状</div><div class="val" data-page-node-id="MADZEekBD8OWkNTa0OX83F">
+      <code data-page-node-id="WyUeNSsvAJtktIWqtUw7W8">tests/border/test_gap_fix_verification.py:239</code> 的 <code data-page-node-id="meZYTWdDVOWEiLrFiaGKr1">test_small_radius_preserves_content</code>（59 行）
+      完整构造了多层边框图、跑了圆角处理、数了蓝色像素、<b data-page-node-id="BUFHG3rew4iHRCXeuymb4G">算出了明确的布尔结论</b>——
+      但最后一步只 <code data-page-node-id="wX1MY4uyDog9rw4NqB1qIu">print</code>，没有 <code data-page-node-id="VzTyAA1VrwMfgRWQumJaKU">assert</code>。
+    </div></div>
+    <div class="field" data-page-node-id="C10MTG2oNc5ufqfBBBgr2o"><div class="k" data-page-node-id="CLPa8FllaE9vJHIjU1Xive">证据</div><pre data-page-node-id="AldcZW0X16f0wsoeorV2x9"><code data-page-node-id="3XCE0yOJWP39jF6GM5QfS0"># tests/border/test_gap_fix_verification.py:293-297（函数结尾）
+
+    content_preserved = blue_count > total_pixels * 0.9  # 90%以上保留
+    if content_preserved:
+        print(f"  ✅ 通过: 内部花纹保持完整")
+    else:
+        print(f"  ⚠️  警告: 部分内容可能被裁剪")
+
+# —— 函数到此结束。既没有 assert，也没有 pytest.fail()。
+#    无论内容是否被裁剪，pytest 都判定为 PASSED。</code></pre></div>
+    <div class="field" data-page-node-id="fd13f65T7XOJeQKL2oZULC"><div class="k" data-page-node-id="5eU6uGV0jBap8rVNtGf8H9">影响</div><div class="val" data-page-node-id="wwfUqnCaBRqUB0pzAbCN4B">
+      <b data-page-node-id="RczbF7a4DHrXEa4A2J6qN6">最典型的假绿灯。</b>它验证的正是「小圆角是否保持内部花纹完整」这个真实业务规则，
+      一旦回归破坏，测试仍报绿，只能靠肉眼在 379 行输出里找那句「⚠️ 警告」。
+      这比没有测试更危险——它提供了虚假的安全感。
+    </div></div>
+    <div class="field" data-page-node-id="oHnAWWtMcfOB4jBMDKGjao"><div class="k" data-page-node-id="iUWM2WVPuzmAYHKXIaaGH5">建议动作</div><div class="val" data-page-node-id="Rc5Tsi17MzCvdyqy7arSs5">
+      把 <code data-page-node-id="xF6TuefapEG5Tohd0N6pCf">if/else print</code> 换成一行 <code data-page-node-id="hseqaeEkFTOo5hlJd4sKSb">assert content_preserved, f"内部花纹被裁剪: 蓝色像素占比 {blue_count/total_pixels:.1%}"</code>。
+      改动 1 行，是本次投入产出比最高的一项。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p1" data-page-node-id="NpgDUGgHkfHIcmBmY11jox">
+  <div class="hd" data-page-node-id="BLY9BIpFC4GDR54sEY4fMC"><span class="tag" data-page-node-id="o53uUrv0sDfcPmRFjJttzs">P1</span><span class="t" data-page-node-id="rstYshKUn17LwCCEhNOFHX">5 个用例从未真正执行：依赖的源图全项目不存在</span></div>
+  <div class="bd" data-page-node-id="F7x1dmC3peubDbNDkPDXkj">
+    <div class="field" data-page-node-id="4uPL2gQDwx1ARIBB5OmBtN"><div class="k" data-page-node-id="kY9E9JlIMfFePG0TNyuNYZ">现状</div><div class="val" data-page-node-id="fNPmwHSHgkAFkuW34cCuOr">
+      <code data-page-node-id="QhLLCchiztXDH3u02FYJaa">tests/border/test_border_fix.py</code> 的<b data-page-node-id="wGz94GaIfmkFIeeiYYogQQ">全部 5 个用例</b>依赖 <code data-page-node-id="2mZs7YAmJYQaZbsSIAZf1P">psd_demo/</code> 目录下的一张源图。
+      核查发现：<b data-page-node-id="XlrBKgJFa32mWZNJuVVyBo">整个项目根本没有 <code data-page-node-id="y594AnPNULLlAkoWSBMnQT">psd_demo/</code> 目录</b>，这张图在任何位置都不存在。
+      所以这 5 个用例<b data-page-node-id="LpsMkaakJaCMOGqB5XpvBb">自写入起就一直在跳过，从未真正跑过一次</b>。
+    </div></div>
+    <div class="field" data-page-node-id="P4tgTpKodzG66thUKdyTyO"><div class="k" data-page-node-id="t1FirFCwmZRzqAYBe6tvMj">证据</div><pre data-page-node-id="MnwgC9H5dt4VHAT79NKAXR"><code data-page-node-id="5ne2MGD9S7xAljHirw4E8s"># tests/border/test_border_fix.py:23-24, 42
+SRC_NAME = "双面格-定制-定制尺寸-简织;竖版54x41.2cm.jpg"
+SRC_PATH = os.path.join(PROJECT_ROOT, "psd_demo", SRC_NAME)
+...
+        pytest.skip(f"需要源图才能运行此测试（未找到: {SRC_PATH}）")
+
+$ ls -d psd_demo          → No such file or directory
+$ ls -d tests/psd_demo    → No such file or directory
+$ find . -type d -name "*psd_demo*" -not -path "./.git/*"
+  （空 —— 全项目无此目录）
+$ find . -name "*双面格*" -not -path "./.git/*"
+  ./.dumate/inbox/16-双面格-定制-定制尺寸-蔓生花;78.5x160cm左下角和左上角圆角半径5.5cm1张;.jpg
+  ./.dumate/inbox/16-双面格-定制-定制尺寸-蔓生花;95x200cm4个圆角半径9cm.jpg
+  （仅 .dumate/inbox 下有同名系列的其他产品图，非所需那张）
+
+实跑：tests\border\test_border_fix.py  sssss   → 5 skipped</code></pre></div>
+    <div class="field" data-page-node-id="dhwBbEHAVKgASrH8YfFXnN"><div class="k" data-page-node-id="hvZjn3BQSgom1n3zvi11rf">影响</div><div class="val" data-page-node-id="JAhwT8eezpI3yg5iZLhBlV">
+      border 目录名义上有 15 个用例，<b data-page-node-id="HJn7HHvFOHYIQRxVRvEGSZ">实际只有 10 个在跑</b>。跳过机制本身设计合理（找不到图就跳而非失败），
+      但这 5 个用例的防护价值为 0，且它们的存在让人高估了边框模块的覆盖度。
+    </div></div>
+    <div class="field" data-page-node-id="qh7zSw97qGW0qHRgoDs5DG"><div class="k" data-page-node-id="B7KxSlXskZlS5rKEhnCTEX">建议动作（三选一，需你定）</div><div class="val" data-page-node-id="kWcYAL3oWWZ0pLJ4nwPLiW">
+      <ul class="tight" data-page-node-id="T9WjvC2MTv8qhDplFsV1l1">
+        <li data-page-node-id="pzvbSWO2zs0iDmm55ydWGl"><b data-page-node-id="cpeLSwI10D0RSTVPipCCM5">A. 补源图</b>：找一张同规格图放进 <code data-page-node-id="nkDGVZZTvM3itbXW1utfR5">psd_demo/</code>（推荐，保住这 5 个用例的防护价值）</li>
+        <li data-page-node-id="5rCG79d4GMNeBgNLkUH0fN"><b data-page-node-id="ppSauwUTFDrFhvBGlLXrkM">B. 改为自动生成素材</b>：用 PIL 合成一张满足条件的替代图，彻底摆脱外部文件依赖（最稳）</li>
+        <li data-page-node-id="oew6NgR7C6CvUnVIQeOukA"><b data-page-node-id="vGvfhyicrEefe8nDcGbsrZ">C. 删除这 5 个用例</b>：若确认该场景已被其他测试覆盖（不推荐，会丢失真实图回归能力）</li>
+      </ul>
+      另外提醒：文件名含全角分号 <code data-page-node-id="Z4d9OccoJDI303miqMbB4p">；</code> 与中文，跨平台时容易踩坑。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="UufGlV3NWFRgUuDrjEW9CQ">
+  <div class="hd" data-page-node-id="YOY1HainHz3ChNdLJ56UR2"><span class="tag" data-page-node-id="N8reZM8tjVSz2pCimBfJL3">P2</span><span class="t" data-page-node-id="HuoUTqivz3luEQJuT04e5B">冒烟测试伪装成用例：只 print PASSED，无断言</span></div>
+  <div class="bd" data-page-node-id="YtAgGd5TktMme8Rbrp1cMH">
+    <div class="field" data-page-node-id="C5balrNTceEdzt0aDkDPgd"><div class="k" data-page-node-id="fBrDAqaFWj4Xu8KLJ2Eb8F">现状</div><div class="val" data-page-node-id="KllgfC28946PW0y6IjwNuk">
+      <code data-page-node-id="iiLJQ9OmKYatWq8D691tMq">tests/core/test_lshape_render.py</code> 的 <code data-page-node-id="ioeaGHXVFFZmPKlQ1JiIGv">test_lshape_with_corners</code>(:49) 与
+      <code data-page-node-id="mcXNFh0xH8uLDFk2svQM2L">test_lshape_with_border_bands</code>(:69) 只有打印，没有任何校验。
+    </div></div>
+    <div class="field" data-page-node-id="3VVeMRYltF1pDVjHHrHiny"><div class="k" data-page-node-id="KqcLzagdaKJc301qBjmHPt">证据</div><pre data-page-node-id="FCna6Eo44NgPTGyEW8fdUE"><code data-page-node-id="B9oB5MmRhgQxJnp4qzb8Ap"># tests/core/test_lshape_render.py:64-66
+    result = render_design(design, quality='export')
+    print(f'  Size: {result.size}')
+    print('  PASSED')          ← 无条件打印，无论结果如何都是 PASSED
+
+# tests/core/test_lshape_render.py:89-91（同上）
+    result = render_design(design, quality='export')
+    print(f'  Size: {result.size}')
+    print('  PASSED')</code></pre></div>
+    <div class="field" data-page-node-id="tE757F6uivkGrgvm2jqkC2"><div class="k" data-page-node-id="OIylEghLBTw0V077RgtAHU">影响</div><div class="val" data-page-node-id="gIEhTHHA7FBxNw1oTHsNka">
+      有<b data-page-node-id="xwZtjU11mCZ4xd1Ybk0c18">微弱价值</b>——能抓到「渲染直接抛异常」这类崩溃。但 <code data-page-node-id="FvDiZCEgA7nxJBTHINuv2W">PASSED</code> 字样是误导性的，
+      且无法发现渲染尺寸/内容错误。同文件其他 8 个用例都有真断言，这两个是漏网的。
+    </div></div>
+    <div class="field" data-page-node-id="QcoIkZc8RgsfFTQFdCkUvE"><div class="k" data-page-node-id="TPgcTwg5nxBRHfVdOgjQUz">建议动作</div><div class="val" data-page-node-id="pLXxaWCAAlfGXTZehB1SZK">
+      补最小断言：<code data-page-node-id="SG3LYua6KRJrrRsDXjU06V">assert result.size[0] &gt; 0 and result.size[1] &gt; 0</code>。
+      若本就只想做冒烟，建议改名 <code data-page-node-id="jD5rACj6YEFMIBeuVqA92D">test_*_smoke</code> 并加注释说明「仅验证不抛异常」。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="ccx1ITPl91SmxbilZ9OOEr">
+  <div class="hd" data-page-node-id="hEhHzu9hlUSL0UuKSDowl5"><span class="tag" data-page-node-id="eXbRUdzDg3U3x1yKMcMLUH">P2</span><span class="t" data-page-node-id="t8C4OWiDkIekVp3ElPKjZH">唯一弱断言：只校验「不是 None」</span></div>
+  <div class="bd" data-page-node-id="tV9DgQCCws9ZEVP27y6t51">
+    <div class="field" data-page-node-id="w1bBzGvQCkWKjpGph8IZFq"><div class="k" data-page-node-id="xHlX8IY4VyeVNfl7TSi32g">现状</div><div class="val" data-page-node-id="EFNzMyKPgao4p5pgGDF5Lp">
+      全项目 25 处 <code data-page-node-id="yG19h0fJVk4AUTQzRDKkXJ">assert x is not None</code> 形式的弱断言，经逐个复核，
+      <b data-page-node-id="QTQYnGFr2RMqsHP1qimwZb">24 处后面都跟了真正的断言</b>（属于合理的空值前置检查），
+      <b data-page-node-id="sFuSDgXyrjYA9ve4hrlHWR">只有 1 处</b>把弱断言当成了唯一校验。
+    </div></div>
+    <div class="field" data-page-node-id="v8tFhdGrLGJQRzgdbQ9mVQ"><div class="k" data-page-node-id="QV0B9ugbNYfx1EyCNf8mXG">证据</div><pre data-page-node-id="nCnn9hjP4Lawle4CvnH6IV"><code data-page-node-id="72E3AQZQnNtHDGQH2aExAP"># tests/core/test_image_cropper.py:131-132  兄弟用例（正确示范）
+    def test_simple_resize_mode(self, tmp_path):
+        ...
+        assert result is not None
+        assert result.size[0] > 0 and result.size[1] > 0   ← 校验了实际内容
+
+# tests/core/test_image_cropper.py:145  问题用例
+    def test_no_corners(self, tmp_path):
+        ...
+        result = crop_image(cfg)
+        assert result is not None                          ← 到此为止，唯一断言
+
+# 对比：同一文件的 test_simple_resize_mode 多一个尺寸校验，
+#       test_no_corners 少了这一句，等于只验证「没返回 None」。</code></pre></div>
+    <div class="field" data-page-node-id="dTJIdGrsWx07Xb0LCAinCH"><div class="k" data-page-node-id="qHvkreblvcxpUE1j9w4tA3">影响</div><div class="val" data-page-node-id="s71wRnipnV5fUEPzjmEh9T">
+      低。<code data-page-node-id="BP5XsVK1Y6Ps6tYZbiWeka">crop_image</code> 几乎不会返回 None，所以这个断言基本恒真，
+      无法发现尺寸错误。属于防护网的一个小洞。
+    </div></div>
+    <div class="field" data-page-node-id="31Vc7geuovVfi62FwCpMm6"><div class="k" data-page-node-id="12JeSBbIOAo1EzmMjM3adr">建议动作</div><div class="val" data-page-node-id="k92wuTIyJ7aCrj8fvGCpVx">
+      照抄兄弟用例，补一行 <code data-page-node-id="l7yDStBL4fMBL8YAMp7Rlk">assert result.size[0] &gt; 0 and result.size[1] &gt; 0</code>。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="VcABoHMuDhWvgzCIouhNwU">
+  <div class="hd" data-page-node-id="fyik9P8LeohyQgr6MNlE0q"><span class="tag" data-page-node-id="kHqwBfBQQvPkCfc1gMtwua">P2</span><span class="t" data-page-node-id="winMiv7LDdFkUqFktQCF5N">2 个调试脚本违规命名为 test_*.py</span></div>
+  <div class="bd" data-page-node-id="jZycHd2iVua4SnkHULPyN3">
+    <div class="field" data-page-node-id="MBwOUzZKrfJOiiHw1fQH7r"><div class="k" data-page-node-id="UR1o1NhyLA2RUfT9KA69UM">现状</div><div class="val" data-page-node-id="yz4lGvMxkPubv5IpF8ik8i">
+      <code data-page-node-id="3fvE9tQ5jy5ZxevDHumMau">scripts/verify/</code> 下有两个文件名为 <code data-page-node-id="NRVDhK1F3Fo2ib4cmqa9EO">test_*.py</code>，但内部 <b data-page-node-id="Kd9XAZ0b3tU5wsqwgyjOea">0 个 test 函数</b>，
+      实际是调试脚本（用于复现另外两个 test 的问题）。
+    </div></div>
+    <div class="field" data-page-node-id="GR1jpxph4SZLEH1zD48ug2"><div class="k" data-page-node-id="ofT20wjKDAfVd4HE62opxN">证据</div><pre data-page-node-id="sClbciXCTTYobCpqQcJRrD"><code data-page-node-id="gSzeEtiX4Ksh1yKB1l5x35">scripts/verify/test_multilayer_debug.py   86 行   test_函数 0
+  """调试 test_multilayer_border_with_mixed_colors 的简化脚本。"""
+scripts/verify/test_xianxu_debug.py       67 行   test_函数 0
+  """调试 test_xianxu_corner_clean 的简化脚本。"""
+
+scripts/README.md 命名约定（强制）：
+  | `_verify_<细节>.py`  | `verify/` | 长期保留 | 可复用的验证/自检脚本 |
+  | `test_*.py`（不含 pytest fixture） | `_archive/old_tests/` | 仅归档 | 历史伪单测，
+     **正式 pytest 必须写在 tests/ 下** |
+
+当前状态：因 pytest.ini 的 testpaths=tests 锁定，它们不会被收集，
+         无实际运行风险；但违反本目录的强制命名约定。</code></pre></div>
+    <div class="field" data-page-node-id="4b2uEGSpERSUc3vmrBK5a5"><div class="k" data-page-node-id="OUIq2kcdxbu8sXDU0RSK8N">影响</div><div class="val" data-page-node-id="fi6F3No68MryJAZ9GB3QWF">
+      无运行风险（<code data-page-node-id="QM5oU365lMeMJNQO65yotx">testpaths</code> 已锁定）。主要是<b data-page-node-id="uXLwmwnfbH2xP0TObnqucC">规范一致性</b>问题，
+      且这两个脚本已自行实现了 PROJECT_ROOT 注入，是<b data-page-node-id="bh8tf57TeG9aPSbrIROiJh">仍在使用</b>的调试工具，不像死代码。
+    </div></div>
+    <div class="field" data-page-node-id="Lf0yKUmod83tIZLg5ThewP"><div class="k" data-page-node-id="NvGRFiNsbCHTMpfLNOnERI">建议动作</div><div class="val" data-page-node-id="IcfQP06v16QFBUkiKeqLK5">
+      重命名为 <code data-page-node-id="FKQORZSXH9dlOIKjGtrHwW">_verify_multilayer_debug.py</code> / <code data-page-node-id="UNsuWlGoW9cTsrpa9ruyGJ">_verify_xianxu_debug.py</code>（符合 <code data-page-node-id="jiprwXAm1bNLWzqrA62D5w">verify/</code> 约定）。
+      纯改名，不动内容。
+    </div></div>
+  </div>
+</div>
+
+<div class="issue p2" data-page-node-id="J2yiW8vNTEAA6Q2ibVihLy">
+  <div class="hd" data-page-node-id="Frbmh5LOCqAcd2BKOT7fg1"><span class="tag" data-page-node-id="lDssiaZd9SatjnCftyCXiL">P2</span><span class="t" data-page-node-id="T3FfPRv1OLAwEYWG3HIAso">tests/gui/ 空目录</span></div>
+  <div class="bd" data-page-node-id="FFjJE56710bOmVYyKzEaxe">
+    <div class="field" data-page-node-id="WDWoxJBnE5J7tXckUEN2C7"><div class="k" data-page-node-id="MF6n5NB4ybrNx6b2ZdOeMi">现状</div><div class="val" data-page-node-id="ouQ47zlCQBZJNuSFyj4jJh">
+      <code data-page-node-id="iTL7iU8qNapwjKUv7ICVlj">tests/gui/</code> 下无任何 <code data-page-node-id="8Q8yhF9ezBLUveiJ8in9Kq">.py</code> 文件。README 已标注为「预留目录」，
+      属已知技术债，非本次新发现。
+    </div></div>
+    <div class="field" data-page-node-id="B7bCY7hvcfY0BHa5k18A58"><div class="k" data-page-node-id="diwLVWnUuebaSKMEsJdjIa">建议动作</div><div class="val" data-page-node-id="pTaoD2jEpFZKpkYfGOKnbo">
+      保留（README 已声明是预留）。若长期不打算补 GUI 测试，可考虑删除以免误导；
+      但保留更符合「预留」语义。<b data-page-node-id="2wh2h5Sr6Nj3VFoqqfBAKQ">建议不动。</b>
+    </div></div>
+  </div>
+</div>
+
+<h2 data-page-node-id="QaEKEtF11ojSbMZB4mNKgm">三、已核验为健康 / 无需处理</h2>
+
+<div class="card" data-page-node-id="afB1COglzoa8ynZk6agowK">
+<table data-page-node-id="sAV2YqDEtmzReqdqT2ykAz">
+<thead data-page-node-id="rdIm1tNbhjIYmLD7hygiH4"><tr data-page-node-id="qi5kuEExRrVCnv9ugkz2lY"><th data-page-node-id="259oldbxhxGDUOvpMEWJmT">检测类别</th><th class="num" data-page-node-id="CW45h7d2UPDxD4mU73tWiM">命中</th><th data-page-node-id="CZqerZXqWCT7YWXDCvX8wJ">说明</th></tr></thead>
+<tbody data-page-node-id="mq4NfFV9Fl7exWoa4W8qqu">
+<tr data-page-node-id="mSqa3ojN6GvbQ3XSPDSW31"><td data-page-node-id="KHFlADsyjpglGes0FTGGQi">A 空壳文件（0 个 test 函数）</td><td class="num g" data-page-node-id="01qEqPPgn5A8BXC19ET7pr">0</td><td data-page-node-id="FuVNyNyfG6y6LjQzRFgDzl">上一轮已把 5 个空壳文件移至 <code data-page-node-id="f6mCFc1YTyNDGZKhJLdeWU">scripts/diagnose/</code>，本轮复核确认 <code data-page-node-id="06hxq8odrieLBkGmXuXFzR">tests/</code> 下<b data-page-node-id="dtEbuk2ALVNnVxwMqwWyrD">无残留</b></td></tr>
+<tr data-page-node-id="AFfNeCWRAbsGXpuYBt7WCJ"><td data-page-node-id="DBDgMbKZvs3C3sjxWgrbSL">B 空函数体（只有 pass/docstring）</td><td class="num g" data-page-node-id="kvw1OyyG91FdJTb1SnJWhd">0</td><td data-page-node-id="FpjJlQqFIBPf2djq7DT4UM">347 个 test 函数均有实际逻辑</td></tr>
+<tr data-page-node-id="kx9NFIFyhWJ2G7Z3ve6577"><td data-page-node-id="oMDbJDhMMCsnyphM9MF4y1">C 同名覆盖（后者覆盖前者）</td><td class="num g" data-page-node-id="8xxKV2lHoeXzEoYSQ6WfMn">0</td><td data-page-node-id="V8rKsb2YN6gdmlBURdnECy">无重名，不存在「定义了却不执行」的用例</td></tr>
+<tr data-page-node-id="ghHX2Yc5DGtnznVrKbP4hl"><td data-page-node-id="2XQiTqjlDMDCMDiz95X5F1">G 过期引用</td><td class="num g" data-page-node-id="eofgssd3B0U0B6yXvNESFV">0</td><td data-page-node-id="NrCJbHQgJEkHffmMH9WmhG">所有 <code data-page-node-id="xgUTdXU1YFk2I7uCzaIujJ">from core.X / gui.X import Y</code> 的符号在源模块中<b data-page-node-id="kGCZZj7TCaDUowucQyVu2h">均存在</b>，无失效 import</td></tr>
+<tr data-page-node-id="ZL9vT6sVhchkFTJOFitc3c"><td data-page-node-id="MiZRKrceR8Se3VxG0XU31x">非 <code data-page-node-id="RXrRomxOqMp1graJkXek3b">Test*</code> 类内的 test 方法</td><td class="num g" data-page-node-id="kegbyxslFuAsqY8fni5NQH">0</td><td data-page-node-id="dF2I8LfrS8C7YuuuZxKODF">新增检查项：<code data-page-node-id="qKnJStGIC5zurnawoUOHmS">pytest.ini</code> 限定 <code data-page-node-id="l3EP1XwdHcT0XNfieUHOwr">python_classes = Test*</code>，若类不以 Test 开头，其中的 test 方法<b data-page-node-id="GjnA7ndTRzqaYrAGHKLcOl">永不执行</b>。本项目无此情况</td></tr>
+<tr data-page-node-id="UKObxf5XN1pPloMyqdBMPL"><td data-page-node-id="sh4ZvWeBodeUaHl4R7WEt8">E 永久跳过（skip 无恢复条件）</td><td class="num g" data-page-node-id="GQPJYAhJLqen7L0dSykguy">0</td><td data-page-node-id="YwaHqtppnUySyegt2ggdUs">无 <code data-page-node-id="MuUBtZZcaNMVwEOBuLC2ZK">@pytest.mark.skip</code> 永久标记；5 个跳过均为条件跳过（缺源图），已单列为 P1</td></tr>
+<tr data-page-node-id="OAHMuJFzGTG8EKa6CT9H6J"><td data-page-node-id="i3IP6OPSElRai65Jpwo0Y9">恒真断言 <code data-page-node-id="hZ3d5bUDXcswcYlDkQPrZp">assert True</code> / <code data-page-node-id="V7KuiAnxjhVCiLF62RFgaH">assert 1</code></td><td class="num g" data-page-node-id="GRxivVhivOYBXMs7NZDGAd">0</td><td data-page-node-id="eGwTjB1cfApAFme9ggopAS">无</td></tr>
+<tr data-page-node-id="BWECLPj9u4XCtphx2YToIK"><td data-page-node-id="8vtrlJVEfAdWU5OP4jQoaz"><code data-page-node-id="Wq6180Q9lY8BKxQWxR3axe">tests/__init__.py</code> 空文件</td><td class="num m" data-page-node-id="b25yzibJchX7NlRENjjLId">1</td><td data-page-node-id="nuPUYTurTuZQAdvpYM4zb8"><b data-page-node-id="MTOEzH3ZhystbUsu56Fd21">正常</b>，包标识文件本就该为空，不算技术债</td></tr>
+<tr data-page-node-id="WexCD8ynjFiAuD2CLGXzND"><td data-page-node-id="vaOTnVNhbGSc8ncUXmRbhN">22 个 <code data-page-node-id="zFSdBhmPsdnptHnR038c5u">scripts/**/_archive/</code> 下的 test_*.py</td><td class="num m" data-page-node-id="9xX8KVYmvkuAl74DxwxGyL">22</td><td data-page-node-id="eDiWhArMtwED3XWy5XwhLA"><b data-page-node-id="PmqRDgo8e7KSGHuUzFFzm4">符合规范</b>——<code data-page-node-id="B62wb4iGcwOk8rxUgCB4dL">scripts/README.md</code> 明确规定历史伪单测归档在 <code data-page-node-id="qkdPnfUX3PuruP58LPJY33">_archive/old_tests/</code>，无需处理</td></tr>
+</tbody>
+</table>
+
+<div class="note" data-page-node-id="WSN79jJLtEYxzDpPZv9hzq">
+<b data-page-node-id="FQMAcen5BPtpXNqLcWGB3b">关于「39 个缺失文件引用」——这是误报，已在报告中剔除。</b><br data-page-node-id="2RvWSBoDwwbvJBymihTNIh">
+初版扫描器检出 39 处「测试引用了不存在的文件」，逐个核查后确认绝大多数是假阳性，两类典型情况：
+<ul class="tight" data-page-node-id="S9XFTxoIVg5IDMnu1vq0Cc">
+<li data-page-node-id="kw69iwdtd4F5A447ZqHWUz"><code data-page-node-id="wHrLZRjMSetteqNpjujXVH">tmp_path / "src.jpg"</code> 这种 pytest 临时目录动态生成的文件（扫描时当然不存在）</li>
+<li data-page-node-id="ywLEa9RKFmBouV7MNqDeVw">模板匹配测试里的文件名字符串仅用于<b data-page-node-id="XLJ616WwD6CwXXbE6nlNLR">解析</b>（如 <code data-page-node-id="rr9j5Fd5OkdRUpU4Cxci5r">"双面格-定制-定制尺寸-简织;竖版55x41cm.jpg"</code>），并不真实读盘</li>
+</ul>
+真正因缺文件而失效的只有 P1 那一项（<code data-page-node-id="GzPjjdM6O2LnddGdNBkKwW">test_border_fix.py</code> 的 5 个用例）。
+</div>
+</div>
+
+<h2 data-page-node-id="ej56tSHF9F97ZGxvKH6Sy0">四、清理方案（待确认后执行）</h2>
+
+<div class="confirm" data-page-node-id="WVWeZ5U9KU5Mlu69KLOyDS">
+  <div class="hd" data-page-node-id="AfIUUOfz2yPmZ3PmsghMwc">⚠️ 以下内容尚未执行 —— 等你确认具体范围后才动手</div>
+  <p style="margin:0 0 10px" data-page-node-id="63kRaogSrC0CNBaxzUiRh2">请勾选要执行的项（可直接回复序号，如「1 2 3」）：</p>
+  <div class="chk" data-page-node-id="S3ri8C0R8079ODspPvvWJa"><input type="checkbox" disabled data-page-node-id="4ZVYuesky4RjeiJmqgmDKr"> <b data-page-node-id="bwpAStBHiVlLb3NJUZlS6U">1.</b> 修假测试：<code data-page-node-id="Z5ugIxH7PGhjFz0sNVFf04">test_gap_fix_verification.py:293</code> 的 <code data-page-node-id="hLntQivuz9ZonbhwVJa1da">if/else print</code> → <code data-page-node-id="F2PwPq002HihB5GK0VMgK7">assert content_preserved, ...</code>（改 1 行）</div>
+  <div class="chk" data-page-node-id="YN00vdzWSnTXND2gCAiWZF"><input type="checkbox" disabled data-page-node-id="PuiCsXJ3xUgRT4c6y7FUs7"> <b data-page-node-id="slINFR39CugHQHqMWnbDpO">2.</b> 处理 5 个从未执行的用例：<b data-page-node-id="kYDW5P5CeKAeCl8ZuBCIDG">A</b> 补源图 / <b data-page-node-id="K6zWG6u1LP0OLDbL5fDeHi">B</b> 改为自动生成素材 / <b data-page-node-id="U326gdV1xYA8WXaZ1KmKFS">C</b> 删除（需你选一种）</div>
+  <div class="chk" data-page-node-id="eLFVMp4dhGX7egARFMrsLO"><input type="checkbox" disabled data-page-node-id="pgToe1IRqapLWgwWHTlbUf"> <b data-page-node-id="ionVznJmlbTeJBJgTC5KNm">3.</b> 两个冒烟用例补最小断言：<code data-page-node-id="HTmah743oPobrPvjVxDF7b">test_lshape_render.py:66 / :91</code></div>
+  <div class="chk" data-page-node-id="Nx1CECFtuExKegAJtX7DmU"><input type="checkbox" disabled data-page-node-id="oB5dzrIjb2xBkfs3D4jP8M"> <b data-page-node-id="ejSz7ODl1WJ4TibRoscH1W">4.</b> 补弱断言：<code data-page-node-id="2RYS5m3zxOBEpZUvUFquAr">test_image_cropper.py:145</code> 增加尺寸校验</div>
+  <div class="chk" data-page-node-id="s40HwrSHTd4l5ezim43QFg"><input type="checkbox" disabled data-page-node-id="gUeD8UE1om1sZO8csT3BE5"> <b data-page-node-id="2Ca5Nce6aBa9NLg0J1R5cv">5.</b> 重命名 2 个违规脚本：<code data-page-node-id="azqhArdIqfZPnWqSYm67Pm">test_multilayer_debug.py</code> → <code data-page-node-id="asaSQLpt7XQz1H7xx3u6c5">_verify_multilayer_debug.py</code>（<code data-page-node-id="wHjmHItrrO1u5qNUJ7miUG">test_xianxu_debug.py</code> 同理）</div>
+  <div class="chk" data-page-node-id="U28wJTtkHlt0q2TYZ7egvQ"><input type="checkbox" disabled data-page-node-id="e7CidR2fhebmuuTOCKkwPM"> <b data-page-node-id="lIYz1NaAcvMEi7gG5DsRIC">6.</b> 以上全部</div>
+</div>
+
+<div class="phase" data-page-node-id="iSDRSErHXukoQsuhed0GnI">
+  <div class="ph" data-page-node-id="bOQUeXhN9jp0mvbypQCFVm">执行保障<span class="risk risk-l" data-page-node-id="nCkz6yWudVaH8cDOjIgE6W">低风险</span></div>
+  <ul data-page-node-id="ASAbAnIK2ghmjNVkcgIBO4">
+    <li data-page-node-id="fGzg3isMmGunyv4IHuWScw"><b data-page-node-id="56MTTo9lnM1A7ENYZGkguS">不删任何现有测试</b>，除第 2 项你明确选择「C 删除」</li>
+    <li data-page-node-id="TADpQrZ1QIlk4uVaiPtMV6">第 5 项纯改名，用 <code data-page-node-id="RCuc1Y1f92ZO9DzZORVKjc">git mv</code> 保留历史，不动文件内容</li>
+    <li data-page-node-id="gZDoNuQIADFJRjLCsxifFo">每改一项立即重跑全量测试，确保 <b data-page-node-id="vS4l3HJZXcmlQC3awMF4QA">379 收集 / 374 passed</b> 的基线不倒退
+        （第 1、3、4 项修好后，pass 数应<b data-page-node-id="XDogm6pcT9PPCRLixJFX0P">不变或减少</b>——若减少说明修出了真 bug，是好事）</li>
+    <li data-page-node-id="NOUjK4t0JDNwddDnuVpTiv">全部改动集中在 <code data-page-node-id="THRjgSAW6ppV23GHMHLKPG">tests/</code> 与 <code data-page-node-id="6eXTNpvbeMbsqd5MaKfxWl">scripts/verify/</code>，<b data-page-node-id="83WL5BvyVDw5fnTFuM5Ikv">不碰 <code data-page-node-id="89FcXonDIClMwG3mASS0dj">core/</code> <code data-page-node-id="rRwI1lvmsEZoKjxHHeT2UM">gui/</code> <code data-page-node-id="s8SPsASNzs76y2vbJXuDco">main.py</code></b></li>
+    <li data-page-node-id="97p2DQTxwBptGgF8CU9d5J">完成后单独提交，提交信息沿用 <code data-page-node-id="XcnY3thvCT1cphyZPkFKYI">v2.2-</code> 前缀</li>
+  </ul>
+</div>
+
+<h2 data-page-node-id="LzIFiPauCuV6xRUI02JNoe">五、扫描方法说明</h2>
+<div class="card" data-page-node-id="kiKi6eYUKA4rnFdkn2Berr">
+<p style="margin:0 0 8px" data-page-node-id="rR8FLHs4qfpd3jv9fbt7Fg">本次为<b data-page-node-id="UF853Jl6FcCcBUGF9Dbz1j">纯只读</b>扫描，未创建、修改、删除任何项目文件。判定基于 AST 静态分析 + 实跑验证结合：</p>
+<ul class="tight" data-page-node-id="hE7cEhDndjDVqbMSB9zHUO">
+<li data-page-node-id="TDpIgc1inktcumk5J1smDE"><b data-page-node-id="mf6UeR2ueYHY6TusLgtjiC">静态</b>：解析 <code data-page-node-id="5bei6XE3CVtOrBvrSRJulh">tests/</code> 下 28 个 py 文件的 AST，统计 test 函数、断言、装饰器、import 符号</li>
+<li data-page-node-id="9KrtiAXFJcQ5mbR2LyxZlN"><b data-page-node-id="B8xgfSLIZugMC3lppYRtDN">动态</b>：实跑 <code data-page-node-id="Coqv9B6u1CHieSDK1eKeou">pytest</code> 取得收集数与跳过项；对 <code data-page-node-id="y64z3xMATV8peIjY1A4Sfy">core.*/gui.*</code> 的 import 符号做真实 import 校验</li>
+<li data-page-node-id="DIXLxvuwrZiaDfsi6z0vUJ"><b data-page-node-id="7UNQEUsyqDHx5YIveoz5Lf">人工复核</b>：对扫描器初判的 25 处弱断言、39 处缺失文件引用逐个人工确认，剔除假阳性（最终分别留下 1 处和 1 组）</li>
+</ul>
+<pre data-page-node-id="jtksAY8ytl5FETO0jqJHzU"><code data-page-node-id="HlHMGUSwg7t59rqD4ih9Zo">扫描规模：tests/ 28 个文件 · 347 个 test 函数 · 7,946 行
+实跑基线：379 collected / 374 passed / 5 skipped / 0 failed</code></pre>
+</div>
+
+<footer data-page-node-id="gPMmq30vYlk4mnjlGFH2nc">
+  <div class="foot-ver" data-page-node-id="0uUirDU4be6gli762ZCbq1">SmartShapeCrop V2.2 · 失效测试清理报告 v1.0</div><br data-page-node-id="MbrsxjErCtgstAYKs1LyEk">
+  生成时间 2026-09-11 &nbsp;·&nbsp; 检测基线 HEAD 28c8ab5<br data-page-node-id="Kg12Z4GTBAQY5xPM3Hv2lY">
+  全程只读扫描 &nbsp;·&nbsp; 清理方案待确认后执行 &nbsp;·&nbsp; 报告位置 ProductSummary/SmartShapeCrop分析报告/
+</footer>
+
+</div>
+</body>
+</html>
