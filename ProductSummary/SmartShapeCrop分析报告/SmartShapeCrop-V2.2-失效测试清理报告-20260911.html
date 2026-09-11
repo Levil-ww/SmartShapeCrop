@@ -3,7 +3,7 @@
 <head data-page-node-id="EUFkj5AQ20fDxi0XBr8Rba">
 <meta charset="UTF-8" data-page-node-id="gSapHNeZaQjVl1eUva5YvG">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="AXUhw78zIIJIB9tTgDeCg5">
-<title>SmartShapeCrop V2.2 失效测试清理报告</title>
+<title>SmartShapeCrop V2.2 失效测试清理报告 v1.1（执行更新版）</title>
 <style>
 :root{
   --bg:#f6f8fa; --card:#ffffff; --text:#1f2328; --muted:#656d76;
@@ -92,6 +92,17 @@ ul.tight{margin:8px 0;padding-left:20px}
 ul.tight li{margin:4px 0}
 .chk{font-size:13.5px;margin:8px 0}
 .chk input{margin-right:8px;transform:scale(1.1)}
+.note.ok{background:var(--okbg);border-color:#b7e4c7}
+.field.exec{
+  background:var(--okbg);border:1px solid #b7e4c7;border-radius:8px;
+  padding:11px 15px;margin-top:14px;
+}
+.field.exec .k{color:var(--ok)}
+.done{background:var(--okbg);border:2px solid #b7e4c7;border-radius:10px;padding:18px 22px;margin:20px 0}
+.done .hd{font-size:16px;font-weight:680;color:var(--ok);margin-bottom:10px}
+.done ul{margin:6px 0 0;padding-left:20px}
+.done li{margin:6px 0;font-size:13.2px}
+.badge-done{background:#1a7f37;border-color:#2ea043;color:#fff}
 </style>
 </head>
 <body data-page-node-id="aZhbzNqQlpkQbIAs6oAPQZ">
@@ -104,17 +115,34 @@ ul.tight li{margin:4px 0}
     <span data-page-node-id="JSgbGvtsKvBwPjpTAhfS0h">检测日期 2026-09-11</span>
     <span data-page-node-id="V34N2HepetLlTnKBk3wu64">版本 V2.2</span>
     <span data-page-node-id="t58DnbcK0BQrXQGd5uZXRP">基线 HEAD 28c8ab5</span>
-    <span data-page-node-id="A0vnkARy5btS82ZVoOPKLO">tests/ 28 文件 · 347 个 test 函数</span>
-    <span data-page-node-id="iQFUmN0RGGNCPrbS4kuws1">只读扫描，未修改任何文件</span>
+    <span data-page-node-id="t58DnbcK0BQrXQGd5uZXRP">执行 HEAD 98f81b9</span>
+    <span data-page-node-id="A0vnkARy5btS82ZVoOPKLO">tests/ 27 文件 · 342 个 test 函数</span>
+    <span class="badge-done" data-page-node-id="iQFUmN0RGGNCPrbS4kuws1">✅ 已执行完毕 · 仅改测试，未动 core/gui</span>
   </div>
 </header>
 
+<div class="note ok">
+<b>📌 本报告已由「只读扫描方案」更新为「执行结果归档」。</b><br>
+清理项 1 / 2C / 3 / 4 / 5 已于 2026-09-11 全部执行完毕，提交 <code>98f81b9</code>（<code>v2.2-清理失效测试并修复4处假绿灯断言</code>）。
+第 6 项按报告原建议<b>保持不动</b>（<code>tests/gui/</code> 为 README 声明的预留目录）。
+下方各章节中，<b>原文描述（现状 / 证据 / 影响 / 建议动作）一律保留</b>作为问题档案，
+每项新增绿色「<b>执行结果</b>」区块记录实际处置与验证数据。
+</div>
+
 <h2 data-page-node-id="3y4Tnf7JF04TD73fEBzDDo">一、结论摘要</h2>
 
-<div class="verdict" data-page-node-id="WZGpMCZGrSUvnE9caW4rqK">
-  <b data-page-node-id="rkEE0JXM1KwxRuOM8amHrp">一句话判断：</b>测试体系整体<b data-page-node-id="btCKtXMC5gODChEp5uAup0">比预想健康得多</b>——空壳、空函数、同名覆盖、过期引用四类均为 <b data-page-node-id="RlmFHCA8JeX7HlkycqdkvM">0</b>（上一轮已清掉 5 个空壳文件，本轮复核确认无残留）。
+<div class="verdict" data-page-node-id="WZGpMCZGrSUvnE9caW4rqK" style="border-left-color:var(--ok)">
+  <b data-page-node-id="rkEE0JXM1KwxRuOM8amHrp">扫描期判断（原文保留）：</b>测试体系整体<b data-page-node-id="btCKtXMC5gODChEp5uAup0">比预想健康得多</b>——空壳、空函数、同名覆盖、过期引用四类均为 <b data-page-node-id="RlmFHCA8JeX7HlkycqdkvM">0</b>（上一轮已清掉 5 个空壳文件，本轮复核确认无残留）。
   真正需要动的是 <b data-page-node-id="Izz3BXR5gJ418xLDUcgJkM">6 项</b>：其中 <b data-page-node-id="UPT2yqDSobVNAwxUiXAZ5U">1 个假测试</b>（算完不校验、永远绿灯）和 <b data-page-node-id="rEPJUut6ba5T4m6iVKJVVP">5 个从未真正执行过的用例</b>（依赖的源图全项目不存在）是重点。
   其余为弱断言、命名不规范等低风险项。
+  <div style="margin-top:13px;padding-top:12px;border-top:1px dashed var(--border)">
+    <b style="color:var(--ok)">✅ 执行后状态（2026-09-11 更新）：</b>
+    确认执行的 <b style="color:var(--ok)">5 项（1 / 2C / 3 / 4 / 5）已全部完成</b>，第 6 项按原建议保留不动。
+    共修复 <b style="color:var(--ok)">4 处假绿灯断言</b>、删除 <b style="color:var(--ok)">5 个从未执行的用例</b>、改名 <b style="color:var(--ok)">2 个违规脚本</b>。
+    全量测试由 <code>379 收集 / 374 passed / 5 skipped</code> 变为 <code>374 收集 / 374 passed / 0 skipped / 0 failed</code>——
+    <b style="color:var(--ok)">通过数不变，说明补上的断言没有揭出新的真实 bug，原有功能未受影响</b>。
+    所有改动严格限定在 <code>tests/</code> 与 <code>scripts/verify/</code>，<code>core/</code>、<code>gui/</code>、<code>main.py</code> 零改动。
+  </div>
 </div>
 
 <div class="kpis" data-page-node-id="IcwzAnvcoVXJ0Epi5punVd">
@@ -122,13 +150,15 @@ ul.tight li{margin:4px 0}
   <div class="kpi" data-page-node-id="TU42FeWX3MSjiUmD4pSiDD"><div class="v g" data-page-node-id="jqMXY1rx3mq8CTaCIgS0eN">0</div><div class="l" data-page-node-id="2wPekAWrQsDjySQ3qIb1Nf">空函数体</div><div class="n m" data-page-node-id="n1c987ZWf7qf998l8Ev9wJ">无</div></div>
   <div class="kpi" data-page-node-id="rP9L6lsyON0tJ4lj77Jc0s"><div class="v g" data-page-node-id="p1Ij0qqhVB2qyAabklcY8P">0</div><div class="l" data-page-node-id="1p9M3jBexLGSUdMLnhvmLu">同名覆盖</div><div class="n m" data-page-node-id="9HBU4cdFudufwGaWx6uYkt">无</div></div>
   <div class="kpi" data-page-node-id="G4tAdSlk8kYnAKc9G0guI0"><div class="v g" data-page-node-id="GUPqs11MN5BKHVn2cRAGh2">0</div><div class="l" data-page-node-id="FxLxC7vvXk0JcUOWhCnSFC">过期引用</div><div class="n m" data-page-node-id="pYFitt7RL5GLy3F1pAlwPp">core/gui 符号全在</div></div>
-  <div class="kpi" data-page-node-id="v0me92lpew3lNVw16CXeZK"><div class="v r" data-page-node-id="wtQ9dxlMV6lCJDEY6yFzLS">1</div><div class="l" data-page-node-id="27GMZJuiJtibSstJEHIzN5">假测试</div><div class="n r" data-page-node-id="nfBCYDFLahcGjpDyGIzVs1">算完不校验</div></div>
-  <div class="kpi" data-page-node-id="FmtbXESjrAmES8OClRDRwR"><div class="v r" data-page-node-id="v9s1vFIcTjjOP3muJLJ1Ww">5</div><div class="l" data-page-node-id="P7k1aKD8AneoB0o2RveeYh">从未执行的用例</div><div class="n r" data-page-node-id="qebUyKXEgwRKBsyGAOHxC9">源图不存在</div></div>
-  <div class="kpi" data-page-node-id="aVbGqx8mJJn1faeb34iRFY"><div class="v o" data-page-node-id="GBDHWHI4jcl8uIF2aVFsJP">2</div><div class="l" data-page-node-id="3nQ2U7qIj4Q88SVGw31YES">冒烟伪装用例</div><div class="n m" data-page-node-id="8dFI6YPXukqEKOpuTQB7Rl">仅 print PASSED</div></div>
-  <div class="kpi" data-page-node-id="GPCaRdRzBK5yuDK5fR4D1M"><div class="v o" data-page-node-id="FO6vUrseLT9prIBk8YQ15s">2</div><div class="l" data-page-node-id="tk2Gs3Uq3ivSTwqYLVxzRK">命名违规脚本</div><div class="n m" data-page-node-id="aBdDzUxRcBdAUfcoNSazaL">scripts/verify/ 下</div></div>
+  <div class="kpi" data-page-node-id="v0me92lpew3lNVw16CXeZK"><div class="v g" data-page-node-id="wtQ9dxlMV6lCJDEY6yFzLS">0</div><div class="l" data-page-node-id="27GMZJuiJtibSstJEHIzN5">假测试</div><div class="n g" data-page-node-id="nfBCYDFLahcGjpDyGIzVs1">已补 assert</div></div>
+  <div class="kpi" data-page-node-id="FmtbXESjrAmES8OClRDRwR"><div class="v g" data-page-node-id="v9s1vFIcTjjOP3muJLJ1Ww">0</div><div class="l" data-page-node-id="P7k1aKD8AneoB0o2RveeYh">从未执行的用例</div><div class="n g" data-page-node-id="qebUyKXEgwRKBsyGAOHxC9">已按 C 删除</div></div>
+  <div class="kpi" data-page-node-id="aVbGqx8mJJn1faeb34iRFY"><div class="v g" data-page-node-id="GBDHWHI4jcl8uIF2aVFsJP">0</div><div class="l" data-page-node-id="3nQ2U7qIj4Q88SVGw31YES">冒烟伪装用例</div><div class="n g" data-page-node-id="8dFI6YPXukqEKOpuTQB7Rl">已补尺寸断言</div></div>
+  <div class="kpi" data-page-node-id="GPCaRdRzBK5yuDK5fR4D1M"><div class="v g" data-page-node-id="FO6vUrseLT9prIBk8YQ15s">0</div><div class="l" data-page-node-id="tk2Gs3Uq3ivSTwqYLVxzRK">命名违规脚本</div><div class="n g" data-page-node-id="aBdDzUxRcBdAUfcoNSazaL">已改 _verify_ 前缀</div></div>
+  <div class="kpi"><div class="v g">0</div><div class="l">假绿灯断言</div><div class="n g">原 4 处 · 已全部修复</div></div>
+  <div class="kpi"><div class="v g">374</div><div class="l">全量通过数</div><div class="n g">0 skipped · 0 failed</div></div>
 </div>
 
-<h2 data-page-node-id="F7mEbldLrJaXCSjZNs9ywy">二、需处理项（6 项）</h2>
+<h2 data-page-node-id="F7mEbldLrJaXCSjZNs9ywy">二、需处理项（6 项 · 已执行 5 项，1 项按原建议保留）</h2>
 
 <div class="issue p1" data-page-node-id="rP4aagVo4ZHhCUpD3JOjN4">
   <div class="hd" data-page-node-id="fEQZUcr1LdkL3F6Um4umZB"><span class="tag" data-page-node-id="TMOM9RAdjJ31FJGgS0tb4x">P1</span><span class="t" data-page-node-id="PNXyl6SdGfyQs4PTuHp4TE">假测试：算出结论却不校验，永远绿灯</span></div>
@@ -156,6 +186,15 @@ ul.tight li{margin:4px 0}
     <div class="field" data-page-node-id="oHnAWWtMcfOB4jBMDKGjao"><div class="k" data-page-node-id="iUWM2WVPuzmAYHKXIaaGH5">建议动作</div><div class="val" data-page-node-id="Rc5Tsi17MzCvdyqy7arSs5">
       把 <code data-page-node-id="xF6TuefapEG5Tohd0N6pCf">if/else print</code> 换成一行 <code data-page-node-id="hseqaeEkFTOo5hlJd4sKSb">assert content_preserved, f"内部花纹被裁剪: 蓝色像素占比 {blue_count/total_pixels:.1%}"</code>。
       改动 1 行，是本次投入产出比最高的一项。
+    </div></div>
+    <div class="field exec"><div class="k">✅ 执行结果（2026-09-11 · 已执行）</div><div class="val">
+      已按建议把 <code>if/else print</code> 替换为真正的断言，原 <code>print</code> 保留作诊断输出、不再作为唯一结论，
+      并加 <code>[2026-09-11 修复]</code> 注释说明改动原因：
+      <pre><code>assert content_preserved, (
+    f"小圆角半径下内部花纹被裁剪: 蓝色内容像素仅保留 "
+    f"{blue_count}/{total_pixels} ({blue_count / total_pixels:.1%})，低于 90% 阈值"
+)</code></pre>
+      <b>验证</b>：单独重跑该文件 → <code>3 passed</code>，实测内容保留率 <code>40000/40000 = 100%</code>，断言真实生效且通过。
     </div></div>
   </div>
 </div>
@@ -196,6 +235,16 @@ $ find . -name "*双面格*" -not -path "./.git/*"
       </ul>
       另外提醒：文件名含全角分号 <code data-page-node-id="Z4d9OccoJDI303miqMbB4p">；</code> 与中文，跨平台时容易踩坑。
     </div></div>
+    <div class="field exec"><div class="k">✅ 执行结果（2026-09-11 · 已执行，用户选定方案 C）</div><div class="val">
+      已删除整个 <code>tests/border/test_border_fix.py</code>（139 行 / 5 个用例，全文件均依赖那张不存在的源图）。
+      tests 由 <b>28 文件 / 347 个 test 函数</b> 降为 <b>27 文件 / 342 个 test 函数</b>。
+      <br><b>验证</b>：全量重跑 <code>374 collected / 374 passed / 0 skipped / 0 failed</code>——
+      原先的 5 个 skipped 随文件一起消失，通过数 374 与删除前<b>完全一致</b>，确认这 5 个用例此前确实零贡献。
+      <br><b>回滚方式</b>（如需恢复该场景的真实图回归能力）：
+      <pre><code>git checkout 98f81b9~1 -- tests/border/test_border_fix.py</code></pre>
+      <b>遗留建议</b>：A/B 两个方案（补源图 / 改用 PIL 合成素材）本次未做。若日后需要真实产品图回归，
+      可据此命令取回文件并补齐 <code>psd_demo/</code> 素材。
+    </div></div>
   </div>
 </div>
 
@@ -222,6 +271,17 @@ $ find . -name "*双面格*" -not -path "./.git/*"
     <div class="field" data-page-node-id="QcoIkZc8RgsfFTQFdCkUvE"><div class="k" data-page-node-id="TPgcTwg5nxBRHfVdOgjQUz">建议动作</div><div class="val" data-page-node-id="pLXxaWCAAlfGXTZehB1SZK">
       补最小断言：<code data-page-node-id="SG3LYua6KRJrrRsDXjU06V">assert result.size[0] &gt; 0 and result.size[1] &gt; 0</code>。
       若本就只想做冒烟，建议改名 <code data-page-node-id="jD5rACj6YEFMIBeuVqA92D">test_*_smoke</code> 并加注释说明「仅验证不抛异常」。
+    </div></div>
+    <div class="field exec"><div class="k">✅ 执行结果（2026-09-11 · 已执行）</div><div class="val">
+      <code>tests/core/test_lshape_render.py</code> 两处（<code>test_lshape_with_corners</code> / <code>test_lshape_with_border_bands</code>）
+      均在 <code>print('  PASSED')</code> 之前补上最小断言，<b>原 print 保留</b>作诊断输出：
+      <pre><code># [2026-09-11 修复] 原先只 print('PASSED') 而无任何校验，属冒烟测试伪装成用例。
+# 补最小断言：渲染结果尺寸必须有效（不改变被测逻辑，仅让失效可被发现）。
+assert result.size[0] &gt; 0 and result.size[1] &gt; 0, (
+    f'render_design 返回空尺寸: {result.size}'
+)</code></pre>
+      未改名（保持 <code>test_*</code>），因为它们现在已有真断言，不再是「仅验证不抛异常」的冒烟用例。
+      <b>验证</b>：全量通过数仍为 374，无回归。
     </div></div>
   </div>
 </div>
@@ -255,6 +315,17 @@ $ find . -name "*双面格*" -not -path "./.git/*"
     <div class="field" data-page-node-id="31Vc7geuovVfi62FwCpMm6"><div class="k" data-page-node-id="12JeSBbIOAo1EzmMjM3adr">建议动作</div><div class="val" data-page-node-id="k92wuTIyJ7aCrj8fvGCpVx">
       照抄兄弟用例，补一行 <code data-page-node-id="l7yDStBL4fMBL8YAMp7Rlk">assert result.size[0] &gt; 0 and result.size[1] &gt; 0</code>。
     </div></div>
+    <div class="field exec"><div class="k">✅ 执行结果（2026-09-11 · 已执行）</div><div class="val">
+      <code>tests/core/test_image_cropper.py:145</code> 的 <code>test_no_corners</code> 已在原空值检查后补上尺寸校验，
+      与同文件 <code>test_simple_resize_mode</code> 完全对齐：
+      <pre><code>result = crop_image(cfg)
+assert result is not None
+# [2026-09-11 修复] 原先只有上面这句空值检查，几乎恒真，无法发现尺寸错误。
+assert result.size[0] &gt; 0 and result.size[1] &gt; 0, (
+    f'crop_image 返回空尺寸: {result.size}'
+)</code></pre>
+      <b>验证</b>：重新扫描「弱断言作为唯一校验」指标，<b>1 → 0</b>。全量通过数仍为 374，无回归。
+    </div></div>
   </div>
 </div>
 
@@ -285,6 +356,16 @@ scripts/README.md 命名约定（强制）：
       重命名为 <code data-page-node-id="FKQORZSXH9dlOIKjGtrHwW">_verify_multilayer_debug.py</code> / <code data-page-node-id="UNsuWlGoW9cTsrpa9ruyGJ">_verify_xianxu_debug.py</code>（符合 <code data-page-node-id="jiprwXAm1bNLWzqrA62D5w">verify/</code> 约定）。
       纯改名，不动内容。
     </div></div>
+    <div class="field exec"><div class="k">✅ 执行结果（2026-09-11 · 已执行）</div><div class="val">
+      两个脚本已改名，<b>文件内容零改动</b>：
+      <pre><code>scripts/verify/test_multilayer_debug.py  →  scripts/verify/_verify_multilayer_debug.py
+scripts/verify/test_xianxu_debug.py      →  scripts/verify/_verify_xianxu_debug.py</code></pre>
+      git 识别为 <code>R 100%</code>（纯重命名，相似度 100%）。
+      <b>验证</b>：非归档目录下的 <code>test_*.py</code> 违规脚本计数 <b>2 → 0</b>；全量测试收集数未受影响（本就不在 testpaths 内）。
+      <br><b>操作注记</b>：本次使用普通 <code>mv</code> 而非 <code>git rm</code>——执行第 2C 项时 <code>git rm</code> 曾引发
+      <code>tests/</code> 目录连带消失的事故，故后续删除/改名一律改用 <code>mv</code> + <code>git add -A</code>，
+      git 仍能正确识别重命名。
+    </div></div>
   </div>
 </div>
 
@@ -299,6 +380,12 @@ scripts/README.md 命名约定（强制）：
       保留（README 已声明是预留）。若长期不打算补 GUI 测试，可考虑删除以免误导；
       但保留更符合「预留」语义。<b data-page-node-id="2wh2h5Sr6Nj3VFoqqfBAKQ">建议不动。</b>
     </div></div>
+    <div class="field exec"><div class="k">⚪ 执行结果（2026-09-11 · 按原建议保留，未改动）</div><div class="val">
+      <code>tests/gui/</code> 维持空目录状态（0 个 <code>.py</code> 文件，<code>tests/__init__.py</code> 仍为 0 字节）。
+      本项不在本次执行范围内——报告原本的建议就是「保留」，执行时予以采纳。
+      <br><b>后续可选项</b>：GUI 层目前零测试覆盖（全面检测报告已列为主要短板）。若日后要补，
+      建议从「窗口能否无异常构造 + 关键控件是否存在」这类离屏冒烟入手，再逐步扩展到交互。
+    </div></div>
   </div>
 </div>
 
@@ -309,11 +396,11 @@ scripts/README.md 命名约定（强制）：
 <thead data-page-node-id="rdIm1tNbhjIYmLD7hygiH4"><tr data-page-node-id="qi5kuEExRrVCnv9ugkz2lY"><th data-page-node-id="259oldbxhxGDUOvpMEWJmT">检测类别</th><th class="num" data-page-node-id="CW45h7d2UPDxD4mU73tWiM">命中</th><th data-page-node-id="CZqerZXqWCT7YWXDCvX8wJ">说明</th></tr></thead>
 <tbody data-page-node-id="mq4NfFV9Fl7exWoa4W8qqu">
 <tr data-page-node-id="mSqa3ojN6GvbQ3XSPDSW31"><td data-page-node-id="KHFlADsyjpglGes0FTGGQi">A 空壳文件（0 个 test 函数）</td><td class="num g" data-page-node-id="01qEqPPgn5A8BXC19ET7pr">0</td><td data-page-node-id="FuVNyNyfG6y6LjQzRFgDzl">上一轮已把 5 个空壳文件移至 <code data-page-node-id="f6mCFc1YTyNDGZKhJLdeWU">scripts/diagnose/</code>，本轮复核确认 <code data-page-node-id="06hxq8odrieLBkGmXuXFzR">tests/</code> 下<b data-page-node-id="dtEbuk2ALVNnVxwMqwWyrD">无残留</b></td></tr>
-<tr data-page-node-id="AFfNeCWRAbsGXpuYBt7WCJ"><td data-page-node-id="DBDgMbKZvs3C3sjxWgrbSL">B 空函数体（只有 pass/docstring）</td><td class="num g" data-page-node-id="kvw1OyyG91FdJTb1SnJWhd">0</td><td data-page-node-id="FpjJlQqFIBPf2djq7DT4UM">347 个 test 函数均有实际逻辑</td></tr>
+<tr data-page-node-id="AFfNeCWRAbsGXpuYBt7WCJ"><td data-page-node-id="DBDgMbKZvs3C3sjxWgrbSL">B 空函数体（只有 pass/docstring）</td><td class="num g" data-page-node-id="kvw1OyyG91FdJTb1SnJWhd">0</td><td data-page-node-id="FpjJlQqFIBPf2djq7DT4UM">342 个 test 函数均有实际逻辑（原 347，减去已删除的 5 个）</td></tr>
 <tr data-page-node-id="kx9NFIFyhWJ2G7Z3ve6577"><td data-page-node-id="oMDbJDhMMCsnyphM9MF4y1">C 同名覆盖（后者覆盖前者）</td><td class="num g" data-page-node-id="8xxKV2lHoeXzEoYSQ6WfMn">0</td><td data-page-node-id="V8rKsb2YN6gdmlBURdnECy">无重名，不存在「定义了却不执行」的用例</td></tr>
 <tr data-page-node-id="ghHX2Yc5DGtnznVrKbP4hl"><td data-page-node-id="2XQiTqjlDMDCMDiz95X5F1">G 过期引用</td><td class="num g" data-page-node-id="eofgssd3B0U0B6yXvNESFV">0</td><td data-page-node-id="NrCJbHQgJEkHffmMH9WmhG">所有 <code data-page-node-id="xgUTdXU1YFk2I7uCzaIujJ">from core.X / gui.X import Y</code> 的符号在源模块中<b data-page-node-id="kGCZZj7TCaDUowucQyVu2h">均存在</b>，无失效 import</td></tr>
 <tr data-page-node-id="ZL9vT6sVhchkFTJOFitc3c"><td data-page-node-id="MiZRKrceR8Se3VxG0XU31x">非 <code data-page-node-id="RXrRomxOqMp1graJkXek3b">Test*</code> 类内的 test 方法</td><td class="num g" data-page-node-id="kegbyxslFuAsqY8fni5NQH">0</td><td data-page-node-id="dF2I8LfrS8C7YuuuZxKODF">新增检查项：<code data-page-node-id="qKnJStGIC5zurnawoUOHmS">pytest.ini</code> 限定 <code data-page-node-id="l3EP1XwdHcT0XNfieUHOwr">python_classes = Test*</code>，若类不以 Test 开头，其中的 test 方法<b data-page-node-id="GjnA7ndTRzqaYrAGHKLcOl">永不执行</b>。本项目无此情况</td></tr>
-<tr data-page-node-id="UKObxf5XN1pPloMyqdBMPL"><td data-page-node-id="sh4ZvWeBodeUaHl4R7WEt8">E 永久跳过（skip 无恢复条件）</td><td class="num g" data-page-node-id="GQPJYAhJLqen7L0dSykguy">0</td><td data-page-node-id="YwaHqtppnUySyegt2ggdUs">无 <code data-page-node-id="MuUBtZZcaNMVwEOBuLC2ZK">@pytest.mark.skip</code> 永久标记；5 个跳过均为条件跳过（缺源图），已单列为 P1</td></tr>
+<tr data-page-node-id="UKObxf5XN1pPloMyqdBMPL"><td data-page-node-id="sh4ZvWeBodeUaHl4R7WEt8">E 永久跳过（skip 无恢复条件）</td><td class="num g" data-page-node-id="GQPJYAhJLqen7L0dSykguy">0</td><td data-page-node-id="YwaHqtppnUySyegt2ggdUs">无 <code data-page-node-id="MuUBtZZcaNMVwEOBuLC2ZK">@pytest.mark.skip</code> 永久标记；原 5 个条件跳过（缺源图）已随 P1 项删除 —— 执行后全量 <b>0 skipped</b></td></tr>
 <tr data-page-node-id="OAHMuJFzGTG8EKa6CT9H6J"><td data-page-node-id="i3IP6OPSElRai65Jpwo0Y9">恒真断言 <code data-page-node-id="hZ3d5bUDXcswcYlDkQPrZp">assert True</code> / <code data-page-node-id="V7KuiAnxjhVCiLF62RFgaH">assert 1</code></td><td class="num g" data-page-node-id="GRxivVhivOYBXMs7NZDGAd">0</td><td data-page-node-id="eGwTjB1cfApAFme9ggopAS">无</td></tr>
 <tr data-page-node-id="BWECLPj9u4XCtphx2YToIK"><td data-page-node-id="8vtrlJVEfAdWU5OP4jQoaz"><code data-page-node-id="Wq6180Q9lY8BKxQWxR3axe">tests/__init__.py</code> 空文件</td><td class="num m" data-page-node-id="b25yzibJchX7NlRENjjLId">1</td><td data-page-node-id="nuPUYTurTuZQAdvpYM4zb8"><b data-page-node-id="MTOEzH3ZhystbUsu56Fd21">正常</b>，包标识文件本就该为空，不算技术债</td></tr>
 <tr data-page-node-id="WexCD8ynjFiAuD2CLGXzND"><td data-page-node-id="vaOTnVNhbGSc8ncUXmRbhN">22 个 <code data-page-node-id="zFSdBhmPsdnptHnR038c5u">scripts/**/_archive/</code> 下的 test_*.py</td><td class="num m" data-page-node-id="9xX8KVYmvkuAl74DxwxGyL">22</td><td data-page-node-id="eDiWhArMtwED3XWy5XwhLA"><b data-page-node-id="PmqRDgo8e7KSGHuUzFFzm4">符合规范</b>——<code data-page-node-id="B62wb4iGcwOk8rxUgCB4dL">scripts/README.md</code> 明确规定历史伪单测归档在 <code data-page-node-id="qkdPnfUX3PuruP58LPJY33">_archive/old_tests/</code>，无需处理</td></tr>
@@ -327,21 +414,63 @@ scripts/README.md 命名约定（强制）：
 <li data-page-node-id="kw69iwdtd4F5A447ZqHWUz"><code data-page-node-id="wHrLZRjMSetteqNpjujXVH">tmp_path / "src.jpg"</code> 这种 pytest 临时目录动态生成的文件（扫描时当然不存在）</li>
 <li data-page-node-id="ywLEa9RKFmBouV7MNqDeVw">模板匹配测试里的文件名字符串仅用于<b data-page-node-id="XLJ616WwD6CwXXbE6nlNLR">解析</b>（如 <code data-page-node-id="rr9j5Fd5OkdRUpU4Cxci5r">"双面格-定制-定制尺寸-简织;竖版55x41cm.jpg"</code>），并不真实读盘</li>
 </ul>
-真正因缺文件而失效的只有 P1 那一项（<code data-page-node-id="GzPjjdM6O2LnddGdNBkKwW">test_border_fix.py</code> 的 5 个用例）。
+真正因缺文件而失效的只有 P1 那一项（<code data-page-node-id="GzPjjdM6O2LnddGdNBkKwW">test_border_fix.py</code> 的 5 个用例）——该项已于本次执行中删除。
+</div>
+
+<div class="note ok">
+<b>🔁 执行后全量复扫（2026-09-11，同一扫描器重跑）：</b>
+<table style="margin-top:8px">
+<thead><tr><th>指标</th><th class="num">执行前</th><th class="num">执行后</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>tests/ 文件数</td><td class="num">28</td><td class="num g">27</td><td>删除 <code>test_border_fix.py</code></td></tr>
+<tr><td>test 函数总数</td><td class="num">347</td><td class="num g">342</td><td>−5（全部是此前从未执行的）</td></tr>
+<tr><td>断言总数</td><td class="num">689</td><td class="num g">686</td><td>−7（随删除文件带走，其中 0 个曾被执行过）+4（新增 4 处真断言）</td></tr>
+<tr><td>A 空壳 / B 空函数 / C 同名覆盖 / G 过期引用</td><td class="num">0</td><td class="num g">0</td><td>维持清零</td></tr>
+<tr><td>D 无断言用例</td><td class="num">1</td><td class="num m">1</td><td><code>test_apply_rounded_corners_skips_degenerate_no_crash</code>，<b>刻意为之</b>——该用例语义就是「不崩溃」，保留</td></tr>
+<tr><td>弱断言作为<b>唯一</b>校验</td><td class="num r">1</td><td class="num g">0</td><td>已修复（扫描器仍会列出 25 处 <code>is not None</code>，但均为合理的空值前置检查，后面都跟了真断言）</td></tr>
+<tr><td>H 位置不当（非归档目录的 <code>test_*.py</code>）</td><td class="num r">2</td><td class="num g">0</td><td>已改名；剩余 22 个全部在 <code>_archive/</code> 内，符合规范</td></tr>
+<tr><td>I 空文件</td><td class="num">1</td><td class="num m">1</td><td><code>tests/__init__.py</code>，包标识文件本就该为空</td></tr>
+<tr><td>全量测试</td><td>379 收集 / 374 passed / 5 skipped</td><td class="g">374 收集 / <b>374 passed</b> / 0 skipped / 0 failed</td><td><b>通过数不变</b> → 补的断言没揭出隐藏 bug，无回归</td></tr>
+</tbody>
+</table>
 </div>
 </div>
 
-<h2 data-page-node-id="ej56tSHF9F97ZGxvKH6Sy0">四、清理方案（待确认后执行）</h2>
+<h2 data-page-node-id="ej56tSHF9F97ZGxvKH6Sy0">四、执行结果（2026-09-11 已完成并提交）</h2>
 
-<div class="confirm" data-page-node-id="WVWeZ5U9KU5Mlu69KLOyDS">
-  <div class="hd" data-page-node-id="AfIUUOfz2yPmZ3PmsghMwc">⚠️ 以下内容尚未执行 —— 等你确认具体范围后才动手</div>
-  <p style="margin:0 0 10px" data-page-node-id="63kRaogSrC0CNBaxzUiRh2">请勾选要执行的项（可直接回复序号，如「1 2 3」）：</p>
-  <div class="chk" data-page-node-id="S3ri8C0R8079ODspPvvWJa"><input type="checkbox" disabled data-page-node-id="4ZVYuesky4RjeiJmqgmDKr"> <b data-page-node-id="bwpAStBHiVlLb3NJUZlS6U">1.</b> 修假测试：<code data-page-node-id="Z5ugIxH7PGhjFz0sNVFf04">test_gap_fix_verification.py:293</code> 的 <code data-page-node-id="hLntQivuz9ZonbhwVJa1da">if/else print</code> → <code data-page-node-id="F2PwPq002HihB5GK0VMgK7">assert content_preserved, ...</code>（改 1 行）</div>
-  <div class="chk" data-page-node-id="YN00vdzWSnTXND2gCAiWZF"><input type="checkbox" disabled data-page-node-id="PuiCsXJ3xUgRT4c6y7FUs7"> <b data-page-node-id="slINFR39CugHQHqMWnbDpO">2.</b> 处理 5 个从未执行的用例：<b data-page-node-id="kYDW5P5CeKAeCl8ZuBCIDG">A</b> 补源图 / <b data-page-node-id="K6zWG6u1LP0OLDbL5fDeHi">B</b> 改为自动生成素材 / <b data-page-node-id="U326gdV1xYA8WXaZ1KmKFS">C</b> 删除（需你选一种）</div>
-  <div class="chk" data-page-node-id="eLFVMp4dhGX7egARFMrsLO"><input type="checkbox" disabled data-page-node-id="pgToe1IRqapLWgwWHTlbUf"> <b data-page-node-id="ionVznJmlbTeJBJgTC5KNm">3.</b> 两个冒烟用例补最小断言：<code data-page-node-id="HTmah743oPobrPvjVxDF7b">test_lshape_render.py:66 / :91</code></div>
-  <div class="chk" data-page-node-id="Nx1CECFtuExKegAJtX7DmU"><input type="checkbox" disabled data-page-node-id="oB5dzrIjb2xBkfs3D4jP8M"> <b data-page-node-id="ejSz7ODl1WJ4TibRoscH1W">4.</b> 补弱断言：<code data-page-node-id="2RYS5m3zxOBEpZUvUFquAr">test_image_cropper.py:145</code> 增加尺寸校验</div>
-  <div class="chk" data-page-node-id="s40HwrSHTd4l5ezim43QFg"><input type="checkbox" disabled data-page-node-id="gUeD8UE1om1sZO8csT3BE5"> <b data-page-node-id="2Ca5Nce6aBa9NLg0J1R5cv">5.</b> 重命名 2 个违规脚本：<code data-page-node-id="azqhArdIqfZPnWqSYm67Pm">test_multilayer_debug.py</code> → <code data-page-node-id="asaSQLpt7XQz1H7xx3u6c5">_verify_multilayer_debug.py</code>（<code data-page-node-id="wHjmHItrrO1u5qNUJ7miUG">test_xianxu_debug.py</code> 同理）</div>
-  <div class="chk" data-page-node-id="U28wJTtkHlt0q2TYZ7egvQ"><input type="checkbox" disabled data-page-node-id="e7CidR2fhebmuuTOCKkwPM"> <b data-page-node-id="lIYz1NaAcvMEi7gG5DsRIC">6.</b> 以上全部</div>
+<div class="done">
+  <div class="hd">✅ 已执行项 —— 全部落在提交 98f81b9「v2.2-清理失效测试并修复4处假绿灯断言」</div>
+  <ul>
+    <li><b>1. 修假测试</b> ✅ —— <code>test_gap_fix_verification.py:293</code> 的 <code>if/else print</code> 已换成 <code>assert content_preserved, ...</code>。单独重跑 <code>3 passed</code>，实测内容保留率 100%。</li>
+    <li><b>2. 5 个从未执行的用例</b> ✅ <b>（用户选定方案 C：删除）</b> —— 整个 <code>tests/border/test_border_fix.py</code>（139 行）已删除。方案 A（补源图）/ B（PIL 合成素材）本次未做，可按需回滚取回。</li>
+    <li><b>3. 两个冒烟用例补断言</b> ✅ —— <code>test_lshape_render.py</code> 两处已补 <code>assert result.size[0] &gt; 0 and result.size[1] &gt; 0</code>。</li>
+    <li><b>4. 补弱断言</b> ✅ —— <code>test_image_cropper.py:145</code> 已补尺寸校验，与兄弟用例对齐。弱断言作唯一校验的计数 <b>1 → 0</b>。</li>
+    <li><b>5. 重命名 2 个违规脚本</b> ✅ —— <code>test_multilayer_debug.py</code> → <code>_verify_multilayer_debug.py</code>，<code>test_xianxu_debug.py</code> → <code>_verify_xianxu_debug.py</code>，内容零改动，git 记为 <code>R 100%</code>。</li>
+    <li><b>6. tests/gui/ 空目录</b> ⚪ <b>未动</b> —— 采纳原报告建议「保留」，它是 README 声明的预留目录。</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph">执行后核验<span class="risk risk-l">低风险 · 已通过</span></div>
+  <ul>
+    <li><b>功能零改动已验证</b>：所有变更仅落在 <code>tests/</code> 与 <code>scripts/verify/</code>；<code>core/</code>、<code>gui/</code>、<code>main.py</code> 一个字节未动。</li>
+    <li><b>测试基线未倒退</b>：<code>374 collected / 374 passed / 0 skipped / 0 failed</code>（42.7s）。通过数与清理前<b>完全相同</b>——
+        说明补上的 4 处断言没有揭出被掩盖的真实 bug，删除的 5 个用例此前也确实零贡献。</li>
+    <li><b>第 5 项刻意避开 <code>git rm</code></b>：执行第 2C 项删除时，<code>git rm</code> 曾导致 <code>tests/</code> 下 29 个文件连带消失
+        （已用 <code>git checkout -- tests/</code> 恢复，无内容丢失）。故改名改用普通 <code>mv</code> + <code>git add -A</code>，
+        经确认 git 仍能正确识别为重命名，<b>后续同类操作沿用此法</b>。</li>
+    <li><b>不做过度修改</b>：4 处断言均只补「最小必要校验」，未顺手重构、未改被测逻辑、未调整阈值，
+        原有 <code>print</code> 诊断输出全部保留。</li>
+  </ul>
+</div>
+
+<div class="note">
+<b>📌 本次未做、留待后续决定的事项：</b>
+<ul class="tight">
+<li><code>psd_demo/</code> 源图缺失问题本身<b>未根治</b>——只是删掉了依赖它的用例。若该场景（双面格定制尺寸实图回归）仍有价值，建议按方案 B 用 PIL 合成素材重建，可彻底摆脱外部文件依赖。</li>
+<li><code>tests/gui/</code> 仍为空，GUI 层零测试覆盖（全面检测报告已列为主要短板）。</li>
+<li>D 类「无断言用例」剩 1 个（<code>test_apply_rounded_corners_skips_degenerate_no_crash</code>），语义上就是「不崩溃即可」，<b>判定为合理，保留</b>。</li>
+</ul>
 </div>
 
 <div class="phase" data-page-node-id="iSDRSErHXukoQsuhed0GnI">
@@ -358,20 +487,29 @@ scripts/README.md 命名约定（强制）：
 
 <h2 data-page-node-id="LzIFiPauCuV6xRUI02JNoe">五、扫描方法说明</h2>
 <div class="card" data-page-node-id="kiKi6eYUKA4rnFdkn2Berr">
-<p style="margin:0 0 8px" data-page-node-id="rR8FLHs4qfpd3jv9fbt7Fg">本次为<b data-page-node-id="UF853Jl6FcCcBUGF9Dbz1j">纯只读</b>扫描，未创建、修改、删除任何项目文件。判定基于 AST 静态分析 + 实跑验证结合：</p>
+<p style="margin:0 0 8px" data-page-node-id="rR8FLHs4qfpd3jv9fbt7Fg"><b>扫描阶段</b>（第一、二、三章的结论来源）为<b data-page-node-id="UF853Jl6FcCcBUGF9Dbz1j">纯只读</b>，未创建、修改、删除任何项目文件，判定基于 AST 静态分析 + 实跑验证结合。
+<b>执行阶段</b>（第四章）于 2026-09-11 经确认后实施，仅改动 <code>tests/</code> 与 <code>scripts/verify/</code>，并已用同一扫描器复扫验证。方法细节如下：</p>
 <ul class="tight" data-page-node-id="hE7cEhDndjDVqbMSB9zHUO">
-<li data-page-node-id="TDpIgc1inktcumk5J1smDE"><b data-page-node-id="mf6UeR2ueYHY6TusLgtjiC">静态</b>：解析 <code data-page-node-id="5bei6XE3CVtOrBvrSRJulh">tests/</code> 下 28 个 py 文件的 AST，统计 test 函数、断言、装饰器、import 符号</li>
+<li data-page-node-id="TDpIgc1inktcumk5J1smDE"><b data-page-node-id="mf6UeR2ueYHY6TusLgtjiC">静态</b>：解析 <code data-page-node-id="5bei6XE3CVtOrBvrSRJulh">tests/</code> 下 py 文件的 AST（扫描期 28 个 / 复扫期 27 个），统计 test 函数、断言、装饰器、import 符号</li>
 <li data-page-node-id="9KrtiAXFJcQ5mbR2LyxZlN"><b data-page-node-id="B8xgfSLIZugMC3lppYRtDN">动态</b>：实跑 <code data-page-node-id="Coqv9B6u1CHieSDK1eKeou">pytest</code> 取得收集数与跳过项；对 <code data-page-node-id="y64z3xMATV8peIjY1A4Sfy">core.*/gui.*</code> 的 import 符号做真实 import 校验</li>
 <li data-page-node-id="DIXLxvuwrZiaDfsi6z0vUJ"><b data-page-node-id="7UNQEUsyqDHx5YIveoz5Lf">人工复核</b>：对扫描器初判的 25 处弱断言、39 处缺失文件引用逐个人工确认，剔除假阳性（最终分别留下 1 处和 1 组）</li>
 </ul>
-<pre data-page-node-id="jtksAY8ytl5FETO0jqJHzU"><code data-page-node-id="HlHMGUSwg7t59rqD4ih9Zo">扫描规模：tests/ 28 个文件 · 347 个 test 函数 · 7,946 行
-实跑基线：379 collected / 374 passed / 5 skipped / 0 failed</code></pre>
+<pre data-page-node-id="jtksAY8ytl5FETO0jqJHzU"><code data-page-node-id="HlHMGUSwg7t59rqD4ih9Zo">【扫描期 · HEAD 28c8ab5】
+扫描规模：tests/ 28 个文件 · 347 个 test 函数 · 7,946 行 · 689 条断言
+实跑基线：379 collected / 374 passed / 5 skipped / 0 failed
+
+【执行后复扫 · HEAD 98f81b9】
+扫描规模：tests/ 27 个文件 · 342 个 test 函数 · 7,280 行 · 686 条断言
+实跑结果：374 collected / 374 passed / 0 skipped / 0 failed
+扫描器命中：A 空壳 0 · B 空函数 0 · C 同名覆盖 0 · D 无断言 1(刻意) ·
+            E 永久跳过 0 · G 过期引用 0 · H 位置不当 0(非归档) · I 空文件 1(包标识)</code></pre>
 </div>
 
 <footer data-page-node-id="gPMmq30vYlk4mnjlGFH2nc">
-  <div class="foot-ver" data-page-node-id="0uUirDU4be6gli762ZCbq1">SmartShapeCrop V2.2 · 失效测试清理报告 v1.0</div><br data-page-node-id="MbrsxjErCtgstAYKs1LyEk">
-  生成时间 2026-09-11 &nbsp;·&nbsp; 检测基线 HEAD 28c8ab5<br data-page-node-id="Kg12Z4GTBAQY5xPM3Hv2lY">
-  全程只读扫描 &nbsp;·&nbsp; 清理方案待确认后执行 &nbsp;·&nbsp; 报告位置 ProductSummary/SmartShapeCrop分析报告/
+  <div class="foot-ver" data-page-node-id="0uUirDU4be6gli762ZCbq1">SmartShapeCrop V2.2 · 失效测试清理报告 v1.1（执行更新版）</div><br data-page-node-id="MbrsxjErCtgstAYKs1LyEk">
+  扫描日期 2026-09-11 &nbsp;·&nbsp; 检测基线 HEAD 28c8ab5 &nbsp;·&nbsp; 执行提交 HEAD 98f81b9<br data-page-node-id="Kg12Z4GTBAQY5xPM3Hv2lY">
+  清理项 1 / 2C / 3 / 4 / 5 已执行 &nbsp;·&nbsp; 第 6 项按原建议保留 &nbsp;·&nbsp; 仅改动 tests/ 与 scripts/verify/，core/gui/main.py 零改动<br>
+  报告位置 ProductSummary/SmartShapeCrop分析报告/
 </footer>
 
 </div>
