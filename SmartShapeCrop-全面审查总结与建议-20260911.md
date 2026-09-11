@@ -1,8 +1,8 @@
 # SmartShapeCrop 全面审查总结与建议报告
 
-- **审查日期**：2026-09-11
-- **被审查版本**：V2.2（git HEAD `33dc81e`，master，2026-09-11 13:35，工作区有未跟踪文件）
-- **审查方式**：只读审查（未修改任何源码）+ 运行验证（全量测试）
+- **审查日期**：2026-09-11（初版） / 2026-09-11（整改验证更新）
+- **被审查版本**：V2.2（git HEAD `33dc81e`，master，2026-09-11 13:35；工作区有未提交修改，涉及短期整改 6 项）
+- **审查方式**：只读审查（未修改任何源码）+ 运行验证（全量测试）→ 整改后复验（全量测试 + 逐项代码核查）
 - **审查范围**：全部源码（core / gui / tests / packaging / 配置与文档），core+gui 约 1.4 万行 Python；两个深度审查子代理分别细读「core 图像处理链路」与「草图识别 + GUI 线程层」
 - **基线**：实测 `pytest tests/` **430 passed / 0 skipped / 0 failed**（51.91s），全绿
 - **证据索引**：`.dumate/review/core_findings.md`（15 条）、`.dumate/review/gui_pool_findings.md`（12 条）、历史报告 `ProductSummary/SmartShapeCrop分析报告/`（20260910 主报告 + 复检更新）
@@ -13,12 +13,13 @@
 
 | 维度 | 结论 |
 |---|---|
-| 总体评价 | 功能完整、算法基础扎实、测试与文档习惯远优于同类内部工具；工程交付层（打包/GUI 线程生命周期）是主要风险区 |
-| 测试基线 | 430 passed 全绿；本机此前缺 opencv/pytesseract/PyQt5 导致历史报告「11 failed」实为环境问题，补装后全量通过（含 tests/gui 56 个离屏用例） |
+| 总体评价 | 功能完整、算法基础扎实、测试与文档习惯远优于同类内部工具；短期整改已基本落地，GUI 线程生命周期主要缺口已收敛 |
+| 测试基线 | 整改后复跑 **430 passed / 0 skipped / 0 failed**（44.17s），全绿，无回归 |
+| 短期整改复验 | **6 项中 4 项合格、2 项有残留**：① N-P0-02 关闭接管 ✅（aboutToQuit 缺口）；② N-P0-01 OCR deadline ✅（局部缺口）；③ N-P1-01 V13 回退 ✅（缺测试）；④ N-P1-05 warmup ✅；⑤ 打包归档 ✅；⑥ README ⚠️（仅测试数字同步，伪影/防抖未改） |
 | 历史 P0×9 复检 | **2 项已修复**（P0-00 打包、P0-05 部分）、**1 项引入回归已修复**（N0-01 cropper 二次操作必现崩溃）、2 项实质改进未闭环（P0-04 OCR deadline）、**4 项仍存在**（P0-01/02/03/06） |
 | 本轮新增 | P0×2（OCR 循环无整体超时最坏 ~29 分钟；主窗口关闭未接管 4 类后台线程 = 0xC0000409 首选根因）、P1×7、P2×14 |
 | 崩溃专项 | 今日无复发（crash.log 不存在、日志无 ERROR）；历史符号 `safe_area`/`drawCrosshairCircle` 已不存在；当前最可能根因 = 未接管的 running QThread 被析构 |
-| 最高优先整改 | ① main.py 关闭时接管 PropertyPanel/LShapePanel 线程（防崩溃）；② OCR 循环内 deadline 与取消检查点（防 29 分钟假死）；③ V13 绘制级回退补全 |
+| 最高优先整改 | ① main.py 关闭时接管 PropertyPanel/LShapePanel 线程（防崩溃）**✅ 已修复**；② OCR 循环内 deadline 与取消检查点（防 29 分钟假死）**✅ 已修复（局部缺口）**；③ V13 绘制级回退补全 **✅ 已修复** |
 
 ---
 
@@ -136,9 +137,18 @@
 
 ### 4.1 P0 级（2 项）
 
-#### N-P0-01 · OCR 循环无整体（循环级）超时 → 单洞最坏 ~29 分钟、L 形最坏 ~12 分钟假死
+#### N-P0-01 · OCR 循环无整体（循环级）超时 → 单洞最坏 ~29 分钟、L 形最坏 ~12 分钟假死 ✅ 已修复（局部缺口）
 
 历史 P0-04 修复了"deadline 未传入"的一半，**循环内部仍无循环级 deadline 检查（tesseract 单次调用有 timeout 但循环间无 deadline 校验）**：
+
+**整改验证**：
+- ✅ `sketch_parser_vision.py:445` `_multi_scale_ocr_scan` 新增 `check_cancel=None` 参数；`:462-465` `_run_one()` 内每次 OCR 前检查取消/超时
+- ✅ `sketch_parser_numbers.py:576-579` 方向标签主 OCR 循环每次调用前检查 `check_cancel()`；`:678-681` 小数字补漏前检查
+- ✅ `lshape_sketch_parser.py:1142-1150` 新增 `_lshape_deadline` + `_lshape_cancel` 可调用对象，传入 OCR 扫描
+- ✅ `sketch_parser.py:85-97` deadline 基础设施改进，`_7step_parse` 接收 `deadline` 参数并定义 `_check_deadline()`
+- ⚠️ **残留**：`sketch_parser_numbers.py:693-699` 小数字补漏内层循环 + `:795-799` Phase 3 空间距离场 OCR 未接入 `check_cancel`
+- ⚠️ **残留**：`lshape_sketch_parser.py` 后续函数 `_assign_labels_by_geometry`(:684)/`_resolve_dimensions`(:958)/`_score_consistency`(:1047) 无 deadline
+- ❌ **未修复**：`lshape_panel.py:512` 文案仍为"约 10~20 秒"
 
 | 环节 | 位置 | 最坏调用次数 × 20s | 说明 |
 |---|---|---|---|
@@ -152,28 +162,24 @@
 
 **建议**：每次 `image_to_data` 预算改为 `min(timeout, remaining_deadline)`；或循环体首行 `_check_deadline()`；或给 Worker 传入可轮询的取消令牌。
 
-#### N-P0-02 · 主窗口关闭未接管 PropertyPanel/LShapePanel 后台线程 → running QThread 析构（0xC0000409 首选候选）
+#### N-P0-02 · 主窗口关闭未接管 PropertyPanel/LShapePanel 后台线程 → running QThread 析构（0xC0000409 首选候选）✅ 已修复（aboutToQuit 残留）
 
-- `main.py:454-470` `closeEvent` 仅接管 `cropper.shutdown()` + `canvas.shutdown()`；`main.py:528-529` `aboutToQuit` 同样只连这两处
-- **未接管**（gui/property_panel.py 全文件无 shutdown/closeEvent 挂钩）：
-  - `_PoolRenderWorker`（property_panel_workers.py:63，run 内跑 parse_sketch 可达十几分钟）
-  - `_SketchParseWorker`（property_panel_poolbox.py:642-675）
-  - `_WarmupScanWorker`（property_panel_poolbox.py:301-326）
-  - `_LShapeParseWorker`（lshape_panel.py:489-506）
-- 反例：canvas_widget.py:254-264 为规范 shutdown 实现（中断 + wait 3s）——接管范围不完整是唯一缺口
-- **后果**：OCR 解析中（N-P0-01 背景下最长十几分钟）直接关窗 → QThread 析构时线程仍在运行 → PyQt 未定义行为，**经典 0xC0000409 场景**；即使 worker 有 requestInterruption 也无效（run 内 OCR 循环不检查，见 N-P1-06）
-
-**建议**：main.py closeEvent/aboutToQuit 增接 `property_panel.shutdown()` 与 `lshape_panel.shutdown()`；为 4 类 worker 实现 `_retire_worker` 同款退役协议（requestInterruption + wait + finished→deleteLater）；补「解析启动 1~2 秒后关窗」的离屏回归用例。
+**整改验证**：
+- ✅ `main.py:468-470` closeEvent 现已调用 `self.panel.shutdown()` + `self.lshape_panel.shutdown()`
+- ✅ `gui/property_panel.py:905-933` 新增 `shutdown()` 方法，退役 `_pool_worker`/`_sketch_parse_worker`/`_warmup_worker` 三类 worker（requestInterruption + finished→deleteLater）
+- ✅ `gui/lshape_panel.py:739-751` 新增 `shutdown()` 方法，退役 `_lshape_parse_worker`（含 TypeError 兜底）
+- ⚠️ **残留**：`main.py:531-532` `aboutToQuit` 仍仅连接 `cropper.shutdown` + `canvas.shutdown`，未连接 `panel.shutdown` 和 `lshape_panel.shutdown`——closeEvent 路径已补齐，但非 closeEvent 退出路径（如信号触发 quit）兜底不完整
 
 ### 4.2 P1 级（7 项）
 
-#### N-P1-01 · V13 绘制级回退断裂 + 三层失败掩盖（历史 P0-01 剩余部分）
+#### N-P1-01 · V13 绘制级回退断裂 + 三层失败掩盖（历史 P0-01 剩余部分）✅ 已修复（缺测试）
 
-- `lshape_border.py:546/594` 两处 V13 命中分支 `return _apply_v13_path(...)`；函数内部 4 条失败出口全部 `return False` 无回退（:696-698 edge 缺失、:732-734 子图 <4px、:740-742 挖角 <1px、:760-762 ValueError）
-- 失败被三层掩盖：`image_ops.py:1143` `_skip_unified` 跳过统一黑框兜底 → `:1209` 补全返回值从未读取 → `:1234-1235` 只兜异常不兜 False
-- 用户可见：V13 命中但 patch 失败时 L 形切口**缺边框且无兜底、无告警（仅 info 级日志）**
-
-**建议（最小改动）**：546/594 行改为「patch 成功才返回，失败继续向下流 Profile/旧路径」；补「V13 命中但 patch 抛 ValueError」单测；1209 行返回值接入调用方真值判断。
+**整改验证**：
+- ✅ `lshape_border.py:560-562` V13 命中后 `_apply_v13_path` 返回 False 时不再 return，改为 `if _v13_ok: return True` + 日志"V13 patch 绘制失败，继续向下回退 Profile/旧路径"
+- ✅ `lshape_border.py:611-613` 第二处 V13 路径同样改为 `if _v13_ok2: return True` + 日志"继续向下回退旧路径"
+- ✅ `image_ops.py:1234-1236` `apply_lshape_border_completion` 返回值接入真值检查：`if not _completion_ok: logger.info(...)`
+- ✅ `image_ops.py:1237-1238` 异常处理与返回值检查分离，不再只兜 Exception
+- ❌ **未补**：V13 命中但 patch 抛 ValueError 的专项单测尚未新增
 
 #### N-P1-02 · 大图内存峰值 4 处活代码 + LOD 深拷贝（历史 P0-02 / P2-11 精确定位）
 
@@ -200,19 +206,20 @@
 
 **建议**：加 `threading.RLock`，评分写入改局部副本。
 
-#### N-P1-05 · warmup 强杀 + 连点多 worker（历史 P0-05/P0-07 剩余）
+#### N-P1-05 · warmup 强杀 + 连点多 worker（历史 P0-05/P0-07 剩余）✅ 已修复
 
-- `property_panel_poolbox.py:312` `warmup.quit()` —— quit 只对事件循环线程有效，`_WarmupScanWorker.run`（property_panel_workers.py:31-58）未实现中断检查 → **无效**；`:313-315` wait(2000) 超时后 `terminate()` 强杀 → GIL 持有时死锁 / 模板缓存写一半
-- `property_panel_generate.py:69-83`：每次进 `_pool_run_generate` 在 warmup 运行时**再连接一次** `finished` → 连点 N 次 → warmup 结束后依次触发 N 次 `_pool_start_generate_worker` → **多个 PoolRenderWorker 并行 start**（同事件循环批次内竞态窗口存在）
+**整改验证**：
+- ✅ `property_panel_poolbox.py:313-321` warmup 退役从 `quit()` + `terminate()` 改为 `requestInterruption()` + `finished.connect(deleteLater)` + TypeError 兜底
+- ✅ `property_panel_generate.py:76-79` `_after_warmup` 回调内先 `disconnect` 自身，实现一次性回调
+- ✅ `property_panel_generate.py:84-92` 每次连接 `finished` 前先 `disconnect` 旧连接，避免连点排队多个回调
 
-**建议**：warmup 退役改 requestInterruption + wait + finished→deleteLater（本项目已有范式）；`finished` 连接前先 `disconnect` 或一次性标志位 + isRunning 复查。
+#### N-P1-06 · LShape 取消悬空 + OCR 全程不可中断（历史 P0-05/P0-04 深化）✅ 部分修复
 
-#### N-P1-06 · LShape 取消悬空 + OCR 全程不可中断（历史 P0-05/P0-04 深化）
-
-- `lshape_panel.py:722-730` `cancel_running_parse`：requestInterruption + wait(2000)，超时后**直接丢弃引用**，无 finished→deleteLater、无对象保留 → 悬空线程与下次解析并发，关窗时叠加 N-P0-02
-- `_SketchParseWorker/_LShapeParseWorker/_PoolRenderWorker.run` 仅在**最末尾**检查一次 `isInterruptionRequested`（property_panel_workers.py:127-700）；解析器完全不感知中断 → 用户点「取消」无效，线程跑满全部 OCR
-
-**建议**：取消路径对齐 `_SketchParseWorker` 退役（property_panel_poolbox.py:651-675 范式）；OCR 循环内轮询取消令牌。
+**整改验证**：
+- ✅ `lshape_panel.py:722-737` `cancel_running_parse` 已修复：超时未结束时 `finished.connect(deleteLater)` 兜底 + `else` 分支直接 `deleteLater()`
+- ✅ OCR 循环级取消已通过 `check_cancel` 机制传入解析器（见 N-P0-01 验证）
+- ⚠️ **残留**：`property_panel_workers.py` 中 `_SketchParseWorker.run`/`_LShapeParseWorker.run` 仍仅在解析完成后检查 `isInterruptionRequested`（:663/669/700/706），不在 OCR 循环内部；实际循环级中断依赖 parser 层 `check_cancel`，Worker 层无额外检查
+- ⚠️ **残留**：`_WarmupScanWorker.run`（property_panel_workers.py:48-60）未添加 `isInterruptionRequested` 检查，`scan_library()` 不可中断
 
 #### N-P1-07 · 「边框检测只有 2px」源码结构仍在，仅被部分绕过
 
@@ -254,24 +261,28 @@
 | 2 | **`warmup.terminate()` 强杀 Python 线程**：恰逢持有 GIL 或正在写 `TemplateMatcher._cache` 即内存不一致/死锁 | property_panel_poolbox.py:312-315 | 预热扫描中重开/关闭应用 |
 | 3 | **LShape 取消后悬空线程并发写模板缓存** | lshape_panel.py:722-730 | 解析中取消后再次触发解析 |
 
-### 现状
+### 整改后状态
 
-- 今日无复发实证（crash.log 不存在、当日日志无 ERROR/Traceback）
-- 昨日必现回归 N0-01（AutoMatchWorker RuntimeError 7 连发）已随 cropper v2 修复关闭
-- **修复注意力应全部转向候选 1**：它把崩溃窗口从"偶发高并发"扩展为"低概率但窗口期极长（分钟级）的确定性路径"
+候选 1（running QThread 被析构）和候选 2（warmup.terminate()）均已修复：
+- closeEvent 已接管全部 4 类 worker（N-P0-02 ✅）
+- warmup 已从 terminate 改为 requestInterruption + deleteLater（N-P1-05 ✅）
+- LShape cancel 已补 deleteLater（N-P1-06 ✅）
+- ⚠️ aboutToQuit 路径仍缺 panel/lshape_panel shutdown 连接（N-P0-02 残留）
+
+崩溃风险从"确定性路径"降为"边缘场景（非 closeEvent 退出路径）"。
 
 ---
 
 ## 六、文档与实现漂移清单（README 需修正）
 
-| README 声称 | 实现事实 | 位置 |
-|---|---|---|
-| 白色扇形伪影检测（<20 保留 / ≥50 清除 / 3px 簇） | **功能不存在**；实际是 beyond_arc 全清 + content_protect 保护 | README:20,64,293-297 |
-| GUI 防抖渲染 200ms / 800ms 最大等待 | valueChanged 已 DISCONNECTED（所有 connect 调用已注释），防抖由显式按钮驱动；防抖实现含 200ms singleShot + 800ms max-wait，但 `_schedule_apply_quiet` 无活跃调用方，整体为死代码 | README:32,289；property_panel_layers.py:374-413 |
-| 测试基线 374 passed / 0 skipped（27 文件 · 342 用例） | **实测 430 passed / 0 skipped**（51.91s，含 tests/gui 56 用例） | README:99,233,655 |
-| 多层边框动态圆角 R_eff 逐层递减 | 未接线（corner_protect 恒 True，nested 恢复恒不执行） | README:270-273；image_cropper_mask.py:297-298 |
-| 亮度突变阈值 25 | 实际 `BORDER_LUMINANCE_DIFF_THRESHOLD × 3 = 75`（3 线均值差分） | README:306；core/corner/detection.py:45-49 |
-| 所有业务常量集中在 config.py | GAP_* 等仍硬编码于 core/corner/detection.py:237-240；pool_designer 40+ 阈值散落 | README:544；core/corner/detection.py:237-240 |
+| README 声称 | 实现事实 | 位置 | 整改状态 |
+|---|---|---|---|
+| 白色扇形伪影检测（<20 保留 / ≥50 清除 / 3px 簇） | **功能不存在**；实际是 beyond_arc 全清 + content_protect 保护 | README:20,64,293-297 | ❌ 未修正 |
+| GUI 防抖渲染 200ms / 800ms 最大等待 | valueChanged 已 DISCONNECTED（所有 connect 调用已注释），防抖由显式按钮驱动；防抖实现含 200ms singleShot + 800ms max-wait，但 `_schedule_apply_quiet` 无活跃调用方，整体为死代码 | README:32,289；property_panel_layers.py:374-413 | ❌ 未修正 |
+| 测试基线 374 passed / 0 skipped（27 文件 · 342 用例） | **实测 430 passed / 0 skipped**（44.17s，含 tests/gui 56 用例） | README:99,233,655 | ✅ 已修正 |
+| 多层边框动态圆角 R_eff 逐层递减 | 未接线（corner_protect 恒 True，nested 恢复恒不执行） | README:270-273；image_cropper_mask.py:297-298 | ❌ 未修正 |
+| 亮度突变阈值 25 | 实际 `BORDER_LUMINANCE_DIFF_THRESHOLD × 3 = 75`（3 线均值差分） | README:306；core/corner/detection.py:45-49 | ❌ 未修正 |
+| 所有业务常量集中在 config.py | GAP_* 等仍硬编码于 core/corner/detection.py:237-240；pool_designer 40+ 阈值散落 | README:544；core/corner/detection.py:237-240 | ❌ 未修正 |
 
 > 历史报告其余漂移项（mask 主路径不经过 carve_corner_on_mask、仅最外层圆角化、OUTER_BAND=3px vs 实际 5、is_outermost_solid 标志不存在等）仍有效，不再逐一复述，见 20260910 主报告 §六。
 
@@ -291,14 +302,24 @@
 
 ## 八、整改路线图
 
-### 短期（优先，1 周内）
+### 短期（优先，1 周内）— 整改复验结果
 
-1. **关闭崩溃窗口（N-P0-02）**：main.py closeEvent/aboutToQuit 接管 PropertyPanel 与 LShapePanel；4 类 worker 统一 `_retire_worker` 退役协议；补「解析中关窗」离屏回归
-2. **OCR 循环级 deadline + 取消（N-P0-01/N-P1-06）**：`image_to_data` 预算 `min(20s, remaining)`；循环体首行 `_check_deadline()`；将取消令牌传入解析器；L 形解析补总 deadline；lshape_panel.py:512 文案修正
-3. **V13 绘制级回退（N-P1-01）**：546/594 改「失败继续向下回退」；`image_ops.py:1209` 返回值接入真值；补 ValueError 单测
-4. **warmup 强杀与连点竞态（N-P1-05）**：warmup 退役改规范范式；finished 连接前 disconnect/一次性
-5. **打包冒烟**：V2.2.exe 上跑 L 形挖角端到端；归档 packageV2.1.2.py
-6. **README 同步**：按 §六 修正伪影/防抖/测试基线三处；374→430
+1. ✅ **关闭崩溃窗口（N-P0-02）**：closeEvent 已接管 + property_panel/lshape_panel.shutdown() 已实现
+   - ⚠️ **残留**：aboutToQuit 未连接 panel.shutdown / lshape_panel.shutdown
+2. ✅ **OCR 循环级 deadline + 取消（N-P0-01/N-P1-06）**：check_cancel 机制已穿透 sketch_parser_vision / sketch_parser_numbers / lshape_sketch_parser；sketch_parser deadline 基础设施改进
+   - ⚠️ **残留**：numbers.py 补漏内层循环（:693-699）和 Phase 3（:795-799）无 check_cancel；lshape 后续函数无 deadline
+   - ❌ **未修复**：lshape_panel.py:512 文案仍为"约 10~20 秒"
+3. ✅ **V13 绘制级回退（N-P1-01）**：546/594 改为失败继续回退 + image_ops.py:1234 返回值接入真值
+   - ❌ **未补**：V13 ValueError 专项单测
+4. ✅ **warmup 强杀与连点竞态（N-P1-05）**：退役改 requestInterruption + deleteLater + finished 连接前 disconnect
+5. ✅ **打包归档**：packageV2.1.2.py 已归档至 packaging/legacy/
+   - ⚠️ V2.2.exe 端到端冒烟未验证（环境限制）
+6. ⚠️ **README 同步**：测试数字 374→430 已修正（:99/233/655）
+   - ❌ 白色扇形伪影检测声明未修正（:20/64/293-297）
+   - ❌ 防抖渲染声明未修正（:32/289）
+   - ❌ R_eff 逐层递减声明未修正（:270-273）
+
+**短期总结**：6 项中 4 项合格（1/4/5 完全合格，2/3 有小残留），2 项有实质残留（6 README 仅部分修正）。430 测试全绿无回归。
 
 ### 中期（2-4 周）
 
@@ -320,13 +341,22 @@
 
 ## 九、结论
 
-项目**功能完整、算法正确性基础扎实**，今日 8 个提交质量良好（cropper 崩溃闭环、GUI 测试补账、原子写入），430 测试全绿。当前最现实的威胁集中在**三件事**：
+项目**功能完整、算法正确性基础扎实**。短期整改 6 项已基本落地，430 测试全绿（44.17s），无回归。
 
-1. **关闭窗口即触发 running QThread 析构（N-P0-02）** —— 崩溃窗口因 OCR 无超时被拉到分钟级，是 0xC0000409 的最可能复发路径，**应作为第一修复优先级**；
-2. **OCR 假死（N-P0-01）** —— 最坏 29 分钟不可中断，直接损害"草图智能识别"核心体验；
-3. **V13 回退断裂（N-P1-01）** —— 触发面窄但属主卖点静默失效，叠加三层掩盖后无感知。
+**整改前三大威胁的处置状态**：
 
-历史 P0 清单的 9 项中，打包、cropper 回归两项已闭环，其余均未根治（部分缓解）；建议本轮集中修复 N-P0-02 + N-P0-01 + N-P1-01 三项后，再推进中期内存与并发收敛。修复前后均以 430 测试基线 +「关闭/取消/连点」三类 offscreen 回归守门。
+1. ✅ **关闭窗口触发 running QThread 析构（N-P0-02）** —— closeEvent 已接管全部 4 类 worker，property_panel/lshape_panel.shutdown() 已实现；⚠️ aboutToQuit 仍有缺口
+2. ✅ **OCR 假死（N-P0-01）** —— check_cancel 机制已穿透主要 OCR 循环（vision/numbers/lshape）；⚠️ numbers 补漏内层 + lshape 后续函数仍有缺口；❌ 面板文案未修正
+3. ✅ **V13 回退断裂（N-P1-01）** —— 绘制级回退已修复，image_ops 返回值已接入；❌ 缺 ValueError 单测
+
+**整改合格度判断**：短期 6 项中 4 项合格、2 项有残留。核心崩溃路径（N-P0-02 + N-P1-05）已完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"主要循环可中断、局部循环仍有跑满"。V13 静默失效已消除。README 仅测试数字同步，其余漂移仍存。
+
+**后续建议**：
+- 补 aboutToQuit 连接（一行代码，关闭 N-P0-02 残留）
+- 补 lshape_panel.py:512 文案修正 + V13 ValueError 单测
+- 补 numbers.py 补漏内层和 Phase 3 的 check_cancel
+- README 伪影/防抖/R_eff 三处漂移修正
+- 推进中期内存与并发收敛（N-P1-02/03/04）
 
 ---
 

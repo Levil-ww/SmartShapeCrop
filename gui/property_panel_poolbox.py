@@ -299,21 +299,26 @@ class _PoolBoxMixin:
             self._pool_on_template_dir_changed(last_dir, warmup=True)
 
     def _pool_trigger_warmup(self, abs_dir: str):
-        """启动后台预热扫描；若已有预热在跑则先等待其停止（避免竞争写 TemplateMatcher）"""
+        """启动后台预热扫描；若已有预热在跑则先退役旧实例（避免竞争写 TemplateMatcher）"""
+        # [Fix N-P1-05] 退役旧 warmup：quit+terminate 改为 requestInterruption+finished→deleteLater
         # 如果已有生成任务在跑，不做预热——生成流程内部会先扫描
         if self._pool_worker is not None and self._pool_worker.isRunning():
             return
-        # 已有预热在跑：目录相同就复用；目录不同先停掉旧的
+        # 已有预热在跑：目录相同就复用；目录不同先退役旧的
         warmup = getattr(self, '_warmup_worker', None)
         if warmup is not None and warmup.isRunning():
             old_dir = getattr(warmup, '_template_dir', '')
             if os.path.abspath(old_dir) == abs_dir:
                 return  # 同一个目录，不用重新预热
-            warmup.quit()
-            if not warmup.wait(2000):
-                warmup.terminate()
-                warmup.wait(1000)
-            warmup.deleteLater()
+            # 退役旧 warmup（规范范式，避免 terminate 强杀风险）
+            old_warmup = warmup
+            old_warmup.requestInterruption()
+            try:
+                old_warmup.finished.connect(old_warmup.deleteLater)
+            except TypeError:
+                old_warmup.deleteLater()
+            # 断开引用，让新实例可以开始；旧实例自行在后台结束
+            self._warmup_worker = None
 
         warmup = _WarmupScanWorker(self._matcher, abs_dir, parent=self)
         @warmup.finished_ok.connect

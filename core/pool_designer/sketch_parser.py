@@ -119,7 +119,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     ocr_raw = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
                                     target_w_cm=target_outer_w_cm,
                                     target_h_cm=target_outer_h_cm,
-                                    enhanced_gray=enhanced_gray)
+                                    enhanced_gray=enhanced_gray,
+                                    check_cancel=lambda: _check_deadline('OCR扫描') is not None)
     if not ocr_raw:
         return {'success': False, 'message': '全局OCR未识别到任何数值'}
     ocr_raw = _merge_split_decimals(ocr_raw)
@@ -130,7 +131,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     dir_locked = _extract_direction_label_numbers(cv2, tesseract, gray_img,
                                                    enhanced_gray=enhanced_gray,
                                                    target_outer_w_cm=target_outer_w_cm,
-                                                   target_outer_h_cm=target_outer_h_cm)
+                                                   target_outer_h_cm=target_outer_h_cm,
+                                                   check_cancel=lambda: _check_deadline('方向标签识别') is not None)
     excluded_fields = set(dir_locked.keys())
     excluded_values = [v[0] for v in dir_locked.values()]
     # [Fix Bug2] 将权威外框尺寸和目标尺寸加入 value 排除，防止 total_w/total_h 被误分配给 inner_* 或 margin_* 桶

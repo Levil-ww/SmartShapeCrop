@@ -442,7 +442,7 @@ def _make_preprocess_variants(cv2, gray_img, enhanced_gray=None):
 
 
 
-def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_gray=None, **kwargs):
+def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_gray=None, check_cancel=None, **kwargs):
     """多尺度多预处理OCR，返回 [(value, confidence, (x,y,w,h)), ...]。"""
     from PIL import Image as PILImage
     results = []
@@ -459,6 +459,10 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
         except Exception:
             return out
         for psm in psm_list:
+            # [Fix N-P0-01] 每次 OCR 前检查取消/超时
+            if check_cancel is not None and check_cancel():
+                logger.info("[_run_one] 检测到取消/超时，终止 OCR 循环")
+                return out
             cfg = f'--oem 3 --psm {psm}'
             try:
                 data = tesseract.image_to_data(pil, config=cfg, output_type=tesseract.Output.DICT,

@@ -272,7 +272,8 @@ def _parse_dir_num_token(text):
 
 
 def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=None,
-                                     target_outer_w_cm=0.0, target_outer_h_cm=0.0):
+                                     target_outer_w_cm=0.0, target_outer_h_cm=0.0,
+                                     check_cancel=None):
     """Phase1改进版：提取方向+数值组合（支持双向匹配 + 颜色增强 + 小数字补漏）。
 
     返回: dict {field_name: (value, conf, bbox)}
@@ -561,6 +562,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         return True
 
     for img, scale, src_tag in scan_list:
+        # [Fix N-P0-01] 每次预处理变体前检查取消/超时
+        if check_cancel is not None and check_cancel():
+            logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止扫描")
+            return result
         try:
             pil = PILImage.fromarray(img)
         except Exception:
@@ -568,6 +573,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             continue
         for lang in lang_options:
             for psm in psm_list:
+                # [Fix N-P0-01] 每次 OCR 前检查取消/超时
+                if check_cancel is not None and check_cancel():
+                    logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止 OCR 循环")
+                    return result
                 try:
                     data = tesseract.image_to_data(
                         pil, lang=lang,
@@ -666,6 +675,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         and cv2 is not None
     )
     if run_small_number_fallback:
+        # [Fix N-P0-01] 小数字补漏前再检查一次
+        if check_cancel is not None and check_cancel():
+            logger.info("[_extract_direction_label_numbers] 小数字补漏前检测到取消/超时，跳过")
+            return result
         logger.info(f"[Step4] 小数字补漏触发：缺失{missing_fields}个字段，6x+PSM10扫描增强图...")
         try:
             s60 = cv2.resize(enhanced_gray, None, fx=6.0, fy=6.0, interpolation=cv2.INTER_CUBIC)

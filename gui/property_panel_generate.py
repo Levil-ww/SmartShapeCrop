@@ -72,9 +72,19 @@ class _GenerateMixin:
             QApplication.processEvents()
 
             def _after_warmup(_s=source, _t=target_name):
+                # [Fix N-P1-05] 预热结束后一次性断开，防止连点排队多个回调
+                try:
+                    warmup.finished.disconnect(_after_warmup)
+                except Exception:
+                    pass
                 # 预热结束后，内存缓存已就绪，scan_library 会走 quick-skip（毫秒级）
                 self._pool_start_generate_worker(_s, _t)
 
+            # [Fix N-P1-05] 先断开旧连接再连新连接，避免多次触发
+            try:
+                warmup.finished.disconnect(_after_warmup)
+            except Exception:
+                pass
             try:
                 warmup.finished.connect(_after_warmup)
             except Exception:

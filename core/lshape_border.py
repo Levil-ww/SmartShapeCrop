@@ -543,7 +543,7 @@ def apply_lshape_border_completion(
                 "[LShapeBorder] V13 检测命中（Profile 让位）: edge=%dpx band=%dpx color=%s",
                 _v13[0], _v13[1], _v13[2],
             )
-            return _apply_v13_path(
+            _v13_ok = _apply_v13_path(
                 canvas_arr=canvas_arr,
                 material_img=material_img,
                 outer_rect=outer_rect,
@@ -557,6 +557,9 @@ def apply_lshape_border_completion(
                 manual_band_px=_v13[1],
                 manual_band_color=_v13[2],
             )
+            if _v13_ok:
+                return True
+            logger.info("[LShapeBorder] V13 patch 绘制失败，继续向下回退 Profile/旧路径")
         logger.info("[LShapeBorder] Profile 首层厚黑但 V13 未命中，Profile 接管")
 
     if _profile_layers:
@@ -591,7 +594,7 @@ def apply_lshape_border_completion(
             "[LShapeBorder] V13 检测命中: edge=%dpx band=%dpx color=%s，走 V13 路径",
             v13[0], v13[1], v13[2],
         )
-        return _apply_v13_path(
+        _v13_ok2 = _apply_v13_path(
             canvas_arr=canvas_arr,
             material_img=material_img,
             outer_rect=outer_rect,
@@ -605,6 +608,9 @@ def apply_lshape_border_completion(
             manual_band_px=v13[1],
             manual_band_color=v13[2],
         )
+        if _v13_ok2:
+            return True
+        logger.info("[LShapeBorder] V13 patch 绘制失败（直接优先路径），继续向下回退旧路径")
 
     border_layers_src = detect_pool_material_borders(detect_img, bg_color)
     if not border_layers_src:

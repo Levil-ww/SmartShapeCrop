@@ -96,7 +96,7 @@ SmartShapeCrop/
 │   ├── property_panel_layers.py   #   多层边框编辑 UI
 │   └── property_panel_poolbox.py   #   多洞参数面板 + 草图识别与边距回填调度
 │
-├── tests/                          # 单元测试（pytest，以实跑结果为准；2026-09-11 失效测试清理后实测 374 passed / 0 skipped）
+├── tests/                          # 单元测试（pytest，以实跑结果为准；2026-09-11 失效测试清理后实测 430 passed / 0 skipped）
 │   ├── conftest.py
 │   ├── core/                       #   核心模块测试（圆角/裁剪/文件名解析/模板匹配/L 形渲染/草图解析/边框补全）
 │   │   ├── test_rounded_corner.py
@@ -230,7 +230,7 @@ python process_image.py --src "D:\path\to\源图.jpg" --out-dir "D:\path\to\out"
 ### 运行测试
 
 ```bash
-# 全部测试（实测 374 passed / 0 skipped，约 43 秒）
+# 全部测试（实测 430 passed / 0 skipped，约 43 秒）
 python -m pytest tests/ -q
 
 # 仅圆角测试
@@ -652,7 +652,7 @@ python main.py
 
 ### 测试
 
-测试位于 `tests/` 目录，按模块分子目录组织，使用 pytest 框架。实测基线（2026-09-11，失效测试清理后）：**374 passed / 0 skipped / 0 failed**（27 个文件 · 342 个用例）。
+测试位于 `tests/` 目录，按模块分子目录组织，使用 pytest 框架。实测基线（2026-09-11，失效测试清理后）：**430 passed / 0 skipped / 0 failed**（27 个文件 · 342 个用例）。
 
 > 2026-09-11 清理：修复 4 处「算完不校验」的假绿灯断言、删除 5 个因源图缺失而从未执行过的用例、将 2 个违规命名的调试脚本改为 `_verify_` 前缀。
 > 详见 `ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-V2.2-失效测试清理报告-20260911.html`。

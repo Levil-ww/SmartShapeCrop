@@ -465,6 +465,9 @@ class MainWindow(QMainWindow):
         """
         if self._is_saving:
             self._retire_save_worker()
+        # [Fix N-P0-02] 退役 PropertyPanel 与 LShapePanel 后台线程，避免关窗时 running QThread 被析构
+        self.panel.shutdown()
+        self.lshape_panel.shutdown()
         self.cropper.shutdown()
         self.canvas.shutdown()
         super().closeEvent(event)

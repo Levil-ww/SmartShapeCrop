@@ -509,7 +509,7 @@ class LShapePanel(QWidget):
         worker.finished_err.connect(self._on_lshape_parse_err)
         worker.finished.connect(self._on_lshape_worker_finished)
         self._lshape_parse_worker = worker
-        self._set_status("正在识别 L 形挖角（多尺度 OCR，约 10~20 秒）…")
+        self._set_status("正在识别 L 形挖角（多尺度 OCR，普通情况约 10~20 秒，复杂图可能更长）…")
         worker.start()
 
     def _on_lshape_worker_finished(self):
@@ -724,10 +724,31 @@ class LShapePanel(QWidget):
         if self._lshape_parse_worker is not None and self._lshape_parse_worker.isRunning():
             try:
                 self._lshape_parse_worker.requestInterruption()
-                self._lshape_parse_worker.wait(2000)
+                if not self._lshape_parse_worker.wait(2000):
+                    # [Fix N-P0-02] 超时未结束则 finished→deleteLater 兜底
+                    try:
+                        self._lshape_parse_worker.finished.connect(self._lshape_parse_worker.deleteLater)
+                    except TypeError:
+                        self._lshape_parse_worker.deleteLater()
+                else:
+                    self._lshape_parse_worker.deleteLater()
             except Exception:
                 pass
         self._lshape_parse_worker = None
+
+    def shutdown(self):
+        """[Fix N-P0-02] 退役 LShapePanel 持有的后台线程，避免主窗口关闭时析构 running QThread。"""
+        if getattr(self, '_lshape_parse_worker', None) is not None:
+            old = self._lshape_parse_worker
+            self._lshape_parse_worker = None
+            if old.isRunning():
+                old.requestInterruption()
+                try:
+                    old.finished.connect(old.deleteLater)
+                except TypeError:
+                    old.deleteLater()
+            else:
+                old.deleteLater()
 
     # ====================================================================
     # 目标文件名历史记录（独立于水池设计器，使用 TARGET_SRC_LSHAPE）

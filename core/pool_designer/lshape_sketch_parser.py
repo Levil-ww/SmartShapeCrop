@@ -1139,8 +1139,15 @@ def parse_lshape_sketch(
     if tesseract is not None:
         try:
             enhanced = _enhance_colored_ink(cv2, img)
+            # [Fix N-P0-01] L 形解析也传入 deadline，防止 OCR 循环无限制运行
+            from .sketch_parser_base import _PARSE_TIMEOUT_SEC
+            import time as _sp_time
+            _lshape_deadline = _sp_time.monotonic() + _PARSE_TIMEOUT_SEC
+            def _lshape_cancel():
+                return _sp_time.monotonic() > _lshape_deadline
             ocr_numbers = _multi_scale_ocr_scan(
-                cv2, tesseract, gray, enhanced_gray=enhanced)
+                cv2, tesseract, gray, enhanced_gray=enhanced,
+                check_cancel=_lshape_cancel)
         except Exception as e:
             logger.warning(f"[lshape] OCR 扫描失败（降级为纯几何）: {e}")
     else:

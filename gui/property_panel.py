@@ -902,4 +902,34 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
 
 
 
+    def shutdown(self):
+        """[Fix N-P0-02] 退役 PropertyPanel 持有的后台线程，避免主窗口关闭时析构 running QThread。"""
+        # _pool_worker (PoolRenderWorker)
+        if getattr(self, '_pool_worker', None) is not None:
+            old = self._pool_worker
+            self._pool_worker = None
+            if old.isRunning():
+                old.requestInterruption()
+                old.finished.connect(old.deleteLater)
+            else:
+                old.deleteLater()
+        # _sketch_parse_worker (_SketchParseWorker)
+        if getattr(self, '_sketch_parse_worker', None) is not None:
+            old = self._sketch_parse_worker
+            self._sketch_parse_worker = None
+            if old.isRunning():
+                old.requestInterruption()
+                old.finished.connect(old.deleteLater)
+            else:
+                old.deleteLater()
+        # _warmup_worker (_WarmupScanWorker)
+        if getattr(self, '_warmup_worker', None) is not None:
+            old = self._warmup_worker
+            self._warmup_worker = None
+            if old.isRunning():
+                old.requestInterruption()
+                old.finished.connect(old.deleteLater)
+            else:
+                old.deleteLater()
+
     # ---- PSD 导出 ----

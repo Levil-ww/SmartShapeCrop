@@ -1231,6 +1231,9 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                 manual_band_px=getattr(design, 'lshape_manual_band_px', None),
                 manual_band_color=getattr(design, 'lshape_manual_band_color', None),
             )
+            # [Fix N-P1-01] 补全返回值接入真值（仅日志记录，不改变渲染逻辑）
+            if not _completion_ok:
+                logger.info("[LShapeBorder] 边框补全未返回成功，切口依赖统一黑框兜底")
         except Exception as _bc_e:
             logger.debug(f"[LShapeBorder] 补全过程异常（静默跳过）: {_bc_e}")
 
