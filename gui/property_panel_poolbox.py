@@ -310,10 +310,10 @@ class _PoolBoxMixin:
             if os.path.abspath(old_dir) == abs_dir:
                 return  # 同一个目录，不用重新预热
             warmup.quit()
-            warmup.wait(2000)
-            if warmup.isRunning():
+            if not warmup.wait(2000):
                 warmup.terminate()
                 warmup.wait(1000)
+            warmup.deleteLater()
 
         warmup = _WarmupScanWorker(self._matcher, abs_dir, parent=self)
         @warmup.finished_ok.connect
@@ -648,14 +648,26 @@ class _PoolBoxMixin:
             return
 
         # —— 启动后台解析（立即返回，不阻塞 UI 重绘）——
-        if self._sketch_parse_worker is not None and self._sketch_parse_worker.isRunning():
-            # 取消前一次未完成的解析（避免旧结果覆盖新图）
-            # requestInterruption() 对纯 run() 的 QThread 生效（quit() 仅对有事件循环的线程有效）
-            try:
-                self._sketch_parse_worker.requestInterruption()
-                self._sketch_parse_worker.wait(2000)
-            except Exception:
-                pass
+        if self._sketch_parse_worker is not None:
+            old = self._sketch_parse_worker
+            self._sketch_parse_worker = None
+            if old.isRunning():
+                # 取消前一次未完成的解析（避免旧结果覆盖新图）
+                # requestInterruption() 对纯 run() 的 QThread 生效（quit() 仅对有事件循环的线程有效）
+                try:
+                    old.requestInterruption()
+                    if not old.wait(2000):
+                        # 线程仍在运行：连接 finished→deleteLater 确保结束后释放
+                        try:
+                            old.finished.connect(old.deleteLater)
+                        except TypeError:
+                            old.deleteLater()
+                    else:
+                        old.deleteLater()
+                except Exception:
+                    old.deleteLater()
+            else:
+                old.deleteLater()
         worker = _SketchParseWorker(self._sketch_path, target_w, target_h, self)
         worker.finished_ok.connect(self._on_sketch_parsed)
         worker.finished_err.connect(self._on_sketch_parse_err)

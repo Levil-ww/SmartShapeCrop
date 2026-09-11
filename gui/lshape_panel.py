@@ -486,12 +486,24 @@ class LShapePanel(QWidget):
             return
 
         # 取消前一次未完成的 L 形解析
-        if self._lshape_parse_worker is not None and self._lshape_parse_worker.isRunning():
-            try:
-                self._lshape_parse_worker.requestInterruption()
-                self._lshape_parse_worker.wait(2000)
-            except Exception:
-                pass
+        if self._lshape_parse_worker is not None:
+            old = self._lshape_parse_worker
+            self._lshape_parse_worker = None
+            if old.isRunning():
+                try:
+                    old.requestInterruption()
+                    if not old.wait(2000):
+                        # 线程仍在运行：连接 finished→deleteLater 确保结束后释放
+                        try:
+                            old.finished.connect(old.deleteLater)
+                        except TypeError:
+                            old.deleteLater()
+                    else:
+                        old.deleteLater()
+                except Exception:
+                    old.deleteLater()
+            else:
+                old.deleteLater()
         worker = _LShapeParseWorker(sketch_path, raw_w, raw_h, self)
         worker.finished_ok.connect(self._on_lshape_parsed)
         worker.finished_err.connect(self._on_lshape_parse_err)
