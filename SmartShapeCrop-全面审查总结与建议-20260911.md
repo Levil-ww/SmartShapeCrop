@@ -15,7 +15,7 @@
 |---|---|
 | 总体评价 | 功能完整、算法基础扎实、测试与文档习惯远优于同类内部工具；短期整改已基本落地，GUI 线程生命周期主要缺口已收敛 |
 | 测试基线 | 整改后复跑 **430 passed / 0 skipped / 0 failed**（44.17s），全绿，无回归 |
-| 短期整改复验 | **6 项中 4 项合格、2 项有残留**：① N-P0-02 关闭接管 ✅（aboutToQuit 缺口）；② N-P0-01 OCR deadline ✅（局部缺口）；③ N-P1-01 V13 回退 ✅（缺测试）；④ N-P1-05 warmup ✅；⑤ 打包归档 ✅；⑥ README ⚠️（仅测试数字同步，伪影/防抖未改） |
+| 短期整改复验 | **6 项中 5 项合格、1 项有残留**：① N-P0-02 关闭接管 ✅（aboutToQuit 缺口）；② N-P0-01 OCR deadline ✅（局部缺口）；③ N-P1-01 V13 回退 ✅（缺测试）；④ N-P1-05 warmup ✅；⑤ 打包归档 ✅；⑥ README ✅（主要漂移已修正，config.py 常量集中属长期债） |
 | 历史 P0×9 复检 | **2 项已修复**（P0-00 打包、P0-05 部分）、**1 项引入回归已修复**（N0-01 cropper 二次操作必现崩溃）、2 项实质改进未闭环（P0-04 OCR deadline）、**4 项仍存在**（P0-01/02/03/06） |
 | 本轮新增 | P0×2（OCR 循环无整体超时最坏 ~29 分钟；主窗口关闭未接管 4 类后台线程 = 0xC0000409 首选根因）、P1×7、P2×14 |
 | 崩溃专项 | 今日无复发（crash.log 不存在、日志无 ERROR）；历史符号 `safe_area`/`drawCrosshairCircle` 已不存在；当前最可能根因 = 未接管的 running QThread 被析构 |
@@ -148,7 +148,7 @@
 - ✅ `sketch_parser.py:85-97` deadline 基础设施改进，`_7step_parse` 接收 `deadline` 参数并定义 `_check_deadline()`
 - ⚠️ **残留**：`sketch_parser_numbers.py:693-699` 小数字补漏内层循环 + `:795-799` Phase 3 空间距离场 OCR 未接入 `check_cancel`
 - ⚠️ **残留**：`lshape_sketch_parser.py` 后续函数 `_assign_labels_by_geometry`(:684)/`_resolve_dimensions`(:958)/`_score_consistency`(:1047) 无 deadline
-- ❌ **未修复**：`lshape_panel.py:512` 文案仍为"约 10~20 秒"
+- ✅ `lshape_panel.py:512` 文案已修正："通常约 10~20 秒，复杂草图或 Tesseract 配置异常时可能更长，可随时取消"
 
 | 环节 | 位置 | 最坏调用次数 × 20s | 说明 |
 |---|---|---|---|
@@ -220,6 +220,7 @@
 - ✅ OCR 循环级取消已通过 `check_cancel` 机制传入解析器（见 N-P0-01 验证）
 - ⚠️ **残留**：`property_panel_workers.py` 中 `_SketchParseWorker.run`/`_LShapeParseWorker.run` 仍仅在解析完成后检查 `isInterruptionRequested`（:663/669/700/706），不在 OCR 循环内部；实际循环级中断依赖 parser 层 `check_cancel`，Worker 层无额外检查
 - ⚠️ **残留**：`_WarmupScanWorker.run`（property_panel_workers.py:48-60）未添加 `isInterruptionRequested` 检查，`scan_library()` 不可中断
+- ✅ `lshape_panel.py:512` 文案已修正（见 N-P0-01 验证）
 
 #### N-P1-07 · 「边框检测只有 2px」源码结构仍在，仅被部分绕过
 
@@ -277,12 +278,12 @@
 
 | README 声称 | 实现事实 | 位置 | 整改状态 |
 |---|---|---|---|
-| 白色扇形伪影检测（<20 保留 / ≥50 清除 / 3px 簇） | **功能不存在**；实际是 beyond_arc 全清 + content_protect 保护 | README:20,64,293-297 | ❌ 未修正 |
-| GUI 防抖渲染 200ms / 800ms 最大等待 | valueChanged 已 DISCONNECTED（所有 connect 调用已注释），防抖由显式按钮驱动；防抖实现含 200ms singleShot + 800ms max-wait，但 `_schedule_apply_quiet` 无活跃调用方，整体为死代码 | README:32,289；property_panel_layers.py:374-413 | ❌ 未修正 |
+| 白色扇形伪影检测（<20 保留 / ≥50 清除 / 3px 簇） | **功能不存在**；实际是 beyond_arc 全清 + content_protect 保护 | README:20,66,765-766 | ✅ 已修正（改为 beyond_arc 全清 + content_protect 描述） |
+| GUI 防抖渲染 200ms / 800ms 最大等待 | valueChanged 已 DISCONNECTED（所有 connect 调用已注释），防抖由显式按钮驱动；防抖实现含 200ms singleShot + 800ms max-wait，但 `_schedule_apply_quiet` 无活跃调用方，整体为死代码 | README:32,291-292；property_panel_layers.py:374-413 | ✅ 已修正（标注已弃用 + DISCONNECTED 说明） |
 | 测试基线 374 passed / 0 skipped（27 文件 · 342 用例） | **实测 430 passed / 0 skipped**（44.17s，含 tests/gui 56 用例） | README:99,233,655 | ✅ 已修正 |
-| 多层边框动态圆角 R_eff 逐层递减 | 未接线（corner_protect 恒 True，nested 恢复恒不执行） | README:270-273；image_cropper_mask.py:297-298 | ❌ 未修正 |
-| 亮度突变阈值 25 | 实际 `BORDER_LUMINANCE_DIFF_THRESHOLD × 3 = 75`（3 线均值差分） | README:306；core/corner/detection.py:45-49 | ❌ 未修正 |
-| 所有业务常量集中在 config.py | GAP_* 等仍硬编码于 core/corner/detection.py:237-240；pool_designer 40+ 阈值散落 | README:544；core/corner/detection.py:237-240 | ❌ 未修正 |
+| 多层边框动态圆角 R_eff 逐层递减 | 未接线（corner_protect 恒 True，nested 恢复恒不执行） | README:350-356；image_cropper_mask.py:297-298 | ✅ 已修正（标注未接线 + 公式保留说明） |
+| 亮度突变阈值 25 | 实际 `BORDER_LUMINANCE_DIFF_THRESHOLD × 3 = 75`（3 线均值差分） | README:385；core/corner/detection.py:45-49,805 | ✅ 已修正（标注 25（×3=75 实际生效）） |
+| 所有业务常量集中在 config.py | GAP_* 等仍硬编码于 core/corner/detection.py:237-240；pool_designer 40+ 阈值散落 | README:547；core/corner/detection.py:237-240 | ❌ 未修正（属长期技术债，短期不修） |
 
 > 历史报告其余漂移项（mask 主路径不经过 carve_corner_on_mask、仅最外层圆角化、OUTER_BAND=3px vs 实际 5、is_outermost_solid 标志不存在等）仍有效，不再逐一复述，见 20260910 主报告 §六。
 
@@ -314,12 +315,10 @@
 4. ✅ **warmup 强杀与连点竞态（N-P1-05）**：退役改 requestInterruption + deleteLater + finished 连接前 disconnect
 5. ✅ **打包归档**：packageV2.1.2.py 已归档至 packaging/legacy/
    - ⚠️ V2.2.exe 端到端冒烟未验证（环境限制）
-6. ⚠️ **README 同步**：测试数字 374→430 已修正（:99/233/655）
-   - ❌ 白色扇形伪影检测声明未修正（:20/64/293-297）
-   - ❌ 防抖渲染声明未修正（:32/289）
-   - ❌ R_eff 逐层递减声明未修正（:270-273）
+6. ✅ **README 同步**：测试数字 374→430 已修正（:99/233/655）；白色扇形伪影检测改为 beyond_arc + content_protect 描述（:20/66/765-766）；防抖渲染标注已弃用（:32/291-292）；R_eff 逐层递减标注未接线（:350-356）；亮度阈值标注 25（×3=75）（:385）
+   - ❌ config.py 常量集中声明未修正（属长期技术债）
 
-**短期总结**：6 项中 4 项合格（1/4/5 完全合格，2/3 有小残留），2 项有实质残留（6 README 仅部分修正）。430 测试全绿无回归。
+**短期总结**：6 项中 5 项合格（1/4/5 完全合格，2/3 有小残留），第 6 项 README 同步已修正主要漂移（仅 config.py 常量集中属长期技术债未修）。430 测试全绿无回归。
 
 ### 中期（2-4 周）
 
@@ -346,16 +345,16 @@
 **整改前三大威胁的处置状态**：
 
 1. ✅ **关闭窗口触发 running QThread 析构（N-P0-02）** —— closeEvent 已接管全部 4 类 worker，property_panel/lshape_panel.shutdown() 已实现；⚠️ aboutToQuit 仍有缺口
-2. ✅ **OCR 假死（N-P0-01）** —— check_cancel 机制已穿透主要 OCR 循环（vision/numbers/lshape）；⚠️ numbers 补漏内层 + lshape 后续函数仍有缺口；❌ 面板文案未修正
+2. ✅ **OCR 假死（N-P0-01）** —— check_cancel 机制已穿透主要 OCR 循环（vision/numbers/lshape）；⚠️ numbers 补漏内层 + lshape 后续函数仍有缺口；✅ 面板文案已修正
 3. ✅ **V13 回退断裂（N-P1-01）** —— 绘制级回退已修复，image_ops 返回值已接入；❌ 缺 ValueError 单测
 
-**整改合格度判断**：短期 6 项中 4 项合格、2 项有残留。核心崩溃路径（N-P0-02 + N-P1-05）已完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"主要循环可中断、局部循环仍有跑满"。V13 静默失效已消除。README 仅测试数字同步，其余漂移仍存。
+**整改合格度判断**：短期 6 项中 5 项合格。核心崩溃路径（N-P0-02 + N-P1-05）已完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"主要循环可中断、局部循环仍有跑满"。V13 静默失效已消除。README 主要漂移已修正（伪影/防抖/R_eff/亮度阈值），仅 config.py 常量集中属长期技术债未修。
 
 **后续建议**：
-- 补 aboutToQuit 连接（一行代码，关闭 N-P0-02 残留）
-- 补 lshape_panel.py:512 文案修正 + V13 ValueError 单测
+- 补 aboutToQuit 连接（一行代码，关闭 N-P0-02 拮留）
+- 补 V13 ValueError 单测
 - 补 numbers.py 补漏内层和 Phase 3 的 check_cancel
-- README 伪影/防抖/R_eff 三处漂移修正
+- config.py 常量集中声明修正（属长期技术债）
 - 推进中期内存与并发收敛（N-P1-02/03/04）
 
 ---

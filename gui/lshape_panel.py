@@ -509,7 +509,7 @@ class LShapePanel(QWidget):
         worker.finished_err.connect(self._on_lshape_parse_err)
         worker.finished.connect(self._on_lshape_worker_finished)
         self._lshape_parse_worker = worker
-        self._set_status("正在识别 L 形挖角（多尺度 OCR，普通情况约 10~20 秒，复杂图可能更长）…")
+        self._set_status("正在识别 L 形挖角（多尺度 OCR，通常约 10~20 秒，复杂草图或 Tesseract 配置异常时可能更长，可随时取消）…")
         worker.start()
 
     def _on_lshape_worker_finished(self):
