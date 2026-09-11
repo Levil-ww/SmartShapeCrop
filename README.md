@@ -110,11 +110,21 @@ SmartShapeCrop/
 │   ├── integration/               #   集成测试（F1-F19 修复验证 / 水池-L 形流程 / 配置）
 │   ├── sketch/                     #   草图识别测试（多洞 / 特征 / 输入校验 / 修复）
 │   ├── border/                     #   边框测试（边框修复 / 复杂花纹安全 / 用户案例）
-│   └── gui/                        #   GUI 测试（预留目录）
+│   └── gui/                        #   GUI 层测试（离屏运行，V2.2 新增 56 个用例）
+│       ├── conftest.py                #   离屏 QApplication / 设置隔离 / 线程清理夹具
+│       ├── test_gui_smoke.py          #   构造冒烟与线程卫生
+│       ├── test_main_window.py        #   主窗口装配与信号-槽接线
+│       ├── test_signals_contract.py   #   面板信号契约与跨面板注入
+│       ├── test_property_panel.py     #   水池设计器面板
+│       ├── test_cropper_panel.py      #   圆角裁剪工具面板
+│       └── test_lshape_panel.py       #   L 形挖角设计面板
 │
-│   注：混入 tests/ 的诊断脚本（原 test_gap_detail_analysis / test_corner_analysis_simple /
+│   注 1：混入 tests/ 的诊断脚本（原 test_gap_detail_analysis / test_corner_analysis_simple /
 │       test_diagnose / test_sketch_fix / test_verify）已于 2026-09-11 全部移至
 │       scripts/diagnose/_diag_*.py，tests/ 下不再有任何非用例的 test_*.py。
+│   注 2：GUI 测试以 QT_QPA_PLATFORM=offscreen 离屏运行，不弹真实窗口；
+│       通过替换 AppSettings 单例隔离用户配置（避免读取网络模板库目录），
+│       teardown 统一停止后台线程（否则解释器退出时会崩溃）。详见 tests/gui/conftest.py。
 │
 ├── scripts/                        # 人工诊断/验证脚本（不进 CI）
 │   ├── README.md                   #   脚本组织规范与命名约定
@@ -790,7 +800,8 @@ python -m pytest tests/integration/ -v
 
 ## 已知问题与后续规划
 
-- **GUI 层测试缺口**：`tests/gui/` 目前为预留目录，worker 生命周期等 GUI 缺陷依赖人工冒烟验证（测试套件 320 项全绿但无法覆盖 GUI 层）；建议为 worker 退役协议补充 `QT_QPA_PLATFORM=offscreen` 回归测试
+- ~~**GUI 层测试缺口**~~ ✅ **已于 2026-09-11 补上**：`tests/gui/` 新增 56 个离屏用例（构造冒烟 / 主窗口接线 / 信号契约 / 三个面板的初始状态与交互），GUI 层 6,577 行代码不再零覆盖。
+  仍待补：worker 生命周期（`CropWorker` / `PoolRenderWorker` / `_WarmupScanWorker`）的退役协议回归——当前仅验证"线程可被停止"，未验证"取消后不回写 UI"
 - **L 形挖角端到端冒烟**：`dist/智能裁剪设计器V2.2.exe` 已构建，建议对 L 形挖角（V2.2 主卖点）在发布版 exe 上做一次端到端冒烟验证
 - **历史脚本归档**：`packaging/packageV2.1.2.py` 等旧版本脚本仍保留在仓库，仅 `packageV2.2.py` 为当前入口，勿混用
 
