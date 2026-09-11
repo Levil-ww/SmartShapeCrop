@@ -18,6 +18,18 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 
+class PsdLoadError(Exception):
+    """PSD 加载失败异常，区分错误类型供 GUI 展示友好提示。"""
+
+    DEPENDENCY_MISSING = 'dependency_missing'
+    FILE_CORRUPT = 'file_corrupt'
+    FORMAT_UNSUPPORTED = 'format_unsupported'
+
+    def __init__(self, message: str, error_type: str = FILE_CORRUPT):
+        super().__init__(message)
+        self.error_type = error_type
+
+
 @dataclass
 class PsdLayer:
     """PSD 单个图层信息"""
@@ -126,6 +138,9 @@ def load_psd_flattened(path: str, bg=(255, 255, 255)) -> Image.Image:
     """
     把 PSD 按可见性合成一张 RGB 图（等价于 PS 另存为 JPG 的结果）。
     若 psd-tools 不可用则尝试用 PIL 直接打开（某些 PSD 自带合成预览）。
+
+    Raises:
+        PsdLoadError: 当 PSD 解析失败（依赖缺失 / 文件损坏 / 格式不支持）。
     """
     PSDImage = _try_import_psd_tools()
     if PSDImage is not None:
@@ -139,6 +154,8 @@ def load_psd_flattened(path: str, bg=(255, 255, 255)) -> Image.Image:
             return bg_img
         except Exception as e:
             logger.warning(f"[WARN] psd-tools 合成失败: {e}, 回退到 PIL 直接读取")
+    else:
+        logger.warning("[WARN] psd-tools 未安装，尝试用 PIL 直接读取 PSD")
     # 回退：PIL 直接打开（某些 PSD 会嵌入合成预览）
     try:
         img = Image.open(path)
@@ -146,9 +163,16 @@ def load_psd_flattened(path: str, bg=(255, 255, 255)) -> Image.Image:
             img = img.convert('RGB')
         return img
     except Exception as e:
-        # 最后手段：返回同尺寸占位图
-        logger.warning(f"PSD 回退 PIL 直接读取也失败 path={path}: {e}")
-        return Image.new('RGB', (1000, 1000), (240, 240, 240))
+        logger.error(f"PSD 解析失败 path={path}: {e}")
+        if PSDImage is None:
+            raise PsdLoadError(
+                f"PSD 解析失败：缺少 psd-tools 依赖，且 PIL 无法读取该文件。\n请执行 pip install psd-tools 后重试。\n文件: {os.path.basename(path)}",
+                error_type=PsdLoadError.DEPENDENCY_MISSING,
+            ) from e
+        raise PsdLoadError(
+            f"PSD 文件解析失败，可能已损坏或格式不受支持。\n文件: {os.path.basename(path)}\n错误: {e}",
+            error_type=PsdLoadError.FILE_CORRUPT,
+        ) from e
 
 
 def export_psd_layers_as_jpgs(psd_path: str,

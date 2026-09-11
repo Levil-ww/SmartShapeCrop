@@ -26,7 +26,7 @@ from .geometry import (
 )
 from .image_ops import render_design, save_jpg, prepare_material_for_rect
 from .psd.loader import (
-    PsdLayer, load_psd_layers, load_psd_flattened,
+    PsdLayer, PsdLoadError, load_psd_layers, load_psd_flattened,
     export_psd_layers_as_jpgs,
 )
 # 圆角处理子包公共 API（统一从 corner 子包重导出，保证单一来源）
@@ -48,7 +48,7 @@ __all__ = [
     # image_ops
     'render_design', 'save_jpg', 'prepare_material_for_rect',
     # psd
-    'PsdLayer', 'load_psd_layers', 'load_psd_flattened',
+    'PsdLayer', 'PsdLoadError', 'load_psd_layers', 'load_psd_flattened',
     'export_psd_layers_as_jpgs',
     # corner（圆角处理公共 API）
     'CORNER_ANGLES',

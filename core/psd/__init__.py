@@ -4,6 +4,7 @@ PSD 加载子包：PSD 分层文件读取与导出。
 """
 from .loader import (
     PsdLayer,
+    PsdLoadError,
     is_psd_file,
     load_psd_layers,
     load_psd_flattened,
@@ -14,6 +15,7 @@ from .loader import (
 
 __all__ = [
     'PsdLayer',
+    'PsdLoadError',
     'is_psd_file',
     'load_psd_layers',
     'load_psd_flattened',
