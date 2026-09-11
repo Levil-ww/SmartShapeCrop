@@ -435,10 +435,12 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # [Fix 2026-08-27] 仅当检测到真实边框层时才补绘。
     # 若边框层为空（如外背景被过滤后无剩余层），此时补绘会从原图边缘
     # 采样外背景色并误绘到弧线区域，形成背景色弧形缺口（中古雨林黑弧）。
+    # [Fix 2026-09-10] skip_outside_arc=False 时补绘外轮廓，
+    # 避免 arc 外侧 border_zone 内被 mask 裁为 bg 色的像素残留白色。
     if corners_px and border_layers:
         _redraw_outer_border_on_corners(
             result, img, corners_px, outermost_layers, validity_mask, bg_color,
-            skip_outside_arc=True,  # 非保护模式：裁切区域不应重绘边框
+            skip_outside_arc=False,  # 补绘所有 border_zone 内像素，确保圆弧处边框连续
             only_outermost=True,
         )
 

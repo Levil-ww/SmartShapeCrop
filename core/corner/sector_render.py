@@ -389,7 +389,12 @@ def _redraw_border_on_corner(
         # [v8] valid_region 已经用 R+2 容差包含边界外 2px（用于直弧衔接处），
         # 这里 dist <= R_total 仍保留以避免在弧外画边框色；真正的弧外清理由
         # beyond_arc 负责。
-        d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist <= float(R_total) + 1.5)
+        # [Fix 圆角边框粗细不一致] d=0（最外层圆弧边界）使用 depth >= -0.5 容差，
+        # 补偿浮点精度导致的 dist 略大于 R 的边界像素被遗漏。
+        if d == 0:
+            d_region = valid_region & (depth >= -0.5) & (depth < d + 1) & (dist <= float(R_total) + 1.5)
+        else:
+            d_region = valid_region & (depth >= d) & (depth < d + 1) & (dist <= float(R_total) + 1.5)
         # [P2-B R2 2026-09-05] 当 paint_inside_arc=False 时，进一步排除源图中
         # 与 bg_color 接近的像素（保留源间隙不被边框色覆盖）。
         # 仅 border_only mode + 无 corner 保护场景下使用。
