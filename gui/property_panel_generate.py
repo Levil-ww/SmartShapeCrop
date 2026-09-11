@@ -168,7 +168,7 @@ class _GenerateMixin:
             # 1) 把 Worker 构建的设计写回 self.design，并同步到所有 SpinBox / 控件
             self.design = design
 
-            # ==== [2026-09-09 FIX] 用户 SpinBox 参数覆盖 Worker design ====
+            # ==== [2026-09-09 FIX + 2026-09-11 L形修复] 用户 SpinBox 参数覆盖 Worker design ====
             # 根因：PoolRenderWorker 构建 design 时：
             #   a) 画布宽/高 只从文件名/草图获取，不读取 SpinBox 当前值；
             #   b) 多洞分支会用 sketch_result 的全局边距覆盖已用 user_margins 设置的边距。
@@ -176,9 +176,21 @@ class _GenerateMixin:
             #   design 不反映用户最新输入 → 内挖素材匹配 + UI 回填 + 预览渲染 全部用旧值。
             # 修复：Worker 完成后，在任何后续操作之前，从 SpinBox 读取当前值覆盖 design，
             #   确保用户在界面上看到的值就是系统实际使用的值。
-            # L 形模式跳过边距（L 形语义：边距恒为 0，由 LShapePanel 独立控制）。
-            self.design.canvas_w_cm = self._sp_w.value()
-            self.design.canvas_h_cm = self._sp_h.value()
+            #
+            # [2026-09-11 L形专项修复] L 形模式的画布尺寸 SpinBox 在 LShapePanel 上，
+            #   不是水池面板的 _sp_w/_sp_h。当 mode=rect_lshape 时，从 LShapePanel 的
+            #   _lshape_params（outer_w_cm/outer_h_cm）推算画布值（+1cm 损耗）。
+            #   否则用户改了 L 形面板外框 → 水池面板 SpinBox 没改 → design 被旧值覆盖 →
+            #   LShapePanel 又被旧值写回，形成"修改无效"的死循环。
+            if self.design.mode == 'rect_lshape' and self._lshape_panel is not None:
+                _lp = self._lshape_panel.get_lshape_params()
+                if _lp and _lp.get('outer_w_cm', 0) > 0:
+                    self.design.canvas_w_cm = _lp['outer_w_cm'] + 1.0
+                if _lp and _lp.get('outer_h_cm', 0) > 0:
+                    self.design.canvas_h_cm = _lp['outer_h_cm'] + 1.0
+            else:
+                self.design.canvas_w_cm = self._sp_w.value()
+                self.design.canvas_h_cm = self._sp_h.value()
             self.design.outer_margin_cm = self._sp_outer_margin.value()
             if self.design.mode != 'rect_lshape':
                 self.design.inner_margin_top_cm = self._sp_mt.value()

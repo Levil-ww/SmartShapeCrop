@@ -1151,10 +1151,29 @@ def parse_lshape_sketch(
     dims = _resolve_dimensions(geo, roles)
     sc = _score_consistency(geo, dims)
 
-    # 当 OCR 完全失败但有 target 尺寸时，用像素比例定标
-    if dims['outer_w_cm'] <= 0 and target_outer_w_cm > 0:
+    # —— [2026-09-11 FIX] 外框真值始终信任 target 文件名 ——
+    # 产品不变量：草图的外框尺寸一定与目标文件名尺寸一致。
+    # OCR 可能因模糊/位置偏差识别出完全错误的外框值（如 9x21cm 应为 85x38cm），
+    # 导致方向颠倒（9<21 变竖版）、挖角 cm 值被像素比例定标污染。
+    # 当 target 值可用时，始终用 target 值覆盖 OCR；OCR 值仅作 debug 记录。
+    if target_outer_w_cm > 0:
+        if dims['outer_w_cm'] > 0 and abs(dims['outer_w_cm'] - target_outer_w_cm) / target_outer_w_cm > 0.5:
+            logger.warning(
+                f"[lshape] OCR 外框宽 {dims['outer_w_cm']:.1f}cm 与 "
+                f"target {target_outer_w_cm:.1f}cm 差距 >50%，使用 target 值"
+            )
         dims['outer_w_cm'] = target_outer_w_cm
-    if dims['outer_h_cm'] <= 0 and target_outer_h_cm > 0:
+    elif dims['outer_w_cm'] <= 0 and target_outer_w_cm > 0:
+        dims['outer_w_cm'] = target_outer_w_cm
+
+    if target_outer_h_cm > 0:
+        if dims['outer_h_cm'] > 0 and abs(dims['outer_h_cm'] - target_outer_h_cm) / target_outer_h_cm > 0.5:
+            logger.warning(
+                f"[lshape] OCR 外框高 {dims['outer_h_cm']:.1f}cm 与 "
+                f"target {target_outer_h_cm:.1f}cm 差距 >50%，使用 target 值"
+            )
+        dims['outer_h_cm'] = target_outer_h_cm
+    elif dims['outer_h_cm'] <= 0 and target_outer_h_cm > 0:
         dims['outer_h_cm'] = target_outer_h_cm
 
     # 若外框尺寸已知但挖角尺寸仍缺失，用像素比例反推
