@@ -780,6 +780,19 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             _bottom = _ir_y + _ch
             _left = _ir_r - _cw
             _extra[0:_bottom, _left:W] = True
+        # ===== DEBUG: 打印 L 形 cut 关键坐标 =====
+        print(f'\n========== [LSHAPE CUT DEBUG] ==========', flush=True)
+        print(f'corner={lshape.corner} canvas={W}x{H}', flush=True)
+        print(f'inner_rect px: ({_ir_x},{_ir_y})-({_ir_r},{_ir_b})', flush=True)
+        print(f'DESIGN l_cut_w_cm={design.l_cut_w_cm} l_cut_h_cm={design.l_cut_h_cm}', flush=True)
+        print(f'canvas_w_cm={design.canvas_w_cm} canvas_h_cm={design.canvas_h_cm}', flush=True)
+        print(f'outer_margin={design.outer_margin_cm} inner_margins_tblr=({design.inner_margin_top_cm},{design.inner_margin_bottom_cm},{design.inner_margin_left_cm},{design.inner_margin_right_cm})', flush=True)
+        print(f'lshape.cut_w={lshape.cut_w} (px) lshape.cut_h={lshape.cut_h} (px)', flush=True)
+        if lshape.corner == 'tr':
+            print(f'tr: _bottom={_ir_y}+{_ch}={_bottom} _left={_ir_r}-{_cw}={_left}', flush=True)
+            print(f'cut area in canvas px: x=[{_left},{W}] y=[0,{_bottom}]', flush=True)
+            print(f'cut area W px={W-_left} H px={_bottom}', flush=True)
+            print(f'cut cm: {(W-_left)*2.54/design.dpi:.2f} x {_bottom*2.54/design.dpi:.2f}', flush=True)
         cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
         if cut_area_mask.any():
             # 预先采样素材底色——给 Step 3.6 border completion 当 bg_color 用

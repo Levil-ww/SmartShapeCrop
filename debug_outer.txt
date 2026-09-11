@@ -1,0 +1,66 @@
+﻿.\main.py:56:         outer_margin_cm=1.0,
+.\main.py:75:         outer_margin_cm=0.5,
+.\main.py:93:         outer_margin_cm=1.0,
+.\main.py:111:         outer_margin_cm=0.8,
+.\core\geometry.py:125:     outer_margin_cm: float = 1.0   # 外框留白边
+.\core\geometry.py:274:         m = self.cm2px(self.outer_margin_cm)
+.\core\image_ops.py:526:     lod_design.outer_margin_cm = design.outer_margin_cm * min(sx, sy)
+.\core\image_ops.py:582:             f"W={W} H={H} outer_margin={design.outer_margin_cm} "
+.\core\image_ops.py:789:         print(f'outer_margin={design.outer_margin_cm} inner_margins_tblr=({design.inner_margin_top_cm},{design.inner_margin_bottom_cm},{design.inner_margin_left_cm},{design.inner_margin_right_cm})', f
+.\gui\property_panel.py:142:         self._sp_outer_margin = self._dspin(0, 20, self.design.outer_margin_cm)
+.\gui\property_panel_generate.py:204:             self.design.outer_margin_cm = self._sp_outer_margin.value()
+.\gui\property_panel_layers.py:75:         d.outer_margin_cm = self._sp_outer_margin.value()
+.\gui\property_panel_layers.py:195:                     ox_cm = d.outer_margin_cm
+.\gui\property_panel_layers.py:196:                     oy_cm = d.outer_margin_cm
+.\gui\property_panel_poolbox.py:745:                         ox_cm = self.design.outer_margin_cm
+.\gui\property_panel_poolbox.py:746:                         oy_cm = self.design.outer_margin_cm
+.\gui\property_panel_workers.py:241:             design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
+.\gui\property_panel_workers.py:249:                 design.outer_margin_cm = 0.0
+.\gui\property_panel_workers.py:394:                     # 画布坐标原点 = (outer_margin_cm, outer_margin_cm)。水池模式下通常=0。
+.\gui\property_panel_workers.py:395:                     ox_cm = design.outer_margin_cm
+.\gui\property_panel_workers.py:396:                     oy_cm = design.outer_margin_cm
+.\gui\property_panel_workers.py:540:                             _ox = design.outer_margin_cm
+.\gui\property_panel_workers.py:541:                             _oy = design.outer_margin_cm
+.\scripts\_v13_baseline_render.py:59:         outer_margin_cm=0.0,
+.\scripts\diagnose\_live\e2e_render_user_case.py:116:         outer_margin_cm=0.0,
+.\scripts\diagnose\_live\_diag_topmargin_repro.py:36:     d.outer_margin_cm = 0.0
+.\scripts\_archive\old_tests\test_design_render_rounded_bands.py:35:     d.outer_margin_cm = 0.5  # 外留白 0.5cm
+.\scripts\_archive\old_tests\test_design_render_rounded_bands.py:98: outer_margin_px = cm2px(design_rd.outer_margin_cm)
+.\scripts\_archive\old_tests\test_design_render_rounded_bands_v2.py:36:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_design_render_rounded_bands_v2.py:89: outer_margin_px = cm2px(design_rd.outer_margin_cm)
+.\scripts\_archive\old_tests\test_final_comprehensive.py:20:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_final_corrected.py:21:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_final_v2.py:20:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_final_v3.py:18:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_leak_find.py:17:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_psd_import.py:86:         outer_margin_cm=1.0,
+.\scripts\_archive\old_tests\test_render.py:34:         outer_margin_cm=1.0, mode=mode,
+.\scripts\_archive\old_tests\test_render.py:84:         outer_margin_cm=0.8,
+.\scripts\_archive\old_tests\test_ring_concentric.py:20:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_white_diag.py:16:     d.outer_margin_cm = 0.5
+.\scripts\_archive\old_tests\test_white_pixel_loc.py:17:     d.outer_margin_cm = 0.5
+.\scripts\_archive\_diag_20260904_lshape\_diag_lshape_after_fix.py:41:         outer_margin_cm=0.0,
+.\scripts\_archive\_diag_20260904_lshape\_diag_lshape_keluoyinhua.py:105:         outer_margin_cm=0.0,
+.\scripts\_archive\_diag_20260904_lshape\_diag_lshape_keluoyinhua.py:120:     print(f"  design.outer_margin_cm={design.outer_margin_cm}")
+.\scripts\_archive\_diag_20260904_lshape\_diag_lshape_keluoyinhua.py:229:         outer_margin_cm=0.0,
+.\scripts\_archive\_diag_20260904_lshape\_diag_lshape_v2_corrected.py:45:         outer_margin_cm=0.0,
+.\scripts\_archive\_diag_20260904_lshape\_diag_v22_verify.py:35:         outer_margin_cm=0.0,
+.\tests\core\test_crop_design_validate.py:78:         with pytest.raises(ValueError, match='outer_margin_cm'):
+.\tests\core\test_crop_design_validate.py:79:             CropDesign(outer_margin_cm=-1.0).validate()
+.\tests\core\test_crop_design_validate.py:98:         CropDesign(outer_margin_cm=0, inner_margin_top_cm=0,
+.\tests\core\test_lshape_render.py:22:         outer_margin_cm=0.5,
+.\tests\core\test_lshape_render.py:55:         outer_margin_cm=0.5,
+.\tests\core\test_lshape_render.py:80:         outer_margin_cm=0.5,
+.\tests\core\test_lshape_render.py:159:         outer_margin_cm=0.5,
+.\tests\core\test_lshape_render.py:183:         outer_margin_cm=0.5,
+.\tests\core\test_lshape_render.py:209:             outer_margin_cm=0.3,
+.\tests\core\test_lshape_render.py:242:                 outer_margin_cm=0.5,
+.\tests\core\test_lshape_render.py:331:             outer_margin_cm=0.3,
+.\tests\integration\test_f1_inner_rect_crash.py:38:         outer_margin_cm=1.0,
+.\tests\integration\test_f1_inner_rect_crash.py:71:     d.outer_margin_cm = 999.0  # 外边距爆炸
+.\tests\integration\test_f1_inner_rect_crash.py:138:         outer_margin_cm=0.5,
+.\tests\integration\test_pool_lshape_flow.py:39:         outer_margin_cm=0.0,
+.\tests\integration\test_pool_lshape_flow.py:150:         outer_margin_cm=0.0,
+.\tests\sketch\test_multi_hole_parser.py:582:     d.outer_margin_cm = 0.0
+.\tests\sketch\test_multi_hole_parser.py:645:     d.outer_margin_cm = 0.0
+.\tests\sketch\test_multi_hole_parser.py:687:     d.outer_margin_cm = 0.0

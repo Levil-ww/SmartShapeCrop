@@ -1,0 +1,61 @@
+﻿=== ALL rect_lshape / lshape / LSHAPE blocks ===
+679: if design.mode == 'rect_lshape' and not is_pool_with_material:
+681: logger.info("[DEBUG-RD] STEP1.1 命中 rect_lshape + 非池素材 → 填outer_bg_color遮罩")
+682: from .geometry import build_lshape_mask
+689: lshape_mask_img = build_lshape_mask(
+690: (W, H), outer, lshape.corner,
+691: lshape.cut_w, lshape.cut_h,
+702: if not is_pool_with_material and not (design.mode == 'rect_lshape' and has_outer_img):
+725: # rect_lshape + 池素材时，"L 形区域保留外框素材、被切掉的角显示洞色"。
+736: if design.mode == 'rect_lshape' and is_pool_with_material:
+738: logger.info("[DEBUG-RD] STEP3 命中 rect_lshape + 池素材 → L形挖角处理路径")
+739: from .geometry import build_lshape_mask, compute_inner_corner_radii
+750: full_inner_img = build_lshape_mask(
+751: (W, H), inner_rect, lshape.corner,
+755: cut_area_mask = full_inner_mask & ~inner_mask
+761: _cw, _ch = int(round(lshape.cut_w)), int(round(lshape.cut_h))
+763: if lshape.corner == 'bl':
+768: elif lshape.corner == 'br':
+773: elif lshape.corner == 'tl':
+778: elif lshape.corner == 'tr':
+784: print(f'\n========== [LSHAPE CUT DEBUG] ==========', flush=True)
+785: print(f'corner={lshape.corner} canvas={W}x{H}', flush=True)
+790: print(f'lshape.cut_w={lshape.cut_w} (px) lshape.cut_h={lshape.cut_h} (px)', flush=True)
+791: if lshape.corner == 'tr':
+796: cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+797: if cut_area_mask.any():
+839: canvas_arr[cut_area_mask] = np.array([255, 255, 255], dtype=np.uint8)
+841: canvas_arr[cut_area_mask] = np.array(
+1013: if design.mode == 'rect_lshape' and not lshape_cut_done:
+1014: from .geometry import build_lshape_mask, compute_inner_corner_radii
+1023: full_inner_img = build_lshape_mask(
+1024: (W, H), inner_rect, lshape.corner,
+1028: cut_area_mask = full_inner_mask & ~inner_mask
+1031: if cut_area_mask.any() and not (design.mode == 'rect_lshape' and has_outer_img):
+1032: canvas_arr[cut_area_mask] = inner_fill_arr[cut_area_mask]
+1035: # rect_hole / rect_lshape 模式：用几何差集替代形态学腐蚀（精确等价，加速）
+1038: if design.mode in ('rect_hole', 'rect_lshape'):
+1041: build_lshape_mask)
+1105: if design.mode == 'rect_lshape':
+1115: shrunk_cut_w = max(0.0, lshape.cut_w - border_width_px)
+1116: shrunk_cut_h = max(0.0, lshape.cut_h - border_width_px)
+1117: mask_b_img = build_lshape_mask(
+1118: (W, H), shrunk_rect, lshape.corner,
+1141: # 只有多洞 PRE-COMPUTE 成功时覆盖；单洞 / rect_lshape / 少于 2 洞：_mh_border_mask is None，
+1156: _skip_unified = design.mode == 'rect_lshape' and is_pool_with_material
+1171: # 仅在 rect_lshape + 池素材 + 非 tile（tile 无边框）时触发。
+1173: _do_completion = design.mode == 'rect_lshape' and is_pool_with_material and not _is_tile
+1184: cut_corner = lshape.corner
+1190: cut_w_px = lshape.cut_w + _ir_x
+1191: cut_h_px = lshape.cut_h + (H - _ir_b)
+1193: cut_w_px = lshape.cut_w + (W - _ir_r)
+1194: cut_h_px = lshape.cut_h + (H - _ir_b)
+1196: cut_w_px = lshape.cut_w + _ir_x
+1197: cut_h_px = lshape.cut_h + _ir_y
+1199: cut_w_px = lshape.cut_w + (W - _ir_r)
+1200: cut_h_px = lshape.cut_h + _ir_y
+1392: build_lshape_mask, RectShape)
+1436: elif design.mode == 'rect_lshape':
+1438: m = build_lshape_mask(
+1439: (W, H), inner_rect, lshape.corner,
+1440: lshape.cut_w, lshape.cut_h,

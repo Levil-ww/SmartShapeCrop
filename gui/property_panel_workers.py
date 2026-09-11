@@ -243,7 +243,10 @@ class PoolRenderWorker(QThread):
             if is_lshape:
                 # —— L 形挖角（裁剪有图）模式 ——
                 # 语义：L 形区域保留外框素材花纹，被切掉的角显示洞色。
-                # 配置：margins 全 0（L 形 = 画布挖角），mode='rect_lshape'。
+                # 配置：outer_margin=0, inner_margin 全 0（cut 定位直接基于 canvas 边缘）。
+                # 关键不变量：挖角尺寸 = 用户输入值（草图/手动），完全不受 TRIM 影响。
+                # TRIM 只是画布比外框多出的余量，cut 自然延伸到 canvas 边缘。
+                design.outer_margin_cm = 0.0
                 lp = self._lshape_params
                 # 外框尺寸优先用 L 形解析结果（已与文件名校验），否则用文件名解析值
                 lw = float(lp.get('outer_w_cm') or 0)

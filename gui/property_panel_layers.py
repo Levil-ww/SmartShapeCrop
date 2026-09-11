@@ -72,11 +72,16 @@ class _LayersMixin:
         d.canvas_h_cm = self._sp_h.value()
         d.dpi = self._sp_dpi.value()
         d.mode = self._cb_mode.currentData()
-        d.outer_margin_cm = self._sp_outer_margin.value()
-        d.inner_margin_top_cm = self._sp_mt.value()
-        d.inner_margin_bottom_cm = self._sp_mb.value()
-        d.inner_margin_left_cm = self._sp_ml.value()
-        d.inner_margin_right_cm = self._sp_mr.value()
+        # L 形挖角模式：outer_margin / inner_margin 由 Worker 固定为 0.0，
+        # 不从 SpinBox 读取（property_panel_generate.py:204 也有同样的保护）。
+        # SpinBox 默认值是 1.0，若无条件覆盖会把 Worker 的 0.0 冲回 1.0
+        # → inner_rect 内缩 1cm → cut 整体偏移 1cm → PS 测量 cut 尺寸大 1cm。
+        if d.mode != 'rect_lshape':
+            d.outer_margin_cm = self._sp_outer_margin.value()
+            d.inner_margin_top_cm = self._sp_mt.value()
+            d.inner_margin_bottom_cm = self._sp_mb.value()
+            d.inner_margin_left_cm = self._sp_ml.value()
+            d.inner_margin_right_cm = self._sp_mr.value()
         # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数从 LShapePanel 读取 =====
         # 原 self._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
         # 通过 self._lshape_panel.get_corner()/get_cut_w_cm()/get_cut_h_cm() 读取，
