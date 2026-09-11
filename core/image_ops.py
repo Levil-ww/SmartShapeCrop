@@ -1667,7 +1667,17 @@ def save_jpg(img: Image.Image, out_path: str, quality: int = 95, dpi: int | tupl
             ds = int(round(dpi))  # type: ignore[arg-type]
             dx, dy = ds, ds
         save_kwargs['dpi'] = (dx, dy)
-    img.save(out_path, 'JPEG', **save_kwargs)
+    tmp_path = out_path + '.tmp'
+    try:
+        img.save(tmp_path, 'JPEG', **save_kwargs)
+        os.replace(tmp_path, out_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError as e:
+                logger.debug(f"清理临时文件失败 {tmp_path}: {e}")
+        raise
 
 
 # ---------- 素材图自动裁剪：用于把任意 JPG 素材铺满到目标区域 ----------
