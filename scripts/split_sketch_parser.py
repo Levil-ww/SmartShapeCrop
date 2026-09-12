@@ -52,9 +52,9 @@ GROUPS = {
         '_merge_split_decimals', '_parse_dir_num_token',
         '_extract_direction_label_numbers',
     ],
-    'sketch_parser_margins': [
+'sketch_parser_margins': [
         '_score_assignment_consistency', '_brute_force_margin_permute',
-        '_validate_and_fix_margins', '_validate_geometric_constraints',
+        '_validate_and_fix_margins',
         '_build_assignment',
     ],
 }

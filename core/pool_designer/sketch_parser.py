@@ -39,18 +39,17 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-_PARSE_TIMEOUT_SEC = 20
-_ALGO_VERSION = 7  # 2026-08-20: 严格7步法重构版
-
 # ---------------------------------------------------------------------------
 # 字符规范化：全角→半角（OCR 在 chi_sim 模式下常输出全角数字 ０-９ 句号．）
 # ---------------------------------------------------------------------------
+# [N-P2-10] 常量单一来源：_PARSE_TIMEOUT_SEC / _ALGO_VERSION 统一由下面的
+# sketch_parser_base / sketch_parser_cache import 提供（本地重复定义已删除）。
 
 from .sketch_parser_base import (_FW_HW_TRANSLATION, _PARSE_TIMEOUT_SEC, _SKETCH_ACCEPT_EXT, _SKETCH_MAX_FILE_MB, _SKETCH_MAX_PIXELS, _normalize_ocr_text, validate_sketch_file)
 from .sketch_parser_cache import (_ALGO_VERSION, _SKETCH_CACHE, _SKETCH_CACHE_LOCK, _SKETCH_CACHE_MAX, _SKETCH_CONSISTENT_CACHE, _SKETCH_CONSISTENT_CACHE_LOCK, _SKETCH_CONSISTENT_CACHE_MAX, _get_cache_key, _get_cached_result, _get_consistent_cache_key, _get_consistent_cached_result, _store_cached_result, _store_consistent_cached_result)
 from .sketch_parser_vision import (_TESSERACT_STATUS, _build_binary_masks, _compute_gaps, _divide_8_zones, _enhance_colored_ink, _find_all_rectangles, _load_image, _make_preprocess_variants, _multi_scale_ocr_scan, _safe_import_cv2, _safe_import_tesseract, _select_best_nested_pair, _spatial_map_values, _to_gray, get_tesseract_status)
 from .sketch_parser_numbers import (_DIR_CHAR_MAP, _extract_direction_label_numbers, _merge_split_decimals, _parse_dir_num_token)
-from .sketch_parser_margins import (_brute_force_margin_permute, _build_assignment, _score_assignment_consistency, _validate_and_fix_margins, _validate_geometric_constraints)
+from .sketch_parser_margins import (_brute_force_margin_permute, _build_assignment, _score_assignment_consistency, _validate_and_fix_margins)
 @dataclass
 class SketchParseResult:
     success: bool = False
@@ -117,8 +116,6 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     if (early := _check_deadline('OCR扫描')) is not None:
         return early
     ocr_raw = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
-                                    target_w_cm=target_outer_w_cm,
-                                    target_h_cm=target_outer_h_cm,
                                     enhanced_gray=enhanced_gray,
                                     check_cancel=lambda: _check_deadline('OCR扫描') is not None)
     if not ocr_raw:

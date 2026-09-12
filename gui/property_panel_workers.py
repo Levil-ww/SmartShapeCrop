@@ -28,6 +28,192 @@ from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_s
 logger = logging.getLogger(__name__)
 
 
+class _SketchDecodeWorker(QThread):
+    """[Perf-Opt P1-07] 草图大图解码后台线程：Image.open + convert 移出 GUI 线程。
+
+    大图 Image.open/convert('RGB') 可能耗时数百 ms ~ 秒级，原先在
+    _pool_load_sketch_from_path 主线程同步执行会阻塞 Qt 重绘（上传/拖拽大图时界面卡死）。
+    本 Worker 在后台完成解码，decoded 信号回传 PIL Image（None 表示失败），
+    GUI 线程负责 emit sketch_loaded —— 显示语义与原实现完全一致，只是解码不再卡 UI。
+    """
+    decoded = pyqtSignal(object)   # PIL Image；解码失败为 None
+
+    def __init__(self, sketch_path: str, parent=None):
+        super().__init__(parent)
+        self._path = sketch_path
+
+    def run(self):
+        try:
+            if self.isInterruptionRequested():
+                return
+            pil_img = Image.open(self._path)
+            if pil_img.mode not in ('RGB', 'RGBA'):
+                pil_img = pil_img.convert('RGB')
+            # 强制完成整图解码（Image.open 是惰性的），确保耗时代码全部在后台线程
+            pil_img.load()
+            if self.isInterruptionRequested():
+                return
+            self.decoded.emit(pil_img)
+        except Exception as e:
+            if self.isInterruptionRequested():
+                return
+            logger.warning(f"草图加载为 PIL Image 失败: {e}")
+            self.decoded.emit(None)
+
+
+class _InnerMatchWorker(QThread):
+    """[Perf-Opt P1-08] 内挖素材自动匹配后台线程：scan_library + find_best_match 移出 GUI 线程。
+
+    原逻辑位于 _GenerateMixin._on_pool_finished_ok（GUI 线程直接执行）：
+    模板目录 mtime 变化时 scan_library 会全量扫描（数百~上千文件），
+    find_best_match 要对候选逐条做损失计算，整段可能耗时数秒~数十秒，
+    期间 Qt 事件循环被阻塞 → 界面冻结（"模板扫描卡死"）。
+    本 Worker 在后台完成扫描与匹配（含素材图预加载），
+    结果（路径/评分/预加载图）通过 finished_ok 信号回传主线程，
+    由 _on_inner_match_done 回填 design 并继续"预览 + 状态"收尾 ——
+    匹配数据、回填字段与失败语义与原实现完全一致，只是不再卡 UI。
+    """
+    finished_ok = pyqtSignal(object)   # result dict
+    finished_err = pyqtSignal(str)
+
+    def __init__(self, matcher: TemplateMatcher, template_dir: str,
+                 target_name: str,
+                 is_multi_hole: bool, holes_wh: list,
+                 single_wh: tuple | None,
+                 parent=None):
+        """参数均为纯数据（matcher 引用 + 文本/数值），不携带 GUI 对象。
+
+        is_multi_hole: 多洞模式（洞数≥2）标志
+        holes_wh:      多洞时每洞 (w_cm, h_cm) 列表
+        single_wh:     单洞时 (inner_w_cm, inner_h_cm)
+        """
+        super().__init__(parent)
+        self._matcher = matcher
+        self._template_dir = template_dir
+        self._target_name = target_name or ""
+        self._is_multi = bool(is_multi_hole)
+        self._holes_wh = list(holes_wh or [])
+        self._single_wh = single_wh
+
+    def run(self):
+        try:
+            if self.isInterruptionRequested():
+                return
+            import re as _re
+            from core.parser.name_parser import parse_filename as _parse_fn
+            from core.image_ops import load_image_rgb
+            if not self._template_dir or not os.path.isdir(self._template_dir):
+                self.finished_err.emit("模板库目录无效")
+                return
+            if self._matcher.get_template_dir() != os.path.abspath(self._template_dir):
+                self._matcher.set_template_dir(os.path.abspath(self._template_dir))
+            self._matcher.scan_library(force=False, check_cancel=self.isInterruptionRequested)
+            if self.isInterruptionRequested():
+                return
+
+            target_name = self._target_name
+            # ===== 查询名构造（与单洞/多洞原逻辑完全对齐） =====
+            # 优先：正则替换 target 名中的尺寸部分 → 保留花型名（如"安妮森林"）
+            # 兜底：parse_filename 取 pattern_name（去掉冒号后的尺寸）
+            _tmpl = ""
+            _dim_match = None
+            if target_name:
+                _dim_match = _re.search(
+                    r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
+                    target_name
+                )
+            if _dim_match:
+                # ✅ 正确路径：正则替换 → 保留原始花型名（如 "安妮森林"）
+                _tmpl = (target_name[:_dim_match.start()]
+                         + '{W:.1f}x{H:.1f}CM'
+                         + target_name[_dim_match.end():])
+            elif target_name:
+                # 兜底：无尺寸 → 尝试 parse_filename 提取 pattern_name
+                _p = _parse_fn(target_name)
+                _flower = _p.pattern_name or _p.pool_pattern_name or ""
+                _flower = _flower.split(':')[0].strip() if _flower else ""
+                if _flower:
+                    _tmpl = f"{_flower}-裁剪有图-{{W:.1f}}x{{H:.1f}}CM"
+
+            result: dict = {'multi': self._is_multi, 'inner_match_info': ''}
+            if self._is_multi:
+                # ===== 多洞：每洞独立匹配 + 素材图预加载 =====
+                preload_cache: dict[str, object] = {}
+                holes_out = []
+                info_lines = []
+                for _i, (_w, _h) in enumerate(self._holes_wh):
+                    if self.isInterruptionRequested():
+                        return
+                    if _w <= 0 or _h <= 0:
+                        holes_out.append({'path': None, 'score': 0.0})
+                        continue
+                    _q = _tmpl.format(W=_w, H=_h) if _tmpl else ""
+                    if _q:
+                        _best, _ = self._matcher.find_best_match(_q)
+                        if _best is not None:
+                            _path = _best.path
+                            holes_out.append({'path': _path, 'score': float(_best.score)})
+                            info_lines.append(f"洞{_i+1}素材："
+                                             f"{os.path.basename(_path)}"
+                                             f" (score={_best.score:.1f})\n")
+                            if _path and os.path.isfile(_path) and _path not in preload_cache:
+                                preload_cache[_path] = load_image_rgb(_path)
+                        else:
+                            holes_out.append({'path': None, 'score': 0.0})
+                            info_lines.append(f"洞{_i+1}素材：未找到匹配\n")
+                    else:
+                        holes_out.append({'path': None, 'score': 0.0})
+                        info_lines.append(f"洞{_i+1}素材：无花型名跳过\n")
+                result['holes'] = holes_out
+                result['preload'] = preload_cache
+                result['inner_match_info'] = "".join(info_lines)
+            else:
+                # ===== 单洞：原有内挖素材匹配（逻辑一字未改） =====
+                best_inner = None
+                inner_w_cm, inner_h_cm = (self._single_wh or (0.0, 0.0))
+                inner_query = ""
+                if target_name and inner_w_cm > 0 and inner_h_cm > 0:
+                    # 用正则替换原目标文件名中的尺寸部分为内挖尺寸
+                    dim_match = _re.search(
+                        r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
+                        target_name
+                    )
+                    if dim_match:
+                        new_dim = f'{inner_w_cm:.1f}x{inner_h_cm:.1f}CM'
+                        inner_query = (target_name[:dim_match.start()]
+                                       + new_dim
+                                       + target_name[dim_match.end():])
+                    else:
+                        # 兜底：构造标准查询格式
+                        p = _parse_fn(target_name)
+                        pat = p.pool_pattern_name or p.pattern_name or ""
+                        inner_query = (f"{pat}-裁剪有图-{inner_w_cm:.1f}x{inner_h_cm:.1f}CM"
+                                       if pat else "")
+                if inner_query:
+                    best_inner, _ = self._matcher.find_best_match(inner_query)
+                    if best_inner is not None:
+                        result['inner_match_info'] = (f"内挖素材：{os.path.basename(best_inner.path)} "
+                                                      f"(score={best_inner.score:.1f})\n")
+                    else:
+                        result['inner_match_info'] = "内挖素材：未找到匹配（请手动选择）\n"
+                else:
+                    result['inner_match_info'] = "内挖素材：无花型名，跳过自动匹配\n"
+                result['single'] = {
+                    'path': best_inner.path if best_inner is not None else None,
+                    'score': float(best_inner.score) if best_inner is not None else 0.0,
+                    'w_cm': float(getattr(best_inner, 'w_cm', 0.0) or 0.0) if best_inner else 0.0,
+                    'h_cm': float(getattr(best_inner, 'h_cm', 0.0) or 0.0) if best_inner else 0.0,
+                }
+            if self.isInterruptionRequested():
+                return
+            self.finished_ok.emit(result)
+        except Exception as e:
+            if self.isInterruptionRequested():
+                return
+            logger.warning(f"[InnerMatchWorker] failed: {e}")
+            self.finished_err.emit(str(e))
+
+
 class _WarmupScanWorker(QThread):
     """[Perf-Opt] 后台预热扫描：用户选择/恢复模板库目录后立即在后台执行 scan_library，
     把磁盘缓存加载到内存、做增量扫描。这样用户填写文件名/上传草图的时间与扫描

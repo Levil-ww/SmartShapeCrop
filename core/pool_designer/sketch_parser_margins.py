@@ -583,50 +583,6 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
 
 
 
-def _validate_geometric_constraints(margins, result, outer, inner,
-                                     cm_per_px_x, cm_per_px_y,
-                                     target_outer_w_cm, target_outer_h_cm):
-    """几何约束校验：用像素几何值填充/覆盖 OCR 边距。
-
-    1. 从 outer/inner 像素矩形计算几何边距（cm）
-    2. OCR 边距存在但偏离几何值超过容差 → 覆盖为几何值
-    3. OCR 边距缺失 → 用几何值填充
-    """
-    ox, oy, ow, oh = outer
-    ix, iy, iw, ih = inner
-
-    geom_top = (iy - oy) * cm_per_px_y
-    geom_bottom = ((oy + oh) - (iy + ih)) * cm_per_px_y
-    geom_left = (ix - ox) * cm_per_px_x
-    geom_right = ((ox + ow) - (ix + iw)) * cm_per_px_x
-
-    outer_h_cm = target_outer_h_cm if target_outer_h_cm > 0 else oh * cm_per_px_y
-    outer_w_cm = target_outer_w_cm if target_outer_w_cm > 0 else ow * cm_per_px_x
-
-    tolerance_h = max(3.0, outer_h_cm * 0.15)
-    tolerance_w = max(3.0, outer_w_cm * 0.15)
-
-    fm = {}
-
-    for name, geom_val, tol in [
-        ('margin_top', geom_top, tolerance_h),
-        ('margin_bottom', geom_bottom, tolerance_h),
-        ('margin_left', geom_left, tolerance_w),
-        ('margin_right', geom_right, tolerance_w),
-    ]:
-        if name in margins:
-            ocr_val = margins[name][0]
-            if abs(ocr_val - geom_val) > tol:
-                fm[name] = geom_val
-            else:
-                fm[name] = ocr_val
-        else:
-            fm[name] = geom_val
-
-    return fm
-
-
-
 def _build_assignment(dir_locked, buckets, target_outer_w, target_outer_h):
     """组装8字段赋值方案。
 
@@ -754,4 +710,5 @@ def _build_assignment(dir_locked, buckets, target_outer_w, target_outer_h):
             val, conf, _ = candidates[0]
             asg[asg_field] = (val, conf / 100 * 0.5)
     return asg
+
 

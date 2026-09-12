@@ -28,7 +28,8 @@ from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_s
 logger = logging.getLogger(__name__)
 
 from .property_panel_widgets import ColorButton, _SketchDropLabel
-from .property_panel_workers import PoolRenderWorker, _SketchParseWorker, _WarmupScanWorker
+from .property_panel_workers import (PoolRenderWorker, _SketchDecodeWorker,
+                                     _SketchParseWorker, _WarmupScanWorker)
 from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
 
 class _PoolBoxMixin:
@@ -562,27 +563,74 @@ class _PoolBoxMixin:
                 f"L 形面板已载入草图：{os.path.basename(p)}（水池设计器缩略图保持不变）")
 
         # —— 2) 立即显示：主画布大图（共享画布，总是显示最新草图）——
-        try:
-            pil_img = Image.open(p)
-            if pil_img.mode not in ('RGB', 'RGBA'):
-                pil_img = pil_img.convert('RGB')
-            self.sketch_loaded.emit(pil_img)
-        except Exception as e:
-            logger.warning(f"草图加载为 PIL Image 失败: {e}")
-            self.sketch_loaded.emit(None)
-
-        # —— 3) 后台异步解析草图（来源相关：Safety S4 不变式）——
-        # 矩形解析：仅 pool 来源触发（避免 L 形草图被误识别为矩形，闪烁错误边距）
-        if source == 'pool':
-            self._pool_auto_parse_sketch()
+        # [Perf-Opt P1-07] 大图解码移入后台线程：Image.open/convert 对超大图可能耗时
+        # 数百 ms ~ 秒级，主线程同步执行会阻塞 Qt 重绘（上传/拖拽大图时界面卡死）。
+        # 改为 _SketchDecodeWorker 后台解码，decoded 信号回传 PIL Image（None 表示失败）
+        # 后由 _on_sketch_decoded 在主线程 emit sketch_loaded —— 显示语义完全不变。
+        # 解码完成后的后续动作（矩形解析 / L 形预检测）也一并移入该回调执行，
+        # 保持"解码 → 显示画布 → 启动后续"的原有顺序语义。
+        self._start_sketch_decode_worker(p, source)
 
         # ===== [2026-09-03 双向隔离 Bug A 修复] L 形预检测只在 L 面板上传时触发 =====
         # 之前 source 不敏感：水池面板上传草图 → L 形预检测也跑 → LShapePanel 被填参数 → 串台。
         # 正确规则：
-        #   source='pool'  → 仅矩形解析（L552 已隔离），**不动** LShapePanel 任何状态
+        #   source='pool'  → 仅矩形解析，**不动** LShapePanel 任何状态
         #   source='lshape' → 仅 L 形预检测，更新 LShapePanel 缩略图 + 启动 Worker
-        if self._lshape_panel is not None and source == 'lshape':
-            # 更新 L 形面板自己的缩略图（仅 L 面板自己上传时才同步，避免双向串台）
+        # 该分支已随解码异步化移入 _on_sketch_decoded 回调（紧随 emit sketch_loaded
+        # 之后执行），与原有"解码 → 显示画布 → 启动后续"顺序语义保持一致。
+
+    def _start_sketch_decode_worker(self, p: str, source: str = 'pool'):
+        """[Perf-Opt P1-07] 启动后台草图解码 Worker；已有旧 Worker 在跑则先退役。
+
+        退役范式与 _pool_auto_parse_sketch/_pool_trigger_warmup 一致：
+        requestInterruption + finished→deleteLater，避免强杀在线程内持锁的 PIL 解码。
+        """
+        old = getattr(self, '_sketch_decode_worker', None)
+        if old is not None:
+            self._sketch_decode_worker = None
+            if old.isRunning():
+                try:
+                    old.requestInterruption()
+                    try:
+                        old.finished.connect(old.deleteLater)
+                    except TypeError:
+                        old.deleteLater()
+                except Exception:
+                    try:
+                        old.finished.connect(old.deleteLater)
+                    except TypeError:
+                        old.deleteLater()
+            else:
+                old.deleteLater()
+        self._sketch_decode_source = source
+        worker = _SketchDecodeWorker(p, parent=self)
+        worker.decoded.connect(self._on_sketch_decoded)
+        # 解码结束即释放（decoded 信号已回传结果，随后 Worker 无残留引用）
+        try:
+            worker.finished.connect(worker.deleteLater)
+        except TypeError:
+            pass
+        self._sketch_decode_worker = worker
+        worker.start()
+
+    def _on_sketch_decoded(self, img):
+        """[Perf-Opt P1-07] 解码完成回调（主线程）：展示画布 + 执行解码后的后续动作。
+
+        原同步实现中：解码 → emit sketch_loaded → 按来源启动解析/L 形预检测；
+        现在解码在后台线程完成，信号回到主线程后按同样的顺序执行，功能逻辑不变。
+        """
+        # 防御：忽略已被新上传替换的旧 Worker 结果（sender 不再是最新 Worker）
+        if self.sender() is not self._sketch_decode_worker:
+            logger.info("[PropertyPanel] 忽略已过期的草图解码结果")
+            return
+        source = getattr(self, '_sketch_decode_source', 'pool')
+        self.sketch_loaded.emit(img)
+        # 矩形解析：仅 pool 来源触发（避免 L 形草图被误识别为矩形，闪烁错误边距）
+        if source == 'pool':
+            self._pool_auto_parse_sketch()
+        elif self._lshape_panel is not None:
+            # L 形面板：更新自己的缩略图（仅 L 面板自己上传时才同步，避免双向串台）
+            p = self._sketch_path or ""
             self._lshape_panel.sync_sketch_preview(p)
             self._lshape_panel.set_sketch_path_for_view(p)
             try:
@@ -919,6 +967,47 @@ class _PoolBoxMixin:
         # 生成/识别/主画布共用同一份草图，用户点"清除草图"就是要让草图从画布上消失。
         self._sketch_path = ""
         self._sketch_parse_result = None
+
+        # [Perf-Opt P1-07] 清除草图时退役进行中的解码 Worker：
+        # 避免其解码完成后经 _on_sketch_decoded 又把已清除的旧草图回填到主画布。
+        old_decode = getattr(self, '_sketch_decode_worker', None)
+        if old_decode is not None:
+            self._sketch_decode_worker = None
+            if old_decode.isRunning():
+                try:
+                    old_decode.requestInterruption()
+                    try:
+                        old_decode.finished.connect(old_decode.deleteLater)
+                    except TypeError:
+                        old_decode.deleteLater()
+                except Exception:
+                    try:
+                        old_decode.finished.connect(old_decode.deleteLater)
+                    except TypeError:
+                        old_decode.deleteLater()
+            else:
+                old_decode.deleteLater()
+
+        # [Perf-Opt P1-08] 退役进行中的内挖素材匹配 Worker：
+        # 清除草图/重新生成时，旧的 scan_library+find_best_match 结果作废，
+        # 避免其 finished_ok 回填已清除的 design 或与新一轮匹配串台。
+        old_match = getattr(self, '_inner_match_worker', None)
+        if old_match is not None:
+            self._inner_match_worker = None
+            if old_match.isRunning():
+                try:
+                    old_match.requestInterruption()
+                    try:
+                        old_match.finished.connect(old_match.deleteLater)
+                    except TypeError:
+                        old_match.deleteLater()
+                except Exception:
+                    try:
+                        old_match.finished.connect(old_match.deleteLater)
+                    except TypeError:
+                        old_match.deleteLater()
+            else:
+                old_match.deleteLater()
 
         if source == 'pool':
             # 水池面板缩略图：清除 + 恢复拖拽提示样式（L 形面板缩略图/参数不受影响）

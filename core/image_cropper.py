@@ -121,7 +121,7 @@ class CropConfig:
 # 内部统一使用 core.config 的定义，此处只是重导出。
 _DEFAULT_BORDER_WIDTH_CM = DEFAULT_BORDER_WIDTH_CM
 
-from .image_cropper_mask import (_analyze_corner_sector_content, _build_border_paint_mask, _build_multi_layer_corner_mask, _corner_sector_has_content, _estimate_outer_background, _post_cleanup_gap_regions)
+from .image_cropper_mask import (_build_border_paint_mask, _build_multi_layer_corner_mask, _estimate_outer_background, _post_cleanup_gap_regions)
 from .image_cropper_border import (_DEFAULT_BORDER_WIDTH_CM, _redraw_outer_border_on_corners, apply_border_only_corners)
 
 def load_source_image(path: str) -> Image.Image:

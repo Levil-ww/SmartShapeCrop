@@ -54,7 +54,6 @@ from .config import (
 
 logger = logging.getLogger(__name__)
 
-
 def _build_multi_layer_corner_mask(
     w: int, h: int,
     corners_px: dict[str, int],
@@ -273,114 +272,6 @@ def _build_multi_layer_corner_mask(
     mask = Image.fromarray(mask_arr, mode='L')
     return mask
 
-
-
-def _analyze_corner_sector_content(
-    img: Image.Image,
-    corner_key: str,
-    r: int,
-    raw_depth: int,
-    bg_color: tuple = (255, 255, 255),
-) -> bool:
-    """
-    分析角落扇形区域是否包含需要保护的内容（花纹、图案等）。
-
-    通过在扇形区域（圆角外侧）采样像素的颜色复杂度来判断：
-    - 颜色种类多 / 方差高 → 有实际内容（如森夜私语的叶子花纹）→ 应保护
-    - 颜色单一 / 方差低 → 仅为背景色（如安妮森林的纯色角落） → 应完全裁切
-
-    Args:
-        img: 原图（RGB）
-        corner_key: 角标记 ('tl','tr','bl','br')
-        r: 圆角半径（像素）
-        raw_depth: 边框总厚度（像素）
-        bg_color: 背景色（用于判断"内容"与"背景"的差异）
-
-    Returns:
-        True = 该角存在内容，需要保护（只裁边框条带）
-        False = 该角为纯色背景，应完全裁掉整个扇形
-    """
-    w, h = img.size
-    r = min(r, max(1, min(w, h) // 2))
-    if r <= 0:
-        return False
-
-    # 扇形区域中心
-    if corner_key == 'tl':
-        cx, cy = r, r
-    elif corner_key == 'tr':
-        cx, cy = w - r, r
-    elif corner_key == 'bl':
-        cx, cy = r, h - r
-    else:
-        cx, cy = w - r, h - r
-
-    # 计算扇形区域（L 形 → 两个矩形）
-    # tl 角：矩形A = [0, r] x [0, r]（完整的角方块）
-    # 扇形 = 角方块内 dist > r 的部分
-    # 为了高效分析，我们在扇形区域采样像素
-
-    sample_step = max(2, r // 15)  # 自适应采样步长
-    pixels = []
-
-    if corner_key == 'tl':
-        for y in range(0, r, sample_step):
-            for x in range(0, r, sample_step):
-                dx, dy = x - r, y - r
-                if dx * dx + dy * dy > r * r:  # dist > r (outside circle)
-                    pixels.append(img.getpixel((x, y)))
-    elif corner_key == 'tr':
-        for y in range(0, r, sample_step):
-            for x in range(w - r, w, sample_step):
-                dx, dy = x - (w - r), y - r
-                if dx * dx + dy * dy > r * r:
-                    pixels.append(img.getpixel((x, y)))
-    elif corner_key == 'bl':
-        for y in range(h - r, h, sample_step):
-            for x in range(0, r, sample_step):
-                dx, dy = x - r, y - (h - r)
-                if dx * dx + dy * dy > r * r:
-                    pixels.append(img.getpixel((x, y)))
-    else:  # br
-        for y in range(h - r, h, sample_step):
-            for x in range(w - r, w, sample_step):
-                dx, dy = x - (w - r), y - (h - r)
-                if dx * dx + dy * dy > r * r:
-                    pixels.append(img.getpixel((x, y)))
-
-    if len(pixels) < 10:
-        return False
-
-    # 分析颜色复杂度
-    pixels_arr = np.array(pixels, dtype=np.float32)
-
-    # 1. 计算背景色相似度：与 bg_color 距离小于30的像素占比
-    bg_diff = np.sqrt(np.sum((pixels_arr - np.array(bg_color, dtype=np.float32)) ** 2, axis=1))
-    bg_ratio = np.mean(bg_diff < 30)
-
-    # 如果超过 85% 的像素接近背景色 → 认为无内容
-    if bg_ratio > 0.85:
-        return False
-
-    # 2. 计算唯一颜色数（量化到 20 个 bin）
-    quantized = (pixels_arr // 20).astype(np.int32)
-    unique_colors = len(set(map(tuple, quantized)))
-
-    # 如果唯一颜色数多 → 有内容（花纹、渐变等）
-    if unique_colors >= 8:
-        return True
-
-    # 3. 计算像素间方差（高方差 = 有图案细节）
-    variance = np.mean(np.var(pixels_arr, axis=0))
-
-    # 高方差 → 有内容
-    if variance > 800:
-        return True
-
-    return False
-
-
-
 def _estimate_outer_background(img: Image.Image, ring_px: int = 5) -> tuple[int, int, int]:
     """
     估算图像最外层背景色。
@@ -407,91 +298,6 @@ def _estimate_outer_background(img: Image.Image, ring_px: int = 5) -> tuple[int,
     if samples.shape[0] == 0:
         return (255, 255, 255)
     return tuple(int(round(v)) for v in np.median(samples, axis=0))
-
-
-
-def _corner_sector_has_content(
-    img: Image.Image,
-    corner_key: str,
-    r_px: int,
-    border_depth_px: int,
-) -> bool:
-    """
-    判断某个圆角对应的外侧扇形区域（排除边框条带后）是否包含需要保护的内容。
-
-    与旧的 _analyze_corner_sector_content 不同：
-      - 使用图像真实外背景色作为参考，而不是输出背景色
-      - 只采样"边框条带之外"的像素，避免把边框本身误判为内容
-      - 当外侧区域与外背景一致（无内容）时返回 False，允许完整裁切扇形
-
-    返回 True 表示该区域有图案/花纹，需要启用保护模式（只裁边框条带）。
-    """
-    w, h = img.size
-    r = min(r_px, max(1, min(w, h) // 2))
-    if r <= 0:
-        return False
-
-    outer_bg = np.array(_estimate_outer_background(img), dtype=np.float64)
-
-    if corner_key == 'tl':
-        cx, cy = r, r
-        x0, y0, x1, y1 = 0, 0, r, r
-    elif corner_key == 'tr':
-        cx, cy = w - r, r
-        x0, y0, x1, y1 = w - r, 0, w, r
-    elif corner_key == 'bl':
-        cx, cy = r, h - r
-        x0, y0, x1, y1 = 0, h - r, r, h
-    else:  # br
-        cx, cy = w - r, h - r
-        x0, y0, x1, y1 = w - r, h - r, w, h
-
-    step = max(2, r // 30)
-    # 只采样弧线外侧紧邻区域（窄带），避免深入内容区导致误判
-    band = max(12, min(r // 4, 40))
-    outer_r = r + band
-    tol = max(4, border_depth_px + 4)
-    samples: list[tuple[int, int, int]] = []
-
-    for y in range(y0, min(y1 + band, h), step):
-        for x in range(x0, min(x1 + band, w), step):
-            dx = x - cx
-            dy = y - cy
-            dist_sq = dx * dx + dy * dy
-            # 仅保留弧线外侧紧邻窄带内的像素
-            if dist_sq <= r * r or dist_sq > outer_r * outer_r:
-                continue
-            if corner_key == 'tl':
-                d_edge = min(x - x0, y - y0)
-            elif corner_key == 'tr':
-                d_edge = min((x1 - 1) - x, y - y0)
-            elif corner_key == 'bl':
-                d_edge = min(x - x0, (y1 - 1) - y)
-            else:
-                d_edge = min((x1 - 1) - x, (y1 - 1) - y)
-            if d_edge <= tol:
-                continue
-            samples.append(img.getpixel((x, y)))
-
-    if len(samples) < 12:
-        return False
-
-    samples_arr = np.array(samples, dtype=np.float64)
-    dist_to_bg = np.sqrt(np.sum((samples_arr - outer_bg) ** 2, axis=1))
-    non_bg_ratio = float(np.mean(dist_to_bg > 25.0))
-    # 提高阈值：窄带内少量噪点不应触发保护模式
-    if non_bg_ratio < 0.20:
-        return False
-
-    quantized = (samples_arr // 18).astype(np.int32)
-    unique_colors = len(set(map(tuple, quantized)))
-    if unique_colors >= 6:
-        return True
-
-    variance = float(np.mean(np.var(samples_arr, axis=0)))
-    return variance > 700
-
-
 
 def _build_border_paint_mask(
     w: int, h: int,
@@ -575,8 +381,6 @@ def _build_border_paint_mask(
 
     mask = Image.fromarray(paint_arr, mode='L')
     return mask
-
-
 
 def _post_cleanup_gap_regions(
     result_img: Image.Image,
@@ -664,6 +468,10 @@ def _post_cleanup_gap_regions(
     if not gap_regions:
         return
 
+    validity_mask_arr = None
+    if validity_mask is not None:
+        validity_mask_arr = np.array(validity_mask, dtype=bool)
+
     for corner_key, r in corners_px.items():
         if r <= 0:
             continue
@@ -701,9 +509,8 @@ def _post_cleanup_gap_regions(
         valid_angle = _angle_in_corner_sector(angle, corner_key, tol=2.0)
         valid_region = valid_angle & (dist <= r + 2.0)
 
-        if validity_mask is not None:
-            mask_arr = np.array(validity_mask, dtype=bool)
-            local_validity = mask_arr[roi_y1:roi_y2, roi_x1:roi_x2]
+        if validity_mask_arr is not None:
+            local_validity = validity_mask_arr[roi_y1:roi_y2, roi_x1:roi_x2]
             valid_region = valid_region & local_validity
 
         for (gap_start, gap_end) in gap_regions:

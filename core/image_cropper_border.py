@@ -56,7 +56,6 @@ logger = logging.getLogger(__name__)
 
 from .image_cropper_mask import _build_border_paint_mask
 from .image_cropper_mask import _build_multi_layer_corner_mask
-from .image_cropper_mask import _corner_sector_has_content
 from .image_cropper_mask import _estimate_outer_background
 from .image_cropper_mask import _post_cleanup_gap_regions
 

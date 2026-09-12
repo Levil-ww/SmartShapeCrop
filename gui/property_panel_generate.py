@@ -28,7 +28,7 @@ from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_s
 logger = logging.getLogger(__name__)
 
 from .property_panel_widgets import ColorButton, _SketchDropLabel
-from .property_panel_workers import PoolRenderWorker, _SketchParseWorker
+from .property_panel_workers import PoolRenderWorker, _SketchParseWorker, _InnerMatchWorker
 from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
 
 class _GenerateMixin:
@@ -308,284 +308,16 @@ class _GenerateMixin:
             if design.outer_bg_image:
                 self._ed_outer_img.setText(design.outer_bg_image)
 
-            # 3) 内挖素材自动匹配（仅当挖空方式为"素材填充"且非 L 形模式时）
+# 3) 内挖素材自动匹配（仅当挖空方式为"素材填充"且非 L 形模式时）
             #    L 形模式：L 形区域保留外框素材，挖掉的角显示洞色，不涉及内挖素材。
-            inner_match_info = ""
+            # [Perf-Opt P1-08] scan_library + find_best_match（多洞/单洞）移入
+            # _InnerMatchWorker 后台线程，避免 GUI 线程被匹配耗时阻塞（"模板扫描卡死"）。
+            # 匹配结果经 finished_ok 回传到 _on_inner_match_done：回填 design 后仍走
+            # 原来的 _pool_finish_tail（预览 + 历史记录 + 结果提示），显示语义一致。
             if hm == "image" and self.design.mode != 'rect_lshape':
-                # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞：每洞独立匹配内挖素材 =====
-                # 触发条件：pool_is_multi_hole=True 且 pool_holes_cm>=2
-                # 为每洞用独立的 w_cm/h_cm + pool_pattern_name 构造查询文件名，
-                # 调用 matcher.find_best_match()，结果存入 pool_holes_cm[i]['inner_material_path']。
-                # 单洞场景 pool_is_multi_hole=False → 跳过，走下面的原有单洞逻辑一字不变。
-                _mh = (getattr(self.design, 'pool_is_multi_hole', False)
-                       and isinstance(getattr(self.design, 'pool_holes_cm', []), list)
-                       and len(self.design.pool_holes_cm) >= 2)
-                if _mh:
-                    try:
-                        self._matcher.scan_library(force=False)
-                        import re as _re
-                        # [2026-09-03 修复 NameError] effective_target_name 是 _pool_run_generate
-                        # 的局部变量，Worker.finished_ok 不带它，改用回调顶部重建的 _resolved_target_name
-                        _target_name = _resolved_target_name
-                        # ===== 查询名构造：与单洞逻辑完全对齐（关键修复） =====
-                        # 优先：正则替换 target 名中的尺寸部分 → 保留花型名（如"安妮森林"）
-                        # 兜底：parse_filename 取 pattern_name（去掉冒号后的尺寸）
-                        _tmpl = ""  # 最终查询模板（带原始花型名、占位尺寸）
-                        _dim_match = None
-                        if _target_name:
-                            _dim_match = _re.search(
-                                r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
-                                _target_name
-                            )
-                        if _dim_match:
-                            # ✅ 正确路径：正则替换 → 保留原始花型名（如 "安妮森林"）
-                            # 例："双面草-定制-裁剪有图-安妮森林:50x247cm裁剪有图"
-                            #           → template = "双面草-定制-裁剪有图-安妮森林:{W}x{H}CM裁剪有图"
-                            _tmpl = (_target_name[:_dim_match.start()]
-                                     + '{W:.1f}x{H:.1f}CM'
-                                     + _target_name[_dim_match.end():])
-                        elif _target_name:
-                            # 兜底：无尺寸 → 尝试 parse_filename 提取 pattern_name（比 pool_pattern_name 更可靠）
-                            from core.parser.name_parser import parse_filename as _parse_fn
-                            _p = _parse_fn(_target_name)
-                            # pattern_name 是 "安妮森林:50x247cm" → 去掉冒号后的尺寸
-                            _flower = _p.pattern_name or _p.pool_pattern_name or ""
-                            _flower = _flower.split(':')[0].strip() if _flower else ""
-                            if _flower:
-                                _tmpl = f"{_flower}-裁剪有图-{{W:.1f}}x{{H:.1f}}CM"
-                        # ===== 为每洞填充独立尺寸 =====
-                        _preload_cache = {}  # path -> PIL.Image 避免重复磁盘 IO
-                        for _i, _hc in enumerate(self.design.pool_holes_cm):
-                            _w = float(_hc.get('w_cm', 0))
-                            _h = float(_hc.get('h_cm', 0))
-                            if _w <= 0 or _h <= 0:
-                                _hc['inner_material_path'] = None
-                                continue
-                            if _tmpl:
-                                _q = _tmpl.format(W=_w, H=_h)
-                            else:
-                                _q = ""
-                            if _q:
-                                self._set_pool_status(f"正在匹配洞{_i+1}素材…", is_error=False)
-                                QApplication.processEvents()
-                                _best, _ = self._matcher.find_best_match(_q)
-                                if _best is not None:
-                                    _hc['inner_material_path'] = _best.path
-                                    inner_match_info += (f"洞{_i+1}素材："
-                                                         f"{os.path.basename(_best.path)}"
-                                                         f" (score={_best.score:.1f})\n")
-                                else:
-                                    _hc['inner_material_path'] = None
-                                    inner_match_info += f"洞{_i+1}素材：未找到匹配\n"
-                            else:
-                                _hc['inner_material_path'] = None
-                                inner_match_info += f"洞{_i+1}素材：无花型名跳过\n"
-                        # 预加载所有匹配到的素材图
-                        try:
-                            from core.image_ops import load_image_rgb
-                            for _hc in self.design.pool_holes_cm:
-                                _p = _hc.get('inner_material_path')
-                                if _p and os.path.isfile(_p):
-                                    if _p not in _preload_cache:
-                                        _preload_cache[_p] = load_image_rgb(_p)
-                                    _hc['_cached_inner_image'] = _preload_cache[_p]
-                        except Exception as _pre_e:
-                            logger.warning(f"[Multi-hole inner material] 预加载素材失败: {_pre_e}")
-                    except Exception as _mh_e:
-                        logger.warning(f"[Multi-hole inner material] 多洞独立匹配失败: {_mh_e}")
-                        inner_match_info = f"多洞素材匹配异常：{_mh_e}\n"
-                else:
-                    # ===== 单洞原有内挖素材匹配（一字未改） =====
-                    try:
-                        inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
-                        inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
-                        # [2026-09-03 修复 NameError] effective_target_name 跨栈帧不可见，
-                        # 改用回调顶部用 _last_generate_source 重建的 _resolved_target_name
-                        target_name = _resolved_target_name
-                        if target_name and inner_w_cm > 0 and inner_h_cm > 0:
-                            import re
-                            # 用正则替换原目标文件名中的尺寸部分为内挖尺寸
-                            # 原格式: ...-{W}x{H}CM... → 替换为内挖尺寸
-                            dim_match = re.search(
-                                r'(\d+\.?\d*)\s*[xX×]\s*(\d+\.?\d*)\s*[Cc][Mm]',
-                                target_name
-                            )
-                            if dim_match:
-                                new_dim = f'{inner_w_cm:.1f}x{inner_h_cm:.1f}CM'
-                                inner_query = (target_name[:dim_match.start()]
-                                               + new_dim
-                                               + target_name[dim_match.end():])
-                            else:
-                                # 兜底：构造标准查询格式
-                                from core.parser.name_parser import parse_filename
-                                p = parse_filename(target_name)
-                                pat = p.pool_pattern_name or p.pattern_name or ""
-                                inner_query = f"{pat}-裁剪有图-{inner_w_cm:.1f}x{inner_h_cm:.1f}CM" if pat else ""
-
-                            if inner_query:
-                                self._set_pool_status(f"正在匹配内挖素材…", is_error=False)
-                                QApplication.processEvents()
-                                self._matcher.scan_library(force=False)
-                                best_inner, _ = self._matcher.find_best_match(inner_query)
-                                if best_inner is not None:
-                                    self.design.pool_inner_material_image = best_inner.path
-                                    self.design.hole_bg_image = best_inner.path
-                                    # ===== [SINGLE-HOLE Add-On 2026-08-31] 记录内挖素材设计尺寸 =====
-                                    # 与多洞 pool_holes_cm[i] 存 _src_design_w_cm/_src_design_h_cm 语义对齐；
-                                    # 供 _render_inner_area 单洞 Add-On 调用 adapt_pool_material 时
-                                    #   做"文件名设计方向 ≠ 像素存储方向"的硬校正（cond_C）。
-                                    # 纯写入新字段，不修改已有字段，零行为影响。
-                                    try:
-                                        self.design.pool_inner_src_design_w_cm = float(
-                                            getattr(best_inner, 'w_cm', 0.0) or 0.0)
-                                        self.design.pool_inner_src_design_h_cm = float(
-                                            getattr(best_inner, 'h_cm', 0.0) or 0.0)
-                                    except Exception:
-                                        self.design.pool_inner_src_design_w_cm = 0.0
-                                        self.design.pool_inner_src_design_h_cm = 0.0
-                                    # ===== [END SINGLE-HOLE Add-On 记录内挖素材设计尺寸] =====
-                                    inner_match_info = f"内挖素材：{os.path.basename(best_inner.path)} (score={best_inner.score:.1f})\n"
-                                    self._ed_hole_img.setText(best_inner.path)
-                                else:
-                                    inner_match_info = "内挖素材：未找到匹配（请手动选择）\n"
-                            else:
-                                inner_match_info = "内挖素材：无花型名，跳过自动匹配\n"
-                    except Exception as e:
-                        logger.warning(f"[PropertyPanel] 内挖素材自动匹配失败: {e}")
-                        inner_match_info = f"内挖素材匹配异常：{e}\n"
-
-            # 4) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
-            self._set_pool_status("正在生成预览图…", is_error=False)
-            QApplication.processEvents()
-            self._apply_quiet()
-            logger.info("[PropertyPanel] 预览已生成")
-
-            # ===== [2026-09-03 状态隔离] 历史记录仅写入来源面板（Safety 2 不变式）=====
-            # source='pool'  → 仅调 _pool_record_target_name_history（读 _pool_target，写 TARGET_SRC_POOL）
-            # source='lshape' → 仅调 LShapePanel._record_target_name_history（读自己的 LineEdit，写 TARGET_SRC_LSHAPE）
-            # 两边都从各自的 LineEdit 读值，所以即使两个面板 target 文本不同也互不串台。
-            # 【关键】从 _last_generate_source 读取，而不是参数：Worker.finished_ok 只发 3 个参数，
-            # 没有把 source 带过来；默认值 'pool' 保证旧代码路径（无 source 标记的调用）不会崩。
-            _src = getattr(self, '_last_generate_source', 'pool')
-            if _src == 'pool':
-                self._pool_record_target_name_history()
-            elif _src == 'lshape' and self._lshape_panel is not None:
-                self._lshape_panel._record_target_name_history()
-
-            # 保留信号（不再用于历史记录；未来可挂接状态灯/埋点等副作用）
-            self.pool_generate_succeeded.emit()
-
-            # 5) 结果提示（try/except 防止状态消息失败导致整个流程中断）
-            try:
-                info = f"✅ 生成成功！\n"
-                info += f"画布：{self.design.canvas_w_cm:.1f} × {self.design.canvas_h_cm:.1f} cm\n"
-                if self.design.mode == 'rect_lshape':
-                    info += (f"L形挖角：corner={self.design.l_corner}，"
-                             f"挖角 {self.design.l_cut_w_cm:.1f} × {self.design.l_cut_h_cm:.1f} cm\n")
-                    info += (f"外框尺寸：{max(0, self.design.canvas_w_cm - 1.0):.1f} × "
-                             f"{max(0, self.design.canvas_h_cm - 1.0):.1f} cm"
-                             f"（画布含 1cm 裁剪损耗）\n")
-                else:
-                    # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞显示替换单洞内挖行 =====
-                    # 仅当 pool_is_multi_hole=True 且 pool_holes_cm>=2 时显示每洞 + 间距；
-                    # 否则走原单洞代码一字不变。
-                    is_mh_design = (getattr(self.design, 'pool_is_multi_hole', False)
-                                    and isinstance(getattr(self.design, 'pool_holes_cm', []), list)
-                                    and len(self.design.pool_holes_cm) >= 2)
-                    if is_mh_design:
-                        holes = self.design.pool_holes_cm
-                        gaps = list(getattr(self.design, 'pool_holes_gaps_cm', []) or [])
-                        # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
-                        # 极端情况下 design 残留 0 值洞（历史 state / 旧缓存）也不会显示。
-                        valid_holes = [hc for hc in holes if (float(hc.get('w_cm',0))>0) or (float(hc.get('h_cm',0))>0)]
-                        valid_gaps = gaps[:max(0, len(valid_holes)-1)]
-                        for i, hc in enumerate(valid_holes):
-                            info += f"洞{i+1}：{hc['w_cm']:.1f} × {hc['h_cm']:.1f} cm\n"
-                        gaps_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(valid_gaps)) if valid_gaps else "无"
-                        # ===== [PER-HOLE Add-On] 多洞每洞独立 mt/mb/ml/mr =====
-                        # 从 pool_holes_cm dict（PoolWorker 已填充 mt_cm/mb_cm/ml_cm/mr_cm）读 per-hole 边距
-                        for i, hc in enumerate(valid_holes):
-                            hmt = hc.get('mt_cm', self.design.inner_margin_top_cm)
-                            hmb = hc.get('mb_cm', self.design.inner_margin_bottom_cm)
-                            hml = hc.get('ml_cm', self.design.inner_margin_left_cm)
-                            hmr = hc.get('mr_cm', self.design.inner_margin_right_cm)
-                            info += (f"  洞{i+1}边距：上{hmt:.1f}/下{hmb:.1f}/"
-                                     f"左{hml:.1f}/右{hmr:.1f} cm\n")
-                        info += f"  中距：{gaps_txt}\n"
-                    else:
-                        # ===== 单洞原有代码（一字未改） =====
-                        inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
-                        inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
-                        info += f"内挖：{inner_w_cm:.1f} × {inner_h_cm:.1f} cm\n"
-                        info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
-                                 f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm\n")
-                # 内挖素材匹配结果
-                if inner_match_info:
-                    info += inner_match_info
-                if self.design.mode == 'rect_lshape':
-                    # ===== [L-Shape Panel Refactor 2026-09-02] 从 LShapePanel 读取 L 形参数 =====
-                    # 原 getattr(self, '_lshape_params', None) 已迁移到 LShapePanel；
-                    # 通过 self._get_lshape_params() 间接访问，语义与原直读字段一致。
-                    lp = self._get_lshape_params() or {}
-                    info += (f"L形草图识别：corner={lp.get('corner', '?')}，"
-                             f"挖角 {float(lp.get('cut_w_cm', 0)):.1f} × "
-                             f"{float(lp.get('cut_h_cm', 0)):.1f} cm\n")
-                elif sketch_result is not None and sketch_result.success:
-                    sr = sketch_result
-                    # ===== [MULTI-HOLE Add-On 2026-08-29] 草图结果行 多洞替换 =====
-                    sr_is_mh = (getattr(sr, 'is_multi_hole', False)
-                                and hasattr(sr, 'holes')
-                                and isinstance(sr.holes, list)
-                                and len(sr.holes) >= 2)
-                    if sr_is_mh:
-                        info += f"识别草图成功（{getattr(sr,'layout_type','horizontal')}，{len(sr.holes)}洞）：\n"
-                        info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
-                        # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
-                        valid_holes = [h for h in sr.holes if (float(getattr(h,'w_cm',0))>0) or (float(getattr(h,'h_cm',0))>0)]
-                        for i, h in enumerate(valid_holes):
-                            info += f"  洞{i+1}：{h.w_cm:.1f} × {h.h_cm:.1f} cm\n"
-                        sr_gaps = list(getattr(sr, 'hole_gaps_cm', []) or [])[:max(0,len(valid_holes)-1)]
-                        g_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(sr_gaps)) if sr_gaps else "无"
-                        # ===== [PER-HOLE Add-On] 草图结果每洞独立边距 =====
-                        for i, h in enumerate(valid_holes):
-                            smt = getattr(h, 'margin_top_cm', sr.margin_top_cm)
-                            smb = getattr(h, 'margin_bottom_cm', sr.margin_bottom_cm)
-                            sml = getattr(h, 'margin_left_cm', sr.margin_left_cm)
-                            smr = getattr(h, 'margin_right_cm', sr.margin_right_cm)
-                            info += (f"  洞{i+1}边距：上{smt:.1f}/下{smb:.1f}/"
-                                     f"左{sml:.1f}/右{smr:.1f} cm\n")
-                        info += f"  中距：{g_txt}\n"
-                    else:
-                        info += f"识别草图成功：\n"
-                        info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
-                        info += f"  内挖：{(sr.outer_w_cm - sr.margin_left_cm - sr.margin_right_cm):.1f} × {(sr.outer_h_cm - sr.margin_top_cm - sr.margin_bottom_cm):.1f} cm\n"
-                        info += f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f} cm\n"
-                    if hasattr(sr, 'debug') and sr.debug:
-                        dir_vals = sr.debug.get("direction_margins", {}) if isinstance(sr.debug, dict) else {}
-                        if dir_vals:
-                            try:
-                                dir_mt = self._safe_dir_val2(dir_vals.get("margin_top", 0))
-                                dir_mb = self._safe_dir_val2(dir_vals.get("margin_bottom", 0))
-                                dir_ml = self._safe_dir_val2(dir_vals.get("margin_left", 0))
-                                dir_mr = self._safe_dir_val2(dir_vals.get("margin_right", 0))
-                                if any(v > 0 for v in [dir_mt, dir_mb, dir_ml, dir_mr]):
-                                    info += f"  🔤 方向标注：上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm\n"
-                            except Exception:
-                                pass
-                elif sketch_result is not None and not sketch_result.success:
-                    info += f"草图未识别（请检查/手动调整边距）：{sketch_result.message}\n"
-                else:
-                    info += f"草图未上传或未识别\n"
-                if self.design.pool_outer_material_image:
-                    info += f"匹配素材：{os.path.basename(self.design.pool_outer_material_image)}\n"
-                self._set_pool_status(info)
-                # [2026-09-04 Fix] source='lshape' 时也把完整状态（含匹配素材）写到 L 面板状态栏
-                # 让两个面板的用户都能看到完整结果；source='pool' 时不写 L 面板（那是 pool 面板独立操作）
-                if _src == 'lshape' and self._lshape_panel is not None:
-                    self._lshape_panel._set_status(info.strip())
-            except Exception as e:
-                logger.exception(f"[PropertyPanel] 状态消息构造失败: {e}")
-                self._set_pool_status(f"✅ 生成成功！（预览已生成，状态消息解析失败：{e}）")
+                self._start_inner_match_worker(_resolved_target_name, sketch_result)
+                return
+            self._pool_finish_tail("", sketch_result)
 
         except Exception as e:
             logger.exception(f"[PropertyPanel] _on_pool_finished_ok 异常: {e}")
@@ -594,6 +326,246 @@ class _GenerateMixin:
                 self._apply_quiet()
             except Exception:
                 pass
+
+    # ===== [Perf-Opt P1-08] 内挖素材自动匹配移入后台线程 =====
+    def _start_inner_match_worker(self, target_name: str, sketch_result):
+        """启动 _InnerMatchWorker：在后台执行 scan_library + find_best_match（多洞/单洞）。
+
+        target_name: 重建的 target 名（_resolved_target_name，语义与旧同步路径一致）
+        sketch_result: 保存到回调产物，_pool_finish_tail 结果提示需要它。
+        """
+        # 退役旧 Worker（若上一个还在跑），避免并发匹配串台
+        old = getattr(self, '_inner_match_worker', None)
+        if old is not None:
+            old.requestInterruption()
+            old.finished.connect(old.deleteLater)
+            old.quit()
+            self._inner_match_worker = None
+        # 判断多洞（与旧同步逻辑触发条件一致）
+        is_mh = (getattr(self.design, 'pool_is_multi_hole', False)
+                 and isinstance(getattr(self.design, 'pool_holes_cm', []), list)
+                 and len(self.design.pool_holes_cm) >= 2)
+        if is_mh:
+            holes_wh = [(float(hc.get('w_cm', 0)), float(hc.get('h_cm', 0)))
+                        for hc in self.design.pool_holes_cm]
+            single_wh = None
+        else:
+            holes_wh = []
+            single_wh = (self.design.canvas_w_cm - self.design.inner_margin_left_cm
+                         - self.design.inner_margin_right_cm,
+                         self.design.canvas_h_cm - self.design.inner_margin_top_cm
+                         - self.design.inner_margin_bottom_cm)
+        # 模板目录：优先取面板 ComboBox 当前文本（语义与 _pool_run_generate 一致）；
+        # 为空时回退 matcher 已配置目录（与旧同步逻辑直接 scan_library 现成目录一致）。
+        _tpl_widget = getattr(self, '_pool_tpl_dir', None)
+        if _tpl_widget is not None and hasattr(_tpl_widget, 'lineEdit'):
+            _tpl_dir = _tpl_widget.lineEdit().text().strip()
+        else:
+            _tpl_dir = ""
+        if not _tpl_dir:
+            try:
+                _tpl_dir = self._matcher.get_template_dir() or ""
+            except Exception:
+                _tpl_dir = ""
+        worker = _InnerMatchWorker(
+            matcher=self._matcher,
+            template_dir=_tpl_dir,
+            target_name=target_name,
+            is_multi_hole=is_mh,
+            holes_wh=holes_wh,
+            single_wh=single_wh,
+            parent=self,
+        )
+        self._inner_match_worker = worker
+        self._pending_inner_sketch_result = sketch_result
+        worker.finished_ok.connect(self._on_inner_match_done)
+        worker.finished_err.connect(self._on_inner_match_err)
+        worker.finished.connect(self._on_inner_match_worker_finished)
+        worker.start()
+        self._set_pool_status("正在匹配内挖素材…", is_error=False)
+
+    def _on_inner_match_worker_finished(self):
+        w = getattr(self, '_inner_match_worker', None)
+        if w is not None:
+            try:
+                w.deleteLater()
+            except Exception:
+                pass
+            self._inner_match_worker = None
+
+    def _on_inner_match_done(self, result: dict):
+        """Worker 匹配完成：回填 design（单洞/多洞字段与旧同步路径一字对齐），再执行收尾。"""
+        try:
+            if result.get('multi'):
+                # ===== 多洞：回填每洞 inner_material_path + 预加载图 =====
+                holes = result.get('holes') or []
+                preload = result.get('preload') or {}
+                for _i, _hc in enumerate(self.design.pool_holes_cm):
+                    if _i < len(holes):
+                        _hc['inner_material_path'] = holes[_i].get('path')
+                        _p = _hc.get('inner_material_path')
+                        if _p and _p in preload:
+                            _hc['_cached_inner_image'] = preload[_p]
+            else:
+                # ===== 单洞：回填原有字段 =====
+                single = result.get('single') or {}
+                path = single.get('path')
+                if path:
+                    self.design.pool_inner_material_image = path
+                    self.design.hole_bg_image = path
+                    self.design.pool_inner_src_design_w_cm = float(single.get('w_cm', 0.0) or 0.0)
+                    self.design.pool_inner_src_design_h_cm = float(single.get('h_cm', 0.0) or 0.0)
+                    self._ed_hole_img.setText(path)
+            self._pool_finish_tail(result.get('inner_match_info', ''),
+                                   getattr(self, '_pending_inner_sketch_result', None))
+        except Exception as e:
+            logger.exception(f"[PropertyPanel] _on_inner_match_done 回填异常: {e}")
+            self._pool_finish_tail(f"内挖素材匹配异常：{e}\n",
+                                   getattr(self, '_pending_inner_sketch_result', None))
+
+    def _on_inner_match_err(self, msg: str):
+        logger.warning(f"[PropertyPanel] 内挖素材自动匹配失败: {msg}")
+        self._pool_finish_tail(f"内挖素材匹配异常：{msg}\n",
+                               getattr(self, '_pending_inner_sketch_result', None))
+
+    def _pool_finish_tail(self, inner_match_info: str, sketch_result):
+        """[Perf-Opt P1-08] 生成收尾：触发预览 → 历史记录 → 结果提示。
+
+        原逻辑位于 _on_pool_finished_ok 步骤 4/5；拆出后既支持
+        "无内挖匹配"直接调用，也支持 _InnerMatchWorker 完成后回填再调用。
+        """
+        # 4) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
+        self._set_pool_status("正在生成预览图…", is_error=False)
+        QApplication.processEvents()
+        self._apply_quiet()
+        logger.info("[PropertyPanel] 预览已生成")
+
+        # ===== [2026-09-03 状态隔离] 历史记录仅写入来源面板（Safety 2 不变式）=====
+        # source='pool'  → 仅调 _pool_record_target_name_history（读 _pool_target，写 TARGET_SRC_POOL）
+        # source='lshape' → 仅调 LShapePanel._record_target_name_history（读自己的 LineEdit，写 TARGET_SRC_LSHAPE）
+        # 两边都从各自的 LineEdit 读值，所以即使两个面板 target 文本不同也互不串台。
+        # 【关键】从 _last_generate_source 读取，而不是参数：Worker.finished_ok 只发 3 个参数，
+        # 没有把 source 带过来；默认值 'pool' 保证旧代码路径（无 source 标记的调用）不会崩。
+        _src = getattr(self, '_last_generate_source', 'pool')
+        if _src == 'pool':
+            self._pool_record_target_name_history()
+        elif _src == 'lshape' and self._lshape_panel is not None:
+            self._lshape_panel._record_target_name_history()
+
+        # 保留信号（不再用于历史记录；未来可挂接状态灯/埋点等副作用）
+        self.pool_generate_succeeded.emit()
+
+        # 5) 结果提示（try/except 防止状态消息失败导致整个流程中断）
+        try:
+            info = f"✅ 生成成功！\n"
+            info += f"画布：{self.design.canvas_w_cm:.1f} × {self.design.canvas_h_cm:.1f} cm\n"
+            if self.design.mode == 'rect_lshape':
+                info += (f"L形挖角：corner={self.design.l_corner}，"
+                         f"挖角 {self.design.l_cut_w_cm:.1f} × {self.design.l_cut_h_cm:.1f} cm\n")
+                info += (f"外框尺寸：{max(0, self.design.canvas_w_cm - 1.0):.1f} × "
+                         f"{max(0, self.design.canvas_h_cm - 1.0):.1f} cm"
+                         f"（画布含 1cm 裁剪损耗）\n")
+            else:
+                # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞显示替换单洞内挖行 =====
+                # 仅当 pool_is_multi_hole=True 且 pool_holes_cm>=2 时显示每洞 + 间距；
+                # 否则走原单洞代码一字不变。
+                is_mh_design = (getattr(self.design, 'pool_is_multi_hole', False)
+                                and isinstance(getattr(self.design, 'pool_holes_cm', []), list)
+                                and len(self.design.pool_holes_cm) >= 2)
+                if is_mh_design:
+                    holes = self.design.pool_holes_cm
+                    gaps = list(getattr(self.design, 'pool_holes_gaps_cm', []) or [])
+                    # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
+                    # 极端情况下 design 残留 0 值洞（历史 state / 旧缓存）也不会显示。
+                    valid_holes = [hc for hc in holes if (float(hc.get('w_cm',0))>0) or (float(hc.get('h_cm',0))>0)]
+                    valid_gaps = gaps[:max(0, len(valid_holes)-1)]
+                    for i, hc in enumerate(valid_holes):
+                        info += f"洞{i+1}：{hc['w_cm']:.1f} × {hc['h_cm']:.1f} cm\n"
+                    gaps_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(valid_gaps)) if valid_gaps else "无"
+                    # ===== [PER-HOLE Add-On] 多洞每洞独立 mt/mb/ml/mr =====
+                    # 从 pool_holes_cm dict（PoolWorker 已填充 mt_cm/mb_cm/ml_cm/mr_cm）读 per-hole 边距
+                    for i, hc in enumerate(valid_holes):
+                        hmt = hc.get('mt_cm', self.design.inner_margin_top_cm)
+                        hmb = hc.get('mb_cm', self.design.inner_margin_bottom_cm)
+                        hml = hc.get('ml_cm', self.design.inner_margin_left_cm)
+                        hmr = hc.get('mr_cm', self.design.inner_margin_right_cm)
+                        info += (f"  洞{i+1}边距：上{hmt:.1f}/下{hmb:.1f}/"
+                                 f"左{hml:.1f}/右{hmr:.1f} cm\n")
+                    info += f"  中距：{gaps_txt}\n"
+                else:
+                    # ===== 单洞原有代码（一字未改） =====
+                    inner_w_cm = self.design.canvas_w_cm - self.design.inner_margin_left_cm - self.design.inner_margin_right_cm
+                    inner_h_cm = self.design.canvas_h_cm - self.design.inner_margin_top_cm - self.design.inner_margin_bottom_cm
+                    info += f"内挖：{inner_w_cm:.1f} × {inner_h_cm:.1f} cm\n"
+                    info += (f"边距：上{self.design.inner_margin_top_cm:.1f}/下{self.design.inner_margin_bottom_cm:.1f}/"
+                             f"左{self.design.inner_margin_left_cm:.1f}/右{self.design.inner_margin_right_cm:.1f} cm\n")
+            # 内挖素材匹配结果
+            if inner_match_info:
+                info += inner_match_info
+            if self.design.mode == 'rect_lshape':
+                # ===== [L-Shape Panel Refactor 2026-09-02] 从 LShapePanel 读取 L 形参数 =====
+                # 原 getattr(self, '_lshape_params', None) 已迁移到 LShapePanel；
+                # 通过 self._get_lshape_params() 间接访问，语义与原直读字段一致。
+                lp = self._get_lshape_params() or {}
+                info += (f"L形草图识别：corner={lp.get('corner', '?')}，"
+                         f"挖角 {float(lp.get('cut_w_cm', 0)):.1f} × "
+                         f"{float(lp.get('cut_h_cm', 0)):.1f} cm\n")
+            elif sketch_result is not None and sketch_result.success:
+                sr = sketch_result
+                # ===== [MULTI-HOLE Add-On 2026-08-29] 草图结果行 多洞替换 =====
+                sr_is_mh = (getattr(sr, 'is_multi_hole', False)
+                            and hasattr(sr, 'holes')
+                            and isinstance(sr.holes, list)
+                            and len(sr.holes) >= 2)
+                if sr_is_mh:
+                    info += f"识别草图成功（{getattr(sr,'layout_type','horizontal')}，{len(sr.holes)}洞）：\n"
+                    info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
+                    # ===== [MULTI-HOLE Add-On 2026-08-29] 防御性过滤：仅 w>0 or h>0 才打印 =====
+                    valid_holes = [h for h in sr.holes if (float(getattr(h,'w_cm',0))>0) or (float(getattr(h,'h_cm',0))>0)]
+                    for i, h in enumerate(valid_holes):
+                        info += f"  洞{i+1}：{h.w_cm:.1f} × {h.h_cm:.1f} cm\n"
+                    sr_gaps = list(getattr(sr, 'hole_gaps_cm', []) or [])[:max(0,len(valid_holes)-1)]
+                    g_txt = "，".join(f"间{i+1}_{i+2}={g:.1f}" for i, g in enumerate(sr_gaps)) if sr_gaps else "无"
+                    # ===== [PER-HOLE Add-On] 草图结果每洞独立边距 =====
+                    for i, h in enumerate(valid_holes):
+                        smt = getattr(h, 'margin_top_cm', sr.margin_top_cm)
+                        smb = getattr(h, 'margin_bottom_cm', sr.margin_bottom_cm)
+                        sml = getattr(h, 'margin_left_cm', sr.margin_left_cm)
+                        smr = getattr(h, 'margin_right_cm', sr.margin_right_cm)
+                        info += (f"  洞{i+1}边距：上{smt:.1f}/下{smb:.1f}/"
+                                 f"左{sml:.1f}/右{smr:.1f} cm\n")
+                    info += f"  中距：{g_txt}\n"
+                else:
+                    info += f"识别草图成功：\n"
+                    info += f"  外框：{sr.outer_w_cm:.1f} × {sr.outer_h_cm:.1f} cm\n"
+                    info += f"  内挖：{(sr.outer_w_cm - sr.margin_left_cm - sr.margin_right_cm):.1f} × {(sr.outer_h_cm - sr.margin_top_cm - sr.margin_bottom_cm):.1f} cm\n"
+                    info += f"  边距：上{sr.margin_top_cm:.1f}/下{sr.margin_bottom_cm:.1f}/左{sr.margin_left_cm:.1f}/右{sr.margin_right_cm:.1f} cm\n"
+                if hasattr(sr, 'debug') and sr.debug:
+                    dir_vals = sr.debug.get("direction_margins", {}) if isinstance(sr.debug, dict) else {}
+                    if dir_vals:
+                        try:
+                            dir_mt = self._safe_dir_val2(dir_vals.get("margin_top", 0))
+                            dir_mb = self._safe_dir_val2(dir_vals.get("margin_bottom", 0))
+                            dir_ml = self._safe_dir_val2(dir_vals.get("margin_left", 0))
+                            dir_mr = self._safe_dir_val2(dir_vals.get("margin_right", 0))
+                            if any(v > 0 for v in [dir_mt, dir_mb, dir_ml, dir_mr]):
+                                info += f"  🔤 方向标注：上{dir_mt:.1f}/下{dir_mb:.1f}/左{dir_ml:.1f}/右{dir_mr:.1f} cm\n"
+                        except Exception:
+                            pass
+            elif sketch_result is not None and not sketch_result.success:
+                info += f"草图未识别（请检查/手动调整边距）：{sketch_result.message}\n"
+            else:
+                info += f"草图未上传或未识别\n"
+            if self.design.pool_outer_material_image:
+                info += f"匹配素材：{os.path.basename(self.design.pool_outer_material_image)}\n"
+            self._set_pool_status(info)
+            # [2026-09-04 Fix] source='lshape' 时也把完整状态（含匹配素材）写到 L 面板状态栏
+            # 让两个面板的用户都能看到完整结果；source='pool' 时不写 L 面板（那是 pool 面板独立操作）
+            if _src == 'lshape' and self._lshape_panel is not None:
+                self._lshape_panel._set_status(info.strip())
+        except Exception as e:
+            logger.exception(f"[PropertyPanel] 状态消息构造失败: {e}")
+            self._set_pool_status(f"✅ 生成成功！（预览已生成，状态消息解析失败：{e}）")
 
     def _detect_user_margin_edits(self) -> dict:
         """检测用户是否手动修改了边距 SpinBox 值（相对于草图识别结果）。

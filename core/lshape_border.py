@@ -640,9 +640,13 @@ def apply_lshape_border_completion(
         return False
 
     # Step 2: 把检测到的厚度按 scale 因子换算到画布坐标系
-    # 对于非等比缩放（scale_x ≠ scale_y），按"厚度沿 x 方向用 scale_x、y 方向用 scale_y"处理
-    # 实际场景中 scale_x ≈ scale_y（素材 AR 与画布 AR 通常匹配），取平均做统一换算即可
-    scale_avg = (scale_x + scale_y) / 2.0 if (scale_x > 0 and scale_y > 0) else 1.0
+    # [Fix P1-06 2026-09-12] 统一为几何平均 sqrt(sx*sy)，与 Profile 路径
+    #   （lshape_border_route._apply_profile_path）口径一致：
+    #   非等比缩放（scale_x ≠ scale_y，如 ROTATE_270 素材）时算术平均会
+    #   系统性高估厚度（例 sx=2、sy=0.5 → 算术 1.25 vs 几何 1.0），
+    #   导致切边补边厚度失真、视觉上残留"裸边"。几何均值对"旋转校正
+    #   后 sx/sy 互换但乘积不变"的场景稳健（stretch 填满模式等价）。
+    scale_avg = float(np.sqrt(scale_x * scale_y)) if (scale_x > 0 and scale_y > 0) else 1.0
     scale_avg = max(scale_avg, 0.1)  # 防御性下限
 
     border_layers_canvas: list[tuple[tuple[int, int, int], float]] = []
@@ -733,7 +737,10 @@ def _apply_v13_path(
         color_src = (0, 0, 0)  # 占位，不会被绘制
 
     # —— 2) 厚度换算到画布坐标系（预览 LOD 时 scale 相应变小，自动适配）——
-    scale_avg = (scale_x + scale_y) / 2.0 if (scale_x > 0 and scale_y > 0) else 1.0
+    # [Fix P1-06 2026-09-12] 与旧路径 / Profile 路径（lshape_border_route）统一：
+    # 几何平均 sqrt(sx*sy)。非等比缩放（ROTATE_270 素材 sx 与 sy 互换）时
+    # 算术平均误差 100%+（见 route.py 2026-09-08 修复记录），几何均值偏差 <1%。
+    scale_avg = float(np.sqrt(scale_x * scale_y)) if (scale_x > 0 and scale_y > 0) else 1.0
     scale_avg = max(scale_avg, 0.1)
 
     edge_canvas = float(edge_src) * scale_avg

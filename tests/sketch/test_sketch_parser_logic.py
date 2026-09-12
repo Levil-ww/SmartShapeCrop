@@ -4,8 +4,7 @@
 无需真实草图图片 / Tesseract / OpenCV 图像，仅验证可独立调用的几何与赋值逻辑：
   - _compute_gaps                  外框-内框 4 间隙区域计算 + 无效间隙过滤
   - _score_assignment_consistency  OCR 赋值方案的几何自洽性评分 (sc, 0~1)
-  - _validate_and_fix_margins      边距几何自洽修正（缺失推导 / 比例缩放 / 异常裁剪）
-  - _validate_geometric_constraints 几何约束校验（OCR 与几何值差异大时覆盖）
+- _validate_and_fix_margins      边距几何自洽修正（缺失推导 / 比例缩放 / 异常裁剪）
 
 这些函数历史上是 8.x 系列反复回归的重灾区（横竖颠倒、边距错乱、自洽保护伪命中），
 补纯逻辑单测可在无图片环境下快速锁定回归。
@@ -16,7 +15,6 @@ from core.pool_designer.sketch_parser import (
     _compute_gaps,
     _score_assignment_consistency,
     _validate_and_fix_margins,
-    _validate_geometric_constraints,
 )
 
 
@@ -301,59 +299,3 @@ class TestValidateAndFixMargins:
             f"margin_right 应为 100-80-10=10，实际={out['margin_right'][0]}"
         )
 
-
-# ===========================================================================
-# 4. _validate_geometric_constraints
-# ===========================================================================
-
-class TestValidateGeometricConstraints:
-    """几何约束校验：OCR 与几何计算值差异过大时用几何值覆盖。"""
-
-    # 外框 200×100px，内框 160×80px（偏移 20,10）
-    # target 100×50cm → cm/px = 0.5（双轴一致）
-    # 几何边距：上=10px*0.5=5cm，下=5cm，左=20px*0.5=10cm，右=10cm
-    OUTER = (0, 0, 200, 100)
-    INNER = (20, 10, 160, 80)
-
-    def test_ocr_close_to_geometric_is_kept(self):
-        """OCR 值与几何值接近时保留 OCR 值。"""
-        margins = {
-            'margin_top': (5, 0.9), 'margin_bottom': (5, 0.9),
-            'margin_left': (10, 0.9), 'margin_right': (10, 0.9),
-        }
-        out = _validate_geometric_constraints(
-            margins, {}, self.OUTER, self.INNER,
-            cm_per_px_x=0.5, cm_per_px_y=0.5,
-            target_outer_w_cm=100, target_outer_h_cm=50,
-        )
-        assert out['margin_top'] == pytest.approx(5.0)
-        assert out['margin_bottom'] == pytest.approx(5.0)
-        assert out['margin_left'] == pytest.approx(10.0)
-        assert out['margin_right'] == pytest.approx(10.0)
-
-    def test_ocr_far_from_geometric_is_overridden(self):
-        """OCR 值偏离几何值超过容差时，用几何值覆盖。"""
-        # mt=20，几何值=5，diff=15 > max(3, 50*0.15=7.5) → 覆盖为 5
-        margins = {
-            'margin_top': (20, 0.9), 'margin_bottom': (5, 0.9),
-            'margin_left': (10, 0.9), 'margin_right': (10, 0.9),
-        }
-        out = _validate_geometric_constraints(
-            margins, {}, self.OUTER, self.INNER,
-            cm_per_px_x=0.5, cm_per_px_y=0.5,
-            target_outer_w_cm=100, target_outer_h_cm=50,
-        )
-        assert out['margin_top'] == pytest.approx(5.0)   # 被覆盖
-        assert out['margin_bottom'] == pytest.approx(5.0)  # 保留
-
-    def test_missing_margin_filled_from_geometric(self):
-        """缺失的边距由几何像素值填充。"""
-        out = _validate_geometric_constraints(
-            {}, {}, self.OUTER, self.INNER,
-            cm_per_px_x=0.5, cm_per_px_y=0.5,
-            target_outer_w_cm=100, target_outer_h_cm=50,
-        )
-        assert out['margin_top'] == pytest.approx(5.0)
-        assert out['margin_bottom'] == pytest.approx(5.0)
-        assert out['margin_left'] == pytest.approx(10.0)
-        assert out['margin_right'] == pytest.approx(10.0)

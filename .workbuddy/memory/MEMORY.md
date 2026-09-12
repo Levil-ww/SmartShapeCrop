@@ -41,3 +41,18 @@ ProductSummary/
 
 另外：`.gitignore` 的 `_archive/` 等规则**只对未追踪文件生效**。
 已被追踪的文件必须先 `git rm --cached`，忽略规则才会起作用。
+
+## 环境与交付事实（2026-09-12 实测）
+
+- **打包工具链缺失**：`.venv` 内 **未安装 PyInstaller**（`pyinstaller=MISSING`），
+  改动后无法直接出包，需先 `pip install pyinstaller`。
+  `dist/智能裁剪设计器V2.2.exe` 永远要检查时间戳是否 ≥ 最新源码时间戳。
+- **`.workbuddy/` 与 `.dumate/` 未被 `.gitignore` 覆盖**（仅 `_archive/`、`.venv/`、`dist/`、
+  `build/`、`.idea/`、`logs/` 已覆盖）。当前已误跟踪 51 个文件，含 47.76 MB 的 PyQt5 wheel 备份、
+  约 30 MB 测试图、`.bak` 源码备份。清理前须 `git rm --cached`（详见 P1-03）。
+- **测试必须在 `.venv` 下跑**：`F:\SmartShapeCrop\.venv\Scripts\python.exe`（3.13.14，含 PyQt5/PIL）。
+  实测基线 **433 passed / 0 skipped / 0 failed**（84.4s）；`--collect-only` 报 430，差 3 未定位。
+- **Tesseract 装在非默认路径** `D:\Programs\Tesseract-OCR`（`C:\Program Files\...` 下没有），
+  由 `core.config.PathResolver` 探测到。排查 OCR 问题别只查 C 盘。
+- **本机工具使用坑**：Bash 工具不可用（PATH 未初始化）；PowerShell 工具 stdout 不回传，
+  凡需取输出一律「Python 脚本自行落盘 → Read 读取」。
