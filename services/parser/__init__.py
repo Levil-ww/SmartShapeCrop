@@ -1,5 +1,5 @@
 """
-core/parser/__init__.py
+services/parser/__init__.py
 文件名解析与模板匹配子包。
 """
 from .name_parser import (

@@ -1,5 +1,5 @@
 """
-core/psd/__init__.py
+services/psd/__init__.py
 PSD 加载子包：PSD 分层文件读取与导出。
 """
 from .loader import (

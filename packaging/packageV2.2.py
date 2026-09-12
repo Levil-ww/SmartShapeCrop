@@ -110,28 +110,26 @@ HIDDEN_IMPORTS = [
     # ===== V2.2 新增：L 形挖角边框补全模块 =====
     "core.lshape_border",          # 池素材 L 形挖角后新边缘边框层补全
     "core.lshape_border_route",    # L 形挖角描边/色带/细边框结构重走线（V13 扩展）
-    # ===== 水池设计器草图识别（V2.1.2 拆分为 9 大子模块）=====
-    "core.pool_designer",
-    "core.pool_designer.sketch_parser",            # 主入口
-    "core.pool_designer.sketch_parser_base",       # V2.1.2 新增：基础类
-    "core.pool_designer.sketch_parser_cache",      # V2.1.2 新增：缓存
-    "core.pool_designer.sketch_parser_margins",    # V2.1.2 新增：边距分配
-    "core.pool_designer.sketch_parser_multihole",  # V2.1.2 新增：多洞核心（Phase A-E）
-    "core.pool_designer.sketch_parser_numbers",    # V2.1.2 新增：数值识别
-    "core.pool_designer.sketch_parser_vision",     # V2.1.2 新增：视觉检测
-    "core.pool_designer.lshape_sketch_parser",     # V2.1.2 新增：L 形挖角草图识别
-    # 智能形状裁剪与圆角处理（单步扇形切割、多层边框保护）
-    "core.corner",
-    "core.corner.sector_render",
-    "core.corner.detection",
-    "core.corner.algorithm",
-    # 文件名解析与模板匹配
-    "core.parser",
-    "core.parser.name_parser",
-    "core.parser.template_matcher",
-    # PSD 加载
-    "core.psd",
-    "core.psd.loader",
+    # ===== 服务层（从 core/ 迁移至 services/）=====
+    "services",
+    "services.parser",                              # 文件名解析 + 模板匹配
+    "services.parser.name_parser",
+    "services.parser.template_matcher",
+    "services.sketch_parser",                       # 草图尺寸识别
+    "services.sketch_parser.sketch_parser",         # 主入口
+    "services.sketch_parser.sketch_parser_base",
+    "services.sketch_parser.sketch_parser_cache",
+    "services.sketch_parser.sketch_parser_margins",
+    "services.sketch_parser.sketch_parser_multihole",
+    "services.sketch_parser.sketch_parser_numbers",
+    "services.sketch_parser.sketch_parser_vision",
+    "services.sketch_parser.lshape_sketch_parser",
+    "services.psd",                                 # PSD 加载
+    "services.psd.loader",
+    # ===== core/ 旧路径 shim（通过 core.compat sys.modules 别名重定向到 services/）=====
+    "core.parser",                                  # shim → services.parser
+    "core.pool_designer",                           # shim → services.sketch_parser
+    "core.psd",                                     # shim → services.psd
     # ===== GUI（V2.1.2 拆分为多个子模块，V2.2 新增 L 形面板）=====
     "gui",
     "gui.canvas_widget",
