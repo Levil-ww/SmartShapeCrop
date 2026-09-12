@@ -268,38 +268,9 @@ class MainWindow(QMainWindow):
     def _apply_design(self, design: CropDesign):
         # 把设计同步到面板（让面板的 UI 控件显示正确的数值）
         self.panel.design = design
-        self._sync_panel_from_design(design)
+        self.panel.sync_from_design(design)
         # 触发面板 → 设计变更（会再次收集并渲染，确保所有控件与设计一致）
         self.panel.apply()
-
-    def _sync_panel_from_design(self, d: CropDesign):
-        """把设计对象数值写回面板控件（避免模板加载后 UI 还显示旧值）"""
-        p = self.panel
-        p._sp_w.setValue(d.canvas_w_cm); p._sp_h.setValue(d.canvas_h_cm); p._sp_dpi.setValue(d.dpi)
-        idx = {'rect_hole': 0, 'rect_lshape': 1, 'ellipse_hole': 2}.get(d.mode, 0)
-        p._cb_mode.setCurrentIndex(idx)
-        p._sp_outer_margin.setValue(d.outer_margin_cm)
-        p._sp_mt.setValue(d.inner_margin_top_cm); p._sp_mb.setValue(d.inner_margin_bottom_cm)
-        p._sp_ml.setValue(d.inner_margin_left_cm); p._sp_mr.setValue(d.inner_margin_right_cm)
-        ci = {'tl': 0, 'tr': 1, 'bl': 2, 'br': 3}.get(d.l_corner, 3)
-        # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数同步到 LShapePanel =====
-        # 原 p._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
-        # 通过 p._lshape_panel.set_lshape_params() 回填，语义与原直设控件一致。
-        if p._lshape_panel is not None:
-            p._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
-        p._sp_erx.setValue(d.ellipse_rx_ratio); p._sp_ery.setValue(d.ellipse_ry_ratio)
-        p._btn_outer_color.set_color(d.outer_bg_color); p._btn_hole_color.set_color(d.hole_bg_color)
-        p._ed_outer_img.setText(d.outer_bg_image or ""); p._ed_hole_img.setText(d.hole_bg_image or "")
-        if d.border_text is not None:
-            p._gb_txt.setChecked(True)
-            p._ed_txt.setText(d.border_text.text)
-            p._sp_fs.setValue(d.border_text.font_size_px)
-            p._btn_txt_color.set_color(d.border_text.color)
-            p._ck_mirror.setChecked(d.border_text.mirror_bottom)
-        else:
-            p._gb_txt.setChecked(False)
-        p._on_mode_change()
-        p._update_layers_label()
 
     def _on_design_changed(self, design):
         self.canvas.set_design(design)

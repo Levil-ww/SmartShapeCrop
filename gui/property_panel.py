@@ -875,6 +875,35 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         # L 形参数已迁移到独立 LShapePanel（始终作为 tab 可见，无需此处切换）
         self._gb_e.setVisible(mode == 'ellipse_hole')
 
+    # ---- 把设计对象数值写回面板控件 ----
+    def sync_from_design(self, d: CropDesign):
+        """把设计对象数值写回面板控件（避免模板加载后 UI 还显示旧值）。
+
+        从 main.py._sync_panel_from_design() 迁移至此，
+        由 Panel 自己负责 UI 控件的同步，main.py 不再直接访问 Panel 私有属性。
+        """
+        self._sp_w.setValue(d.canvas_w_cm); self._sp_h.setValue(d.canvas_h_cm); self._sp_dpi.setValue(d.dpi)
+        idx = {'rect_hole': 0, 'rect_lshape': 1, 'ellipse_hole': 2}.get(d.mode, 0)
+        self._cb_mode.setCurrentIndex(idx)
+        self._sp_outer_margin.setValue(d.outer_margin_cm)
+        self._sp_mt.setValue(d.inner_margin_top_cm); self._sp_mb.setValue(d.inner_margin_bottom_cm)
+        self._sp_ml.setValue(d.inner_margin_left_cm); self._sp_mr.setValue(d.inner_margin_right_cm)
+        if self._lshape_panel is not None:
+            self._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
+        self._sp_erx.setValue(d.ellipse_rx_ratio); self._sp_ery.setValue(d.ellipse_ry_ratio)
+        self._btn_outer_color.set_color(d.outer_bg_color); self._btn_hole_color.set_color(d.hole_bg_color)
+        self._ed_outer_img.setText(d.outer_bg_image or ""); self._ed_hole_img.setText(d.hole_bg_image or "")
+        if d.border_text is not None:
+            self._gb_txt.setChecked(True)
+            self._ed_txt.setText(d.border_text.text)
+            self._sp_fs.setValue(d.border_text.font_size_px)
+            self._btn_txt_color.set_color(d.border_text.color)
+            self._ck_mirror.setChecked(d.border_text.mirror_bottom)
+        else:
+            self._gb_txt.setChecked(False)
+        self._on_mode_change()
+        self._update_layers_label()
+
     # ---- 边框层增删改 ----
 
 

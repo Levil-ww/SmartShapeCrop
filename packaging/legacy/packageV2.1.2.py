@@ -123,6 +123,9 @@ HIDDEN_IMPORTS = [
     "workers.property_panel_workers",  # 水池设计相关 Worker
     "workers.cropper_workers",         # 裁剪相关 Worker
     "workers.canvas_workers",          # 画布渲染相关 Worker
+    # ===== Models 层（数据模型，纯数据结构）=====
+    "models",
+    "models.design_model",              # DesignModel：CropDesign 包装器
 ]
 
 # 需要复制元数据的包（运行时依赖包的元数据）
