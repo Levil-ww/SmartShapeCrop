@@ -72,12 +72,14 @@ class _LayersMixin:
         d.canvas_h_cm = self._sp_h.value()
         d.dpi = self._sp_dpi.value()
         d.mode = self._cb_mode.currentData()
-        # L 形挖角模式：outer_margin / inner_margin 由 Worker 固定为 0.0，
-        # 不从 SpinBox 读取（property_panel_generate.py:204 也有同样的保护）。
-        # SpinBox 默认值是 1.0，若无条件覆盖会把 Worker 的 0.0 冲回 1.0
-        # → inner_rect 内缩 1cm → cut 整体偏移 1cm → PS 测量 cut 尺寸大 1cm。
-        if d.mode != 'rect_lshape':
+        # outer_margin: rect_lshape 和 rect_hole 都由 Worker 强制设为 0.0（水池花纹素材
+        #   本身就是外框，不需要额外留白），不从 SpinBox 覆盖。仅 ellipse_hole 模式
+        #   从 SpinBox 读取（Worker 未对椭圆模式设 outer_margin）。
+        if d.mode == 'ellipse_hole':
             d.outer_margin_cm = self._sp_outer_margin.value()
+        # inner_margins: 仅 rect_lshape 由 Worker 固定为 0.0（L 形语义），
+        # 其他模式允许 SpinBox 覆盖（property_panel_generate.py:204 也有同样的保护）
+        if d.mode != 'rect_lshape':
             d.inner_margin_top_cm = self._sp_mt.value()
             d.inner_margin_bottom_cm = self._sp_mb.value()
             d.inner_margin_left_cm = self._sp_ml.value()

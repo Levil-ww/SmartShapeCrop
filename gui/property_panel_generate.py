@@ -201,18 +201,18 @@ class _GenerateMixin:
             else:
                 self.design.canvas_w_cm = self._sp_w.value()
                 self.design.canvas_h_cm = self._sp_h.value()
-            if self.design.mode != 'rect_lshape':
+            # outer_margin: rect_lshape 和 rect_hole 都由 Worker 强制设为 0.0（水池花纹素材
+            #   本身就是外框，不需要额外留白），不从 SpinBox 覆盖。仅 ellipse_hole 模式
+            #   从 SpinBox 读取（Worker 未对椭圆模式设 outer_margin）。
+            if self.design.mode == 'ellipse_hole':
                 self.design.outer_margin_cm = self._sp_outer_margin.value()
+            # inner_margins: 仅 rect_lshape 由 Worker 固定为 0.0（L 形语义），
+            # 其他模式允许 SpinBox 覆盖（用户可微调边距）
+            if self.design.mode != 'rect_lshape':
                 self.design.inner_margin_top_cm = self._sp_mt.value()
                 self.design.inner_margin_bottom_cm = self._sp_mb.value()
                 self.design.inner_margin_left_cm = self._sp_ml.value()
                 self.design.inner_margin_right_cm = self._sp_mr.value()
-            # L 形挖角模式：outer_margin / inner_margin 由 Worker 固定为 0.0，
-            # 不从 SpinBox 读取。因为：
-            #   1) L 形语义是 cut 直接基于 canvas 边缘定位（outer_margin=0 保证 inner_rect=canvas）
-            #   2) SpinBox 默认值是 1.0（见 geometry.py:125），Worker 没同步 SpinBox
-            #   3) 若无条件从 SpinBox 读值覆盖，会把 Worker 设的 0.0 冲回 1.0
-            #   → inner_rect 内缩 1cm → cut 整体偏移 1cm → 用户在 PS 测量看到 cut 尺寸大了 1cm
 
             # ===== [SINGLE-HOLE Add-On 2026-08-31] 记录草图解析成功时的原始边距 =====
             # render_design 中的 Stale Decor Invalidation Add-On（core/image_ops.py）

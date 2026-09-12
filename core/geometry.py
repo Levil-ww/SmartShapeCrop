@@ -122,7 +122,7 @@ class CropDesign:
     mode: Literal['rect_hole', 'rect_lshape', 'ellipse_hole'] = 'rect_hole'
 
     # 外轮廓（模式都用）
-    outer_margin_cm: float = 1.0   # 外框留白边
+    outer_margin_cm: float = 0.0   # 外框留白边（水池模式默认不额外留白，花纹素材本身就是外框）
 
     # —— mode == rect_hole / rect_lshape 时的内挖矩形 ——
     inner_margin_top_cm: float = 8.0
