@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
+from PIL import Image as PILImage
 
 try:  # pragma: no cover - 依赖环境差异
     from PIL import Image
@@ -271,80 +272,316 @@ def _parse_dir_num_token(text):
 
 
 
-def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=None,
-                                     target_outer_w_cm=0.0, target_outer_h_cm=0.0,
-                                     check_cancel=None):
-    """Phase1改进版：提取方向+数值组合（支持双向匹配 + 颜色增强 + 小数字补漏）。
 
-    返回: dict {field_name: (value, conf, bbox)}
+class _DirLabelCaps:
+    """[C-02] 边距 OCR 合理性上限配置（策略表化）。
+
+    由 _compute_margin_caps 构建；is_reasonable_margin 合并了原 L310/L332
+    两个内部闭包版本（权威轴向 cap / 无 target 统一 cap + 50 上限）的行为。
     """
-    from PIL import Image as PILImage
-    result = {}
-    # [N-P2-12] 静默 catch 收敛：统计 image_to_data 调用失败次数，主路径结束汇总 warning
-    ocr_fail_count = 0
-    # [智能覆盖保护] 追踪恢复值的元数据：防止后续OCR误读覆盖已正确恢复的值
-    _recovered_meta = {}  # field → (source_integer, recovered_value, raw_conf)
-    # [全局源整数追踪] 即使恢复元数据被清除（被直接OCR覆盖），仍记录已使用的源整数
-    _used_source_ints = {}  # source_integer → (field, recovered_value)
-    if tesseract is None:
-        return result
 
-    # ---- [防OCR噪声] 预计算边距合理性上限 ----
-    # 边距通常是外框短边的 2%~25%，或绝对不超过 25cm
-    # 此阈值用于剔除 OCR 把装饰文字/尺寸标注误识别为"边距"的情况
+    __slots__ = ('outer_w_cm', 'outer_h_cm', 'is_authoritative',
+                 'cap_horizontal', 'cap_vertical', 'margin_hard_cap')
+
+    def __init__(self, outer_w_cm, outer_h_cm, is_authoritative,
+                 cap_horizontal, cap_vertical, margin_hard_cap):
+        self.outer_w_cm = outer_w_cm
+        self.outer_h_cm = outer_h_cm
+        self.is_authoritative = is_authoritative
+        self.cap_horizontal = cap_horizontal
+        self.cap_vertical = cap_vertical
+        self.margin_hard_cap = margin_hard_cap
+
+    def is_reasonable_margin(self, v, field_hint=None):
+        """判断边距值是否合理（按轴向区分上限）。
+
+        field_hint: 'margin_left'/'margin_right'（横向）'margin_top'/'margin_bottom'（纵向）或 None（fallback）
+        """
+        if v is None or v <= 0:
+            return False
+        if v < 0.3:
+            return False
+        if self.is_authoritative:
+            if field_hint in ('margin_left', 'margin_right'):
+                if v > self.cap_horizontal:
+                    return False
+            elif field_hint in ('margin_top', 'margin_bottom'):
+                if v > self.cap_vertical:
+                    return False
+            else:
+                if self.margin_hard_cap > 0 and v > self.margin_hard_cap:
+                    return False
+        else:
+            if self.margin_hard_cap > 0 and v > self.margin_hard_cap:
+                return False
+            if v > 50.0:
+                return False
+        return True
+
+
+@dataclass
+class _DirLabelState:
+    """[C-02] OCR 方向标签解析的共享可变状态容器。"""
+
+    result: dict = field(default_factory=dict)              # field_name -> (value, conf, bbox)
+    recovered_meta: dict = field(default_factory=dict)      # field -> (source_integer, recovered_value, raw_conf)
+    used_source_ints: dict = field(default_factory=dict)    # source_integer -> (field, recovered_value)
+    ocr_fail_count: int = 0
+
+
+def _is_reasonable_margin(caps, v):
+    """[C-02] 兼容别名：无字段上下文的全局合理性判断（原 L345 内部闭包）。"""
+    return caps.is_reasonable_margin(v, None)
+
+
+def _compute_margin_caps(target_outer_w_cm, target_outer_h_cm):
+    """[C-02] 预计算边距合理性上限（原 L292-347）。
+
+    返回 _DirLabelCaps：轴向 cap（权威模式）或统一 fallback cap（无 target 模式）。
+    """
     _target_is_authoritative = (target_outer_w_cm > 0 and target_outer_h_cm > 0)
     _ref_long = max(target_outer_w_cm, target_outer_h_cm, 0.0)
     _ref_short = min(target_outer_w_cm, target_outer_h_cm) if (target_outer_w_cm > 0 and target_outer_h_cm > 0) else max(target_outer_w_cm, target_outer_h_cm, 0.0)
     if _target_is_authoritative:
-        # [权威模式] 当 target 外框完整可用时，按**轴向**分别设置边距上限（而非统一用短边）
-        # 因为非对称边框的某一边可能非常大（例如内框偏左侧：mr=target_w-iw-ml 可能=74cm > 短边60cm）
-        # 这种情况是数学上正确的，不应被当作 OCR 噪声拒绝
-        # 规则：
-        #   - margin_left / margin_right：上限 = outer_w * 0.9（预留10%给内框），或统一 upper cap
-        #   - margin_top / margin_bottom：上限 = outer_h * 0.9
-        #   - 全局统一 fallback cap（用于 _is_reasonable_margin 无字段上下文时）：max(轴向上限)
         _cap_horizontal = target_outer_w_cm * 0.90  # 横向边距上限 (left/right)
         _cap_vertical = target_outer_h_cm * 0.90     # 纵向边距上限 (top/bottom)
         _margin_hard_cap = max(_cap_horizontal, _cap_vertical)   # 无字段上下文的 fallback（保守上限取最大）
-        # 轴向合理判断：需要知道是哪个字段 → 提供专用函数
-        def _is_reasonable_margin_for_field(v, field_hint=None):
-            """判断边距值是否合理（按轴向区分上限）。
-            field_hint: 'margin_left'/'margin_right'（横向）'margin_top'/'margin_bottom'（纵向）或 None（fallback）
-            """
-            if v is None or v <= 0:
-                return False
-            if v < 0.3:
-                return False
-            if field_hint in ('margin_left', 'margin_right'):
-                if v > _cap_horizontal:
-                    return False
-            elif field_hint in ('margin_top', 'margin_bottom'):
-                if v > _cap_vertical:
-                    return False
-            else:
-                # 不知道字段：使用全局上限（更宽松以防误伤）
-                if _margin_hard_cap > 0 and v > _margin_hard_cap:
-                    return False
-            return True
     else:
-        # 无 target 模式：保持原有严格上限
+        _cap_horizontal = 0.0
+        _cap_vertical = 0.0
         _margin_hard_cap = min(_ref_long * 0.30, 25.0) if _ref_long > 0 else 25.0
-        def _is_reasonable_margin_for_field(v, field_hint=None):
-            """判断边距值是否合理（避免把外框尺寸/装饰文字误识别为边距）。"""
-            if v is None or v <= 0:
-                return False
-            if v < 0.3:
-                return False
-            if _margin_hard_cap > 0 and v > _margin_hard_cap:
-                return False
-            if v > 50.0:
-                return False
+    return _DirLabelCaps(
+        outer_w_cm=target_outer_w_cm,
+        outer_h_cm=target_outer_h_cm,
+        is_authoritative=_target_is_authoritative,
+        cap_horizontal=_cap_horizontal,
+        cap_vertical=_cap_vertical,
+        margin_hard_cap=_margin_hard_cap,
+    )
+
+
+
+def _try_bind_value(state, caps, dir_char, val, conf, bx, by, bw, bh, tag):
+    """[C-02] 单一方向标签绑定（原 L369-528 内部闭包 _try_bind).
+
+    通过 state 容器共享 result/_recovered_meta/_used_source_ints，
+    通过 caps 配置提供权威外框排除与轴向合理性上限。
+    """
+    result = state.result
+    _recovered_meta = state.recovered_meta
+    _used_source_ints = state.used_source_ints
+    _target_is_authoritative = caps.is_authoritative
+    target_outer_w_cm = caps.outer_w_cm
+    target_outer_h_cm = caps.outer_h_cm
+    _margin_hard_cap = caps.margin_hard_cap
+    _is_reasonable_margin_for_field = caps.is_reasonable_margin
+    if dir_char not in _DIR_CHAR_MAP:
+        return
+    if val is None or not (0.3 <= val <= 500):
+        return
+    field = _DIR_CHAR_MAP[dir_char]
+
+    # ---- [权威外框值排除] Step5 exclude_values 的 Step4 镜像实现 ----
+    # 外框尺寸 (w/h) 从几何上不可能等于边距：边距 < 外框。
+    # 若数值恰好是 target_outer_w / target_outer_h 及其 ±1.0 近似值 → 肯定是外框标注，而非边距
+    # 本场景受害者：中古雨林 outer_h=60，被 OCR 相邻匹配到"右"字 → margin_right=60 覆盖了正确的 21.5
+    if _target_is_authoritative:
+        _exclude_candidates = (
+            target_outer_w_cm, target_outer_h_cm,
+            target_outer_w_cm - 0.5, target_outer_w_cm + 0.5,
+            target_outer_h_cm - 0.5, target_outer_h_cm + 0.5,
+            target_outer_w_cm - 1.0, target_outer_w_cm + 1.0,
+            target_outer_h_cm - 1.0, target_outer_h_cm + 1.0,
+        )
+        for _xv in _exclude_candidates:
+            if _xv > 0 and abs(val - _xv) < 0.15:
+                logger.info(
+                    f"[Step4] 权威外框值拒绝: {dir_char}={val} conf={conf} → {field} "
+                    f"(与target外框值 {_xv:.1f} 相同/接近，应为外框标注而非边距)"
+                )
+                return
+    # ---- [智能覆盖保护] 判断是否允许覆盖已有值 ----
+    def _can_overwrite(existing_field, new_conf, is_recovered=False):
+        """判断新值是否允许覆盖已有值。
+        规则：
+        1. 空字段 → 允许
+        2. 新值是直接OCR（非恢复）→ 用原始conf比较存储conf
+        3. 新值是恢复值 → 仅当原始conf比已有值的原始conf高10%以上才允许
+        4. 同源于检测：恢复值的源整数若已被其他字段使用 → 拒绝
+        """
+        if existing_field not in result:
             return True
+        old_val, old_conf, _ = result[existing_field]
+        # 已有值也是恢复值：比较原始conf
+        if existing_field in _recovered_meta:
+            _, _, old_raw_conf = _recovered_meta[existing_field]
+            if is_recovered:
+                # 新值也是恢复值：需要比已有恢复值高10%以上的原始conf
+                return new_conf > old_raw_conf * 1.10
+            else:
+                # 新值是直接值：直接值可以覆盖恢复值（直接OCR更可信）
+                return conf > old_conf
+        else:
+            # 已有值是直接OCR值
+            if is_recovered:
+                # 恢复值不能轻易覆盖直接值
+                return new_conf > old_conf * 1.15
+            else:
+                # 都是直接值：不能用 +1 conf 这种噪声级差异覆盖（旧规则 new_conf > old_conf 会让 92>91 → 覆盖）
+                # 方向标签的OCR置信度通常在高区间(80-98)，相邻扫描配置的conf抖动很常见
+                # 状态不变量：覆盖需要至少 +5 conf 点或 +5% 的显著提升，否则保留先到的绑定值
+                if new_conf >= 90 and old_conf >= 90:
+                    # 双方都是高置信度：需要更大差距 (庄园秘境/中古雨林都≥90)
+                    return new_conf >= old_conf + 8
+                else:
+                    # 一方或双方中等置信度：仍需 +5 的安全裕度
+                    return new_conf >= old_conf + 5
 
-    # 保留向后兼容的 _is_reasonable_margin 别名
-    def _is_reasonable_margin(v):
-        return _is_reasonable_margin_for_field(v, None)
+    # [防OCR噪声] 边距值合理性检查：拒绝明显是外框尺寸/装饰文字的超大值
+    # [Bug5 Fix] 使用已知字段的轴向合理性 cap（margin_left/right 按 outer_w*0.9；top/bottom 按 outer_h*0.9）
+    if not _is_reasonable_margin_for_field(val, field_hint=field):
+        # ----- 小数点恢复尝试：OCR把"7.4"读成"74"的补漏 -----
+        # 仅对整数值尝试（非整数已经是正确的小数格式）
+        if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
+            s = str(int(val))
+            src_int = int(val)  # 记录源整数用于同源检测
+            candidates = []
+            # 2位数: 74 → 7.4
+            if len(s) == 2 and s[1] != '0':
+                try:
+                    candidates.append(float(f"{s[0]}.{s[1]}"))
+                except ValueError as e:
+                    logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
+            # 3位数: 736 → 73.6（十位后加小数点）或 7.36（百位后）
+            if len(s) == 3:
+                if s[2] != '0':
+                    try:
+                        candidates.append(float(f"{s[:2]}.{s[2]}"))
+                    except ValueError as e:
+                        logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
+                try:
+                    candidates.append(float(f"{s[0]}.{s[1:]}"))
+                except ValueError as e:
+                    logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
+            # 尝试每个小数候选
+            for dec_val in candidates:
+                if 0.3 <= dec_val <= 50.0 and _is_reasonable_margin_for_field(dec_val, field_hint=field):
+                    # [同源检测1] 从_recovered_meta检查（当前仍为恢复值）
+                    for other_field, (o_src_int, o_dec_val, _) in _recovered_meta.items():
+                        if other_field != field and o_src_int == src_int:
+                            logger.info(
+                                f"[Step4] 同源冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                f"(源整数{src_int}已被字段{other_field}恢复为{o_dec_val:.1f}，拒绝重复绑定)"
+                            )
+                            return
+                    # [同源检测2] 从全局追踪检查（即使恢复元数据被清除，仍记录源整数使用历史）
+                    if src_int in _used_source_ints:
+                        prev_field, prev_val = _used_source_ints[src_int]
+                        if prev_field != field:
+                            logger.info(
+                                f"[Step4] 同源冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                f"(源整数{src_int}历史上已被字段{prev_field}使用为{prev_val:.1f}，全局拒绝重复绑定)"
+                            )
+                            return
+                    # [同值检测] 恢复值与已有其他字段值相同 → 拒绝（左右/上下重复识别）
+                    for other_field, (o_val, _, _) in result.items():
+                        if other_field != field and abs(o_val - dec_val) < 0.01:
+                            if other_field in _recovered_meta:
+                                logger.info(
+                                    f"[Step4] 同值冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                    f"(值{dec_val:.1f}已被字段{other_field}恢复锁定，拒绝重复绑定)"
+                                )
+                                return
+                    # [几何一致性] 若已有对侧字段且新值与对侧值过于接近 → 检查是否合理
+                    opp_field_map = {'margin_left': 'margin_right', 'margin_right': 'margin_left',
+                                     'margin_top': 'margin_bottom', 'margin_bottom': 'margin_top'}
+                    opp_field = opp_field_map.get(field)
+                    if opp_field and opp_field in result and field not in _recovered_meta:
+                        opp_val = result[opp_field][0]
+                        if abs(dec_val - opp_val) < 0.5 and conf < 85:
+                            # 与对侧值非常接近且置信度不高 → 可能是OCR误读
+                            logger.info(
+                                f"[Step4] 几何冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
+                                f"(与对侧{opp_field}={opp_val:.1f}过于接近，可能为OCR复制，拒绝)"
+                            )
+                            return
+                    logger.info(
+                        f"[Step4] 小数点恢复: {dir_char}={val:.0f}→{dec_val:.1f}cm → {field} "
+                        f"(原整数超出上限，小数解释通过)"
+                    )
+                    # [智能覆盖] 使用保护逻辑判断是否允许覆盖
+                    if _can_overwrite(field, conf, is_recovered=True):
+                        result[field] = (dec_val, conf * 0.85, (bx, by, bw, bh))
+                        _recovered_meta[field] = (src_int, dec_val, conf)
+                        _used_source_ints[src_int] = (field, dec_val)  # 全局追踪
+                        logger.info(f"[Step4] {tag}: {dir_char}={dec_val:.1f}(恢复) conf={conf*0.85:.0f} → {field}")
+                    else:
+                        logger.info(
+                            f"[Step4] 覆盖保护: {dir_char}={dec_val:.1f}(恢复) conf={conf} → {field} "
+                            f"(被已有值保护，拒绝覆盖)"
+                        )
+                    return  # 恢复成功，不再继续
+        # 所有恢复尝试均失败，维持原拒绝逻辑
+        logger.info(
+            f"[Step4] OCR噪声拒绝: {dir_char}={val}cm → {field} "
+            f"(超过边距合理上限 cap={_margin_hard_cap:.1f}cm，可能是装饰文字/尺寸标注)"
+        )
+        return
+    # [直接OCR值] 使用智能覆盖逻辑
+    if _can_overwrite(field, conf, is_recovered=False):
+        result[field] = (val, conf, (bx, by, bw, bh))
+        # 直接OCR值清除恢复元数据（不再是恢复值）
+        if field in _recovered_meta:
+            del _recovered_meta[field]
+        logger.info(f"[Step4] {tag}: {dir_char}={val} conf={conf} → {field}")
 
+
+
+# ===== [相邻性保护] 双token(方向↔数值) 物理距离合法性检查 =====
+# 克罗印花 67×53 场景：OCR 多列阅读时，左列尾的 "38" 与 右列头的 "右" 在 token 索引上相邻，
+# 但物理坐标跨整张图（cx≈50 vs cx≈650）。旧代码只看 i 与 i+1 索引相邻，导致 margin_right=38 错误绑定。
+# 状态不变量：方向字 + 数值 token 必须在"同一行"且"字间距合理"才能配对。
+def _tokens_on_same_line_adjacent(l1, t1, w1, h1, l2, t2, w2, h2, scale=1.0):
+    """判断两个 OCR token bbox 是否在视觉上是同一行内的紧邻文字（参数均为当前 scan 下的像素原始坐标）。"""
+    # 1) 同一行：垂直方向重叠 ≥ 较小字高的 45%（红笔手写线条略斜，阈值不宜过严）
+    y_overlap_top = max(t1, t2)
+    y_overlap_bot = min(t1 + h1, t2 + h2)
+    y_overlap = max(0, y_overlap_bot - y_overlap_top)
+    min_h = max(1, min(h1, h2))
+    if y_overlap < 0.45 * min_h:
+        return False
+    # 2) X 间距：两框之间的空白间距不能大于 3 × 最小字宽，并且绝对间距 < 160px
+    #    (3字宽是中文"上5.5 / 右 11"等排版的正常邻近距离；160px 是 1x 图上的安全上限)
+    #    A 在 B 左边：A.right = l1+w1 → 距离 B.left = l2 的 gap
+    #    B 在 A 左边：同理反向
+    box1_right = l1 + w1
+    box2_right = l2 + w2
+    gap_x = 0
+    if box1_right <= l2:
+        gap_x = l2 - box1_right
+    elif box2_right <= l1:
+        gap_x = l1 - box2_right
+    else:
+        # 两框有 X 重叠 → 视为"紧邻/同一块文本"
+        gap_x = 0
+    max_gap_by_char = 3 * max(1, min(w1, w2))
+    if gap_x > max_gap_by_char:
+        return False
+    # 绝对上限：1x 图上 350px 足以覆盖跨大半个外框的"不可能邻近距离"；
+    # [Fix 2026-09-12 P1-03] 旧代码 350px 不随 scale 缩放，2.5x/4x/6x 放大图上
+    #   合理邻近距离可能超过 350px 被误拒。改为 350 * scale。
+    if gap_x > 350 * scale:
+        return False
+    return True
+
+
+
+def _scan_ocr_pass(state, caps, cv2, tesseract, gray_img, enhanced_gray, check_cancel):
+    """[C-02] 阶段1：标准尺度扫描（gray 1x/2.5x/4x + enhanced 1x/2.5x，原 L348-677）。
+
+    返回: 正常结束 -> 循环残留的 scale（供阶段2 使用）；取消/超时 -> None。
+    """
+    ocr_fail_count = state.ocr_fail_count
     # ========== 阶段1：标准尺度扫描（gray 1x/2.5x/4x + enhanced 1x/2.5x）==========
     # 原有3种尺度保留；enhanced只到2.5x节省时间（小数字由阶段2专门处理）
     scan_list = [(gray_img, 1.0, 'gray')]
@@ -366,209 +603,11 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     lang_options = ['chi_sim+eng', 'eng']
     psm_list = [6, 4, 11, 12]
 
-    def _try_bind(dir_char, val, conf, bx, by, bw, bh, tag):
-        if dir_char not in _DIR_CHAR_MAP:
-            return
-        if val is None or not (0.3 <= val <= 500):
-            return
-        field = _DIR_CHAR_MAP[dir_char]
-
-        # ---- [权威外框值排除] Step5 exclude_values 的 Step4 镜像实现 ----
-        # 外框尺寸 (w/h) 从几何上不可能等于边距：边距 < 外框。
-        # 若数值恰好是 target_outer_w / target_outer_h 及其 ±1.0 近似值 → 肯定是外框标注，而非边距
-        # 本场景受害者：中古雨林 outer_h=60，被 OCR 相邻匹配到"右"字 → margin_right=60 覆盖了正确的 21.5
-        if _target_is_authoritative:
-            _exclude_candidates = (
-                target_outer_w_cm, target_outer_h_cm,
-                target_outer_w_cm - 0.5, target_outer_w_cm + 0.5,
-                target_outer_h_cm - 0.5, target_outer_h_cm + 0.5,
-                target_outer_w_cm - 1.0, target_outer_w_cm + 1.0,
-                target_outer_h_cm - 1.0, target_outer_h_cm + 1.0,
-            )
-            for _xv in _exclude_candidates:
-                if _xv > 0 and abs(val - _xv) < 0.15:
-                    logger.info(
-                        f"[Step4] 权威外框值拒绝: {dir_char}={val} conf={conf} → {field} "
-                        f"(与target外框值 {_xv:.1f} 相同/接近，应为外框标注而非边距)"
-                    )
-                    return
-        # ---- [智能覆盖保护] 判断是否允许覆盖已有值 ----
-        def _can_overwrite(existing_field, new_conf, is_recovered=False):
-            """判断新值是否允许覆盖已有值。
-            规则：
-            1. 空字段 → 允许
-            2. 新值是直接OCR（非恢复）→ 用原始conf比较存储conf
-            3. 新值是恢复值 → 仅当原始conf比已有值的原始conf高10%以上才允许
-            4. 同源于检测：恢复值的源整数若已被其他字段使用 → 拒绝
-            """
-            if existing_field not in result:
-                return True
-            old_val, old_conf, _ = result[existing_field]
-            # 已有值也是恢复值：比较原始conf
-            if existing_field in _recovered_meta:
-                _, _, old_raw_conf = _recovered_meta[existing_field]
-                if is_recovered:
-                    # 新值也是恢复值：需要比已有恢复值高10%以上的原始conf
-                    return new_conf > old_raw_conf * 1.10
-                else:
-                    # 新值是直接值：直接值可以覆盖恢复值（直接OCR更可信）
-                    return conf > old_conf
-            else:
-                # 已有值是直接OCR值
-                if is_recovered:
-                    # 恢复值不能轻易覆盖直接值
-                    return new_conf > old_conf * 1.15
-                else:
-                    # 都是直接值：不能用 +1 conf 这种噪声级差异覆盖（旧规则 new_conf > old_conf 会让 92>91 → 覆盖）
-                    # 方向标签的OCR置信度通常在高区间(80-98)，相邻扫描配置的conf抖动很常见
-                    # 状态不变量：覆盖需要至少 +5 conf 点或 +5% 的显著提升，否则保留先到的绑定值
-                    if new_conf >= 90 and old_conf >= 90:
-                        # 双方都是高置信度：需要更大差距 (庄园秘境/中古雨林都≥90)
-                        return new_conf >= old_conf + 8
-                    else:
-                        # 一方或双方中等置信度：仍需 +5 的安全裕度
-                        return new_conf >= old_conf + 5
-
-        # [防OCR噪声] 边距值合理性检查：拒绝明显是外框尺寸/装饰文字的超大值
-        # [Bug5 Fix] 使用已知字段的轴向合理性 cap（margin_left/right 按 outer_w*0.9；top/bottom 按 outer_h*0.9）
-        if not _is_reasonable_margin_for_field(val, field_hint=field):
-            # ----- 小数点恢复尝试：OCR把"7.4"读成"74"的补漏 -----
-            # 仅对整数值尝试（非整数已经是正确的小数格式）
-            if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
-                s = str(int(val))
-                src_int = int(val)  # 记录源整数用于同源检测
-                candidates = []
-                # 2位数: 74 → 7.4
-                if len(s) == 2 and s[1] != '0':
-                    try:
-                        candidates.append(float(f"{s[0]}.{s[1]}"))
-                    except ValueError as e:
-                        logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
-                # 3位数: 736 → 73.6（十位后加小数点）或 7.36（百位后）
-                if len(s) == 3:
-                    if s[2] != '0':
-                        try:
-                            candidates.append(float(f"{s[:2]}.{s[2]}"))
-                        except ValueError as e:
-                            logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
-                    try:
-                        candidates.append(float(f"{s[0]}.{s[1:]}"))
-                    except ValueError as e:
-                        logger.debug(f"[Step4] 小数候选解析 ValueError 跳过: {e}")
-                # 尝试每个小数候选
-                for dec_val in candidates:
-                    if 0.3 <= dec_val <= 50.0 and _is_reasonable_margin_for_field(dec_val, field_hint=field):
-                        # [同源检测1] 从_recovered_meta检查（当前仍为恢复值）
-                        for other_field, (o_src_int, o_dec_val, _) in _recovered_meta.items():
-                            if other_field != field and o_src_int == src_int:
-                                logger.info(
-                                    f"[Step4] 同源冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
-                                    f"(源整数{src_int}已被字段{other_field}恢复为{o_dec_val:.1f}，拒绝重复绑定)"
-                                )
-                                return
-                        # [同源检测2] 从全局追踪检查（即使恢复元数据被清除，仍记录源整数使用历史）
-                        if src_int in _used_source_ints:
-                            prev_field, prev_val = _used_source_ints[src_int]
-                            if prev_field != field:
-                                logger.info(
-                                    f"[Step4] 同源冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
-                                    f"(源整数{src_int}历史上已被字段{prev_field}使用为{prev_val:.1f}，全局拒绝重复绑定)"
-                                )
-                                return
-                        # [同值检测] 恢复值与已有其他字段值相同 → 拒绝（左右/上下重复识别）
-                        for other_field, (o_val, _, _) in result.items():
-                            if other_field != field and abs(o_val - dec_val) < 0.01:
-                                if other_field in _recovered_meta:
-                                    logger.info(
-                                        f"[Step4] 同值冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
-                                        f"(值{dec_val:.1f}已被字段{other_field}恢复锁定，拒绝重复绑定)"
-                                    )
-                                    return
-                        # [几何一致性] 若已有对侧字段且新值与对侧值过于接近 → 检查是否合理
-                        opp_field_map = {'margin_left': 'margin_right', 'margin_right': 'margin_left',
-                                         'margin_top': 'margin_bottom', 'margin_bottom': 'margin_top'}
-                        opp_field = opp_field_map.get(field)
-                        if opp_field and opp_field in result and field not in _recovered_meta:
-                            opp_val = result[opp_field][0]
-                            if abs(dec_val - opp_val) < 0.5 and conf < 85:
-                                # 与对侧值非常接近且置信度不高 → 可能是OCR误读
-                                logger.info(
-                                    f"[Step4] 几何冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
-                                    f"(与对侧{opp_field}={opp_val:.1f}过于接近，可能为OCR复制，拒绝)"
-                                )
-                                return
-                        logger.info(
-                            f"[Step4] 小数点恢复: {dir_char}={val:.0f}→{dec_val:.1f}cm → {field} "
-                            f"(原整数超出上限，小数解释通过)"
-                        )
-                        # [智能覆盖] 使用保护逻辑判断是否允许覆盖
-                        if _can_overwrite(field, conf, is_recovered=True):
-                            result[field] = (dec_val, conf * 0.85, (bx, by, bw, bh))
-                            _recovered_meta[field] = (src_int, dec_val, conf)
-                            _used_source_ints[src_int] = (field, dec_val)  # 全局追踪
-                            logger.info(f"[Step4] {tag}: {dir_char}={dec_val:.1f}(恢复) conf={conf*0.85:.0f} → {field}")
-                        else:
-                            logger.info(
-                                f"[Step4] 覆盖保护: {dir_char}={dec_val:.1f}(恢复) conf={conf} → {field} "
-                                f"(被已有值保护，拒绝覆盖)"
-                            )
-                        return  # 恢复成功，不再继续
-            # 所有恢复尝试均失败，维持原拒绝逻辑
-            logger.info(
-                f"[Step4] OCR噪声拒绝: {dir_char}={val}cm → {field} "
-                f"(超过边距合理上限 cap={_margin_hard_cap:.1f}cm，可能是装饰文字/尺寸标注)"
-            )
-            return
-        # [直接OCR值] 使用智能覆盖逻辑
-        if _can_overwrite(field, conf, is_recovered=False):
-            result[field] = (val, conf, (bx, by, bw, bh))
-            # 直接OCR值清除恢复元数据（不再是恢复值）
-            if field in _recovered_meta:
-                del _recovered_meta[field]
-            logger.info(f"[Step4] {tag}: {dir_char}={val} conf={conf} → {field}")
-
-    # ===== [相邻性保护] 双token(方向↔数值) 物理距离合法性检查 =====
-    # 克罗印花 67×53 场景：OCR 多列阅读时，左列尾的 "38" 与 右列头的 "右" 在 token 索引上相邻，
-    # 但物理坐标跨整张图（cx≈50 vs cx≈650）。旧代码只看 i 与 i+1 索引相邻，导致 margin_right=38 错误绑定。
-    # 状态不变量：方向字 + 数值 token 必须在"同一行"且"字间距合理"才能配对。
-    def _tokens_on_same_line_adjacent(l1, t1, w1, h1, l2, t2, w2, h2, scale=1.0):
-        """判断两个 OCR token bbox 是否在视觉上是同一行内的紧邻文字（参数均为当前 scan 下的像素原始坐标）。"""
-        # 1) 同一行：垂直方向重叠 ≥ 较小字高的 45%（红笔手写线条略斜，阈值不宜过严）
-        y_overlap_top = max(t1, t2)
-        y_overlap_bot = min(t1 + h1, t2 + h2)
-        y_overlap = max(0, y_overlap_bot - y_overlap_top)
-        min_h = max(1, min(h1, h2))
-        if y_overlap < 0.45 * min_h:
-            return False
-        # 2) X 间距：两框之间的空白间距不能大于 3 × 最小字宽，并且绝对间距 < 160px
-        #    (3字宽是中文"上5.5 / 右 11"等排版的正常邻近距离；160px 是 1x 图上的安全上限)
-        #    A 在 B 左边：A.right = l1+w1 → 距离 B.left = l2 的 gap
-        #    B 在 A 左边：同理反向
-        box1_right = l1 + w1
-        box2_right = l2 + w2
-        gap_x = 0
-        if box1_right <= l2:
-            gap_x = l2 - box1_right
-        elif box2_right <= l1:
-            gap_x = l1 - box2_right
-        else:
-            # 两框有 X 重叠 → 视为"紧邻/同一块文本"
-            gap_x = 0
-        max_gap_by_char = 3 * max(1, min(w1, w2))
-        if gap_x > max_gap_by_char:
-            return False
-        # 绝对上限：1x 图上 350px 足以覆盖跨大半个外框的"不可能邻近距离"；
-        # [Fix 2026-09-12 P1-03] 旧代码 350px 不随 scale 缩放，2.5x/4x/6x 放大图上
-        #   合理邻近距离可能超过 350px 被误拒。改为 350 * scale。
-        if gap_x > 350 * scale:
-            return False
-        return True
-
     for img, scale, src_tag in scan_list:
         # [Fix N-P0-01] 每次预处理变体前检查取消/超时
         if check_cancel is not None and check_cancel():
             logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止扫描")
-            return result
+            return None
         try:
             pil = PILImage.fromarray(img)
         except Exception:
@@ -579,7 +618,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                 # [Fix N-P0-01] 每次 OCR 前检查取消/超时
                 if check_cancel is not None and check_cancel():
                     logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止 OCR 循环")
-                    return result
+                    return None
                 try:
                     data = tesseract.image_to_data(
                         pil, lang=lang,
@@ -605,7 +644,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     # 避免大文本图（n 极大）在 token 处理阶段长时间无响应
                     if check_cancel is not None and check_cancel():
                         logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止 token 遍历")
-                        return result
+                        return None
                     raw = _normalize_ocr_text(str(texts[i]))
                     if not raw:
                         continue
@@ -624,7 +663,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         by = int(tops[i]) / scale
                         bw = int(widths[i]) / scale
                         bh = int(heights[i]) / scale
-                        _try_bind(dchar, dval, ci, bx, by, bw, bh,
+                        _try_bind_value(state, caps, dchar, dval, ci, bx, by, bw, bh,
                                   f"单token({src_tag} {lang} psm{psm})")
                         continue
 
@@ -646,7 +685,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                     by = t_i / scale
                                     bw = (l_j + w_j - l_i) / scale
                                     bh = max(h_i, h_j) / scale
-                                    _try_bind(raw, vv, ci, bx, by, bw, bh,
+                                    _try_bind_value(state, caps, raw, vv, ci, bx, by, bw, bh,
                                               f"双token(方向→数值 {src_tag} {lang} psm{psm})")
                                     continue
                             except ValueError:
@@ -669,12 +708,25 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                     by = t_i / scale
                                     bw = (l_j + w_j - l_i) / scale
                                     bh = max(h_i, h_j) / scale
-                                    _try_bind(nxt_txt, vv, ci, bx, by, bw, bh,
+                                    _try_bind_value(state, caps, nxt_txt, vv, ci, bx, by, bw, bh,
                                               f"双token(数值→方向 {src_tag} {lang} psm{psm})")
                             except ValueError:
                                 logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
 
+    state.ocr_fail_count = ocr_fail_count
+    return scale  # [C-02] 返回循环结束后的 scale 残留值（阶段2 scale=scale 的原语义）
+
+
+
+def _detect_small_number(state, caps, cv2, tesseract, enhanced_gray, check_cancel, last_scale):
+    """[C-02] 阶段2：小数字补漏扫描（6x + PSM 10/7，原 L678-794）。
+
+    last_scale: 阶段1 循环结束后的 scale 残留值（保持原 scale=scale 语义）。
+    返回: 取消/超时 -> False；正常完成 -> True。
+    """
+    result = state.result
+    ocr_fail_count = state.ocr_fail_count
     # ========== 阶段2：小数字补漏扫描（仅当缺失字段时触发，6x + PSM 10/7）==========
     # 性能设计：只有在标准扫描后仍有边距缺失时才执行；且仅扫描 enhanced_gray（节省一半时间）
     # 解决场景："下8" → OCR 漏识 "8" 或识别为 "0"（小数字+红笔对比度不足）
@@ -688,7 +740,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         # [Fix N-P0-01] 小数字补漏前再检查一次
         if check_cancel is not None and check_cancel():
             logger.info("[_extract_direction_label_numbers] 小数字补漏前检测到取消/超时，跳过")
-            return result
+            return False
         logger.info(f"[Step4] 小数字补漏触发：缺失{missing_fields}个字段，6x+PSM10扫描增强图...")
         try:
             s60 = cv2.resize(enhanced_gray, None, fx=6.0, fy=6.0, interpolation=cv2.INTER_CUBIC)
@@ -704,7 +756,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                 # [Fix N-P0-01 补漏] 小数字补漏每次 OCR 前检查取消/超时
                 if check_cancel is not None and check_cancel():
                     logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止小数字补漏循环")
-                    return result
+                    return False
                 try:
                     data_s = tesseract.image_to_data(
                         pil_s60, lang=lang_small,
@@ -743,7 +795,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         by = int(ts_top[i]) / 6.0
                         bw = int(ws[i]) / 6.0
                         bh = int(hs[i]) / 6.0
-                        _try_bind(dc, dv, ci_s, bx, by, bw, bh,
+                        _try_bind_value(state, caps, dc, dv, ci_s, bx, by, bw, bh,
                                   f"小数字单token(6x psm{psm_s})")
                         continue
                     # ---- 小数字模式B：双token方向→数值 ----
@@ -755,7 +807,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 # [Fix] 物理相邻性前置检查（参数为6x放大图的原始像素；helper不关心scale）
                                 sli, sti, swi, shi = int(ls[i]), int(ts_top[i]), int(ws[i]), int(hs[i])
                                 slj, stj, swj, shj = int(ls[i+1]), int(ts_top[i+1]), int(ws[i+1]), int(hs[i+1])
-                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj, scale=scale):
+                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj, scale=last_scale):
                                     pass
                                 else:
                                     vv_s = float(nm_s.group(1))
@@ -763,7 +815,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                     by = sti / 6.0
                                     bw = (slj + swj - sli) / 6.0
                                     bh = max(shi, shj) / 6.0
-                                    _try_bind(raw_s, vv_s, ci_s, bx, by, bw, bh,
+                                    _try_bind_value(state, caps, raw_s, vv_s, ci_s, bx, by, bw, bh,
                                               f"小数字双token(方向→数值 6x psm{psm_s})")
                                     continue
                             except ValueError:
@@ -778,7 +830,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 # [Fix] 物理相邻性前置检查
                                 sli, sti, swi, shi = int(ls[i]), int(ts_top[i]), int(ws[i]), int(hs[i])
                                 slj, stj, swj, shj = int(ls[i+1]), int(ts_top[i+1]), int(ws[i+1]), int(hs[i+1])
-                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj, scale=scale):
+                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj, scale=last_scale):
                                     pass
                                 else:
                                     vv_s = float(m_ns.group(1))
@@ -786,12 +838,24 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                     by = sti / 6.0
                                     bw = (slj + swj - sli) / 6.0
                                     bh = max(shi, shj) / 6.0
-                                    _try_bind(nxt_s, vv_s, ci_s, bx, by, bw, bh,
+                                    _try_bind_value(state, caps, nxt_s, vv_s, ci_s, bx, by, bw, bh,
                                               f"小数字双token(数值→方向 6x psm{psm_s})")
                             except ValueError:
                                 logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                 pass
 
+    state.ocr_fail_count = ocr_fail_count
+    return True  # [C-02] 正常完成（未取消）
+
+
+
+def _phase3_spatial_distance_match(state, caps, cv2, tesseract, gray_img, enhanced_gray, check_cancel):
+    """[C-02] Phase 3：各向异性空间距离场匹配（原 L795-939）。
+
+    返回: 取消/超时 -> False；正常完成 -> True。
+    """
+    result = state.result
+    ocr_fail_count = state.ocr_fail_count
     # ========== Phase 3：各向异性空间距离场匹配（Phase 2 改进4）==========
     # 触发条件：仍有字段缺失 → 扫一遍1x图收集独立方向字+独立数值，按空间位置绑定
     missing_s3 = 4 - len(result)
@@ -809,7 +873,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             # 避免已取消/超时时仍启动一次最长 _PARSE_TIMEOUT_SEC 的 OCR 阻塞
             if check_cancel is not None and check_cancel():
                 logger.info("[_extract_direction_label_numbers] 检测到取消/超时，跳过 Phase3 OCR")
-                return result
+                return False
             dir_tokens_s3 = []   # [(char, cx, cy, bbox_h)]
             num_tokens_s3 = []   # [(value, cx, cy, bbox_h, conf)]
             try:
@@ -898,7 +962,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         # 直接赋值曾导致 7.4（合成小数）被无保护地写入 margin_right，覆盖正确的 74
                         _before_has = dfield in result
                         _before_val = result[dfield][0] if _before_has else None
-                        _try_bind(dchar, nv, nconf, bx0, by0, bw0, bh0,
+                        _try_bind_value(state, caps, dchar, nv, nconf, bx0, by0, bw0, bh0,
                                   "Phase3空间距离场(enh)")
                         # 只有真的绑定成功才记一次计数
                         if (not _before_has and dfield in result) or (_before_has and result[dfield][0] != _before_val):
@@ -929,7 +993,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 by2 = min(dcy - dh//2, num_tokens_s3[next_i][2] - num_tokens_s3[next_i][3]//2)
                                 bw2 = max(20, abs(dcx - num_tokens_s3[next_i][1]) + 30)
                                 bh2 = max(20, dh + num_tokens_s3[next_i][3])
-                                _try_bind(dchar, nv2, nconf2, bx2, by2, bw2, bh2,
+                                _try_bind_value(state, caps, dchar, nv2, nconf2, bx2, by2, bw2, bh2,
                                           f"Phase3空间距离场(备选{retry+1})")
                                 if dfield in result:
                                     bind_count += 1
@@ -937,7 +1001,17 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                                 f"(Rmax={R_MAX:.0f}) conf={nconf2} → {dfield}")
                                     break
                 logger.info(f"[Step4] Phase3空间距离场完成：新绑定 {bind_count} 个字段")
+    state.ocr_fail_count = ocr_fail_count
+    return True  # [C-02] 正常完成（未取消）
 
+
+
+def _phase4_decimal_recovery(state, caps):
+    """[C-02] Phase 4：小数点恢复（OCR把"7.4"读成"74"的补漏，原 L941-1016）。"""
+    result = state.result
+    _recovered_meta = state.recovered_meta
+    _used_source_ints = state.used_source_ints
+    _is_reasonable_margin_for_field = caps.is_reasonable_margin
     # ========== Phase 4：小数点恢复（OCR把"7.4"读成"74"的补漏）==========
     # 原理：Tesseract 有时丢失小数点，将 "7.4" 识别为 "74"。
     # 对每个方向标签值尝试小数恢复：2位整数ab → a.b
@@ -1014,8 +1088,48 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         _recovered_meta[fn] = (src_int, rv, max(rc / 0.85, rc / 0.8))
         _used_source_ints[src_int] = (fn, rv)  # 全局追踪
 
+
+def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=None,
+                                     target_outer_w_cm=0.0, target_outer_h_cm=0.0,
+                                     check_cancel=None):
+    """Phase1改进版：提取方向+数值组合（支持双向匹配 + 颜色增强 + 小数字补漏）。
+
+    返回: dict {field_name: (value, conf, bbox)}
+
+    [C-02] 拆分装配器：原 747 行主体已拆为
+      _compute_margin_caps / _scan_ocr_pass / _try_bind_value /
+      _tokens_on_same_line_adjacent / _detect_small_number /
+      _phase3_spatial_distance_match / _phase4_decimal_recovery，
+      仅保留编排顺序与结果汇总。
+    """
+    state = _DirLabelState()
+    if tesseract is None:
+        return state.result
+
+    # [防OCR噪声] 预计算边距合理性上限（策略表）
+    caps = _compute_margin_caps(target_outer_w_cm, target_outer_h_cm)
+
+    # 阶段1：标准尺度扫描（gray 1x/2.5x/4x + enhanced 1x/2.5x）
+    last_scale = _scan_ocr_pass(state, caps, cv2, tesseract, gray_img,
+                                enhanced_gray, check_cancel)
+    if last_scale is None:  # 取消/超时
+        return state.result
+
+    # 阶段2：小数字补漏扫描（仅当缺失字段时触发，6x + PSM 10/7）
+    if not _detect_small_number(state, caps, cv2, tesseract, enhanced_gray,
+                                check_cancel, last_scale):
+        return state.result
+
+    # Phase 3：各向异性空间距离场匹配
+    if not _phase3_spatial_distance_match(state, caps, cv2, tesseract, gray_img,
+                                          enhanced_gray, check_cancel):
+        return state.result
+
+    # Phase 4：小数点恢复
+    _phase4_decimal_recovery(state, caps)
+
     # [N-P2-12] 汇总 OCR 失败次数（仅在主路径正常结束时；取消/超时提前返回不重复提示）
-    if ocr_fail_count > 0:
-        logger.warning(f"[_extract_direction_label_numbers] OCR 调用失败 {ocr_fail_count} 次（已忽略，继续后续流程）")
-    return result
+    if state.ocr_fail_count > 0:
+        logger.warning(f"[_extract_direction_label_numbers] OCR 调用失败 {state.ocr_fail_count} 次（已忽略，继续后续流程）")
+    return state.result
 

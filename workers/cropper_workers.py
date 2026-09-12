@@ -68,7 +68,11 @@ class AutoMatchWorker(QThread):
             self.log_msg.emit("正在扫描模板库...")
 
             t0 = time.time()
-            self._matcher.scan_library(force=False)
+            self._matcher.scan_library(force=False, check_cancel=self.isInterruptionRequested)
+
+            if self.isInterruptionRequested():
+                self.log_msg.emit("模板扫描已取消")
+                return
 
             self.progress.emit(60, "正在匹配源图...")
             self.log_msg.emit("正在匹配源图...")

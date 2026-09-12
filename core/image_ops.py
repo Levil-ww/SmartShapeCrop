@@ -601,6 +601,58 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     import math
     border_width_px = max(2, int(math.ceil(10 * pixel_scale)))
     BLACK_RGB = (0, 0, 0)
+    # 1. 整体背景（最外层）+ 水池/外背景状态判定
+    canvas, canvas_arr, cached_img, has_outer_img, has_outer_pool_material, is_pool_with_material = \
+        _render_outer_background(design, W, H, quality, _dbg)
+    # 1.1 L形模式 + 花型图：非L形区域填充 outer_bg_color（返回覆盖后 has_outer_img）
+    has_outer_img = _apply_lshape_bg_overlay(
+        canvas_arr, design, W, H, is_pool_with_material, has_outer_img, _dbg)
+    # 2. 渲染边框 band（水池模式且有素材图时跳过）
+    _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material, has_outer_img)
+    # 3. 挖洞后的内部区域（内矩形/椭圆/L形内部）填背景色或素材
+    inner_fill = _render_inner_area(design, quality=quality)
+    inner_fill_arr = np.array(inner_fill, dtype=np.uint8)
+    inner_mask = _get_inner_pixel_mask(design)
+    # 3.x L形挖角（cut 区填白 + 素材底色采样）
+    lshape_cut_done, _lshape_cut_bg_color = _render_lshape_cut(
+        canvas_arr, design, W, H, inner_mask, is_pool_with_material, _dbg)
+    # [SINGLE-HOLE Add-On] Stale Decor Black Border Invalidation (V1)
+    _stale_decor_black_border_invalidation(
+        canvas_arr, design, W, H, has_outer_pool_material)
+    # 3.1 接缝羽化（仅非 L形挖角路径）
+    if not lshape_cut_done:
+        _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr)
+    # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
+    _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, has_outer_img, lshape_cut_done)
+    # 3.5 在挖空区域边缘绘制统一的黑色边框线（border_mask 计算）
+    border_mask = _compute_border_mask(design, W, H, inner_mask, border_width_px)
+    _apply_unified_black_border(
+        canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB, _dbg)
+    # 3.6 [L-Shape Border Completion] L 形挖角处的素材边框补全
+    _lshape_border_completion(canvas_arr, design, W, H, cached_img,
+        is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB)
+    # [SINGLE-HOLE Add-On V2] Stale-Decor Universal Residual Cleaner
+    _stale_decor_residual_cleaner(
+        canvas_arr, design, W, H, border_mask, inner_mask, has_outer_pool_material)
+    # 4. 边框文字
+    if design.border_text is not None:
+        pil = Image.fromarray(canvas_arr, 'RGB')
+        _draw_border_text(pil, design)
+        canvas_arr = np.array(pil, dtype=np.uint8)
+    if _dbg:
+        _final_blacks = (canvas_arr.max(axis=2) < 200).sum()
+        _final_whites = (canvas_arr.min(axis=2) > 200).sum()
+        logger.info(
+            f"[DEBUG-RD] STEP-END total_blacks={_final_blacks} "
+            f"total_whites={_final_whites} total_pixels={canvas_arr.shape[0]*canvas_arr.shape[1]}")
+        logger.info("[DEBUG-RD] ========= render_design() 结束 ==========")
+    return Image.fromarray(canvas_arr, 'RGB')
+
+
+# ---------- [C-01] render_design 拆分辅助函数（逻辑与原实现逐行一致） ----------
+
+def _render_outer_background(design, W, H, quality, _dbg):
+    """[C-01] 整体背景渲染 + 水池素材/外背景图状态判定（原 render_design L604-678）。"""
     # 1. 整体背景（最外层）
     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
     # [Fix 2026-08-26 二次修复] 改用 adapt_pool_material（方向校正 + contain等比 + 边缘延展填充）
@@ -676,6 +728,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             f"[DEBUG-RD] STEP1 判定: is_pool_with_material={is_pool_with_material} "
             f"(outer={has_outer_pool_material} inner={has_inner_pool_material}) "
             f"mode={design.mode!r}")
+    return canvas, canvas_arr, cached_img, has_outer_img, has_outer_pool_material, is_pool_with_material
+
+def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, has_outer_img, _dbg):
+    """[C-01] L形模式 + 花型图：非L形区域填充 outer_bg_color（原 L679-700）。"""
     # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
     # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color
     if design.mode == 'rect_lshape' and not is_pool_with_material:
@@ -698,7 +754,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             non_lshape_mask = ~lshape_mask
             if non_lshape_mask.any():
                 canvas_arr[non_lshape_mask] = outer_bg_arr[non_lshape_mask]
+    return has_outer_img
 
+def _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material, has_outer_img):
+    """[C-01] 渲染边框 band（原 L702-715）。"""
     # 2. 渲染边框 band（水池模式且有素材图时跳过——素材本身就是外框）
     # [Fix 2026-08-26] L 形 + 外背景图：边框带应保持外背景图，故跳过着色。
     if not is_pool_with_material and not (design.mode == 'rect_lshape' and has_outer_img):
@@ -714,22 +773,8 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             # 把 band_mask=True 的像素写入 canvas
             canvas_arr[band_mask] = fill_arr[band_mask]
 
-    # 3. 挖洞后的内部区域（内矩形/椭圆/L形内部）填背景色或素材
-    inner_fill = _render_inner_area(design, quality=quality)
-    inner_fill_arr = np.array(inner_fill, dtype=np.uint8)
-    inner_mask = _get_inner_pixel_mask(design)
-    
-    # 池模式：素材图的边框花纹保留在 inner_mask 外部
-    # 不需要保存/恢复 inner_mask 内部的像素
-    # 白色填充只作用于 inner_mask 内部，外部的素材图花纹自然保留
-    
-    # [Fix 2026-08-28] 裁剪有图（L 形挖角）语义：
-    # rect_lshape + 池素材时，"L 形区域保留外框素材、被切掉的角显示洞色"。
-    # 与旧"素材中间挖 L 形洞"（inner_mask 覆盖为 inner_fill）不同——
-    # 这里 L 形 = 保留区（素材裁成 L 形），cut 角 = 挖掉区（填白色）。
-    # [Fix 2026-09-03] cut 区强制填纯白(255,255,255)：用户反馈原 hole_bg_color
-    #   (250,245,230 米色) 与素材底色过于接近，挖角视觉上不够明显。
-    #   白色也是 JPG 模式下表达"挖空/透明"的行业惯例（与 pool_hole_transparent=True 一致）。
+def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_material, _dbg):
+    """[C-01] L形挖角：cut 区填白/填 bg + 素材底色采样（原 L733-846）。"""
     lshape_cut_done = False
     # [Fix 2026-09-08 v5] 素材底色采样：给 border completion 当 bg_color 用（用来过滤
     #   伪边框层，避免把底色当成边框画到 cut 边缘）。与下面的 cut_area 填充颜色无关——
@@ -844,6 +889,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                     design.hole_bg_color, dtype=np.uint8).reshape(1, 3)
         # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
         lshape_cut_done = True
+    return lshape_cut_done, _lshape_cut_bg_color
+
+def _stale_decor_black_border_invalidation(canvas_arr, design, W, H, has_outer_pool_material):
+    """[C-01] 单洞 Stale-Decor 黑边框失效清理 Add-On V1（原 L847-951）。"""
     # ===== [SINGLE-HOLE Add-On 2026-08-31] Stale Decor Black Border Invalidation =====
     # （仅 rect_hole 单洞素材填充模式，零侵入，外层完整 try/except 静默失败）
     #
@@ -949,67 +998,71 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         )
         _sd_done = False
     # ===== [END SINGLE-HOLE Add-On Stale Decor Black Border Invalidation] =====
-    if not lshape_cut_done:
-        # ===== [SEAM-FEATHER Add-On 2026-09-02] 接缝羽化 =====
-        # 目标：内外素材的原始颜色 100% 保留，仅在 inner_mask 边界 2px 条做线性渐变过渡，
-        # 消除"都是安妮森林但接缝处色感硬跳变"的观感。
-        #
-        # 算法：
-        #   1. 计算 inner_mask 边界条 = inner_mask & ~erode(inner_mask, 2) —— 约 2px 宽
-        #   2. paste 前保存边界条位置的外框原始色
-        #   3. 正常 paste（内挖素材覆盖 inner_mask）
-        #   4. cv2.distanceTransform 算 alpha 渐变（边界侧→内侧：1.0→0.0）
-        #   5. 混合：边界条 = alpha * 外框色 + (1-alpha) * 内挖色
-        #   6. inner_mask 内部像素 alpha=0 → 100% 内挖原始色
-        #      inner_mask 边界最外缘 alpha≈1 → 接近外框原始色
-        #      过渡带 = 2px
-        try:
-            from .geometry import _erode_mask as _em_seam
-            # 色差预检：先算最外缘 1px 边界的内外颜色差，如果 < 5/255 就跳过
-            # （本来没色差不需要羽化，省掉 erosion + 混合开销）
-            _e1 = _em_seam(inner_mask, 1)
-            _s0 = inner_mask & ~_e1
-            if _s0.any():
-                _outer_edge = canvas_arr[_s0]
-                _inner_edge = inner_fill_arr[_s0]
-                _mean_delta = float(
-                    np.abs(_outer_edge.astype(np.int16) - _inner_edge.astype(np.int16))
-                    .mean()
-                )
-                if _mean_delta >= 5.0:
-                    # 色差 >= 5 才羽化，否则跳过（零开销）
-                    _e2 = _em_seam(inner_mask, 2)
-                    _s1 = _e1 & ~_e2
-                    _out_s0 = _outer_edge.copy()
-                    _out_s1 = canvas_arr[_s1].copy() if _s1.any() else None
-                    canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
-                    # 最外缘 1px: α=0.70 接近外框色
-                    _in0 = canvas_arr[_s0].copy()
-                    canvas_arr[_s0] = (
-                        0.70 * _out_s0.astype(np.float32)
-                        + 0.30 * _in0.astype(np.float32)
-                    ).astype(np.uint8)
-                    # 次外缘 1px: α=0.30 接近内挖色
-                    if _s1.any():
-                        _in1 = canvas_arr[_s1].copy()
-                        canvas_arr[_s1] = (
-                            0.30 * _out_s1.astype(np.float32)
-                            + 0.70 * _in1.astype(np.float32)
-                        ).astype(np.uint8)
-                    logger.debug(
-                        f"[render_design] 接缝羽化触发: delta={_mean_delta:.1f}/255"
-                    )
-                else:
-                    # 色差太小，直接覆盖无羽化（省 erosion + 混合）
-                    canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
-            else:
-                canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
-        except Exception as _se_e:
-            logger.debug(
-                f"[render_design] 接缝羽化异常（跳过，回退硬覆盖）: {_se_e}"
-            )
-            canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
 
+def _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr):
+    """[C-01] 接缝羽化：inner_mask 边界 2px 渐变过渡（原 L953-1011）。"""
+    # ===== [SEAM-FEATHER Add-On 2026-09-02] 接缝羽化 =====
+    # 目标：内外素材的原始颜色 100% 保留，仅在 inner_mask 边界 2px 条做线性渐变过渡，
+    # 消除"都是安妮森林但接缝处色感硬跳变"的观感。
+    #
+    # 算法：
+    #   1. 计算 inner_mask 边界条 = inner_mask & ~erode(inner_mask, 2) —— 约 2px 宽
+    #   2. paste 前保存边界条位置的外框原始色
+    #   3. 正常 paste（内挖素材覆盖 inner_mask）
+    #   4. cv2.distanceTransform 算 alpha 渐变（边界侧→内侧：1.0→0.0）
+    #   5. 混合：边界条 = alpha * 外框色 + (1-alpha) * 内挖色
+    #   6. inner_mask 内部像素 alpha=0 → 100% 内挖原始色
+    #      inner_mask 边界最外缘 alpha≈1 → 接近外框原始色
+    #      过渡带 = 2px
+    try:
+        from .geometry import _erode_mask as _em_seam
+        # 色差预检：先算最外缘 1px 边界的内外颜色差，如果 < 5/255 就跳过
+        # （本来没色差不需要羽化，省掉 erosion + 混合开销）
+        _e1 = _em_seam(inner_mask, 1)
+        _s0 = inner_mask & ~_e1
+        if _s0.any():
+            _outer_edge = canvas_arr[_s0]
+            _inner_edge = inner_fill_arr[_s0]
+            _mean_delta = float(
+                np.abs(_outer_edge.astype(np.int16) - _inner_edge.astype(np.int16))
+                .mean()
+            )
+            if _mean_delta >= 5.0:
+                # 色差 >= 5 才羽化，否则跳过（零开销）
+                _e2 = _em_seam(inner_mask, 2)
+                _s1 = _e1 & ~_e2
+                _out_s0 = _outer_edge.copy()
+                _out_s1 = canvas_arr[_s1].copy() if _s1.any() else None
+                canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+                # 最外缘 1px: α=0.70 接近外框色
+                _in0 = canvas_arr[_s0].copy()
+                canvas_arr[_s0] = (
+                    0.70 * _out_s0.astype(np.float32)
+                    + 0.30 * _in0.astype(np.float32)
+                ).astype(np.uint8)
+                # 次外缘 1px: α=0.30 接近内挖色
+                if _s1.any():
+                    _in1 = canvas_arr[_s1].copy()
+                    canvas_arr[_s1] = (
+                        0.30 * _out_s1.astype(np.float32)
+                        + 0.70 * _in1.astype(np.float32)
+                    ).astype(np.uint8)
+                logger.debug(
+                    f"[render_design] 接缝羽化触发: delta={_mean_delta:.1f}/255"
+                )
+            else:
+                # 色差太小，直接覆盖无羽化（省 erosion + 混合）
+                canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+        else:
+            canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+    except Exception as _se_e:
+        logger.debug(
+            f"[render_design] 接缝羽化异常（跳过，回退硬覆盖）: {_se_e}"
+        )
+        canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+
+def _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, has_outer_img, lshape_cut_done):
+    """[C-01] L形模式：填充 cut area 为 hole_bg_color（原 L1013-1034）。"""
     # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
     # inner_mask 是 L 形（不含 cut 区域），需要将 cut 区域也填充
     if design.mode == 'rect_lshape' and not lshape_cut_done:
@@ -1033,6 +1086,8 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         if cut_area_mask.any() and not (design.mode == 'rect_lshape' and has_outer_img):
             canvas_arr[cut_area_mask] = inner_fill_arr[cut_area_mask]
 
+def _compute_border_mask(design, W, H, inner_mask, border_width_px):
+    """[C-01] 3.5 挖空边缘边框 mask 计算（含多洞 PRE-COMPUTE，原 L1036-1151）。"""
     # 3.5 在挖空区域边缘绘制统一的黑色边框线
     # rect_hole / rect_lshape 模式：用几何差集替代形态学腐蚀（精确等价，加速）
     # ellipse_hole 模式：降级为形态学腐蚀
@@ -1149,7 +1204,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         from .geometry import _erode_mask
         eroded = _erode_mask(inner_mask, border_width_px)
         border_mask = inner_mask & ~eroded
+    return border_mask
 
+def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB, _dbg):
+    """[C-01] 统一黑框应用（原 L1153-1168）。"""
     if border_mask.any():
         # [Fix 2026-09-10] L 形 + 池素材：素材已拉伸到 inner_rect，其自身边框
         #   已落在 inner_rect 边缘；统一 10px 黑框会叠加在素材边框上导致黑框
@@ -1167,6 +1225,8 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         if not _skip_unified:
             canvas_arr[border_mask] = BLACK_RGB
 
+def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB):
+    """[C-01] L形挖角处素材边框补全（含三层失败兜底，原 L1170-1269）。"""
     # ===== [L-Shape Border Completion 2026-09-03] L 形挖角处的素材边框补全 =====
     # 当素材图自带边框（如克罗印花的棕色+黑色双层边框、安妮森林的细黑边框），
     # L 形挖角会在 cut 区产生两条新边缘，这些边缘原本只有 step 3.5 的统一黑框，
@@ -1268,6 +1328,8 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             canvas_arr[border_mask] = BLACK_RGB
         # ===== [END 三层失败掩盖] =====
 
+def _stale_decor_residual_cleaner(canvas_arr, design, W, H, border_mask, inner_mask, has_outer_pool_material):
+    """[C-01] Stale-Decor 通用残留清理 Add-On V2（原 L1271-1381）。"""
     # ===== [SINGLE-HOLE Add-On 2026-08-31 V2] Stale-Decor Universal Residual Cleaner =====
     # （仅 rect_hole 单洞素材填充模式，零侵入 try/except 静默失败）
     #
@@ -1379,22 +1441,6 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     except Exception as _v2_e:
         logger.debug(f"[Stale-Decor V2] 静默跳过，原因: {_v2_e}")
     # ===== [END V2 Residual Cleaner] =====
-
-    # 4. 边框文字
-    if design.border_text is not None:
-        pil = Image.fromarray(canvas_arr, 'RGB')
-        _draw_border_text(pil, design)
-        canvas_arr = np.array(pil, dtype=np.uint8)
-
-    if _dbg:
-        _final_blacks = (canvas_arr.max(axis=2) < 50).sum()
-        _final_whites = (canvas_arr.min(axis=2) > 200).sum()
-        logger.info(
-            f"[DEBUG-RD] STEP-END total_blacks={_final_blacks} "
-            f"total_whites={_final_whites} total_pixels={canvas_arr.shape[0]*canvas_arr.shape[1]}")
-        logger.info("[DEBUG-RD] ========= render_design() 结束 ==========")
-
-    return Image.fromarray(canvas_arr, 'RGB')
 
 
 def _looks_like_tile(path: str) -> bool:

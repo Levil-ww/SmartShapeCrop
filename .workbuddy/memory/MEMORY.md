@@ -44,12 +44,19 @@ ProductSummary/
 
 ## 环境与交付事实（2026-09-12 实测）
 
-- **打包工具链缺失**：`.venv` 内 **未安装 PyInstaller**（`pyinstaller=MISSING`），
-  改动后无法直接出包，需先 `pip install pyinstaller`。
-  `dist/智能裁剪设计器V2.2.exe` 永远要检查时间戳是否 ≥ 最新源码时间戳。
-- **`.workbuddy/` 与 `.dumate/` 未被 `.gitignore` 覆盖**（仅 `_archive/`、`.venv/`、`dist/`、
-  `build/`、`.idea/`、`logs/` 已覆盖）。当前已误跟踪 51 个文件，含 47.76 MB 的 PyQt5 wheel 备份、
-  约 30 MB 测试图、`.bak` 源码备份。清理前须 `git rm --cached`（详见 P1-03）。
+- **打包工具链（2026-09-12 18:00 复核，已修正）**：`.venv` 内 **PyInstaller 已安装**，
+  PyQt5 / PIL / numpy / cv2 / psd_tools 全部 OK，可随时出包。
+  （同日早些时候记录的 `pyinstaller=MISSING` 已过期作废。）
+  `dist/智能裁剪设计器V2.2.exe` 永远要检查时间戳是否 ≥ 最新源码时间戳 ——
+  实测 2026-09-12：exe 14:22 < `main.py` 15:11，**交付物落后于源码**。
+- **误追踪产物（2026-09-12 17:00 复核）**：`.gitignore` 未覆盖 **`.workbuddy/`、`.dumate/`、
+  `.trae-html-share-packages/`** 三个目录族。当前误跟踪 **54 个文件 / 76.86 MB**：
+  `.workbuddy/` 49 个（PyQt5 wheel 47.76 MB + 6.55 MB、tmp_samples 诊断图 27.1 MB）、
+  `.dumate/` 15 个（22.1 MB 测试大图）、`.trae-html-share-packages/` 1 个。
+  `.git` 达 149.3 MB 与此直接相关。清理前须 `git rm --cached`。
+- **`.gitignore` 的 `_archive/` 规则匹配「任意层级」**，因此 `scripts/_archive/`、
+  `scripts/verify/_archive/`、`scripts/diagnose/_archive/` 都被它命中 —— 但
+  **`scripts/_archive/` 下 35 个文件仍在索引中**（规则对已追踪文件无效，老坑的又一实例）。
 - **测试必须在 `.venv` 下跑**：`F:\SmartShapeCrop\.venv\Scripts\python.exe`（3.13.14，含 PyQt5/PIL）。
   实测基线 **444 passed / 0 skipped / 0 failed**（74.1s，2026-09-12 收工前实测）。
   （433 是同日早些时候的数字，13:28 那批改动新增用例后升至 444。）
@@ -64,3 +71,24 @@ ProductSummary/
   因此跑分析脚本的**首选路径 = Bash + Python 绝对路径**（stdout 正常回传），
   比 PowerShell（stdout 不回传）少一层「落盘再读」的绕行。
   需要管道/重定向时，把逻辑写进 Python 脚本内部，不要在 bash 层拼管道。
+
+## ⚠️ ProductSummary 旧日期目录会「复活」（2026-09-12 发现）
+
+2026-09-10 C 档治理已 `rmdir` 移除 `ProductSummary/2026-08/` 与 `2026-09/`，
+并在 `SmartShapeCrop_C档执行报告_V1.3.html` 中标记为已删除。但 **2026-09-11 08:30
+它们整批重现（11 个文件重新被追踪）**，与当日 git 事故后的历史恢复/重新检出高度吻合。
+
+**教训：目录结构的「已删除」结论不是终态。** 凡因 Git 历史恢复而回流的旧路径，
+重新检出时会一并回来 —— 这类清理**必须配套 `git rm --cached` + 提交**，
+否则下一次 checkout/恢复就会复活。**只 rmdir 不做索引处理 = 无效治理。**
+
+复核方法（每次整理前先跑）：
+```bash
+git ls-files | grep -c "ProductSummary/2026-"   # 期望 0
+```
+
+## 引用安全：同层级目录搬移不破坏相对链接
+
+`ProductSummary/项目审查报告/` → `ProductSummary/SmartShapeCrop分析报告/` 这类
+**同层级（同为 ProductSummary/<dir>/）** 的搬移，文档内 `../` 与 `../../` 的解析结果
+**完全不变**，因此无需改任何链接。判断搬移是否安全，先比深度，再比文件名。
