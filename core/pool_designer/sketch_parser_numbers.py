@@ -280,6 +280,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     """
     from PIL import Image as PILImage
     result = {}
+    # [N-P2-12] 静默 catch 收敛：统计 image_to_data 调用失败次数，主路径结束汇总 warning
+    ocr_fail_count = 0
     # [智能覆盖保护] 追踪恢复值的元数据：防止后续OCR误读覆盖已正确恢复的值
     _recovered_meta = {}  # field → (source_integer, recovered_value, raw_conf)
     # [全局源整数追踪] 即使恢复元数据被清除（被直接OCR覆盖），仍记录已使用的源整数
@@ -585,6 +587,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         output_type=tesseract.Output.DICT,
                         timeout=_PARSE_TIMEOUT_SEC)
                 except Exception:
+                    # [N-P2-12] 失败计数（不改变原有"忽略异常继续"的行为）
+                    ocr_fail_count += 1
                     logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                     continue
                 if not data or 'text' not in data:
@@ -708,6 +712,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                         output_type=tesseract.Output.DICT,
                         timeout=_PARSE_TIMEOUT_SEC)
                 except Exception:
+                    # [N-P2-12] 失败计数（不改变原有"忽略异常继续"的行为）
+                    ocr_fail_count += 1
                     logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                     continue
                 if not data_s or 'text' not in data_s:
@@ -812,6 +818,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                     config='--oem 3 --psm 6',
                     output_type=tesseract.Output.DICT,
                     timeout=_PARSE_TIMEOUT_SEC)
+            except Exception:
+                # [N-P2-12] 失败计数（不改变原有"忽略异常继续"的行为）
+                ocr_fail_count += 1
+                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                 if d3 and 'text' in d3:
                     t3 = d3.get('text', [])
                     n3 = len(t3)
@@ -854,9 +864,6 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 except ValueError:
                                     logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                                     pass
-            except Exception:
-                logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
-                pass
 
             if dir_tokens_s3 and num_tokens_s3:
                 all_h = [t[3] for t in dir_tokens_s3] + [t[3] for t in num_tokens_s3]
@@ -1007,5 +1014,8 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         _recovered_meta[fn] = (src_int, rv, max(rc / 0.85, rc / 0.8))
         _used_source_ints[src_int] = (fn, rv)  # 全局追踪
 
+    # [N-P2-12] 汇总 OCR 失败次数（仅在主路径正常结束时；取消/超时提前返回不重复提示）
+    if ocr_fail_count > 0:
+        logger.warning(f"[_extract_direction_label_numbers] OCR 调用失败 {ocr_fail_count} 次（已忽略，继续后续流程）")
     return result
 

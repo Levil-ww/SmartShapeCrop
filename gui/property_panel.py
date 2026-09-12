@@ -74,9 +74,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.design = CropDesign()
-        # ===== [2026-09-03 SpinBox 卡顿优化] 构建 _apply_quiet 防抖 QTimer =====
-        # 必须在 _build_ui（连接 SpinBox valueChanged → _schedule_apply_quiet）前调用
-        self._init_apply_debouncer()
+        # [N-P2-13] 防抖机制已移除（valueChanged 全部 DISCONNECTED，渲染由显式按钮驱动）
         # —— 智能水池：共享的 TemplateMatcher（独立缓存，不影响圆角裁剪工具）——
         self._matcher = TemplateMatcher()
         self._matcher.set_log_callback(lambda m: logger.info(f"[PoolMatcher] {m}"))
@@ -156,17 +154,13 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._sp_ml = self._dspin(0, 450, self.design.inner_margin_left_cm)
         self._sp_mr = self._dspin(0, 450, self.design.inner_margin_right_cm)
         # ===== [2026-09-05 交互范式切换] SpinBox → 手动生成 =====
-        # 之前：valueChanged → _schedule_apply_quiet → 200ms 后 _flush_apply_quiet
-        #       → _apply_quiet → _collect + design_changed → render_design (主线程 100~500ms)
-        #       即使有防抖，连续修改后的合并渲染仍阻塞主线程，导致 SpinBox 步进卡顿。
+        # 之前：valueChanged → 防抖合并 → _apply_quiet → _collect + design_changed →
+        #       render_design (主线程 100~500ms)；即使有防抖，合并渲染仍阻塞主线程。
         # 现在：SpinBox 修改 → 只更新设计模型（_collect 由显式生成按钮触发）
         #       渲染 100% 由"生成预览"按钮、"匹配模板→解析草图→生成预览"按钮、
         #       PoolRenderWorker 完成回调三处独立路径触发，不依赖 SpinBox 信号。
         #       用户修改 SpinBox 时 UI 零渲染 → 100% 流畅。
-        # self._sp_mt.valueChanged.connect(self._schedule_apply_quiet)   # DISCONNECTED
-        # self._sp_mb.valueChanged.connect(self._schedule_apply_quiet)   # DISCONNECTED
-        # self._sp_ml.valueChanged.connect(self._schedule_apply_quiet)   # DISCONNECTED
-        # self._sp_mr.valueChanged.connect(self._schedule_apply_quiet)   # DISCONNECTED
+        # [N-P2-13] 原 valueChanged → _schedule_apply_quiet 连接已全部移除（DISCONNECTED）
         fi.addLayout(self._row("上", self._sp_mt))
         fi.addLayout(self._row("下", self._sp_mb))
         fi.addLayout(self._row("左", self._sp_ml))
@@ -244,13 +238,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             sp_mr = self._dspin(0, 500, 0.0); sp_mr.setSuffix("cm")
 
             # ===== [2026-09-05 交互范式切换] 多洞 SpinBox → 手动生成 =====
-            # DISCONNECTED valueChanged → 改为手动生成范式（见 L158-169 的注释）
-            # spw.valueChanged.connect(self._schedule_apply_quiet)   # DISCONNECTED
-            # sph.valueChanged.connect(self._schedule_apply_quiet)   # DISCONNECTED
-            # sp_mt.valueChanged.connect(self._schedule_apply_quiet) # DISCONNECTED
-            # sp_mb.valueChanged.connect(self._schedule_apply_quiet) # DISCONNECTED
-            # sp_ml.valueChanged.connect(self._schedule_apply_quiet) # DISCONNECTED
-            # sp_mr.valueChanged.connect(self._schedule_apply_quiet) # DISCONNECTED
+            # valueChanged 连接已全部移除（渲染由显式生成按钮驱动，见 L158-169 注释）
 
             # 布局：第 0 行 宽/高，第 1 行 上/下，第 2 行 左/右
             grid.addWidget(QLabel("宽"), 0, 0); grid.addWidget(spw, 0, 1)
@@ -274,7 +262,6 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             # 间距：N 个洞 → N-1 个间距。最后一个洞之后不加
             if idx < self._MAX_MH_UI_HOLES - 1:
                 spg = self._dspin(0, 1000, 0.0); spg.setSuffix(" cm")
-                # spg.valueChanged.connect(self._schedule_apply_quiet)  # DISCONNECTED [2026-09-05]
                 lab_gap = QLabel(f"间距{i}↔{i+1}")
                 fm.addRow(lab_gap, spg)
                 self._mh_sp_gaps.append(spg)
@@ -497,11 +484,10 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         _sp_w/_sp_h（+1cm）和 _pool_raw_outer_w/_pool_raw_outer_h（原值，供换算）。
 
         [2026-09-05 交互范式切换] 参数同步仍然立即执行（保证 SpinBox 显示正确），
-        但不再触发 _schedule_apply_quiet（实时渲染）。渲染由显式生成按钮驱动。
+        但不再触发实时渲染；渲染由显式生成按钮驱动。
         注：LShapePanel._on_param_changed 中的 emit lshape_params_changed 也已注释。
         """
         if self._lshape_panel is None:
-            # self._schedule_apply_quiet()   # DISCONNECTED [2026-09-05]
             return
         outer_w = self._lshape_panel.get_outer_w_cm()
         outer_h = self._lshape_panel.get_outer_h_cm()
@@ -515,8 +501,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 self._sp_w.setValue(gui_w)
             if abs(self._sp_h.value() - gui_h) > 0.01:
                 self._sp_h.setValue(gui_h)
-        # [2026-09-05] 不再触发实时防抖渲染
-        # self._schedule_apply_quiet()
+        # [2026-09-05] 不再触发实时防抖渲染（渲染由显式生成按钮驱动）
 
     def _on_lshape_applied(self, params: dict):
         """L 形挖角参数应用 → 切换模式 + 同步尺寸（暂不刷画布，让草图保持显示）。
@@ -793,7 +778,6 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             self._mh_title_label.setText(
                 f"共 {self._mh_active_count} 洞（手动调整，点击「生成预览」应用）")
             # [2026-09-05] 不再立即触发防抖渲染，等待用户点生成预览
-            # self._schedule_apply_quiet()
         except Exception as e:
             import logging as _lg
             _lg.getLogger(__name__).warning(f"[Multi-hole UI] 添加洞失败: {e}")
@@ -809,7 +793,6 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             self._mh_title_label.setText(
                 f"共 {self._mh_active_count} 洞（手动调整，点击「生成预览」应用）")
             # [2026-09-05] 不再立即触发防抖渲染
-            # self._schedule_apply_quiet()
         except Exception as e:
             import logging as _lg
             _lg.getLogger(__name__).warning(f"[Multi-hole UI] 删除洞失败: {e}")

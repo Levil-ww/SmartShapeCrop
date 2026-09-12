@@ -1519,8 +1519,6 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
     if (early := _check_deadline('OCR扫描')) is not None:
         return early
     ocr_raw = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
-                                    target_w_cm=target_outer_w_cm,
-                                    target_h_cm=target_outer_h_cm,
                                     enhanced_gray=enhanced_gray)
     if not ocr_raw:
         return {'success': False, 'message': '多洞OCR未识别到任何数值'}

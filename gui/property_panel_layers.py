@@ -6,9 +6,8 @@
 from __future__ import annotations
 import logging
 import os
-import time
 from datetime import date, datetime, timedelta
-from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize
 from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
@@ -378,47 +377,10 @@ class _LayersMixin:
         self._apply_quiet()
 
     # ====================================================================
-    # 防抖机制（2026-09-03 SpinBox 参数修改卡顿优化）
+    # [N-P2-13] 防抖机制已删除（2026-09-05 交互范式切换后 valueChanged 信号
+    # 全部 DISCONNECTED，渲染由显式生成按钮驱动，_schedule_apply_quiet 无活跃调用方，
+    # 属死代码清理，见 property_panel.py 交互范式说明）。
     # ====================================================================
-    # 适用范围：mt/mb/ml/mr 4 条内挖边距 + L 形面板 5 个参数（corner/w/h/outer_w/outer_h）
-    # 的 valueChanged 信号连续触发时，不要每一次步进都同步跑 LOD 渲染。
-    # 规则：200ms 防抖窗口（连续修改重置）+ 800ms max-wait（最长等 0.8 秒一定渲染）。
-    # 显式调用点（用户点 Apply / 生成完成 / 确认对话框 OK / 文件选择 / 模式切换）继续直调
-    # _apply_quiet()，不经过防抖，保证即时响应。
-    #
-    # 时序：用户长按步进（比如连续 8 次 0.1cm 步进）
-    #   before: _apply_quiet × 8 次 (主线程 800~4000ms 阻塞) → 用户感觉卡死
-    #   after : _schedule_apply_quiet × 8 次（轻量，仅重置 timer）→ 停手 200ms 后
-    #           _flush_apply_quiet → _apply_quiet × 1 次（主线程 100~500ms，仅一次阻塞）
-    def _init_apply_debouncer(self) -> None:
-        """在 PropertyPanel.__init__ 中调用一次，构建防抖 QTimer 与元数据字段。"""
-        self._apply_debounce_timer = QTimer(self)
-        self._apply_debounce_timer.setSingleShot(True)
-        self._apply_debounce_timer.setInterval(200)   # 防抖窗口：200ms
-        self._apply_debounce_timer.timeout.connect(self._flush_apply_quiet)
-        self._apply_first_pending_ts = 0.0           # 首个 pending 调用的 monotonic 时间戳
-        self._APPLY_MAX_WAIT_SEC = 0.800              # 最多等 800ms：强制冲刷，避免长按永远不显示
-
-    def _schedule_apply_quiet(self) -> None:
-        """计划一次防抖的 _apply_quiet 调用。主线程本地计算，无 I/O，μs 级返回。"""
-        now = time.monotonic()
-        if not self._apply_debounce_timer.isActive():
-            # 第一个 pending：记录起点
-            self._apply_first_pending_ts = now
-        # 已经等超过 max-wait：立即同步执行（避免用户持续操作看不到预览）
-        if now - self._apply_first_pending_ts >= self._APPLY_MAX_WAIT_SEC:
-            self._apply_debounce_timer.stop()
-            self._apply_quiet()
-            self._apply_first_pending_ts = 0.0
-            return
-        # （重）启动 200ms 倒计时，等待参数稳定
-        self._apply_debounce_timer.start()
-
-    def _flush_apply_quiet(self) -> None:
-        """防抖 timer 到期：真正执行一次 _apply_quiet（与直接调用等价）。"""
-        self._apply_first_pending_ts = 0.0
-        self._apply_quiet()
-
 
     def _load_from_design(self):
         self._update_layers_label()

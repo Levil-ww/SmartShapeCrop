@@ -11,6 +11,8 @@ import logging
 import numpy as np
 from PIL import Image, ImageDraw
 
+from .config import CM_PER_INCH  # [N-P2-08] 集中换算常量
+
 logger = logging.getLogger(__name__)
 
 
@@ -214,9 +216,13 @@ class CropDesign:
     _cached_outer_image: Image.Image | None = None
     _cached_outer_src: str | None = None
 
-    # —— 辅助：像素级尺寸换算 ——
+# —— 辅助：像素级尺寸换算 ——
+    # [N-P2-08] 集中换算说明：
+    #   本方法返回 float（不取整、无 max(1,) 下限），供内部精确几何计算
+    #   （含 1px 以下小数值的乘加运算，被 image_ops.py 约 20 处依赖）。
+    #   对外/显示型取整换算请用 core.config.cm_to_px / px_to_cm。
     def cm2px(self, cm: float) -> float:
-        return cm * self.dpi / 2.54
+        return cm * self.dpi / CM_PER_INCH
 
     _VALID_MODES = frozenset({'rect_hole', 'rect_lshape', 'ellipse_hole'})
     _VALID_CORNERS = frozenset({'tl', 'tr', 'bl', 'br'})

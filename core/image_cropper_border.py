@@ -50,6 +50,7 @@ from .config import (
     DEFAULT_BG_COLOR,
     DEFAULT_CROP_MODE,
     DEFAULT_MAX_CROP_RATIO,
+    cm_to_px,
 )
 
 logger = logging.getLogger(__name__)
@@ -322,13 +323,13 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     #   README:270-273 宣称的"R_eff 逐层递减"实际未接线，属文档漂移。
     # 移除后统一走保护模式：只裁剪边框条带，内部图案保持直角。
 
-    # 构建 corners_px 字典
+    # 构建 corners_px 字典（[N-P2-08] 集中换算函数 cm_to_px）
     corners_px = {}
     r_cap = max(1, min(w, h) // 2)
     for corner_key, radius_cm in corners.items():
         if radius_cm <= 0:
             continue
-        r_raw = max(1, int(round(radius_cm * dpi / 2.54)))
+        r_raw = cm_to_px(radius_cm, dpi)
         corners_px[corner_key] = min(r_raw, r_cap)
 
     if not corners_px:

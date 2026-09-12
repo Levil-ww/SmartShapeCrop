@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 
 from core.geometry import CropDesign, BorderLayer
 from core.log_setup import setup_logging
+from core.config import px_to_cm  # [N-P2-08] 集中换算函数
 from core.image_ops import save_jpg, render_design
 from gui.canvas_widget import PreviewCanvas, ExportSaveWorker
 from gui.property_panel import PropertyPanel
@@ -304,7 +305,15 @@ class MainWindow(QMainWindow):
         self.canvas.set_design(design)
 
     def _on_rendered(self, img):
-        self._status_size.setText(f"画布尺寸：{img.width} × {img.height} px ({img.width/img.info.get('dpi',(150,))[0]*2.54:.1f}cm × {img.height/img.info.get('dpi',(150,))[1]*2.54:.1f}cm @ DPI {img.info.get('dpi',(150,))[0]:.0f})" if 'dpi' in img.info else f"画布尺寸：{img.width} × {img.height} px")
+        dpi_info = img.info.get('dpi', (150, 150))
+        if 'dpi' in img.info:
+            self._status_size.setText(
+                f"画布尺寸：{img.width} × {img.height} px "
+                f"({px_to_cm(img.width, dpi_info[0]):.1f}cm × {px_to_cm(img.height, dpi_info[1]):.1f}cm "
+                f"@ DPI {dpi_info[0]:.0f})"
+            )
+        else:
+            self._status_size.setText(f"画布尺寸：{img.width} × {img.height} px")
 
     def _on_cropped_image(self, pil_img):
         """裁剪面板生成的图片：在画布上显示预览"""

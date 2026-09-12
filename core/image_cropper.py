@@ -69,6 +69,8 @@ from .config import (
     DEFAULT_BG_COLOR,
     DEFAULT_CROP_MODE,
     DEFAULT_MAX_CROP_RATIO,
+    cm_to_px,
+    px_to_cm,
 )
 
 logger = logging.getLogger(__name__)
@@ -163,13 +165,13 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     # 检测原图边框层
     border_layers = _get_border_layers_robust(img, bg_color)
 
-    # 统一圆角处理：厘米 → 像素
+    # 统一圆角处理：厘米 → 像素（[N-P2-08] 集中换算函数 cm_to_px）
     corners_px = {}
     r_cap = max(1, min(w, h) // 2)
     for corner_key, radius_cm in corners.items():
         if radius_cm <= 0:
             continue
-        r_raw = max(1, int(round(radius_cm * dpi / 2.54)))
+        r_raw = cm_to_px(radius_cm, dpi)
         corners_px[corner_key] = min(r_raw, r_cap)
 
     # 创建圆角 mask（使用 carve_corner_on_mask 确保边界像素正确）
@@ -307,9 +309,9 @@ def crop_image(config: CropConfig) -> Image.Image:
     # 1. 加载源图
     src = load_source_image(config.src_path)
 
-    # 2. 计算目标像素尺寸
-    target_w_px = int(round(config.target_w_cm * config.dpi / 2.54))
-    target_h_px = int(round(config.target_h_cm * config.dpi / 2.54))
+    # 2. 计算目标像素尺寸（[N-P2-08] 集中换算函数 cm_to_px）
+    target_w_px = cm_to_px(config.target_w_cm, config.dpi)
+    target_h_px = cm_to_px(config.target_h_cm, config.dpi)
 
     # 3. 根据模式选择裁剪方式
     mode = config.mode
@@ -343,7 +345,7 @@ def crop_image(config: CropConfig) -> Image.Image:
                 ]
                 logger.info(f"源图边框层检测: {len(src_layers)}层, 缩放比例={scale:.3f}")
                 for i, (color, thickness) in enumerate(pre_detected_layers):
-                    logger.info(f"  第{i+1}层: 厚度={thickness}px ({thickness * 2.54 / config.dpi:.2f}cm), 颜色={color}")
+                    logger.info(f"  第{i+1}层: 厚度={thickness}px ({px_to_cm(thickness, config.dpi):.2f}cm), 颜色={color}")
 
     if mode == 'simple_resize':
         # [Fix 2026-08-26 结合8.21版] simple_resize = 直接缩放到目标尺寸（stretch）

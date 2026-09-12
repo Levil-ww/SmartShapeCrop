@@ -129,6 +129,24 @@ BORDER_MAX_TOTAL_CM: float = 3.0
 
 
 # ============================================================================
+# 统一间隙层判定阈值（classify_gap_layers，与 image_cropper.py/sector_render.py 一致）
+# ============================================================================
+# [N-P2-01] 常量集中迁移：原先定义在 core/corner/detection.py，现单一数据来源在本模块；
+# detection.py 保留模块级同名导出（向后兼容 `from .corner.detection import GAP_*`）。
+
+# INV-G2: 间隙层厚度上限（像素）
+GAP_MAX_THICKNESS_GLOBAL: float = 40.0
+# INV-G3: sandwiched 中间层与两侧邻居的最小差异（灰度距离，数值须 ≥ 20）
+GAP_NEIGHBOR_MIN_DIST_GLOBAL: float = 25.0
+# 间隙层与背景色最小差异
+GAP_BG_DIST_GLOBAL: float = 80.0
+# 间隙层与内容参考色最小差异
+GAP_CONTENT_DIST_GLOBAL: float = 70.0
+# 最外层深色边框判定阈值：max(RGB) >= 此值视为浅色, < 此值视为深色
+SENTINEL_OUTER_DARK_MAX_RGB: float = 150.0
+
+
+# ============================================================================
 # 单位换算
 # ============================================================================
 

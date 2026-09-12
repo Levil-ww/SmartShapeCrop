@@ -221,17 +221,20 @@ def _estimate_content_reference(img: Image.Image) -> np.ndarray:
 # 不变量：
 #   INV-G1: 最外层深色边框 (i=0, max(RGB) <= 150) 永不判为间隙
 #   INV-G2: 间隙层必须满足 厚度 ≤ GAP_MAX_THICKNESS (40px)
-#   INV-G3: sandwiched 中间层 与两侧邻居差异均 > GAP_NEIGHBOR_MIN_DIST (20) → 间隙
+#   INV-G3: sandwiched 中间层 与两侧邻居差异均 > GAP_NEIGHBOR_MIN_DIST (25.0) → 间隙
 #   INV-G4: 浅色外层 (max(RGB) > 150) + 与邻居差异大 + 非内容色 → 可能间隙
 #   INV-B4 (STRUCTURAL): 最内层 (i=n-1) 永不判为间隙 —— 间隙是两边框间空隙，
 #           最内层无内侧相邻边框作参照，只能是实心边框（接触内部图案的最内圈）
 
-# 阈值 (单一来源，与 image_cropper.py/sector_render.py 保持一致):
-GAP_MAX_THICKNESS_GLOBAL = 40.0
-GAP_NEIGHBOR_MIN_DIST_GLOBAL = 25.0
-GAP_BG_DIST_GLOBAL = 80.0
-GAP_CONTENT_DIST_GLOBAL = 70.0
-SENTINEL_OUTER_DARK_MAX_RGB = 150.0  # >= 此值视为浅色, < 此值视为深色
+# [N-P2-01] 阈值单一来源迁移到 core/config.py（与 image_cropper.py/sector_render.py
+# 保持一致）；此处仅保留模块级同名导出，向后兼容 `from .corner.detection import GAP_*`。
+from ..config import (  # noqa: F401  (模块级再导出)
+    GAP_MAX_THICKNESS_GLOBAL,
+    GAP_NEIGHBOR_MIN_DIST_GLOBAL,
+    GAP_BG_DIST_GLOBAL,
+    GAP_CONTENT_DIST_GLOBAL,
+    SENTINEL_OUTER_DARK_MAX_RGB,
+)
 
 
 def classify_gap_layers(

@@ -501,11 +501,17 @@ def apply_lshape_border_completion(
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
 
-    路径选择（向后兼容）：
+    路径选择（向后兼容，三级路由，与下方代码实现逐级对齐）：
         - 全部 manual_* = None（纯自动）：
-            * [2026-09-04] 先试 V13 detect_border_v13（对黑描边+主带结构可靠）
-            * V13 返回 None → 回退原有 detect_pool_material_borders 路径
-            * 两者都无 → 返回 False 跳过补全
+            * [2026-09-08 Profile Route] 先做描边/色带/细线结构检测 detect_border_profile
+              —— 对「米色/白色边距 + 细线 + 点带 + 细框」类素材（蔓生花/中古雨林）可靠；
+            * 若 Profile 首层是厚黑且 profile_yields_to_v13(_layers) 判定 V13 更适用，
+              → 优先试 V13 detect_border_v13（黑描边+主带结构）；
+                - V13 命中 → _apply_v13_path 绘制；V13 patch 绘制失败仍继续回退 Profile/旧路径；
+                - V13 未命中（返回 None）→ Profile 接管（庄园秘境等）；
+            * 然后依次尝试：Profile 路径绘制 → V13 路径绘制（含未计算过的重试）→
+              旧 detect_pool_material_borders 路径；每级绘制失败都回退到下一级；
+            * 所有路径都无边框或全部失败 → 返回 False 跳过补全
         - 任一 manual_* 非 None：
             * 跳过自动检测，直接用 V13 路径
             * 缺失项用 detect_border_v13 自动补齐

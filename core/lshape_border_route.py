@@ -32,6 +32,10 @@ V13 检测返回 None，旧路径 detect_pool_material_borders 也会把与中�
   手动参数 → V13 路径（不变）
   自动：Profile 路径 → V13 路径 → 旧 detect_pool_material_borders 路径
   任一环节失败自动落到下一环节，行为向后兼容。
+
+模块级状态（[N-P2-07] 核查结论，2026-09-12）：
+  本模块模块级仅有常量与 logger，无可变惰性状态（不含 _SEARCH_STEPS/_r_cm 之类
+  跨调用缓存）。所有可变数据均在函数局部，天然线程安全，无需加锁。
 """
 from __future__ import annotations
 

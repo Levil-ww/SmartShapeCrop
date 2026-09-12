@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 Image.MAX_IMAGE_PIXELS = 200_000_000
 
 from .geometry import CropDesign, compute_border_bands
+from .config import px_to_cm  # [N-P2-08] 集中换算函数
 
 
 # ---------- 素材加载与适配 ----------
@@ -792,7 +793,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             print(f'tr: _bottom={_ir_y}+{_ch}={_bottom} _left={_ir_r}-{_cw}={_left}', flush=True)
             print(f'cut area in canvas px: x=[{_left},{W}] y=[0,{_bottom}]', flush=True)
             print(f'cut area W px={W-_left} H px={_bottom}', flush=True)
-            print(f'cut cm: {(W-_left)*2.54/design.dpi:.2f} x {_bottom*2.54/design.dpi:.2f}', flush=True)
+            print(f'cut cm: {px_to_cm(W-_left, design.dpi):.2f} x {px_to_cm(_bottom, design.dpi):.2f}', flush=True)
         cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
         if cut_area_mask.any():
             # 预先采样素材底色——给 Step 3.6 border completion 当 bg_color 用

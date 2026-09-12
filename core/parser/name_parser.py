@@ -14,6 +14,8 @@ import re
 import logging
 from dataclasses import dataclass
 
+from ..config import px_to_cm  # [N-P2-08] 集中换算函数
+
 logger = logging.getLogger(__name__)
 
 
@@ -841,8 +843,8 @@ def get_image_info(path: str) -> dict:
     dpi = info['dpi']
     if dpi and dpi[0] > 0:
         info['size_cm'] = (
-            round(img.width * 2.54 / dpi[0], 2),
-            round(img.height * 2.54 / dpi[1], 2) if len(dpi) > 1 else round(img.height * 2.54 / dpi[0], 2)
+            round(px_to_cm(img.width, dpi[0]), 2),
+            round(px_to_cm(img.height, dpi[1]), 2) if len(dpi) > 1 else round(px_to_cm(img.height, dpi[0]), 2)
         )
     
     return info

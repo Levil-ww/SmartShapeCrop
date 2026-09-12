@@ -196,7 +196,8 @@ class AppSettings:
         self._history = items
 
     def _save_history(self):
-        # 序列化
+        # 序列化（[N-P2-09] 统一持久化策略：QSettings 与 JSON 后备均存 JSON 字符串，
+        # 避免 str/对象两种形态并存；读端 _load_history 已兼容两种形态）
         serializable = [
             {
                 "path": h.path,
@@ -206,11 +207,7 @@ class AppSettings:
             }
             for h in self._history
         ]
-        if self._qs is not None:
-            # QSettings 兼容：用 JSON 字符串存 list[dict]
-            self._write(self.KEY_TEMPLATE_HISTORY, json.dumps(serializable, ensure_ascii=False))
-        else:
-            self._write(self.KEY_TEMPLATE_HISTORY, serializable)
+        self._write(self.KEY_TEMPLATE_HISTORY, json.dumps(serializable, ensure_ascii=False))
 
     # ------------------------------------------------------------
     # 公共 API：模板库默认目录
@@ -352,11 +349,9 @@ class AppSettings:
         return result
 
     def _save_target_name_history(self, source: str, data: dict):
+        # [N-P2-09] 统一持久化策略：QSettings 与 JSON 后备均存 JSON 字符串
         key = self._target_name_key(source)
-        if self._qs is not None:
-            self._write(key, json.dumps(data, ensure_ascii=False))
-        else:
-            self._write(key, data)
+        self._write(key, json.dumps(data, ensure_ascii=False))
 
     @staticmethod
     def _today_iso() -> str:

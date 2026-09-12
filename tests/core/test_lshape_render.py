@@ -460,6 +460,7 @@ def test_lshape_pool_material_completion_success_still_skips_unified_black(tmp_p
         f'补全成功时不应画统一黑框（左边框保持素材浅色），实际采样 {px}'
     )
 
+
 if __name__ == '__main__':
     test_basic_lshape_render()
     test_lshape_with_corners()

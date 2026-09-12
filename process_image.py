@@ -14,6 +14,7 @@ from core.image_cropper import (
     apply_border_only_corners,
     crop_image, CropConfig,
 )
+from core.config import cm_to_px  # [N-P2-08] 集中换算函数
 from core.log_setup import setup_logging
 
 # 初始化日志（幂等，调试时设 LOG_LEVEL=DEBUG）
@@ -47,9 +48,11 @@ target_h_cm = _args.target_h
 corner_r_cm = _args.corner_r
 dpi = _args.dpi
 
-# ============ 计算像素 ============
-target_w_px = int(round(target_w_cm * dpi / 2.54))
-target_h_px = int(round(target_h_cm * dpi / 2.54))
+# ============ 计算像素（[N-P2-08] 集中换算函数 cm_to_px）============
+target_w_px = cm_to_px(target_w_cm, dpi)
+target_h_px = cm_to_px(target_h_cm, dpi)
+# 注意：corner_r 允许为 0（表示该角不做圆角），必须保持 int(round()) 语义，
+# cm_to_px 的 max(1,) 会把 0 变 1px，改变原行为（见 process_image 工作流）。
 corner_r_px = int(round(corner_r_cm * dpi / 2.54))
 
 print(f"目标尺寸: {target_w_px} x {target_h_px} px ({target_w_cm} x {target_h_cm} cm @ {dpi} DPI)")

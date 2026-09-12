@@ -446,11 +446,14 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
     """多尺度多预处理OCR，返回 [(value, confidence, (x,y,w,h)), ...]。"""
     from PIL import Image as PILImage
     results = []
+    # [N-P2-12] 静默 catch 收敛：统计 image_to_data 调用失败次数，循环结束汇总 warning
+    ocr_fail_count = 0
     if region_img.size == 0:
         return results
     h_img, w_img = region_img.shape[:2]
 
     def _run_one(img, scale, psm_list):
+        nonlocal ocr_fail_count
         out = []
         if img.size == 0:
             return out
@@ -468,6 +471,8 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
                 data = tesseract.image_to_data(pil, config=cfg, output_type=tesseract.Output.DICT,
                                                timeout=_PARSE_TIMEOUT_SEC)
             except Exception:
+                # [N-P2-12] 失败计数（不改变原有"忽略异常继续"的行为）
+                ocr_fail_count += 1
                 logger.debug("[_run_one] 忽略异常", exc_info=True)
                 continue
             if not data or 'text' not in data:
@@ -547,6 +552,8 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
     logger.info(f"[Step3] 全局OCR共 {len(results)} 条数值候选")
     for v, c, b in results[:15]:
         logger.info(f"  val={v} conf={c} bbox=({b[0]},{b[1]},{b[2]},{b[3]}) cx={b[0]+b[2]/2:.0f} cy={b[1]+b[3]/2:.0f}")
+    if ocr_fail_count > 0:
+        logger.warning(f"[_multi_scale_ocr_scan] OCR 调用失败 {ocr_fail_count} 次（已忽略，继续后续流程）")
     return results
 
 
