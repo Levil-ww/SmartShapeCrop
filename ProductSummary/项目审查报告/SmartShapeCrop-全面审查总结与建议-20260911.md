@@ -5,7 +5,7 @@
 - **审查方式**：只读审查（未修改任何源码）+ 运行验证（全量测试）→ 整改后复验（全量测试 + 逐项代码核查）
 - **审查范围**：全部源码（core / gui / tests / packaging / 配置与文档），core+gui 约 1.4 万行 Python；两个深度审查子代理分别细读「core 图像处理链路」与「草图识别 + GUI 线程层」
 - **基线**：实测 `pytest tests/` **430 passed / 0 skipped / 0 failed**（51.91s），全绿
-- **证据索引**：`.dumate/review/core_findings.md`（15 条）、`.dumate/review/gui_pool_findings.md`（12 条）、历史报告 `ProductSummary/SmartShapeCrop分析报告/`（20260910 主报告 + 复检更新）
+- **证据索引**：`../../.dumate/review/core_findings.md`（15 条）、`../../.dumate/review/gui_pool_findings.md`（12 条）、历史报告 `../SmartShapeCrop分析报告`（20260910 主报告 + 复检更新）
 
 ---
 
@@ -31,7 +31,7 @@
 2. **水池设计器**：参数化 / 草图 OCR 智能识别（7 步串行流程 + 9 步多洞法），支持多洞嵌套、椭圆挖孔
 3. **L 形挖角设计器**：独立面板 + 草图识别 + V2.2 新增「素材边框自动补全」（Profile / V13 / 旧路径三级路由）
 
-**架构分层健康**：`main.py` → `gui/`（面板 facade + mixin + QThread worker）→ `core/`（纯业务层，不依赖 GUI），依赖单向、core 内部无环、`compat` 兼容层保持旧导入路径可用。
+**架构分层健康**：`../../main.py` → `../../gui`（面板 facade + mixin + QThread worker）→ `../../core`（纯业务层，不依赖 GUI），依赖单向、core 内部无环、`compat` 兼容层保持旧导入路径可用。
 
 **总体评价**：业务价值明确、算法功底扎实（OCR 稳定性投票、多尺度扫描、距离场 mask、Profile 剖面扫描均为高质量实现）、测试与文档习惯良好。主要风险集中在三层：
 
@@ -53,7 +53,7 @@
 ### 2.2 测试基线
 
 - 首次实跑 366 passed / 2 failed / 7 skipped —— 失败根因为**本机缺失 PyQt5**（历史报告「11 failed」同为环境问题，非代码缺陷）
-- 补装 `opencv-python-headless / pytesseract / PyQt5` 后：**430 passed / 0 skipped / 0 failed（51.91s）**，含 `tests/gui/` 56 个离屏用例（test_cropper_panel / test_gui_smoke / test_lshape_panel，7 个文件）
+- 补装 `opencv-python-headless / pytesseract / PyQt5` 后：**430 passed / 0 skipped / 0 failed（51.91s）**，含 `../../tests/gui` 56 个离屏用例（test_cropper_panel / test_gui_smoke / test_lshape_panel，7 个文件）
 - 整改后复跑：**433 passed / 0 skipped / 0 failed（51.45s）**，含中期 4 项（matcher 加锁 + 正确性补丁包 5 项），全绿无回归
 - P1 级 6 项复验复跑：**430 passed / 0 skipped / 0 failed（47.32s）**，含 P1-05 三层失败掩盖消除 + P1-06 三路由 scale 统一 + P1-04 死代码清除 + P1-07 草图解码异步化 + P1-08 模板匹配异步化 + P1-10 死函数清理，全绿无回归
 - N-P2 级 10 项复验复跑：**430 passed / 0 skipped / 0 failed（52.16s）**，含 N-P2-07 模块级状态清除 + N-P2-05 docstring 更新 + N-P2-08 单位换算集中化 + N-P2-01 GAP 常量迁移 + N-P2-09 序列化统一 + N-P2-10 冗余常量清除 + N-P2-11 文案修正 + N-P2-12 OCR 失败计数 + N-P2-13 防抖死代码删除 + N-P2-14 死参数接入，全绿无回归
@@ -64,12 +64,12 @@
 ### 2.3 构建与打包
 
 - `packaging/packageV2.2.py:111-112` 已补 `core.lshape_border` / `core.lshape_border_route`；`:74` APP_NAME 已更新「智能裁剪设计器V2.2」
-- 真机产物 `dist/智能裁剪设计器V2.2.exe`（约 212MB）已生成，打包链路从"脚本修好"进展到"实际跑通"
+- 真机产物 `../../dist/智能裁剪设计器V2.2.exe`（约 212MB）已生成，打包链路从"脚本修好"进展到"实际跑通"
 - 残留建议：**对 V2.2.exe 做一次 L 形挖角端到端冒烟**（V2.2 主卖点，至今未在发布版实测）；归档 `packageV2.1.2.py` 避免误用
 
 ### 2.4 崩溃现场
 
-- `crash.log` 不存在、今日日志无 ERROR/Traceback → **0xC0000409 今日未复发**
+- `../../crash.log` 不存在、今日日志无 ERROR/Traceback → **0xC0000409 今日未复发**
 - 历史符号 `safe_area` / `SafeArea` / `drawCrosshairCircle` / `DrawCrosshair` **全仓库零匹配** —— 已在重构中移除，作为崩溃根因不再适用
 - 结论：崩溃风险从"已发生"退化为"潜在"（见 §五 候选根因分析）
 
@@ -371,7 +371,7 @@
 
 16. ✅ **N-P2-07 模块级惰性状态清除**：lshape_border_route.py 模块级仅有常量与 logger，无可变惰性状态（`_SEARCH_STEPS`/`_r_cm` 等跨调用缓存已清除）。所有可变数据均在函数局部，天然线程安全，与 N-P1-04（matcher RLock）形成完整并发安全链
 17. ✅ **N-P2-05 completion docstring 更新**：`apply_lshape_border_completion` docstring 完整描述三级路由（Profile→V13→旧路径），含 V13 patch 失败回退语义、手动参数路径、全失败返回 False 契约，与实际代码行为一致
-18. ✅ **N-P2-08 单位换算集中化**：`cm_to_px()` / `px_to_cm()` 已集中到 `core/config.py`（:157-164），统一入口，默认 `DEFAULT_DPI`，消除分散换算的不一致风险
+18. ✅ **N-P2-08 单位换算集中化**：`cm_to_px()` / `px_to_cm()` 已集中到 `../../core/config.py`（:157-164），统一入口，默认 `DEFAULT_DPI`，消除分散换算的不一致风险
 19. ✅ **N-P2-01 GAP_* 常量迁移**：4 个 GAP_* 常量已迁入 `config.py`（:138-144），注释漂移（20→25.0）已修正；detection.py 保留 re-export 向后兼容
 20. ✅ **N-P2-09 序列化策略统一**：QSettings 与 JSON 后备均存 JSON 字符串（app_settings.py:199/352），避免 str/对象两种形态并存；读端兼容两种形态
 21. ✅ **N-P2-10 冗余常量清除**：sketch_parser.py 本地重复定义的 `_PARSE_TIMEOUT_SEC`/`_ALGO_VERSION`/`_SKETCH_MAX_*` 等常量已删除，统一由 `sketch_parser_base`/`sketch_parser_cache` import 提供，单一来源无漂移
@@ -463,7 +463,7 @@
 |---|---|---|---|
 | 1 | N-P2-07 | lshape_border_route 模块级惰性搜索状态无锁 | ✅ 模块级仅常量与 logger，无可变惰性状态（`_SEARCH_STEPS`/`_r_cm` 等跨调用缓存已清除）。所有可变数据均在函数局部，天然线程安全，无需加锁 |
 | 2 | N-P2-05 | `apply_lshape_border_completion` docstring 三级路由承诺未覆盖 patch 级缺口 | ✅ docstring 完整描述三级路由（Profile→V13→旧路径），含 V13 patch 失败回退 Profile/旧路径语义、手动参数路径、全失败返回 False 契约 |
-| 3 | N-P2-08 | cm↔px 换算分散 3+ 处无集中 converter | ✅ `cm_to_px()` / `px_to_cm()` 已集中到 `core/config.py`（:157-164），统一入口，默认 `DEFAULT_DPI` |
+| 3 | N-P2-08 | cm↔px 换算分散 3+ 处无集中 converter | ✅ `cm_to_px()` / `px_to_cm()` 已集中到 `../../core/config.py`（:157-164），统一入口，默认 `DEFAULT_DPI` |
 | 4 | N-P2-01 | GAP_* 常量硬编码 detection.py:237-240 | ✅ 4 个 GAP_* 常量已迁入 `config.py`（:138-144），注释漂移（20→25.0）已修正；detection.py 保留 re-export 向后兼容 |
 | 5 | N-P2-09 | QSettings 与 JSON 后备序列化不一致 | ✅ 统一为 JSON 字符串序列化策略（app_settings.py:199/352）；读端兼容 str/对象两种形态 |
 | 6 | N-P2-10 | sketch_parser.py 冗余常量 + 注释夸大 | ✅ 冗余常量（`_PARSE_TIMEOUT_SEC`/`_ALGO_VERSION`/`_SKETCH_MAX_*` 等）本地重复定义已删除，统一由 `sketch_parser_base`/`sketch_parser_cache` import 提供 |
@@ -512,7 +512,7 @@
 
 ### 附：证据文件索引
 
-- `.dumate/review/core_findings.md` — core 图像处理链路 15 条发现 + 8 项正面确认
-- `.dumate/review/gui_pool_findings.md` — 草图识别 + GUI 线程层 12 条发现 + 已确认无问题范围
-- `ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-项目审查报告-20260910.md` — 上轮主报告（P0×9/P1×10/P2×15）
-- `ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-项目审查报告-20260910-复检更新.md` — 上轮复检（N0-01 回归实证）
+- `../../.dumate/review/core_findings.md` — core 图像处理链路 15 条发现 + 8 项正面确认
+- `../../.dumate/review/gui_pool_findings.md` — 草图识别 + GUI 线程层 12 条发现 + 已确认无问题范围
+- `../SmartShapeCrop分析报告/SmartShapeCrop-项目审查报告-20260910.md` — 上轮主报告（P0×9/P1×10/P2×15）
+- `../SmartShapeCrop分析报告/SmartShapeCrop-项目审查报告-20260910-复检更新.md` — 上轮复检（N0-01 回归实证）
