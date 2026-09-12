@@ -51,8 +51,16 @@ ProductSummary/
   `build/`、`.idea/`、`logs/` 已覆盖）。当前已误跟踪 51 个文件，含 47.76 MB 的 PyQt5 wheel 备份、
   约 30 MB 测试图、`.bak` 源码备份。清理前须 `git rm --cached`（详见 P1-03）。
 - **测试必须在 `.venv` 下跑**：`F:\SmartShapeCrop\.venv\Scripts\python.exe`（3.13.14，含 PyQt5/PIL）。
-  实测基线 **433 passed / 0 skipped / 0 failed**（84.4s）；`--collect-only` 报 430，差 3 未定位。
+  实测基线 **444 passed / 0 skipped / 0 failed**（74.1s，2026-09-12 收工前实测）。
+  （433 是同日早些时候的数字，13:28 那批改动新增用例后升至 444。）
 - **Tesseract 装在非默认路径** `D:\Programs\Tesseract-OCR`（`C:\Program Files\...` 下没有），
   由 `core.config.PathResolver` 探测到。排查 OCR 问题别只查 C 盘。
-- **本机工具使用坑**：Bash 工具不可用（PATH 未初始化）；PowerShell 工具 stdout 不回传，
-  凡需取输出一律「Python 脚本自行落盘 → Read 读取」。
+- **本机工具使用坑（2026-09-12 修正）**：Bash 工具**可用**，只是 PATH 里没有 Unix 工具
+  （`ls` / `tail` / `head` / `dirname` / `cd` 全部 command not found，脚本里别用管道和这些命令）。
+  **以绝对路径调用 exe 是可行的**，例如：
+  ```bash
+  "C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.exe" "C:/path/to/script.py"
+  ```
+  因此跑分析脚本的**首选路径 = Bash + Python 绝对路径**（stdout 正常回传），
+  比 PowerShell（stdout 不回传）少一层「落盘再读」的绕行。
+  需要管道/重定向时，把逻辑写进 Python 脚本内部，不要在 bash 层拼管道。

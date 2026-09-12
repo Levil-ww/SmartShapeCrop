@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop V2.2 重构路线图与建议 · V1.0</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: #f4f6f8;
+    color: #1f2328;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 15px; line-height: 1.75;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 72px; }
+
+  /* ---------- 头部 ---------- */
+  header.hero {
+    background: linear-gradient(135deg, #0f3b5c 0%, #1a5f8a 55%, #2b7fa8 100%);
+    color: #fff; padding: 44px 0 36px; margin-bottom: 32px;
+  }
+  header.hero .wrap { padding-bottom: 0; }
+  .hero h1 { margin: 0 0 10px; font-size: 27px; letter-spacing: .3px; font-weight: 700; }
+  .hero .sub { font-size: 14px; opacity: .88; margin-bottom: 20px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-block; padding: 4px 11px; border-radius: 20px;
+    background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.3);
+    font-size: 12.5px;
+  }
+  .chip.solid { background: #fff; color: #0f3b5c; font-weight: 600; border-color: #fff; }
+
+  /* ---------- 通用块 ---------- */
+  section { margin-bottom: 40px; }
+  h2 {
+    font-size: 20px; margin: 0 0 18px; padding-left: 13px;
+    border-left: 5px solid #1a5f8a; line-height: 1.3;
+  }
+  h3 { font-size: 16px; margin: 26px 0 10px; color: #0f3b5c; }
+  p { margin: 10px 0; }
+  .card {
+    background: #fff; border: 1px solid #dde4ea; border-radius: 10px;
+    padding: 20px 22px; margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(16,40,64,.05);
+  }
+  .card > h3:first-child, .card > h4:first-child { margin-top: 0; }
+  .muted { color: #5b6672; font-size: 13.5px; }
+
+  /* ---------- 指标卡 ---------- */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 0 0 8px; }
+  .metric {
+    background: #fff; border: 1px solid #dde4ea; border-radius: 10px;
+    padding: 16px 16px 14px; text-align: center;
+  }
+  .metric .val { font-size: 25px; font-weight: 700; color: #0f3b5c; line-height: 1.2; }
+  .metric .val.bad { color: #b3341f; }
+  .metric .val.warn { color: #9a6a00; }
+  .metric .val.ok { color: #1a6b3c; }
+  .metric .lab { font-size: 12.5px; color: #5b6672; margin-top: 5px; }
+
+  /* ---------- 表格 ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { padding: 9px 11px; text-align: left; border-bottom: 1px solid #e3e9ef; vertical-align: top; }
+  th { background: #eef3f7; font-weight: 600; color: #0f3b5c; font-size: 13.5px; }
+  tr:last-child td { border-bottom: none; }
+  td code, p code, li code { background: #eef2f6; padding: 1px 5px; border-radius: 4px; font-size: 12.8px; font-family: Consolas, "Courier New", monospace; color: #24405c; }
+
+  /* ---------- 代码/证据 ---------- */
+  pre {
+    background: #f7f9fb; border: 1px solid #e0e7ee; border-left: 4px solid #7aa3c0;
+    border-radius: 6px; padding: 13px 15px; overflow-x: auto;
+    font-family: Consolas, "Courier New", monospace; font-size: 12.8px; line-height: 1.65; color: #24405c;
+    margin: 12px 0;
+  }
+  .ev { font-size: 13px; color: #4a5560; margin: 8px 0 0; }
+  .ev b { color: #0f3b5c; }
+
+  /* ---------- 标签 ---------- */
+  .tag {
+    display: inline-block; padding: 2px 9px; border-radius: 4px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .t-bad   { background: #fbe9e5; color: #a8301b; }
+  .t-warn  { background: #fdf3dc; color: #8a5c00; }
+  .t-ok    { background: #e4f4ea; color: #16663a; }
+  .t-info  { background: #e6eefa; color: #1a4b7a; }
+  .t-gray  { background: #eceff2; color: #4a5560; }
+
+  /* ---------- 分档建议 ---------- */
+  .tier { border-radius: 10px; border: 1px solid #dde4ea; background: #fff; margin-bottom: 18px; overflow: hidden; }
+  .tier > .head {
+    padding: 13px 20px; font-weight: 700; font-size: 15.5px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  .tier > .head .desc { font-weight: 400; font-size: 13px; opacity: .85; }
+  .tier > .body { padding: 4px 20px 18px; }
+  .tier.t0 > .head { background: #e8f1f8; color: #0f3b5c; }
+  .tier.t1 > .head { background: #e4f4ea; color: #14532d; }
+  .tier.t2 > .head { background: #fdf3dc; color: #7a5200; }
+  .tier.t3 > .head { background: #fbe9e5; color: #8f2a17; }
+
+  .item { border-top: 1px dashed #e3e9ef; padding: 14px 0 6px; }
+  .item:first-child { border-top: none; padding-top: 8px; }
+  .item h4 { margin: 0 0 6px; font-size: 14.5px; color: #1f2328; }
+  .kv { font-size: 13.5px; margin: 5px 0; }
+  .kv b { color: #0f3b5c; }
+
+  ul, ol { margin: 10px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+
+  .note {
+    background: #f0f7ff; border: 1px solid #cfe3f7; border-radius: 8px;
+    padding: 13px 17px; margin: 14px 0; font-size: 14px;
+  }
+  .note.warn { background: #fff9ec; border-color: #f0dcae; }
+  .note.danger { background: #fdf0ed; border-color: #f3cec5; }
+  .note .t { font-weight: 700; display: block; margin-bottom: 4px; }
+
+  footer {
+    margin-top: 52px; padding: 22px 0 0; border-top: 2px solid #d7dfe6;
+    font-size: 12.8px; color: #6b7681; text-align: center; line-height: 1.9;
+  }
+  footer .ver { font-weight: 700; color: #0f3b5c; }
+
+  @media (max-width: 860px) {
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .hero h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>SmartShapeCrop V2.2 · 重构路线图与建议</h1>
+    <div class="sub">基于全量源码静态分析 + 依赖图求解 + 测试实跑的只读评估 · 未修改任何源码</div>
+    <div class="chips">
+      <span class="chip solid">报告版本 V1.0</span>
+      <span class="chip">2026-09-12</span>
+      <span class="chip">只读分析 · 源码零改动</span>
+      <span class="chip">基线 444 passed / 74.1s</span>
+      <span class="chip">工作区 F:\SmartShapeCrop</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ======================= 一、结论先行 ======================= -->
+<section>
+  <h2>一、结论先行</h2>
+
+  <div class="card">
+    <p style="font-size:16px;margin-top:0;">
+      <b>不建议对这个项目做「重构」，建议做「定点手术 + 防腐层」。</b>
+    </p>
+    <p class="muted" style="margin-bottom:0;">
+      本项目已具备三个稀缺条件：<b>444 个用例全绿（74 秒可复跑）</b>、<b>core 层无 GUI 反向依赖</b>、<b>算法实现质量高于同类内部工具</b>。
+      在这种底子上做大规模重构，收益有限而回归风险真实——项目历史上已多次出现「重构引入回归」的记录。
+      真正值得投入的，是先把<strong>三处会持续放大的结构性问题</strong>定点清除，再建立防止回流的口子。
+    </p>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="val bad">848</div>
+      <div class="lab">行 · 单函数最大长度<br><span style="font-size:11.5px;">render_design()</span></div>
+    </div>
+    <div class="metric">
+      <div class="val warn">1</div>
+      <div class="lab">处循环依赖闭环<br><span style="font-size:11.5px;">被延迟导入掩盖</span></div>
+    </div>
+    <div class="metric">
+      <div class="val bad">93.3%</div>
+      <div class="lab">打包脚本重复度<br><span style="font-size:11.5px;">5 份近乎完全相同</span></div>
+    </div>
+    <div class="metric">
+      <div class="val ok">444</div>
+      <div class="lab">测试全绿 / 74.1 秒<br><span style="font-size:11.5px;">重构安全网可用</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 二、与既有报告的关系 ======================= -->
+<section>
+  <h2>二、本报告相对既有报告的位置</h2>
+
+  <p>
+    项目内已有《SmartShapeCrop V2.2 全面审查与建议报告》（V1.0，2026-09-12），覆盖 P0 三项、P1 六项、P2 八项。
+    本报告<b>不重复其结论</b>，只做两件事：<b>修订其中 1 项被本机实测推翻的判断</b>，以及<b>补充 6 项它未涉及的结构事实</b>。
+    另需说明：该报告的测试基线「433 passed」已被本机实测更新为 <b>444 passed</b>（与当前 README 一致），引用其数字时请以后者为准。
+  </p>
+
+  <table>
+    <thead>
+      <tr><th style="width:20%;">维度</th><th style="width:40%;">既有报告 V1.0</th><th style="width:40%;">本报告</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>循环依赖</b></td>
+        <td>结论「<b>无循环导入</b>」，作为架构亮点（分层得分 82）</td>
+        <td><span class="tag t-bad">修订</span> 实测存在 <b>1 处闭环</b>，由函数内延迟导入掩盖。详见 F1</td>
+      </tr>
+      <tr>
+        <td><b>长函数</b></td>
+        <td>指出最长 848 行，建议「增量提纯、不做大规模重构」</td>
+        <td><span class="tag t-info">深化</span> 定位 848 行的成因（10 个特性挂载块），给出可执行的拆分切面。详见 F2</td>
+      </tr>
+      <tr>
+        <td><b>GUI 拆分质量</b></td>
+        <td>仅指出 250 处未使用导入（机械复制的 import 头）</td>
+        <td><span class="tag t-info">新增</span> 补上耦合实测：6 件套之间仍有 <b>11 条横向依赖边</b>。详见 F3</td>
+      </tr>
+      <tr>
+        <td><b>打包脚本</b></td>
+        <td>建议「旧脚本归档」，未评估重复度</td>
+        <td><span class="tag t-info">新增</span> 量化：<b>逐行相似度 93.3%</b>、最长连续相同块 206 行。详见 F4</td>
+      </tr>
+      <tr>
+        <td><b>双解析流水线</b></td>
+        <td>未涉及</td>
+        <td><span class="tag t-info">新增</span> 7步法与9步法：<b>逻辑重复而非代码复制</b>（相似度仅 8.5%）。详见 F5</td>
+      </tr>
+      <tr>
+        <td><b>scripts/ 规模</b></td>
+        <td>记为 2,871 行</td>
+        <td><span class="tag t-info">新增</span> 实测 <b>185 个脚本 / 约 24,500 行</b>，是 core+gui 总和的量级。详见 F6</td>
+      </tr>
+      <tr>
+        <td><b>不可动区</b></td>
+        <td>未涉及</td>
+        <td><span class="tag t-info">新增</span> 用扇入数据圈定稳定核心，明确「哪些不该碰」。详见第三章</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ======================= 三、结构性事实 ======================= -->
+<section>
+  <h2>三、六项结构性事实（含证据）</h2>
+
+  <!-- F1 -->
+  <div class="card">
+    <h3>F1 · 存在 1 处循环依赖闭环，被延迟导入掩盖 <span class="tag t-bad">高</span></h3>
+    <p>三处导入构成闭环，其中一条边刻意写在函数体内，使模块级静态图看不出环：</p>
+
+    <svg viewBox="0 0 680 300" width="100%" style="max-width:680px;display:block;margin:14px auto;">
+      <defs>
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="8" refY="3.2" orient="auto">
+          <path d="M0,0 L8,3.2 L0,6.4 z" fill="#3a6b93"/>
+        </marker>
+        <marker id="ahr" markerWidth="9" markerHeight="9" refX="8" refY="3.2" orient="auto">
+          <path d="M0,0 L8,3.2 L0,6.4 z" fill="#b3341f"/>
+        </marker>
+      </defs>
+
+      <!-- 三个节点 -->
+      <rect x="230" y="18" width="220" height="56" rx="9" fill="#e8f1f8" stroke="#9cbdd6" stroke-width="1.6"/>
+      <text x="340" y="42" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f3b5c" font-family="Consolas,monospace">core.image_ops</text>
+      <text x="340" y="62" text-anchor="middle" font-size="11.5" fill="#4a5560">渲染总入口 render_design()</text>
+
+      <rect x="24" y="196" width="230" height="56" rx="9" fill="#fdf0ed" stroke="#dda798" stroke-width="1.6"/>
+      <text x="139" y="220" text-anchor="middle" font-size="13.5" font-weight="700" fill="#8f2a17" font-family="Consolas,monospace">core.lshape_border</text>
+      <text x="139" y="240" text-anchor="middle" font-size="11.5" fill="#4a5560">L 形边框补全</text>
+
+      <rect x="426" y="196" width="230" height="56" rx="9" fill="#fdf3dc" stroke="#dcc189" stroke-width="1.6"/>
+      <text x="541" y="220" text-anchor="middle" font-size="13.5" font-weight="700" fill="#7a5200" font-family="Consolas,monospace">core.image_cropper_mask</text>
+      <text x="541" y="240" text-anchor="middle" font-size="11.5" fill="#4a5560">裁剪 mask 构建</text>
+
+      <!-- 边：lshape_border -> image_cropper_mask（顶层） -->
+      <path d="M254,224 L426,224" stroke="#3a6b93" stroke-width="1.8" fill="none" marker-end="url(#ah)"/>
+      <text x="340" y="216" text-anchor="middle" font-size="11.5" fill="#3a6b93" font-weight="600">模块级导入</text>
+
+      <!-- 边：image_cropper_mask -> image_ops（顶层） -->
+      <path d="M541,196 C541,120 430,86 452,80" stroke="#3a6b93" stroke-width="1.8" fill="none" marker-end="url(#ah)"/>
+      <text x="556" y="140" text-anchor="middle" font-size="11.5" fill="#3a6b93" font-weight="600">模块级导入</text>
+
+      <!-- 边：image_ops -> lshape_border（函数内，红） -->
+      <path d="M230,60 C150,80 100,120 128,196" stroke="#b3341f" stroke-width="2.2" stroke-dasharray="6,4" fill="none" marker-end="url(#ahr)"/>
+      <text x="118" y="132" text-anchor="middle" font-size="11.5" fill="#b3341f" font-weight="700">函数内延迟导入</text>
+      <text x="118" y="149" text-anchor="middle" font-size="11" fill="#b3341f">（打断闭环的那一刀）</text>
+    </svg>
+
+    <pre>core/lshape_border.py:34
+    from .image_cropper_mask import _estimate_outer_background      ← 模块级
+
+core/image_cropper_mask.py:14
+    from .image_ops import load_image_rgb, fit_image_to_rect        ← 模块级
+
+core/image_ops.py:1186   （位于 render_design() 函数体内，缩进 12 空格）
+    if _do_completion:
+        try:
+            from .lshape_border import apply_lshape_border_completion   ← 函数级，打破闭环</pre>
+
+    <p class="ev"><b>为什么这条重要：</b>它不是「洁癖问题」，而是一个<b>重构陷阱</b>。任何人日后把 <code>image_ops.py:1186</code> 这行「提纯」到文件顶部（这是最自然的整理动作），模块导入立刻变成真循环并抛 <code>ImportError</code>，程序无法启动。反过来，如果按 F2 的建议拆解 <code>render_design()</code>，这个函数级导入也会随之移位——必须在动刀前先解掉环，而不是拆完再发现。</p>
+    <p class="ev"><b>根因：</b><code>lshape_border</code> 依赖的是 <code>image_cropper_mask</code> 里一个下划线开头的私有工具函数 <code>_estimate_outer_background</code>。封装泄漏 + 工具函数放置层级不当，共同制造了这个环。</p>
+  </div>
+
+  <!-- F2 -->
+  <div class="card">
+    <h3>F2 · render_design() 的 848 行不是「写长了」，而是「被当成了挂载点」 <span class="tag t-bad">高</span></h3>
+    <p>
+      <code>core/image_ops.py:550</code> 起，<b>单函数 848 行</b>。它之所以膨胀，是因为每一个新特性都是<b>往同一个函数里插一段</b>，而不是新增模块。
+      函数内部留下 10 个用注释标记的挂载块，日期跨度从 08-29 到 09-12：
+    </p>
+
+    <table>
+      <thead><tr><th style="width:14%;">行号</th><th style="width:52%;">挂载块（原文标记）</th><th style="width:34%;">业务归属</th></tr></thead>
+      <tbody>
+        <tr><td><code>785</code></td><td>DEBUG: 打印 L 形 cut 关键坐标</td><td>调试残留</td></tr>
+        <tr><td><code>847–951</code></td><td>[SINGLE-HOLE Add-On 2026-08-31] Stale Decor Black Border Invalidation</td><td>单洞·残留边框失效</td></tr>
+        <tr><td><code>953</code></td><td>[SEAM-FEATHER Add-On 2026-09-02] 接缝羽化</td><td>接缝处理</td></tr>
+        <tr><td><code>1044–1091</code></td><td>[MULTI-HOLE Add-On 2026-08-29] PRE-COMPUTE 每洞独立 4 边边框</td><td>多洞·预算</td></tr>
+        <tr><td><code>1142–1147</code></td><td>[MULTI-HOLE Add-On] APPLY 多洞边框 override</td><td>多洞·应用</td></tr>
+        <tr><td><code>1170–1269</code></td><td>[L-Shape Border Completion 2026-09-03] + [Fix 2026-09-12 三层失败掩盖]</td><td>L 形边框补全 + 兜底</td></tr>
+        <tr><td><code>1271–1381</code></td><td>[SINGLE-HOLE Add-On V2] Stale-Decor Universal Residual Cleaner</td><td>单洞·残留清理</td></tr>
+        <tr><td><code>1422–1445</code></td><td>[MULTI-HOLE Add-On] PURE ADD-ON GUARD</td><td>多洞·隔离护栏</td></tr>
+        <tr><td><code>1482–1545</code></td><td>[MULTI-HOLE Add-On] 多洞独立素材填充</td><td>多洞·素材</td></tr>
+        <tr><td><code>1556–1586</code></td><td>[SINGLE-HOLE Add-On] 对齐多洞内填</td><td>单洞·素材对齐</td></tr>
+      </tbody>
+    </table>
+
+    <p class="ev">
+      <b>请注意最后两列的组合规律：</b>单洞路径、多洞路径、L 形路径的处理逻辑被<b>物理交织在同一个函数体里</b>，靠 <code>if mode == ...</code> 与护栏变量区分。
+      注释里的 <code>PURE ADD-ON GUARD</code>、<code>原单洞/椭圆/L 形代码一字未改</code> 这类标记，说明开发者<b>自己也知道</b>这是在不破坏既有逻辑的前提下硬塞进去的——这是理性选择，但代价已经积累到 848 行。
+    </p>
+    <p class="ev">
+      <b>为什么这是最高优先级的靶点：</b>它是<b>导出路径</b>（用户点「导出 JPG」走的就是它），一旦出错是用户可见的成品事故；同时它没有任何单元测试直接测内部阶段，现有测试多数只断言「不崩溃 + 尺寸非空」。这意味着它是<b>当前收益与风险比最差、但改动频率最高</b>的区域。
+    </p>
+  </div>
+
+  <!-- F3 -->
+  <div class="card">
+    <h3>F3 · 水池设计器面板拆成 6 件套后，耦合并未下降 <span class="tag t-warn">中</span></h3>
+    <p>
+      <code>gui/property_panel.py</code> 已拆为 6 个子模块（dialogs / generate / layers / poolbox / widgets / workers）。
+      文件确实变小了，但<b>依赖关系没有形成边界</b>，实测两点：
+    </p>
+    <ol>
+      <li>
+        <b>子模块之间存在 11 条横向依赖边</b>，且形状高度规律：
+        <pre>property_panel_generate  ->  dialogs, widgets, workers
+property_panel_layers    ->  dialogs, widgets, workers
+property_panel_poolbox   ->  dialogs, widgets, workers
+lshape_panel             ->  widgets, workers</pre>
+        <code>widgets</code> 被 5 个模块引用、<code>workers</code> 被 5 个引用、<code>dialogs</code> 被 4 个引用。
+        它们事实上是<b>共享区</b>而非独立模块——却仍然挂在 <code>property_panel_*</code> 这个前缀下，被当作「水池设计器的内部部件」。<b>连 L 形挖角面板（另一个业务模块）也要来借用它们。</b>
+      </li>
+      <li>
+        <b>每个子模块都拉取同一套 core 依赖</b>。6 个子模块中有 5 个都重复导入
+        <code>core.app_settings</code>、<code>core.geometry</code>、<code>core.parser.name_parser</code>、<code>core.parser.template_matcher</code>、<code>core.pool_designer</code>、<code>core.pool_designer.sketch_parser</code> 这一整组。
+        这说明拆分是<b>按代码块切的，不是按职责切的</b>——读者仍然无法从某个子模块的导入头判断「这个模块到底干什么」。
+      </li>
+    </ol>
+    <p class="ev">
+      <b>一个需要注意的对照：</b>它们的逐行相似度只有 <b>8.4%</b>。所以这<b>不是复制粘贴造成的</b>，不能用「去重」解决。
+      这是「拆了文件、没拆职责」的典型形态——<b>机械拆分能降低单文件行数，但不会自动降低耦合</b>。
+    </p>
+  </div>
+
+  <!-- F4 -->
+  <div class="card">
+    <h3>F4 · 5 份打包脚本是真正的复制粘贴：相似度 93.3% <span class="tag t-warn">中</span></h3>
+    <p>
+      <code>packaging/</code> 下有 5 份打包入口（<code>package.py</code>、<code>packageV2.0.py</code>、<code>packageV2.1.py</code>、<code>legacy/packageV2.1.2.py</code>、<code>packageV2.2.py</code>），
+      实测 <code>V2.1.2</code> 与 <code>V2.2</code> 的对比结果：
+    </p>
+    <pre>逐行相似度          93.3%
+完全相同代码行       363 行 / 400 行
+最长连续相同块       206 行
+跨文件同名函数       13 个</pre>
+    <p>
+      13 个同名函数：<code>_print_step</code>、<code>_fail</code>、<code>parse_args</code>、<code>check_resources</code>、<code>_get_pyinstaller_version</code>、
+      <code>ensure_pyinstaller</code>、<code>clean_build</code>、<code>_build_cmd</code>、<code>_run_build</code>、<code>build_exe</code>、<code>show_result</code>、
+      <code>_dir_size_mb</code>、<code>_find_tesseract_install</code>。
+    </p>
+    <p class="ev">
+      <b>这是全项目性价比最高的重构点：</b>它与业务逻辑完全隔离（打包失败不会污染用户功能）、有明确的「产物能出包」验收标准、且改动量小。
+      唯一的真实成本是<b>必须用新脚本成功出一次包来验证</b>——而本机 <code>.venv</code> 内 PyInstaller 缺失（既有报告 P0-02 已记录），所以这项工作<b>应排在补装工具链之后</b>。
+    </p>
+  </div>
+
+  <!-- F5 -->
+  <div class="card">
+    <h3>F5 · 7 步法与 9 步法是「概念重复」，不是「代码重复」 <span class="tag t-warn">中</span></h3>
+    <p>
+      草图识别有两条流水线：<code>sketch_parser.py</code> 的 <code>_7step_parse()</code>（348 行，单洞）与
+      <code>sketch_parser_multihole.py</code> 的 <code>_9step_multi_hole_parse()</code>（411 行，多洞）。两者共享同一套步骤命名与辅助概念，
+      但实测：
+    </p>
+    <pre>整文件逐行相似度      8.5%
+完全相同代码行         85 行 / 1,491 行
+最长连续相同块         14 行</pre>
+    <div class="note warn">
+      <span class="t">这个数字改变了处理方式</span>
+      相似度只有 8.5%，说明它们<b>各自独立实现</b>，不是复制出来的。因此<b>不能走「保留一份、删除另一份」的合并路线</b>——那等于重写一条流水线。
+      真正的问题在另一层：两者<b>重复了同一批概念</b>——<code>_progress</code>、<code>_try_assignment</code>、<code>_round_pref_bonus</code> / <code>_round_pref_bonus_multi</code> 各写一遍，
+      意味着<b>同一个业务规则改动需要在两处分别修改，且没有测试保证两处行为一致</b>。
+    </div>
+    <p class="ev">
+      <b>务实的处理：</b>不合并流水线，而是先<b>抽出共用的概念层</b>（步骤进度上报、数值分配打分、圆整偏好），让两条流水线调用同一份实现。
+      这样既消除了双份维护，又不必承担「重写 OCR 主流程」的风险。
+    </p>
+  </div>
+
+  <!-- F6 -->
+  <div class="card">
+    <h3>F6 · scripts/ 是与 core+gui 同等规模的第二代码库 <span class="tag t-warn">中</span></h3>
+    <pre>scripts/diagnose/        88 个脚本    12,749 行
+scripts/verify/          33 个脚本     5,162 行
+scripts/_archive/        61 个脚本     ┐
+scripts/ 根目录           4 个脚本     ┘ 6,598 行（与 _archive 合计）
+────────────────────────────────────────────
+合计                    185 个脚本   约 24,500 行</pre>
+    <p>
+      作为对照：<code>core/</code> 全部约 17,600 行、<code>gui/</code> 约 6,900 行、<code>tests/</code> 约 6,200 行。
+      也就是说 <b>scripts/ 的体量约等于 core + gui 之和</b>。
+    </p>
+    <p class="ev">
+      <b>为什么它会在重构中被低估：</b>这些脚本大量直接引用 core 的内部符号（<code>core.corner.algorithm</code>、<code>core.image_cropper_border</code> 等），
+      其中 <code>core.image_cropper</code> 一个模块就被引用了 93 处。它们<b>不在测试套件里、不进 CI</b>，所以任何 core 的 API 调整都不会被测试拦住，
+      只会在下次有人跑诊断脚本时静默失效。<b>scripts/ 是重构时隐形的约束网。</b>
+    </p>
+  </div>
+</section>
+
+<!-- ======================= 四、不可动区 ======================= -->
+<section>
+  <h2>四、先圈定「不该动」的部分</h2>
+  <p>重构建议若是只讲「哪里该拆」，执行时很容易误伤核心。用扇入数据（被多少个模块依赖）先把稳定资产标出来：</p>
+
+  <table>
+    <thead><tr><th style="width:12%;">扇入</th><th style="width:42%;">模块</th><th style="width:46%;">定位</th></tr></thead>
+    <tbody>
+      <tr><td><b>93</b></td><td><code>core.image_cropper</code></td><td>裁剪服务主入口，全项目被引最多 → <span class="tag t-ok">冻结契约</span></td></tr>
+      <tr><td><b>58</b></td><td><code>core.config</code></td><td>集中配置单一来源，收敛方向正确 → <span class="tag t-ok">冻结契约</span></td></tr>
+      <tr><td><b>47</b></td><td><code>core.pool_designer.sketch_parser</code></td><td>草图识别入口 → <span class="tag t-ok">保持签名</span></td></tr>
+      <tr><td><b>44</b></td><td><code>core.geometry</code></td><td>参数化形状定义 → <span class="tag t-ok">冻结契约</span></td></tr>
+      <tr><td><b>39</b></td><td><code>core.corner.algorithm</code></td><td>圆角 mask 算法，三入口统一委托 → <span class="tag t-ok">冻结契约</span></td></tr>
+      <tr><td><b>34</b></td><td><code>core.image_ops</code></td><td>渲染总入口（同时也是 F2 的靶点）→ <span class="tag t-warn">只拆内部，不改签名</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <span class="t">读法</span>
+    扇入越高，说明「改它的成本」被放大的倍数越大。上表六个模块的共同处理原则是：<b>只允许新增、不允许修改既有函数签名与返回语义</b>。
+    对 <code>core.image_ops</code> 的特殊之处在于——它既要保持对外签名不变，内部又急需拆解，因此它的重构必须走「内部提纯 + 外部冻结」的双轨。
+  </div>
+</section>
+
+<!-- ======================= 五、分档建议 ======================= -->
+<section>
+  <h2>五、重构建议（按风险从低到高分四档）</h2>
+  <p class="muted">排序原则：<b>先建立可验证的安全网，再做零功能风险的整形，最后才动核心逻辑</b>。前两档可以在完全不改变程序行为的前提下完成。</p>
+
+  <!-- 第 0 档 -->
+  <div class="tier t0">
+    <div class="head">
+      <span>第 0 档 · 护栏先行</span>
+      <span class="desc">不做这一步，后面每一档都在赌博</span>
+    </div>
+    <div class="body">
+      <div class="item">
+        <h4>0-1　把 444 基线固定为可复跑的标尺</h4>
+        <div class="kv"><b>现状：</b>实测 <code>444 passed in 74.08s</code>，退出码 0，安全网确实可用。</div>
+        <div class="kv"><b>动作：</b>在动手前记录一次基线（用例数 / 耗时 / 退出码），此后每个批次改动后复跑比对。<b>任何一次不是「444 passed」都立即回滚，不继续下一批。</b></div>
+        <div class="kv"><b>验收：</b>基线快照留档，且注明取证日期；README 中的测试数字与本机实测一致。</div>
+      </div>
+      <div class="item">
+        <h4>0-2　为 render_design 建「黄金样本回归」——本报告最重要的一条建议</h4>
+        <div class="kv"><b>问题：</b>现有对 <code>render_design</code> 的 17 处调用几乎都只断言「不崩溃 + 尺寸非空」，<b>没有像素级基线</b>。这意味着 F2 描述的 848 行拆解<b>当前不可验证</b>——拆坏了也测不出来。</div>
+        <div class="kv"><b>动作：</b>不改动任何渲染代码，用现有素材跑若干代表性 <code>CropDesign</code>（矩形嵌套 / 椭圆 / L 形 / 多洞，各含与不含带框素材的变体），把输出图存为基线文件；新增一个比对用例，断言新输出与基线的像素差异在容许阈值内。</div>
+        <div class="kv"><b>为什么值得：</b>它是<b>唯一</b>能让 848 行函数变成「可安全拆解」的手段。成本是写一个脚本 + 存几张图，收益是把整个第 3 档从「高风险」降为「可控」。</div>
+        <div class="kv"><b>注意：</b>基线图<b>不进</b>版本库（项目已有 81 MB 图片与 90 MB 误跟踪内容的先例），放本地或单独目录并加忽略规则。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第 1 档 -->
+  <div class="tier t1">
+    <div class="head">
+      <span>第 1 档 · 零功能风险的整形</span>
+      <span class="desc">不触碰业务逻辑，可与日常改动并行推进</span>
+    </div>
+    <div class="body">
+      <div class="item">
+        <h4>1-1　packaging 抽公用模块（对应 F4）</h4>
+        <div class="kv"><b>动作：</b>把 13 个重复函数抽为 <code>packaging/_common.py</code>，各版本脚本只保留「版本差异部分」（hiddenimports 清单、spec 名称、Tesseract 内嵌开关）。旧的 4 份归档，只留 <code>packageV2.2.py</code> 作为唯一入口。</div>
+        <div class="kv"><b>验收：</b>用抽取后的脚本成功出一次包，<code>dist/</code> 产物的时间戳 ≥ 最新源码时间戳。</div>
+        <div class="kv"><b>前置：</b>本机 <code>.venv</code> 缺 PyInstaller，需先补装（既有报告 P0-02）——这也是当前项目「所有改进都发不出去」的根因。</div>
+        <div class="kv"><b>风险：</b><span class="tag t-ok">极低</span>，与用户功能完全隔离。</div>
+      </div>
+      <div class="item">
+        <h4>1-2　scripts/ 分级归档（对应 F6）</h4>
+        <div class="kv"><b>动作：</b>按「是否对应已修复缺陷」把 185 个脚本分三级——已闭环的一次性诊断脚本移入归档；仍在用的保留并补一句用途说明；确认无人引用的可删。<b>先只出分级清单，不移动。</b></div>
+        <div class="kv"><b>收益：</b>把重构时的「隐性约束网」显性化。在动 <code>core</code> 之前就知道哪些脚本会被波及。</div>
+        <div class="kv"><b>纪律：</b>清单先给你确认，确认后再执行——不直接动手。</div>
+      </div>
+      <div class="item">
+        <h4>1-3　兼容层迁移收尾（对应 compat 层）</h4>
+        <div class="kv"><b>现状：</b><code>core/compat/</code> 的 sys.modules 别名机制设计规范、文档完备。但仍有活跃调用点未迁移——例如 <code>gui/property_panel_layers.py:398</code> 使用旧路径 <code>from core.psd_loader import ...</code>，<code>tests/core/test_rounded_corner.py</code> 也仍从 <code>core.rounded_corner</code> 导入。</div>
+        <div class="kv"><b>动作：</b>把这些调用点改到新路径（<code>core.psd.loader</code> / <code>core.corner.algorithm</code>），全部迁移完成后 compat 层即可整体退役——按它自己的文档说法，「删除本子包即可，无需改动业务代码」。</div>
+        <div class="kv"><b>收益：</b>消除一类「看起来存在、实际是别名」的幽灵模块，让依赖图可信。同时避免打包 hiddenimports 长期为一个不存在的路径做白名单。</div>
+      </div>
+      <div class="item">
+        <h4>1-4　未使用导入与仓库卫生</h4>
+        <div class="kv">既有报告 P1-01（250 处未使用导入）与 P2 第 1–3 项（重复 spec、调试残留、旧脚本归档）均属此类，此处不重复展开。<b>唯一补充：必须先清理未使用导入，再做依赖图分析</b>——否则 import 头失真会掩盖真实的分层问题（F1、F3 都曾因此被误判）。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第 2 档 -->
+  <div class="tier t2">
+    <div class="head">
+      <span>第 2 档 · 结构修复</span>
+      <span class="desc">改变模块边界，不改业务行为；每项都需跑 444 基线</span>
+    </div>
+    <div class="body">
+      <div class="item">
+        <h4>2-1　解掉循环依赖闭环（对应 F1）</h4>
+        <div class="kv"><b>动作：</b>把 <code>_estimate_outer_background</code> 从 <code>image_cropper_mask</code> 下沉到一个更基础的层级（与 <code>_estimate_*</code> 同类工具函数放在一起），使 <code>lshape_border</code> 不再反向依赖裁剪 mask 模块。环解开后，<code>image_ops.py:1186</code> 的函数级导入才有资格改为模块级。</div>
+        <div class="kv"><b>关键：顺序不能反。</b>必须先解环，再提纯导入。反过来做会直接 ImportError。</div>
+        <div class="kv"><b>验收：</b>444 基线不变；且在修改后做一次「冷启动」验证（清 <code>__pycache__</code> 后 <code>python main.py</code> 能起来），确认没有隐性导入顺序依赖。</div>
+        <div class="kv"><b>风险：</b><span class="tag t-warn">中</span>——涉及 <code>_estimate_outer_background</code> 的全部调用点，需逐一比对。</div>
+      </div>
+      <div class="item">
+        <h4>2-2　为 property_panel 建立一个真正的共享契约层（对应 F3）</h4>
+        <div class="kv"><b>动作：</b>把被 5 个模块共用的 <code>widgets</code> / <code>workers</code> / <code>dialogs</code> 提升为独立于「水池设计器」的共享模块（例如 <code>gui/shared/</code> 或直接与面板平级），让 L 形挖角面板引用共享模块时不再是「借用别人的内部件」。</div>
+        <div class="kv"><b>不建议：</b>不要试图把 6 件套重新合并回一个大文件——那只是把问题藏回去。也别期望这一项能显著降低耦合：<b>拆分的价值在于让依赖方向变清晰，不在于减少行数。</b></div>
+        <div class="kv"><b>验收：</b>6 件套的 11 条横向依赖边中，指向共享区的部分变为「单向依赖共享层」；GUI 56 个用例保持全绿。</div>
+        <div class="kv"><b>风险：</b><span class="tag t-warn">中</span>——GUI 层改动面较广，建议单独一次改动、不与其他项混做。</div>
+      </div>
+      <div class="item">
+        <h4>2-3　抽出草图识别的共用概念层（对应 F5）</h4>
+        <div class="kv"><b>动作：</b>不改动两条流水线的算法，只把重复的<b>概念</b>抽为共用函数——步骤进度上报、数值分配打分（<code>_try_assignment</code>）、圆整偏好（<code>_round_pref_bonus</code>）。让 <code>_7step_parse</code> 与 <code>_9step_multi_hole_parse</code> 调用同一份实现。</div>
+        <div class="kv"><b>明确不做：</b>不合并两条流水线。8.5% 的相似度说明它们本就不同，强行合并等于重写 OCR 主流程。</div>
+        <div class="kv"><b>验收：</b>两条流水线的既有用例（<code>tests/sketch/</code> 共 4 个文件）全绿；抽出前后对同一批草图输出的识别结果逐字段一致。</div>
+        <div class="kv"><b>风险：</b><span class="tag t-warn">中</span>——OCR 结果对数值路径敏感，务必做识别结果一致性比对，只看测试绿不绿不够。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第 3 档 -->
+  <div class="tier t3">
+    <div class="head">
+      <span>第 3 档 · 高风险手术</span>
+      <span class="desc">仅在完成第 0 档后才有资格启动；且必须逐块进行</span>
+    </div>
+    <div class="body">
+      <div class="item">
+        <h4>3-1　把 render_design() 从「挂载点」改造成「流水线」（对应 F2）</h4>
+        <div class="kv"><b>目标形态：</b>函数体只保留<b>阶段编排</b>，各挂载块提取为独立阶段函数，按 F2 表格中的 10 个块归并为若干策略：
+        <ol style="margin-top:6px;">
+          <li>素材适配与方向校正（现有步骤 0–2）</li>
+          <li>基础形状渲染（矩形 / 椭圆 / L 形主体）</li>
+          <li>多洞处理（PRE-COMPUTE → APPLY → 独立素材填充）</li>
+          <li>边框补全（L 形边框三级路由 + 统一黑框兜底）</li>
+          <li>残留清理（单洞 Stale-Decor 系列 + 接缝羽化）</li>
+        </ol></div>
+        <div class="kv"><b>方法与硬约束：</b>
+        <ul style="margin-top:6px;">
+          <li><b>一次只搬一个块</b>，每搬完一块立即跑黄金样本比对 + 444 基线，<b>不绿就回滚</b>；绝不「一天搬完 5 个块」。</li>
+          <li><b>对外签名零变化</b>：<code>render_design(design, quality=...)</code> 的参数、返回、（以及 <code>render_design_lod</code> 等兄弟入口）一律不动——它的扇入是 34，动签名会连锁波及 GUI 与测试。</li>
+          <li>搬块时<b>顺带保留原有的 <code>[Fix 日期]</code> 注释</b>。这些注释是缺陷溯源的唯一线索，本项目在这方面做得很好，不要在重构中丢掉。</li>
+        </ul></div>
+        <div class="kv"><b>验收：</b>黄金样本像素级一致；444 基线不变；<code>render_design</code> 本体降到可阅读的行数（目标 &lt; 150 行）。</div>
+        <div class="kv"><b>风险：</b><span class="tag t-bad">高</span>——这是全项目改动风险最高的区域。<b>没有第 0 档的黄金样本，就不应启动这一项。</b></div>
+      </div>
+      <div class="item">
+        <h4>3-2　其余长函数的「顺手提纯」</h4>
+        <div class="kv">除 <code>render_design</code> 外的 23 个 ≥200 行函数（<code>_extract_direction_label_numbers</code> 747 行、<code>_detect_lshape_geometry</code> 574 行、<code>worker.run()</code> 515 行等），<b>不建议专门立项</b>。</div>
+        <div class="kv"><b>建议做法：</b>维持既有报告 P1-04 的结论——<b>只在因业务需要改动某个函数时，顺手把其中一段边界清晰的逻辑抽成带 docstring 的私有函数，并为它补一个直接用例</b>。为拆而拆的收益远小于回归风险。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 六、不建议做的 ======================= -->
+<section>
+  <h2>六、明确不建议做的</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:34%;">动作</th><th style="width:66%;">不建议的理由</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>推倒重写 / 换架构</b></td>
+          <td>项目有 444 个用例、算法实现经过多轮真实案例锤炼（圆角多层边框、OCR 稳定性投票、剖面扫描）。重写等于放弃这些已验证的复杂度沉淀，而它们恰恰是这个工具最难的部分。</td>
+        </tr>
+        <tr>
+          <td><b>把 6 个 GUI 子模块重新合并</b></td>
+          <td>合并只是把问题藏回大文件。F3 的问题是「缺共享契约层」，不是「文件太多」。</td>
+        </tr>
+        <tr>
+          <td><b>合并 7 步法与 9 步法流水线</b></td>
+          <td>实测相似度仅 8.5%，本质是两条不同实现。合并 = 重写 OCR 主流程 = 放弃现有识别精度。</td>
+        </tr>
+        <tr>
+          <td><b>为了拆 848 行而先拆 848 行</b></td>
+          <td>在没有像素级基线的前提下拆解导出路径，是在用用户的成品做测试。<b>先做 0-2，再谈 3-1。</b></td>
+        </tr>
+        <tr>
+          <td><b>把多项改动合进同一次提交</b></td>
+          <td>项目历史已多次记录「重构引入回归」。单点修改 → 立即复跑 444 基线 → 再动下一处，是本项目被反复验证过的唯一安全节奏。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ======================= 七、执行纪律 ======================= -->
+<section>
+  <h2>七、执行纪律（若决定推进）</h2>
+  <div class="card">
+    <ol>
+      <li><b>单批次单主题。</b>一次改动只解决一个编号项，禁止「修崩溃 + 清导入 + 拆函数」混做。</li>
+      <li><b>每批次三重验证。</b>① 444 基线全绿；② 涉及渲染时跑黄金样本像素比对；③ 目的是导出路径时，在打包版 exe 上做一次端到端冒烟（L 形挖角目前仍是待验证项）。</li>
+      <li><b>保留注释溯源。</b>所有 <code>[Fix 编号 日期]</code> 注释在重构中随代码搬移，不得删除——它们是唯一能区分「已修 / 未修」的线索。</li>
+      <li><b>顺序不可颠倒。</b>先护栏（第 0 档）→ 再整形（第 1 档）→ 再改边界（第 2 档）→ 最后动核心（第 3 档）。其中 <b>2-1 必须在 3-1 之前</b>（否则循环依赖会在拆解时爆开），<b>1-4 必须在依赖分析之前</b>（否则 import 头失真会误导判断）。</li>
+      <li><b>scripts/ 分级清单先确认再执行。</b>按项目一贯约定，涉及文件移动/归档的操作，先出清单、经审阅后再动手。</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ======================= 八、待决策 ======================= -->
+<section>
+  <h2>八、需要你确认的三个决策点</h2>
+  <div class="card">
+    <p style="margin-top:0;"><b>1. 重构的目标是什么？</b>这决定了优先顺序：</p>
+    <ul>
+      <li><b>目标是「交付稳定、少出事故」</b> → 只做第 0 档 + 第 1 档，第 3 档无限期搁置。</li>
+      <li><b>目标是「后续加功能更快」</b> → 重点在第 2 档（解环 + 共享层），这是新增功能的主要摩擦点。</li>
+      <li><b>目标是「准备一个大版本」</b> → 才值得投入第 3 档，且必须先完成黄金样本。</li>
+    </ul>
+    <p><b>2. 是否允许改变程序行为？</b>本报告的方案按「行为完全不变」设计。若允许微调行为（例如顺手修掉 P0-01 的 dpi 崩溃），可以与重构批次并轨，但验证标准需相应加强。</p>
+    <p style="margin-bottom:0;"><b>3. 打包链路什么时候补齐？</b><code>.venv</code> 缺 PyInstaller 导致所有改进出不了包（既有报告 P0-02）。<b>这一项不解决，第 1 档之后的成果都无法交付。</b>是否需要我协助补装工具链并跑一次出包？</p>
+  </div>
+</section>
+
+<footer>
+  SmartShapeCrop V2.2 重构路线图与建议 · <span class="ver">报告版本 V1.0</span><br>
+  分析日期 2026-09-12 · 实测基线 444 passed / 74.08s（Python 3.13.14 项目 .venv）<br>
+  分析手段：全量 AST 静态分析 · 精确依赖图求解（含相对导入）· 循环依赖检测 · 跨文件相似度比对 · 全量测试实跑<br>
+  <b>本次分析为只读操作，未修改任何源码、未增删任何程序文件。</b>
+</footer>
+
+</div>
+</body>
+</html>
