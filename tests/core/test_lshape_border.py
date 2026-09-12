@@ -273,7 +273,7 @@ class TestApplyLshapeBorderCompletion:
         np.testing.assert_array_equal(canvas[80, 100], [255, 255, 255],
                                       err_msg='水平边缘向缺口区内涂色了')
 
-        # 远离边缘的区域（保留区中心）必须保持未涂色
+# 远离边缘的区域（保留区中心）必须保持未涂色
         np.testing.assert_array_equal(canvas[300, 400], [255, 255, 255])
 
     def test_none_material_returns_false(self):
@@ -286,3 +286,37 @@ class TestApplyLshapeBorderCompletion:
             'tl', 200.0, 100.0,
         )
         assert ok is False
+
+    def test_v13_patch_valueerror_falls_back_to_legacy(self, monkeypatch):
+        """[Fix N-P1-01 防回归] V13 patch 抛 ValueError 时必须回退旧路径，不能向调用方逃逸。
+
+        patch_lshape_cut 对"缺口矩形不在画布角落"等几何不一致场景会抛
+        ValueError('缺口矩形不在画布角落...')；N-P1-01 修复后该异常被
+        _apply_v13_path 捕获（返回 False），入口继续向下回退旧路径兜底。
+        本用例通过 monkeypatch 注入 ValueError，验证：
+          - 公开入口不崩溃、不向上抛异常
+          - 回退旧路径仍能成功补全（返回 True），画布切边被涂黑
+        """
+        canvas = self._canvas()
+        src = _make_bordered_material(size=(400, 300), border=20)
+
+        def _boom(c, corner, x0, y0, cw, ch, edge, band, color, black=(0, 0, 0)):
+            raise ValueError('缺口矩形不在画布角落, 请检查 x0/y0/cw/ch 与翻转角的一致性')
+
+        monkeypatch.setattr('core.lshape_border.patch_lshape_cut', _boom)
+
+        ok = apply_lshape_border_completion(
+            canvas,
+            src.resize((800, 600)),
+            RectShape(x=0, y=0, w=800, h=600),
+            'tl', 200.0, 100.0,
+            dpi=150,
+            src_material_img=src,
+            scale_x=2.0,
+            scale_y=2.0,
+        )
+        # 素材确有 20px 黑边 → 回退链兜底成功，返回 True
+        assert ok is True
+        # 垂直切边 x=200 保留区一侧被涂黑（回退路径真实生效的证据）
+        assert canvas[50, 220].max() <= 60, \
+            f'V13 patch 失败后回退路径未补全切边: {canvas[50, 220]}'

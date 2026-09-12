@@ -468,7 +468,12 @@ class TemplateMatcher:
             return False
         return True
 
-    def scan_library(self, force: bool = False) -> dict[str, TemplateEntry]:
+    def scan_library(self, force: bool = False, check_cancel=None) -> dict[str, TemplateEntry]:
+        """扫描模板库目录，返回 {key: TemplateEntry}。
+
+        check_cancel: 可选无参回调，返回 True 表示调用方请求取消扫描；
+        取消时提前返回（磁盘缓存不落盘）。默认 None 行为与旧版一致。
+        """
         if not self._template_dir:
             self._log("⚠️ 未设置模板库目录")
             return {}
@@ -531,7 +536,11 @@ class TemplateMatcher:
 
         # 3) 执行增量扫描
         total_entries_before = len(self._cache)
-        cache_file_count, total_file_count, dirs_scanned, dirs_skipped, did_full_walk = self._do_incremental_scan()
+        cache_file_count, total_file_count, dirs_scanned, dirs_skipped, did_full_walk = self._do_incremental_scan(check_cancel=check_cancel)
+
+        if check_cancel is not None and check_cancel():
+            self._log("[TemplateMatcher] 扫描被取消，提前返回（已扫部分保留，磁盘缓存不落盘）")
+            return self._cache
 
         try:
             self._dir_mtime = os.path.getmtime(self._template_dir)
@@ -575,7 +584,7 @@ class TemplateMatcher:
         )
         return self._cache
 
-    def _do_incremental_scan(self) -> tuple[int, int, int, int, bool]:
+    def _do_incremental_scan(self, check_cancel=None) -> tuple[int, int, int, int, bool]:
         """返回：(updated_count, total_file_count, dirs_scanned, dirs_skipped, did_full_walk)"""
         # 收集所有子目录
         all_dirs: list[str] = []
@@ -613,6 +622,8 @@ class TemplateMatcher:
         existing_keys_in_scanned_dirs: set[str] = set()
 
         for d in dirs_to_scan:
+            if check_cancel is not None and check_cancel():
+                return updated_count, total_file_count, len(dirs_to_scan), dirs_skipped, False
             try:
                 with os.scandir(d) as it:
                     entries = list(it)
@@ -620,6 +631,8 @@ class TemplateMatcher:
                 entries = []
 
             for entry in entries:
+                if check_cancel is not None and check_cancel():
+                    return updated_count, total_file_count, len(dirs_to_scan), dirs_skipped, False
                 try:
                     if entry.is_file(follow_symlinks=False):
                         total_file_count += 1

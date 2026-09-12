@@ -596,6 +596,11 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                 widths = data.get('width', [0] * n)
                 heights = data.get('height', [0] * n)
                 for i in range(n):
+                    # [Fix N-P0-01 补漏] OCR token 遍历内层循环检查取消/超时，
+                    # 避免大文本图（n 极大）在 token 处理阶段长时间无响应
+                    if check_cancel is not None and check_cancel():
+                        logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止 token 遍历")
+                        return result
                     raw = _normalize_ocr_text(str(texts[i]))
                     if not raw:
                         continue
@@ -691,6 +696,10 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             psm_small = [10, 7]
             lang_small = 'chi_sim+eng'
             for psm_s in psm_small:
+                # [Fix N-P0-01 补漏] 小数字补漏每次 OCR 前检查取消/超时
+                if check_cancel is not None and check_cancel():
+                    logger.info("[_extract_direction_label_numbers] 检测到取消/超时，终止小数字补漏循环")
+                    return result
                 try:
                     data_s = tesseract.image_to_data(
                         pil_s60, lang=lang_small,
@@ -789,6 +798,11 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
             logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
             pil_s3 = None
         if pil_s3 is not None:
+            # [Fix N-P0-01 补漏] Phase 3 OCR 调用前检查取消/超时，
+            # 避免已取消/超时时仍启动一次最长 _PARSE_TIMEOUT_SEC 的 OCR 阻塞
+            if check_cancel is not None and check_cancel():
+                logger.info("[_extract_direction_label_numbers] 检测到取消/超时，跳过 Phase3 OCR")
+                return result
             dir_tokens_s3 = []   # [(char, cx, cy, bbox_h)]
             num_tokens_s3 = []   # [(value, cx, cy, bbox_h, conf)]
             try:

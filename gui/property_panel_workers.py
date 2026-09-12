@@ -52,7 +52,10 @@ class _WarmupScanWorker(QThread):
             abs_dir = os.path.abspath(self._template_dir)
             if self._matcher.get_template_dir() != abs_dir:
                 self._matcher.set_template_dir(abs_dir)
-            self._matcher.scan_library(force=False)
+            self._matcher.scan_library(force=False, check_cancel=self.isInterruptionRequested)
+            if self.isInterruptionRequested():
+                logger.info("[WarmupScan] 扫描被取消，丢弃结果")
+                return
             dt = time.time() - t0
             self.finished_ok.emit(len(self._matcher._cache), dt)
         except Exception as e:

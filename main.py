@@ -530,6 +530,11 @@ def main():
     #   在退出时被析构导致堆损坏
     app.aboutToQuit.connect(w.cropper.shutdown)
     app.aboutToQuit.connect(w.canvas.shutdown)
+    # [Fix N-P0-02 补齐] aboutToQuit 同步接管 PropertyPanel / LShapePanel 后台线程，
+    #   与 closeEvent 的 panel.shutdown()/lshape_panel.shutdown() 对齐，
+    #   覆盖非 closeEvent 退出路径（如系统注销/崩溃恢复），彻底关闭 N-P0-02。
+    app.aboutToQuit.connect(w.panel.shutdown)
+    app.aboutToQuit.connect(w.lshape_panel.shutdown)
     sys.exit(app.exec_())
 
 
