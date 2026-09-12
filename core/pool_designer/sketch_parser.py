@@ -456,6 +456,19 @@ def parse_sketch(
         result.message = reason
         return result
 
+    # [P2-07] 缓存查询提前：多洞解析结果同样写入 _SKETCH_CACHE（原实现：
+    # 多洞成功直接 return、从不写缓存，导致同一多洞草图重复解析 9 步 OCR）。
+    # 缓存 key 含 mtime + target + _ALGO_VERSION，命中语义与单洞路径完全一致。
+    cached = _get_cached_result(image_path, target_outer_w_cm, target_outer_h_cm)
+    if cached is not None:
+        return cached
+    # 只有在没有目标尺寸时才使用一致缓存（目标尺寸不同时需要重新解析）
+    if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
+        consistent = _get_consistent_cached_result(image_path)
+        if consistent is not None:
+            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent)
+            return consistent
+
     # ===== [多洞扩展 2026-08-29] 入口分流 =====
     # 原则：先快速尝试多洞路径（_classify_hole_layout <5ms），
     # 若草图判定为多洞 → 走 9 步多洞解析；
@@ -506,6 +519,7 @@ def parse_sketch(
             logger.info(f"[parse_sketch] 多洞路径成功: layout={result.layout_type} "
                         f"outer={result.outer_w_cm:.1f}x{result.outer_h_cm:.1f} "
                         f"holes={len(result.holes)}")
+            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result)
             return result
         else:
             # 非多洞布局 → 静默回退到单洞 7 步法（不打日志打扰用户）
@@ -530,15 +544,6 @@ def parse_sketch(
         return result
     gray = _to_gray(img)
 
-    cached = _get_cached_result(image_path, target_outer_w_cm, target_outer_h_cm)
-    if cached is not None:
-        return cached
-    # 只有在没有目标尺寸时才使用一致缓存（目标尺寸不同时需要重新解析）
-    if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
-        consistent = _get_consistent_cached_result(image_path)
-        if consistent is not None:
-            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent)
-            return consistent
 
     # 注：文件合法性已在函数开头（解码前）通过 validate_sketch_file 校验，
     # 此处不再重复校验，避免对超大/坏图做无意义的解码。

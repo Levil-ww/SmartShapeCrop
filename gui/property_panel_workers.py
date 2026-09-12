@@ -19,6 +19,7 @@ from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from PIL import Image
 
 from core.geometry import CropDesign, BorderLayer, BorderText
+from core.config import CUT_LOSS_CM
 from core.parser.name_parser import parse_filename
 from core.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
@@ -420,7 +421,7 @@ class PoolRenderWorker(QThread):
                     self._log(f"应用用户手动修改的边距：{', '.join(changed)}")
 
             # 4) 构建 CropDesign
-            #    画布尺寸 = 目标尺寸 + 1cm 损耗（裁剪余料用）
+            TRIM_CM = CUT_LOSS_CM
             TRIM_CM = 1.0
             self.progress.emit(85, "构建设计参数…")
             design = CropDesign()

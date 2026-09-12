@@ -63,10 +63,10 @@ from .sketch_parser_vision import (
 # (同时覆盖 Unicode 箭头和常见 OCR 误读替代字符)
 _ARROW_CHAR_MAP = {
     # 左向箭头
-    '←': 'margin_left', '←': 'margin_left', '↺': 'margin_left',
+    '←': 'margin_left', '↺': 'margin_left',
     '<': 'margin_left', '«': 'margin_left',
     # 右向箭头
-    '→': 'margin_right', '↑': 'margin_right', '↻': 'margin_right',
+    '→': 'margin_right', '↻': 'margin_right',
     '>': 'margin_right', '»': 'margin_right',
     # 上向箭头
     '↑': 'margin_top', '↖': 'margin_top', '↗': 'margin_top',

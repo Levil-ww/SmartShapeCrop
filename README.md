@@ -29,7 +29,7 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具�
 - **L 形挖角素材边框自动补全**（V2.2）：沿 L 形两条新切边按素材原始边框层次重绘，内凹角用 `max(dx, dy)` 几何分层保证边框沿 L 形轮廓连续
 - **三级边框路由**（V2.2）：Profile 路径 → V13 路径 → 旧 detect_pool_material_borders 路径，任一环节失败自动落到下一环节，向后兼容
 - **模板库缓存预热**（V2.2）：目录 mtime 持久化到磁盘缓存，未变化时快速跳过（2ms）；主线程不阻塞预热
-- **GUI 防抖渲染（已弃用）**：~~SpinBox 参数修改采用 200ms 防抖延迟（`QTimer.singleShot`）~~ valueChanged 已全部 DISCONNECTED，参数修改改为显式按钮驱动（`一键生成`/`预览`）即时响应；200ms 防抖 + 800ms max-wait 机制保留在 `_schedule_apply_quiet` 中但当前无活跃调用方
+- **GUI 防抖渲染（已整体删除，N-P2-13）**：~~SpinBox 参数修改采用 200ms 防抖延迟（`QTimer.singleShot`）~~ valueChanged 已全部 DISCONNECTED，参数修改改为显式按钮驱动（`一键生成`/`预览`）即时响应；防抖链（`_init_apply_debouncer`/`_schedule_apply_quiet`/`_flush_apply_quiet`）已整体移除
 - **预览/导出质量区分**：预览用 BILINEAR（快 3-5×），导出用 LANCZOS
 - **参数修改即时响应**：尺寸/边距等常用参数已改为显式按钮驱动即时生成（`一键生成`/`预览`），避免实时 valueChanged 回调的堆积阻塞
 - **历史记录功能**：目标文件名 3 天历史记录，三个面板物理隔离独立存储
@@ -98,7 +98,7 @@ SmartShapeCrop/
 │   ├── property_panel_layers.py   #   多层边框编辑 UI
 │   └── property_panel_poolbox.py   #   多洞参数面板 + 草图识别与边距回填调度
 │
-├── tests/                          # 单元测试（pytest，以实跑结果为准；2026-09-11 失效测试清理后实测 430 passed / 0 skipped）
+├── tests/                          # 单元测试（pytest，以实跑结果为准；2026-09-12 P2 轮复验实测 444 passed / 0 skipped）
 │   ├── conftest.py
 │   ├── core/                       #   核心模块测试（圆角/裁剪/文件名解析/模板匹配/L 形渲染/草图解析/边框补全）
 │   │   ├── test_rounded_corner.py
@@ -232,7 +232,7 @@ python process_image.py --src "D:\path\to\源图.jpg" --out-dir "D:\path\to\out"
 ### 运行测试
 
 ```bash
-# 全部测试（实测 430 passed / 0 skipped，约 43 秒）
+# 全部测试（实测 444 passed / 0 skipped，约 42 秒）
 python -m pytest tests/ -q
 
 # 仅圆角测试
@@ -289,7 +289,7 @@ python packaging/packageV2.2.py --no-tesseract
 - **L 形挖角独立 GUI 面板**：从水池设计器拆出独立标签页（`gui/lshape_panel.py`），草图上传 + 目标文件名 + 一键生成，独立历史记录源
 - **模板库缓存预热**：目录 mtime 持久化，未变化快速跳过；主线程不阻塞
 - **GUI 防抖渲染（已弃用）**：~~SpinBox 等参数修改 200ms 延迟 / 800ms 最大等待~~
-  2026-09-11 修复：valueChanged 已全部 DISCONNECTED，参数修改改为显式按钮驱动（`一键生成`/`预览`），避免实时回调堆积阻塞；200ms 防抖仅在图层/边框批量修改时保留，无 800ms 最大等待机制
+  2026-09-11 修复：valueChanged 已全部 DISCONNECTED，参数修改改为显式按钮驱动（`一键生成`/`预览`），避免实时回调堆积阻塞；防抖链已整体移除（N-P2-13），无 200ms 延迟、无 800ms 最大等待机制
 
 **核心修复**：
 
@@ -657,7 +657,7 @@ python main.py
 
 ### 测试
 
-测试位于 `tests/` 目录，按模块分子目录组织，使用 pytest 框架。实测基线（2026-09-11，失效测试清理后）：**430 passed / 0 skipped / 0 failed**（27 个文件 · 342 个用例）。
+测试位于 `tests/` 目录，按模块分子目录组织，使用 pytest 框架。实测基线（2026-09-12，P2 级技术债修复后复验）：**444 passed / 0 skipped / 0 failed**（含 tests/core/test_image_ops_p2.py 新增 14 项）。
 
 > 2026-09-11 清理：修复 4 处「算完不校验」的假绿灯断言、删除 5 个因源图缺失而从未执行过的用例、将 2 个违规命名的调试脚本改为 `_verify_` 前缀。
 > 详见 `ProductSummary/SmartShapeCrop分析报告/SmartShapeCrop-V2.2-失效测试清理报告-20260911.html`。
@@ -741,7 +741,7 @@ python -m pytest tests/integration/ -v
 | 连通分量向量化（np.isin 替代 Python 循环） | 395 连通分量从 12.8s 降至毫秒级 |
 | LOD 降采样调整（scale=0.5 + BILINEAR） | 消除高细节素材马赛克伪影 |
 | JPG 导出异步化（QThread + 可取消） | 消除大图导出 UI 冻结 |
-| GUI 参数修改防抖渲染（200ms 延迟、800ms 最大等待） | 防止 SpinBox 连续改动阻塞主线程 |
+| ~~GUI 参数修改防抖渲染（200ms 延迟、800ms 最大等待）~~（已移除，N-P2-13） | 原为防止 SpinBox 连续改动阻塞主线程；现参数修改为显式按钮驱动 |
 | 模板库 dir_mtime 磁盘缓存 + 信号槽预热 | 未变化时快速跳过（2ms），主线程不阻塞 |
 | L 形挖角边框补全三级路由 | Profile/V13/旧路径自动回退，向后兼容 |
 | Profile 路径锚点对齐 + 三层封顶 | 抗出血白边，V13/旧路径失效素材可补全 |

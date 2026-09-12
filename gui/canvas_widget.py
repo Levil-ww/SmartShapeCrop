@@ -173,13 +173,9 @@ class PreviewCanvas(QWidget):
         render_id = self._last_render_id + 1
         self._last_render_id = render_id
 
-        # 1. 立即渲染 LOD 预览（保证即时反馈）
-        if total_pixels > LOD_PIXEL_THRESHOLD:
-            # 大图直接 LOD
-            self._render_lod()
-        else:
-            # 小图也先用 LOD 快速预览
-            self._render_lod()
+        # 1. 立即渲染 LOD 预览（保证即时反馈）—— 大小图统一先 LOD
+        # [P2-13] 原 if/else 两分支调用完全相同，合并为单次调用。
+        self._render_lod()
 
         self._update_preview_pixmap()
         self.update()

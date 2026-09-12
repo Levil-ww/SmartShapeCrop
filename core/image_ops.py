@@ -5,6 +5,7 @@ core/image_ops.py
 """
 from __future__ import annotations
 import os
+import re
 import logging
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -1397,9 +1398,17 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
 
 
 def _looks_like_tile(path: str) -> bool:
-    """简单启发式：文件名包含 tile/花砖 则默认平铺"""
+    """简单启发式：文件名包含 tile/花砖 则默认平铺。
+
+    [P2-14] 'hua'（花）/ 'zhuan'（砖）由裸子串改为负向后缀正则：
+      - hua(?!n)：排除 "huang"/"huan" 等拼音前缀词的误命中，保留花纹等平铺素材；
+      - zhuan(?!g)：排除 "zhuang"（妆/庄）的误命中，保留瓷砖素材；
+    tile / pattern / 花砖 保持子串语义不变。
+    """
     n = os.path.basename(path).lower()
-    return any(k in n for k in ('tile', 'pattern', 'hua', 'zhuan', '花砖'))
+    if 'tile' in n or 'pattern' in n or '花砖' in n:
+        return True
+    return re.search(r'hua(?!n)|zhuan(?!g)', n) is not None
 
 
 def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
@@ -1692,7 +1701,9 @@ def save_jpg(img: Image.Image, out_path: str, quality: int = 95, dpi: int | tupl
     ext = os.path.splitext(out_path)[1].lower()
     if ext not in ('.jpg', '.jpeg'):
         out_path = os.path.splitext(out_path)[0] + '.jpg'
-    save_kwargs = {'quality': quality, 'optimize': True}
+    # [P2-15] 显式 4:4:4 色度采样（subsampling=0）：避免 JPEG 默认 4:2:0
+    # 对细线/深色素材引入色度模糊与偏色，保证印刷输出色彩准确。
+    save_kwargs = {'quality': quality, 'optimize': True, 'subsampling': 0}
     if dpi is not None:
         # 规范化：允许 int 或 二元 tuple/list；PIL JPEG 需要 (dpi_x, dpi_y) 且每项为可 round 的标量
         if isinstance(dpi, (tuple, list)) and len(dpi) == 2:

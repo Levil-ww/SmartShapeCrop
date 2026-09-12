@@ -11,8 +11,8 @@ L 形挖角设计面板：把 L 形挖角相关的所有 UI 与识别逻辑单�
      与 L 形解析 Worker 调度整体搬来；
   3) 新增草图上传 + 目标文件名 + 一键生成控件（镜像水池设计器），
      通过信号委托给 PropertyPanel 的同名方法，保证调用一致；
-  4) PropertyPanel 通过 set_lshape_params() / sync_sketch_to_lshape() /
-     sync_target_to_lshape() 回填本面板 UI，实现双向同步；
+  4) PropertyPanel 通过 set_lshape_params() / sync_sketch_preview() /
+     sync_target_from_panel() 回填本面板 UI，实现双向同步；
   5) PropertyPanel 通过 get_corner()/get_cut_w_cm()/get_cut_h_cm()
      在 _collect() 中读取本面板挖角参数，与原直读控件语义完全一致。
 """
@@ -30,6 +30,7 @@ from PyQt5.QtWidgets import (
 )
 
 from core.app_settings import get_app_settings
+from core.config import CUT_LOSS_CM
 from .property_panel_widgets import _SketchDropLabel
 from .property_panel_workers import _LShapeParseWorker
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ class LShapePanel(QWidget):
         target_history_pick(str)    —— 用户从历史菜单选中一条记录
         generate_requested()        —— 用户点"匹配模板 → 解析草图 → 生成预览"
         save_requested()             —— 用户点"导出 JPG"（委托 PropertyPanel.save_requested → main._on_save）
-        lshape_params_changed()     —— 用户改动挖角参数（替代原 _apply_quiet）
+        lshape_params_changed()     —— 用户改动挖角参数（信号定义保留，emit 已注释为测试契约保留，见 _on_param_changed）
         lshape_applied(dict)        —— 用户确认 L 形挖角 → 切换模式 + 更新画布 + 预览
         lshape_recognize_started()  —— 用户点"识别 L 形挖角" → 启动后台解析
     """
@@ -429,7 +430,7 @@ class LShapePanel(QWidget):
           - dict['outer_w_cm'] 存设计真值（SpinBox - 1cm）
           - 挖角 SpinBox 存设计值，dict['cut_w_cm'] 直接取 SpinBox
         """
-        _TRIM = 1.0
+        _TRIM = CUT_LOSS_CM
         # 外框：SpinBox 画布值 → dict 设计值
         canvas_outer_w = max(0.0, self._sp_outer_w.value())
         canvas_outer_h = max(0.0, self._sp_outer_h.value())
@@ -605,7 +606,7 @@ class LShapePanel(QWidget):
                 self._sp_lw.setValue(max(0.0, cut_w_cm))
                 self._sp_lh.setValue(max(0.0, cut_h_cm))
                 # 外框尺寸回填到 SpinBox（设计值 + 1cm = 画布值）
-                _TRIM = 1.0
+                _TRIM = CUT_LOSS_CM
                 if result.outer_w_cm > 0:
                     self._sp_outer_w.setValue(max(0.0, float(result.outer_w_cm) + _TRIM))
                 if result.outer_h_cm > 0:
@@ -695,7 +696,7 @@ class LShapePanel(QWidget):
 
         供 PropertyPanel（Worker 回填 / 画布 SpinBox 同步）调用。
         """
-        _TRIM = 1.0
+        _TRIM = CUT_LOSS_CM
         canvas_w = max(5.0, max(0.0, float(outer_w_cm)) + _TRIM)
         canvas_h = max(5.0, max(0.0, float(outer_h_cm)) + _TRIM)
         self._sp_outer_w.blockSignals(True)
