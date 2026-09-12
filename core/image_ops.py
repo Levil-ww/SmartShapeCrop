@@ -1151,8 +1151,11 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     if border_mask.any():
         # [Fix 2026-09-10] L 形 + 池素材：素材已拉伸到 inner_rect，其自身边框
         #   已落在 inner_rect 边缘；统一 10px 黑框会叠加在素材边框上导致黑框
-        #   过粗，且会覆盖 cut 角处的米色色带直角交点。故跳过统一黑框，改由
-        #   border completion 沿 cut 边绘制与素材一致的边框层。
+        #   过粗，且会覆盖 cut 角处的米色色带直角交点。故此处先跳过统一黑框，
+        #   改由 border completion 沿 cut 边绘制与素材一致的边框层。
+        # [Fix 2026-09-12 三层失败掩盖] 此跳过不是永久的：若 Step 3.6 三层回退
+        #   （V13 → Profile → 旧路径）全部失败（_completion_ok=False），
+        #   会在 Step 3.6 末尾补画统一黑框兜底，保证切口至少有一条边框。
         _skip_unified = design.mode == 'rect_lshape' and is_pool_with_material
         if _dbg:
             logger.info(
@@ -1176,6 +1179,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             f"[DEBUG-RD] STEP3.6 border_completion={_do_completion} "
             f"(mode={design.mode!r} is_pool={is_pool_with_material} tile={_is_tile})")
     if _do_completion:
+        _completion_ok = False  # 兜底初值；异常/失败时保持 False（三层失败掩盖修复）
         try:
             from .lshape_border import apply_lshape_border_completion
 
@@ -1249,6 +1253,18 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
                 logger.info("[LShapeBorder] 边框补全未返回成功，切口依赖统一黑框兜底")
         except Exception as _bc_e:
             logger.debug(f"[LShapeBorder] 补全过程异常（静默跳过）: {_bc_e}")
+        # ===== [Fix 2026-09-12 三层失败掩盖] 三层回退全失败 -> 统一黑框兜底 =====
+        # 背景：V13 patch 失败 -> Profile 失败 -> 旧路径失败/无边框层时
+        # _completion_ok=False，但 Step 3.5 仍跳过统一黑框 -> 切口无任何边框
+        # （三层失败被掩盖成"看起来正常"）。现在补画统一黑框（等价于回到
+        # 2026-09-10 引入 skip 之前的历史兜底行为），保证切口至少有一条边框。
+        # 仅 completion 失败时触发；成功时跳过逻辑保持 2026-09-10 语义不变。
+        if not _completion_ok and border_mask.any():
+            logger.info(
+                "[LShapeBorder] 三层补全均未成功，补画统一黑框兜底 "
+                f"(border_mask={border_mask.sum()}px)")
+            canvas_arr[border_mask] = BLACK_RGB
+        # ===== [END 三层失败掩盖] =====
 
     # ===== [SINGLE-HOLE Add-On 2026-08-31 V2] Stale-Decor Universal Residual Cleaner =====
     # （仅 rect_hole 单洞素材填充模式，零侵入 try/except 静默失败）

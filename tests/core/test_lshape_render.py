@@ -387,6 +387,79 @@ def test_lshape_outer_image_with_borders():
         os.unlink(test_img_path)
 
 
+
+def _make_lshape_material_design(mat_path):
+    """构造 rect_lshape + 池素材设计（素材文件名避开 tile 关键字）。"""
+    return CropDesign(
+        canvas_w_cm=30.0, canvas_h_cm=20.0, dpi=150,
+        mode='rect_lshape',
+        outer_margin_cm=0.5,
+        inner_margin_top_cm=2.0, inner_margin_bottom_cm=2.0,
+        inner_margin_left_cm=2.0, inner_margin_right_cm=2.0,
+        l_corner='br', l_cut_w_cm=8.0, l_cut_h_cm=6.0,
+        pool_outer_material_image=str(mat_path),
+        hole_bg_color=(255, 255, 255),
+        outer_bg_color=(200, 0, 0),
+    )
+
+
+def _sample_left_border(arr, design):
+    """inner_rect 左边框环带内侧采样（border_width_px=10，取内侧 3px 中段）。"""
+    inner_rect = design.inner_rect_px()
+    sx = int(inner_rect.x) + 3
+    sy = (int(inner_rect.y) + int(inner_rect.bottom)) // 2
+    return tuple(int(v) for v in arr[sy, sx])
+
+
+def test_lshape_pool_material_completion_failure_gets_unified_black(tmp_path, monkeypatch):
+    """[Fix 2026-09-12 三层失败掩盖] L 形+池素材：三层回退全失败时统一黑框必须兜底画上。
+
+    此前 _skip_unified 只要 rect_lshape+池素材就无条件跳过统一黑框；当 V13 patch
+    -> Profile -> 旧路径三层全部失败（_completion_ok=False）时，切口/边框带无任何
+    边框，三层失败被掩盖成"看起来正常"。修复后统一黑框兜底补画，本用例锁定：
+    completion 失败（返回 False）-> 左边框环带采样点必须是黑。
+    """
+    mat = tmp_path / 'creamy_mat.png'
+    Image.new('RGB', (60, 60), (220, 220, 220)).save(mat)
+    design = _make_lshape_material_design(mat)
+
+    # 锁定"三层回退全失败"：completion 直接返回 False（无边框素材的真实失败路径亦如此）
+    monkeypatch.setattr(
+        'core.lshape_border.apply_lshape_border_completion',
+        lambda **kw: False,
+    )
+
+    result = render_design(design, quality='export')
+    arr = np.array(result)
+    px = _sample_left_border(arr, design)
+    assert max(px) < 50, (
+        f'三层补全失败后应画统一黑框兜底（左边框环带应为黑），实际采样 {px}'
+    )
+
+
+def test_lshape_pool_material_completion_success_still_skips_unified_black(tmp_path, monkeypatch):
+    """[Fix 2026-09-12 三层失败掩盖] 对照组：completion 成功时仍跳过统一黑框。
+
+    素材自身边框落在 inner_rect 边缘，统一黑框会叠加过粗且覆盖 cut 角色带交点；
+    2026-09-10 起"补全成功则跳过统一黑框"的语义必须保持——本修复只补兜底，
+    不改变成功路径行为。
+    """
+    mat = tmp_path / 'creamy_mat2.png'
+    Image.new('RGB', (60, 60), (220, 220, 220)).save(mat)
+    design = _make_lshape_material_design(mat)
+
+    monkeypatch.setattr(
+        'core.lshape_border.apply_lshape_border_completion',
+        lambda **kw: True,
+    )
+
+    result = render_design(design, quality='export')
+    arr = np.array(result)
+    px = _sample_left_border(arr, design)
+    assert min(px) > 150, (
+        f'补全成功时不应画统一黑框（左边框保持素材浅色），实际采样 {px}'
+    )
+
 if __name__ == '__main__':
     test_basic_lshape_render()
     test_lshape_with_corners()

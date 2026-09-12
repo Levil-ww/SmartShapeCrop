@@ -14,12 +14,12 @@
 | 维度 | 结论 |
 |---|---|
 | 总体评价 | 功能完整、算法基础扎实、测试与文档习惯远优于同类内部工具；短期整改已基本落地，GUI 线程生命周期主要缺口已收敛 |
-| 测试基线 | 整改后复跑 **431 passed / 0 skipped / 0 failed**（42.71s），全绿，无回归 |
-| 短期整改复验 | **6 项全部合格 + 短期收尾 4/4 全完成**：N-P0-02 关闭接管 ✅、N-P0-01 OCR deadline ✅、N-P1-01 V13 回退 ✅、N-P1-05 warmup ✅、打包归档 ✅、README 同步 ✅；收尾项 aboutToQuit / V13单测 / numbers补漏 / warmup中断 全部完成 |
+| 测试基线 | 整改后复跑 **433 passed / 0 skipped / 0 failed**（43.05s），全绿，无回归 |
+| 短期整改复验 | **短期 6 项 + 收尾 4 项 + 三层失败掩盖 全部完成**：N-P0-02 关闭接管 ✅、N-P0-01 OCR deadline ✅、N-P1-01 V13 回退 ✅、N-P1-05 warmup ✅、打包归档 ✅、README 同步 ✅、三层失败掩盖 ✅ |
 | 历史 P0×9 复检 | **2 项已修复**（P0-00 打包、P0-05 部分）、**1 项引入回归已修复**（N0-01 cropper 二次操作必现崩溃）、2 项实质改进未闭环（P0-04 OCR deadline）、**4 项仍存在**（P0-01/02/03/06） |
 | 本轮新增 | P0×2（OCR 循环无整体超时最坏 ~29 分钟；主窗口关闭未接管 4 类后台线程 = 0xC0000409 首选根因）、P1×7、P2×14 |
 | 崩溃专项 | 今日无复发（crash.log 不存在、日志无 ERROR）；历史符号 `safe_area`/`drawCrosshairCircle` 已不存在；最可能根因（running QThread 析构）已通过 closeEvent + aboutToQuit 双通道修复 |
-| 最高优先整改 | 短期 6 项 + 收尾 4 项均已完成 ✅；下一步推进中期内存收敛与并发安全（N-P1-02/04） |
+| 最高优先整改 | 短期 + 收尾 + 三层失败掩盖均已完成 ✅；下一步推进中期大图内存收敛（N-P1-02） |
 
 ---
 
@@ -310,7 +310,7 @@
    - ✅ numbers.py 补漏内层循环 + Phase 3 已接入 check_cancel（短期收尾第 3 项）
    - ✅ `_WarmupScanWorker.run` 已实现中断检查（短期收尾第 4 项）
    - ⚠️ **残留**：lshape 后续函数 `_assign_labels_by_geometry`/`_resolve_dimensions`/`_score_consistency` 无 deadline（几何解析阶段，非 OCR，耗时短）
-3. ✅ **V13 绘制级回退（N-P1-01）**：546/594 改为失败继续回退 + image_ops.py:1234 返回值接入真值 + V13 ValueError 单测（短期收尾第 2 项）
+3. ✅ **V13 绘制级回退（N-P1-01）**：546/594 改为失败继续回退 + image_ops.py:1234 返回值接入真值 + V13 ValueError 单测（短期收尾第 2 项）+ 三层失败掩盖消除（中期第 9 项，`_completion_ok=False` 时补画统一黑框兜底）
 4. ✅ **warmup 强杀与连点竞态（N-P1-05）**：退役改 requestInterruption + deleteLater + finished 连接前 disconnect
 5. ✅ **打包归档**：packageV2.1.2.py 已归档至 packaging/legacy/
    - ⚠️ V2.2.exe 端到端冒烟未验证（环境限制）
@@ -336,7 +336,7 @@
    - 方案 B（复杂）：接线 R_eff 逐层递减，激活 B 段，修正 corner_protect_map 逻辑
 7. **template_matcher 加锁（N-P1-04）** + lshape_border_route 模块状态隔离：core/parser/template_matcher.py 加 `threading.RLock` 保护评分写入；lshape_border_route.py 模块级状态改为实例级
 8. **正确性补丁包**：N1-01 坐标钳制、P1-02 逐侧数量级、P1-03 350×scale、N-P2-04 厚度截断、P1-01 采样 clip（5 项分散小修，逐项补单测）
-9. **消除三层失败掩盖**（与 V13 联动）：`_skip_unified` 改为"补全成功才跳过统一黑框"——当前 V13 回退后 `_completion_ok=False` 时仍跳过统一黑框，切口缺边框兜底
+9. **消除三层失败掩盖**（与 V13 联动）✅：`_skip_unified` 改为"补全成功才跳过统一黑框"，三层回退全失败时补画统一黑框兜底（image_ops.py:1256-1267）。配套 2 个测试：失败兜底 + 成功仍跳过
 
 ### 长期（技术债）
 
@@ -350,20 +350,20 @@
 
 ## 九、结论
 
-项目**功能完整、算法正确性基础扎实**。短期整改 6 项 + 收尾 4 项全部完成，431 测试全绿（42.71s），无回归。
+项目**功能完整、算法正确性基础扎实**。短期整改 6 项 + 收尾 4 项 + 三层失败掩盖全部完成，433 测试全绿（43.05s），无回归。
 
 **整改前三大威胁的处置状态**：
 
-1. ✅ **关闭窗口触发 running QThread 析构（N-P0-02）** —— closeEvent + aboutToQuit 双通道接管全部 4 类 worker，property_panel/lshape_panel.shutdown() 已实现
-2. ✅ **OCR 假死（N-P0-01）** —— check_cancel 机制已穿透所有 OCR 循环（vision/numbers 主循环+补漏+Phase3 / lshape OCR 阶段）；lshape 几何解析阶段无 deadline 但耗时短不构成假死；面板文案已修正；warmup 中断检查已实现
-3. ✅ **V13 回退断裂（N-P1-01）** —— 绘制级回退已修复，image_ops 返回值已接入，补 ValueError 回归单测
+1. ✅ **关闭窗口触发 running QThread 析构（N-P0-02）** —— closeEvent + aboutToQuit 双通道接管全部 4 类 worker
+2. ✅ **OCR 假死（N-P0-01）** —— check_cancel 机制已穿透所有 OCR 循环；warmup 中断检查已实现；lshape 几何阶段无 deadline 但耗时毫秒级
+3. ✅ **V13 回退断裂 + 三层失败掩盖（N-P1-01）** —— 绘制级回退已修复 + 返回值接入 + ValueError 单测 + 三层全失败时统一黑框兜底
 
-**整改合格度判断**：短期 6 项全部合格 + 收尾 4 项全部完成。核心崩溃路径完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"所有 OCR 循环均可取消、几何阶段无 deadline 但耗时毫秒级"。V13 静默失效已消除并补防回归测试。README 主要漂移已修正。
+**整改合格度判断**：短期 6 项 + 收尾 4 项 + 三层失败掩盖全部完成。核心崩溃路径完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"所有 OCR 循环均可取消"。V13 回退链完整闭环（回退 + 返回值 + 单测 + 兜底）。README 主要漂移已修正。
 
 **下一步修复建议（按优先级排序）**：
 
-1. **最优先（1 周内）**：消除三层失败掩盖（中期第 9 项）——当前 V13 回退后 `_completion_ok=False` 时 `_skip_unified` 仍为 True，切口缺边框兜底，是 V13 回退修复链的最后一环
-2. **中期（2-4 周）**：按 5→6→7→8 顺序推进——大图内存收敛（用户可感知的性能提升）→ 嵌套矩形删死代码（简化维护面）→ template_matcher 加锁（消除并发隐患）→ 正确性补丁包（逐项修复）
+1. **最优先（1 周内）**：推进中期大图内存收敛（第 5 项）——4 处 float64 全图转换 + LOD deepcopy 是用户可感知的性能瓶颈，大尺寸素材下内存占用和耗时都有显著改善空间
+2. **中期（2-4 周）**：按 5→6→7→8 顺序推进——大图内存收敛 → 嵌套矩形删死代码（简化维护面）→ template_matcher 加锁（消除并发隐患）→ 正确性补丁包（逐项修复）
 3. **长期技术债**：阈值收敛、死代码清理、双入口收敛等可在功能迭代间隙穿插进行，不阻塞主路径
 
 ---
