@@ -63,7 +63,18 @@ def _is_real_border(
         return False
 
     w, h = src_img.size
-    arr = np.array(src_img, dtype=np.float64)
+    # [Fix 2026-09-12 N-P1-02] 降采样避免全图 float64（2亿像素≈4.8GB）。
+    # 边缘/中心均值在降采样后统计稳定，中位色不受影响。
+    MAX_SIDE = 200
+    if max(w, h) > MAX_SIDE:
+        scale = MAX_SIDE / max(w, h)
+        img_small = src_img.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            Image.BILINEAR,
+        )
+        arr = np.array(img_small, dtype=np.float64)
+    else:
+        arr = np.array(src_img, dtype=np.float64)
     H, W = arr.shape[:2]
     if H < 20 or W < 20:
         return False
@@ -120,7 +131,18 @@ def _filter_content_layers(
     if len(border_layers) <= 1:
         return border_layers
 
-    arr = np.array(src_img, dtype=np.float64)
+    # [Fix 2026-09-12 N-P1-02] 降采样避免全图 float64。
+    MAX_SIDE = 200
+    w, h = src_img.size
+    if max(w, h) > MAX_SIDE:
+        scale = MAX_SIDE / max(w, h)
+        img_small = src_img.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            Image.BILINEAR,
+        )
+        arr = np.array(img_small, dtype=np.float64)
+    else:
+        arr = np.array(src_img, dtype=np.float64)
     H, W = arr.shape[:2]
     # 中心区域（剔除边缘 10% 后的中间 80%）
     m0, m1 = int(H * 0.1), int(H * 0.9)

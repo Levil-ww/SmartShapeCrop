@@ -30,7 +30,6 @@ from .corner.detection import (
     _detect_border_layers,
     _get_border_layers_robust,
     _scan_edge_boundaries,
-    detect_nested_rect_layers,
     classify_gap_layers,
     get_solid_border_colors,
     GAP_MAX_THICKNESS_GLOBAL,
@@ -317,14 +316,12 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             border_layers = []
             print("[FILTER] removed only outer-bg layer, empty result")
 
-    # ===== [新增] 检测嵌套矩形层（用于逐层有效半径递减 + 内层直角保护）=====
-    try:
-        nested_rects = detect_nested_rect_layers(img, border_layers=border_layers)
-    except Exception as e:
-        logger.warning(f"嵌套矩形层检测失败: {e}")
-        nested_rects = []
-    if not nested_rects:
-        nested_rects = [(0, 0, w - 1, h - 1)]
+    # [Fix 2026-09-12 N-P1-03] 嵌套矩形检测已移除（死代码清理）。
+    # 原因：corner_protect_map 对所有圆角角恒为 True（r_px > 0），
+    #   导致 image_cropper_mask.py:297 保护模式恒跳过 nested_rects 处理段（B 段），
+    #   所有嵌套矩形扫描结果（含逐层 R_eff 递减逻辑）永不被执行，白耗内存与 CPU。
+    #   README:270-273 宣称的"R_eff 逐层递减"实际未接线，属文档漂移。
+    # 移除后统一走保护模式：只裁剪边框条带，内部图案保持直角。
 
     # 构建 corners_px 字典
     corners_px = {}
@@ -341,17 +338,29 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # 计算 content_ref_arr（从图像中心采样内容参考色，与 sector_render 保持一致）
     content_ref_arr = None
     if img is not None:
-        img_arr = np.array(img, dtype=np.float64)
-        h_img, w_img = img_arr.shape[:2]
-        cx_start = int(w_img * 0.15)
-        cx_end = int(w_img * 0.85)
-        cy_start = int(h_img * 0.15)
-        cy_end = int(h_img * 0.85)
+        # [Fix 2026-09-12 N-P1-02] 降采样避免全图 float64（2亿像素≈4.8GB）。
+        # 策略：最长边>200px时缩放到200px级别再转float64；中位色稳定。
+        MAX_SIDE = 200
+        w_img, h_img = img.size
+        if max(w_img, h_img) > MAX_SIDE:
+            scale = MAX_SIDE / max(w_img, h_img)
+            img_small = img.resize(
+                (max(1, int(w_img * scale)), max(1, int(h_img * scale))),
+                Image.BILINEAR,
+            )
+            img_f = np.array(img_small, dtype=np.float64)
+        else:
+            img_f = np.array(img, dtype=np.float64)
+        h_arr, w_arr = img_f.shape[:2]
+        cx_start = int(w_arr * 0.15)
+        cx_end = int(w_arr * 0.85)
+        cy_start = int(h_arr * 0.15)
+        cy_end = int(h_arr * 0.85)
         STEPS = 21
-        xs = np.linspace(cx_start, cx_end, STEPS, dtype=np.int64).clip(0, w_img - 1)
-        ys = np.linspace(cy_start, cy_end, STEPS, dtype=np.int64).clip(0, h_img - 1)
+        xs = np.linspace(cx_start, cx_end, STEPS, dtype=np.int64).clip(0, w_arr - 1)
+        ys = np.linspace(cy_start, cy_end, STEPS, dtype=np.int64).clip(0, h_arr - 1)
         gx, gy = np.meshgrid(xs, ys)
-        samples = img_arr[gy, gx, :].reshape(-1, 3)
+        samples = img_f[gy, gx, :].reshape(-1, 3)
         if samples.shape[0] > 0:
             content_ref_arr = np.median(samples, axis=0)
 
@@ -374,7 +383,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # 仅使用最外层边框层定义 border_zone，确保内层图案/矩形框/文字带保持直角。
     # [Fix INV-1] 传递实际 bg_color 和 content_ref_arr，确保 classify_gap_layers 判定一致
     mask = _build_multi_layer_corner_mask(
-        w, h, corners_px, outermost_layers, nested_rects=nested_rects,
+        w, h, corners_px, outermost_layers,
         protect_content=corner_protect_map,
         bg_color=bg_color,
         content_ref_arr=content_ref_arr,

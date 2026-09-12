@@ -1,7 +1,7 @@
 # SmartShapeCrop 全面审查总结与建议报告
 
-- **审查日期**：2026-09-11（初版） / 2026-09-11（整改验证更新）
-- **被审查版本**：V2.2（git HEAD `33dc81e`，master，2026-09-11 13:35；工作区有未提交修改，涉及短期整改 6 项）
+- **审查日期**：2026-09-11（初版） / 2026-09-12（中期整改验证更新）
+- **被审查版本**：V2.2（git HEAD `33dc81e`，master，2026-09-11 13:35；工作区有未提交修改，涉及短期整改 6 项 + 收尾 4 项 + 三层失败掩盖 + 中期 2 项）
 - **审查方式**：只读审查（未修改任何源码）+ 运行验证（全量测试）→ 整改后复验（全量测试 + 逐项代码核查）
 - **审查范围**：全部源码（core / gui / tests / packaging / 配置与文档），core+gui 约 1.4 万行 Python；两个深度审查子代理分别细读「core 图像处理链路」与「草图识别 + GUI 线程层」
 - **基线**：实测 `pytest tests/` **430 passed / 0 skipped / 0 failed**（51.91s），全绿
@@ -13,13 +13,13 @@
 
 | 维度 | 结论 |
 |---|---|
-| 总体评价 | 功能完整、算法基础扎实、测试与文档习惯远优于同类内部工具；短期整改已基本落地，GUI 线程生命周期主要缺口已收敛 |
-| 测试基线 | 整改后复跑 **433 passed / 0 skipped / 0 failed**（43.05s），全绿，无回归 |
-| 短期整改复验 | **短期 6 项 + 收尾 4 项 + 三层失败掩盖 全部完成**：N-P0-02 关闭接管 ✅、N-P0-01 OCR deadline ✅、N-P1-01 V13 回退 ✅、N-P1-05 warmup ✅、打包归档 ✅、README 同步 ✅、三层失败掩盖 ✅ |
-| 历史 P0×9 复检 | **2 项已修复**（P0-00 打包、P0-05 部分）、**1 项引入回归已修复**（N0-01 cropper 二次操作必现崩溃）、2 项实质改进未闭环（P0-04 OCR deadline）、**4 项仍存在**（P0-01/02/03/06） |
+| 总体评价 | 功能完整、算法基础扎实、测试与文档习惯远优于同类内部工具；短期整改已基本落地，中期内存收敛与死代码清理已完成，GUI 线程生命周期主要缺口已收敛 |
+| 测试基线 | 整改后复跑 **433 passed / 0 skipped / 0 failed**（42.71s），全绿，无回归 |
+| 短期整改复验 | **短期 6 项 + 收尾 4 项 + 三层失败掩盖 + 中期 2 项 全部完成**：N-P0-02 关闭接管 ✅、N-P0-01 OCR deadline ✅、N-P1-01 V13 回退 ✅、N-P1-05 warmup ✅、打包归档 ✅、README 同步 ✅、三层失败掩盖 ✅、大图内存收敛 ✅、嵌套矩形删死代码 ✅ |
+| 历史 P0×9 复检 | **4 项已修复**（P0-00 打包、P0-02 大图 float64、P0-03 嵌套矩形死代码、P0-05 部分）、**1 项引入回归已修复**（N0-01 cropper 二次操作必现崩溃）、2 项实质改进未闭环（P0-04 OCR deadline）、**2 项仍存在**（P0-01/06） |
 | 本轮新增 | P0×2（OCR 循环无整体超时最坏 ~29 分钟；主窗口关闭未接管 4 类后台线程 = 0xC0000409 首选根因）、P1×7、P2×14 |
 | 崩溃专项 | 今日无复发（crash.log 不存在、日志无 ERROR）；历史符号 `safe_area`/`drawCrosshairCircle` 已不存在；最可能根因（running QThread 析构）已通过 closeEvent + aboutToQuit 双通道修复 |
-| 最高优先整改 | 短期 + 收尾 + 三层失败掩盖均已完成 ✅；下一步推进中期大图内存收敛（N-P1-02） |
+| 最高优先整改 | 短期 + 收尾 + 三层失败掩盖 + 中期内存收敛/死代码清理均已完成 ✅；下一步推进中期 template_matcher 加锁（N-P1-04） |
 
 ---
 
@@ -39,7 +39,7 @@
 2. **OCR 无循环级超时**——最坏场景单张草图可假死约 29 分钟，且不可取消；
 3. **文档/承诺漂移**——README 宣称能力（白色扇形伪影检测、防抖渲染、1-2 亿像素内存）在代码中不存在或不成立。
 
-此外昨日报告的核心问题（V13 回退链、大图 float64、嵌套矩形检测丢弃、matcher 无锁）除打包外均未根治，仅部分缓解。
+此外昨日报告的核心问题（V13 回退链 ✅、大图 float64 ✅、嵌套矩形检测丢弃 ✅、matcher 无锁 ❌）中，除 matcher 无锁外均已根治。
 
 ---
 
@@ -79,8 +79,8 @@
 |---|---|---|---|
 | P0-00 | PyInstaller 打包漏收 lshape_border 两模块 + 版本号未更新 | ✅ **已修复** | packageV2.2.py:74,111-112；spec 同源；dist/V2.2.exe 已生成 |
 | P0-01 | L 形路由回退链断裂（V13 失败不回退） | 🔶 **部分修复**（见 N-P1-01） | 检测级已修：V13 返回 None → 回退 Profile/旧路径（lshape_border.py:538-541/586-609）；**绘制级仍断**：V13 命中后 patch 失败直接 return（:546/594） |
-| P0-02 | 大图全图 float64 转换，与 1-2 亿像素宣称冲突 | ❌ **仍存在**（见 N-P1-02） | 活代码 4 处：image_cropper_border.py:344、image_cropper_mask.py:729、lshape_border.py:66/123；每处 2 亿像素 ≈ 4.8GB |
-| P0-03 | 多层嵌套矩形检测结果被丢弃 | ❌ **仍存在**（见 N-P1-03） | corner_protect_map 全角 True（image_cropper_border.py:369-371）→ image_cropper_mask.py:297-298 `pass`，B 段 90 行死代码 |
+| P0-02 | 大图全图 float64 转换，与 1-2 亿像素宣称冲突 | ✅ **已修复**（见 N-P1-02） | 4 处 float64 全部改为降采样（MAX_SIDE=200）后转换；LOD deepcopy 改用 clone() 共享 _cached_outer_image |
+| P0-03 | 多层嵌套矩形检测结果被丢弃 | ✅ **已修复**（见 N-P1-03） | 方案 A 执行：删除 detect_nested_rect_layers 调用 + B 段 90 行死代码 + dead import/parameter/docstring 清理 |
 | P0-04 | OCR 循环无真实 deadline | 🔶 **实质改进未闭环**（见 N-P0-01） | deadline 已传入 7 步法（sketch_parser.py:117/128/556 monotonic+20s）与 9 步法（sketch_parser_multihole.py:1519/1536/1935），但 **OCR 循环内无循环级 deadline 检查（tesseract 单次调用有 timeout 但循环间无校验）**，最坏仍 ~29 分钟 |
 | P0-05 | GUI 面板侧 worker 未接入退役协议 | 🔶 **部分修复**（见 N-P0-02） | CropperPanel 已修复（N0-01）；lshape_panel / property_panel_poolbox 已接入（9b710fe）；但 main.py:454-470 关闭时**未接管** PropertyPanel/LShapePanel 4 类 worker；warmup 仍用 terminate 强杀（property_panel_poolbox.py:312-315） |
 | P0-06 | TemplateMatcher 共享实例无锁 | ❌ **仍存在**（见 N-P1-04） | core/parser/ 无任何 threading/Lock/RLock |
@@ -123,7 +123,7 @@
 | P2-08 | pool_mode 字段与 is_pool_mode() 不一致 | ❌ 未复验 |
 | P2-09 | PSD 加载（隐藏层合成/失败静默/导出名序号） | 🔶 c19b85c「PSD 占位图」提交涉及占位逻辑；隐藏层/导出名未确认 |
 | P2-10 | 模板缓存 6 小时上限 | ❌ 未复验 |
-| P2-11 | LOD deepcopy 内存翻倍 | ❌ **仍存在**（本轮确认 image_ops.py:504-506 深拷贝含 `_cached_outer_image` 的 design） |
+| P2-11 | LOD deepcopy 内存翻倍 | ✅ **已修复** | image_ops.py:506 `deepcopy(design)` 改为 `design.clone()`，共享 _cached_outer_image 只读引用 |
 | P2-12 | 根目录卫生 | 🔶 **基本修复**：_dbg_*.png、_debug_v13.py、Test-multiplhole.py 均已清除（剩余 process_image.py 为正常脚本） |
 | P2-13 | 三套历史记录实现重复 / 1cm 常量重复 | ❌ 未复验 |
 | P2-14 | 'hua' 子串误匹配 | ❌ 未复验 |
@@ -181,21 +181,28 @@
 - ✅ `image_ops.py:1237-1238` 异常处理与返回值检查分离，不再只兜 Exception
 - ❌ **未补**：V13 命中但 patch 抛 ValueError 的专项单测尚未新增
 
-#### N-P1-02 · 大图内存峰值 4 处活代码 + LOD 深拷贝（历史 P0-02 / P2-11 精确定位）
+#### N-P1-02 · 大图内存峰值 4 处活代码 + LOD 深拷贝（历史 P0-02 / P2-11 精确定位）✅ 已修复
 
-- 全图 uint8→float64：`image_cropper_border.py:344`、`image_cropper_mask.py:729`（都只为 21×21 中值采样）、`lshape_border.py:66/123`（只为掩膜均值）——每处 2 亿像素 ≈ 4.8GB
-- `image_ops.py:504-506` LOD `deepcopy(design)`：PIL.Image 深拷贝复制像素数据 → LOD 阶段内存翻倍
-- 对照：`core/corner/detection.py:196-205` 是唯一已降采样点（注释明确"避免 2 亿像素 ×3×8=4.8GB"），方案未推广
+**整改验证**：
+- ✅ `image_cropper_border.py:339-353` content_ref_arr 计算：全图 float64 改为降采样（MAX_SIDE=200, BILINEAR）后转换，中位色统计稳定
+- ✅ `image_cropper_mask.py:632-647` _post_cleanup_gap_regions：同上降采样方案，消除 2 亿像素 ×3×8=4.8GB 峰值
+- ✅ `lshape_border.py:66-77` _is_real_border：同上降采样方案
+- ✅ `lshape_border.py:131-142` _filter_content_layers：同上降采样方案
+- ✅ `image_ops.py:506` LOD `_make_lod_design`：`deepcopy(design)` 改为 `design.clone()`，复用 CropDesign.clone() 的「deepcopy + 共享 _cached_outer_image 只读引用」模式，避免大图像素数据深拷贝
+- **效果**：5 处大图内存峰值全部消除，2 亿像素场景下每处节省 ~4.8GB，LOD 阶段不再内存翻倍
 
-**建议**：复用 core/corner/detection.py 降采样方案；LOD 分支只拷轻量字段或先降采样再深拷贝。
+#### N-P1-03 · 嵌套矩形检测结果恒被丢弃 = 每次圆角裁剪白跑全图扫描（历史 P0-03）✅ 已修复（方案 A）
 
-#### N-P1-03 · 嵌套矩形检测结果恒被丢弃 = 每次圆角裁剪白跑全图扫描（历史 P0-03 代价量化）
-
-- `core/corner/detection.py:853` 全图 uint8 复制 + `:855-858` 四边步长 2 扫描 + `:861-873` 层合成，在每次 `apply_border_only_corners` 完整执行后全部丢弃
-- 根因：`image_cropper_border.py:369-371` `corner_protect_map` 对**所有角恒为 True** → `image_cropper_mask.py:297-298` pass → B 段（:300-387 逐层恢复）恒不执行
-- 附带：README 主打"R_eff 逐层递减"（README:270-273）实际未接线
-
-**建议**：corner_protect 恒 True 时跳过检测并删除 B 段（或反向实现 R_eff 递减），二者互斥保留其一。
+**整改验证**：
+- ✅ `image_cropper_border.py:317-325` 删除 `detect_nested_rect_layers()` 调用与 `nested_rects` 变量，替换为注释说明删除原因
+- ✅ `image_cropper_border.py:385` `_build_multi_layer_corner_mask()` 调用不再传递 `nested_rects` 参数
+- ✅ `image_cropper_border.py:33` 删除 `detect_nested_rect_layers` dead import
+- ✅ `image_cropper_mask.py:33` 删除 `detect_nested_rect_layers` dead import
+- ✅ `image_cropper_mask.py:58-64` 函数签名删除 `nested_rects` 死参数
+- ✅ `image_cropper_mask.py:66-88` docstring 清理：删除 R_eff 公式描述与 nested_rects 参数说明
+- ✅ `image_cropper_mask.py:107-117` 删除 `nested_rects is None` 死代码块（含内部 import + 赋值）
+- ✅ `image_cropper_mask.py:291-294` B 段 90+ 行嵌套矩形恢复逻辑已删除，替换为注释说明
+- **效果**：消除每次圆角裁剪白跑的全图嵌套矩形扫描，代码路径简化，消除"R_eff 逐层递减"的误导
 
 #### N-P1-04 · template_matcher 无锁并发读写（历史 P0-06 定位确认）
 
@@ -232,8 +239,8 @@
 | # | 问题 | 证据 |
 |---|---|---|
 | N-P2-01 | GAP_* 常量硬编码 core/corner/detection.py:237-240，config 无对应键；:230-231 注释（20）与代码（25.0）漂移；docstring 声称"常量全在 config.py"失真 | core/corner/detection.py:9,230-240 |
-| N-P2-02 | 死代码三函数 `_analyze_corner_sector_content`/`_estimate_outer_background`/`_corner_sector_has_content`（image_cropper_mask.py:396/502/531）无调用方，其中 :510/:552 为死代码上的全图 float64 陷阱 | image_cropper_mask.py:396-597 |
-| N-P2-03 | mask B 段 90 行（:300-387）因 corner_protect 恒 True 语义不可达；`_completion_ok` 死变量 | image_ops.py:1209 |
+| N-P2-02 | 死代码三函数 `_analyze_corner_sector_content`/`_estimate_outer_background`/`_corner_sector_has_content`（image_cropper_mask.py）无调用方；其中 :510/:552 的 float64 陷阱已随降采样修复消除 | image_cropper_mask.py:303-597（三函数仍存，float64 已修） |
+| N-P2-03 | ✅ **B 段已删除**（N-P1-03 方案 A）；`_completion_ok` 已在三层失败掩盖修复中接入 | image_cropper_mask.py:291-294（注释替代） |
 | N-P2-04 | `_enforce_border_thickness_caps` Step2 先 pop 后查总量，轻微超限时最内层真实边框被整层误丢（与注释意图相反） | core/corner/detection.py:52,439,727 |
 | N-P2-05 | `apply_lshape_border_completion` docstring 三级路由承诺（V13 失败回退旧路径）未覆盖 patch 级缺口 | lshape_border.py:482-492,781-782 |
 | N-P2-06 | 素材 contain 等比+边缘延展与 scale 整图比值换算存在 ±px 误差；scale_avg 非等比取平均 | image_ops.py:630-651,1193-1202；lshape_border.py:617 |
@@ -281,7 +288,7 @@
 | 白色扇形伪影检测（<20 保留 / ≥50 清除 / 3px 簇） | **功能不存在**；实际是 beyond_arc 全清 + content_protect 保护 | README:20,66,765-766 | ✅ 已修正（改为 beyond_arc 全清 + content_protect 描述） |
 | GUI 防抖渲染 200ms / 800ms 最大等待 | valueChanged 已 DISCONNECTED（所有 connect 调用已注释），防抖由显式按钮驱动；防抖实现含 200ms singleShot + 800ms max-wait，但 `_schedule_apply_quiet` 无活跃调用方，整体为死代码 | README:32,291-292；property_panel_layers.py:374-413 | ✅ 已修正（标注已弃用 + DISCONNECTED 说明） |
 | 测试基线 374 passed / 0 skipped（27 文件 · 342 用例） | **实测 430 passed / 0 skipped**（44.17s，含 tests/gui 56 用例） | README:99,233,655 | ✅ 已修正 |
-| 多层边框动态圆角 R_eff 逐层递减 | 未接线（corner_protect 恒 True，nested 恢复恒不执行） | README:350-356；image_cropper_mask.py:297-298 | ✅ 已修正（标注未接线 + 公式保留说明） |
+| 多层边框动态圆角 R_eff 逐层递减 | 未接线（corner_protect 恒 True，nested 恢复恒不执行）→ **死代码已删除**（N-P1-03 方案 A） | README:350-356；image_cropper_mask.py:291-294 | ✅ 已修正（标注未接线 + 死代码已删） |
 | 亮度突变阈值 25 | 实际 `BORDER_LUMINANCE_DIFF_THRESHOLD × 3 = 75`（3 线均值差分） | README:385；core/corner/detection.py:45-49,805 | ✅ 已修正（标注 25（×3=75 实际生效）） |
 | 所有业务常量集中在 config.py | GAP_* 等仍硬编码于 core/corner/detection.py:237-240；pool_designer 40+ 阈值散落 | README:547；core/corner/detection.py:237-240 | ❌ 未修正（属长期技术债，短期不修） |
 
@@ -317,7 +324,7 @@
 6. ✅ **README 同步**：测试数字 374→430、白色扇形伪影检测、防抖渲染、R_eff 逐层递减、亮度阈值 5 处漂移已修正
    - ❌ config.py 常量集中声明未修正（属长期技术债，不影响功能）
 
-**短期总结**：6 项全部合格。核心崩溃路径（N-P0-02 + N-P1-05）已完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"所有 OCR 循环均可中断、几何解析阶段无 deadline 但耗时短"。V13 静默失效已消除并补了回归测试。README 主要漂移已修正。431 测试全绿无回归。
+**短期总结**：6 项全部合格。核心崩溃路径（N-P0-02 + N-P1-05）已完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"所有 OCR 循环均可中断、几何解析阶段无 deadline 但耗时短"。V13 静默失效已消除并补了回归测试。README 主要漂移已修正。中期大图内存收敛（第 5 项）+ 嵌套矩形删死代码（第 6 项）已完成。433 测试全绿无回归。
 
 ### 短期收尾（已完成，4/4 合格）
 
@@ -330,10 +337,8 @@
 
 ### 中期（2-4 周）
 
-5. **大图内存收敛（N-P1-02）**：4 处 float64 改降采样（复用 core/corner/detection.py:196-205 降采样范式）；LOD 避免整图深拷贝（image_ops.py:504-506 deepcopy 改为字段级复制）
-6. **嵌套矩形接线或删死代码（N-P1-03）**：二选一——
-   - 方案 A（推荐先做）：删除 nested_rects 检测与 mask B 段死代码，简化代码路径，消除"R_eff 逐层递减"的误导
-   - 方案 B（复杂）：接线 R_eff 逐层递减，激活 B 段，修正 corner_protect_map 逻辑
+5. ✅ **大图内存收敛（N-P1-02）**：4 处 float64 全部改为降采样（MAX_SIDE=200, BILINEAR）后转换；LOD `deepcopy(design)` 改为 `design.clone()` 共享 `_cached_outer_image` 只读引用
+6. ✅ **嵌套矩形删死代码（N-P1-03）**：方案 A 执行——删除 `detect_nested_rect_layers` 调用 + B 段 90 行死代码 + dead import/parameter/docstring 清理
 7. **template_matcher 加锁（N-P1-04）** + lshape_border_route 模块状态隔离：core/parser/template_matcher.py 加 `threading.RLock` 保护评分写入；lshape_border_route.py 模块级状态改为实例级
 8. **正确性补丁包**：N1-01 坐标钳制、P1-02 逐侧数量级、P1-03 350×scale、N-P2-04 厚度截断、P1-01 采样 clip（5 项分散小修，逐项补单测）
 9. **消除三层失败掩盖**（与 V13 联动）✅：`_skip_unified` 改为"补全成功才跳过统一黑框"，三层回退全失败时补画统一黑框兜底（image_ops.py:1256-1267）。配套 2 个测试：失败兜底 + 成功仍跳过
@@ -341,7 +346,7 @@
 ### 长期（技术债）
 
 10. **阈值收敛**：GAP_* / sector_render / mask / pool_designer 40+ 阈值迁入 config.py；`_ALGO_VERSION` 单源；cm↔px 集中 converter（N-P2-08）
-11. **死代码清理**：mask 三死函数（N-P2-02）、B 段（N-P2-03）、防抖残留、12 个占位函数、`_render_async` 死分支
+11. **死代码清理**：mask 三死函数（N-P2-02，float64 已修但函数体仍存）、防抖残留、12 个占位函数、`_render_async` 死分支
 12. **双入口收敛**：`apply_rounded_corners` 与 `apply_border_only_corners` 语义二选一（避免测试固化旧语义）
 13. **输出质量**：save_jpg 显式 4:4:4；PSD 隐藏层跳过合成 + 失败显式返回 + 导出名稳定化；`_looks_like_tile` 黑名单化
 14. **可观测性**：OCR 失败计数与日志（N-P2-12）；跨线程回调全部改 QObject 槽 / QueuedConnection（P0-08 残留）
@@ -350,21 +355,23 @@
 
 ## 九、结论
 
-项目**功能完整、算法正确性基础扎实**。短期整改 6 项 + 收尾 4 项 + 三层失败掩盖全部完成，433 测试全绿（43.05s），无回归。
+项目**功能完整、算法正确性基础扎实**。短期整改 6 项 + 收尾 4 项 + 三层失败掩盖 + 中期内存收敛/死代码清理 2 项全部完成，433 测试全绿（42.71s），无回归。
 
-**整改前三大威胁的处置状态**：
+**整改前五大威胁的处置状态**：
 
 1. ✅ **关闭窗口触发 running QThread 析构（N-P0-02）** —— closeEvent + aboutToQuit 双通道接管全部 4 类 worker
 2. ✅ **OCR 假死（N-P0-01）** —— check_cancel 机制已穿透所有 OCR 循环；warmup 中断检查已实现；lshape 几何阶段无 deadline 但耗时毫秒级
 3. ✅ **V13 回退断裂 + 三层失败掩盖（N-P1-01）** —— 绘制级回退已修复 + 返回值接入 + ValueError 单测 + 三层全失败时统一黑框兜底
+4. ✅ **大图内存峰值（N-P1-02 / P0-02 / P2-11）** —— 4 处 float64 全部降采样 + LOD deepcopy 改 clone() 共享缓存
+5. ✅ **嵌套矩形死代码（N-P1-03 / P0-03）** —— 方案 A 执行：删除调用 + B 段 90 行 + dead import/parameter/docstring
 
-**整改合格度判断**：短期 6 项 + 收尾 4 项 + 三层失败掩盖全部完成。核心崩溃路径完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"所有 OCR 循环均可取消"。V13 回退链完整闭环（回退 + 返回值 + 单测 + 兜底）。README 主要漂移已修正。
+**整改合格度判断**：短期 6 项 + 收尾 4 项 + 三层失败掩盖 + 中期 2 项全部完成。核心崩溃路径完全收敛，OCR 假死从"最坏 29 分钟不可中断"改善为"所有 OCR 循环均可取消"。V13 回退链完整闭环。大图内存峰值从 5 处 ~4.8GB 降至降采样级别。嵌套矩形死代码全清除。README 主要漂移已修正。
 
 **下一步修复建议（按优先级排序）**：
 
-1. **最优先（1 周内）**：推进中期大图内存收敛（第 5 项）——4 处 float64 全图转换 + LOD deepcopy 是用户可感知的性能瓶颈，大尺寸素材下内存占用和耗时都有显著改善空间
-2. **中期（2-4 周）**：按 5→6→7→8 顺序推进——大图内存收敛 → 嵌套矩形删死代码（简化维护面）→ template_matcher 加锁（消除并发隐患）→ 正确性补丁包（逐项修复）
-3. **长期技术债**：阈值收敛、死代码清理、双入口收敛等可在功能迭代间隙穿插进行，不阻塞主路径
+1. **最优先（1 周内）**：推进中期 template_matcher 加锁（第 7 项，N-P1-04）——core/parser/ 无任何 threading/Lock，并发读写可致字典迭代异常、评分交叉污染、缓存文件撕裂
+2. **中期（2-4 周）**：按 7→8 顺序推进——template_matcher 加锁（消除并发隐患）→ 正确性补丁包（逐项修复）
+3. **长期技术债**：阈值收敛、死代码清理（mask 三死函数仍存）、双入口收敛等可在功能迭代间隙穿插进行，不阻塞主路径
 
 ---
 

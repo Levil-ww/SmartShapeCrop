@@ -30,7 +30,6 @@ from .corner.detection import (
     _detect_border_layers,
     _get_border_layers_robust,
     _scan_edge_boundaries,
-    detect_nested_rect_layers,
     classify_gap_layers,
     get_solid_border_colors,
     GAP_MAX_THICKNESS_GLOBAL,
@@ -60,22 +59,12 @@ def _build_multi_layer_corner_mask(
     w: int, h: int,
     corners_px: dict[str, int],
     border_layers: list[tuple[tuple[int, int, int], int]],
-    nested_rects: list[tuple[int, int, int, int]] | None = None,
     protect_content: dict[str, bool] | bool = False,
     bg_color: tuple[int, int, int] = (255, 255, 255),
     content_ref_arr: np.ndarray | None = None,
 ) -> Image.Image:
     """
-    构建多层边框动态圆角遮罩。[升级：嵌套矩形层感知 + 内容区保护]
-
-    [关键不变量 S1/S4 + L1]
-      每层嵌套矩形边框 k 有独立的有效圆角半径：
-        R_eff(k, corner) = max(0, R_total - D(k, corner))
-      其中 D(k, corner) 是该层矩形距图像外边缘的距离：
-        - TL: D = max(rect.x1, rect.y1)
-        - TR: D = max(w-1-rect.x2, rect.y1)
-        - BL: D = max(rect.x1, h-1-rect.y2)
-        - BR: D = max(w-1-rect.x2, h-1-rect.y2)
+    构建多层边框动态圆角遮罩。[内容区保护模式]
 
     [内容区保护模式]
       当 protect_content=True 时，只有位于边框条带内的扇形外部像素会被裁切，
@@ -90,8 +79,6 @@ def _build_multi_layer_corner_mask(
         w, h: 图像宽高（像素）
         corners_px: 四角圆角半径（像素）
         border_layers: 边框层列表 [(color, thickness_px), ...]
-        nested_rects: 可选，预检测的嵌套矩形（从 detect_nested_rect_layers 得到），
-                      None 则在内部自动检测
         protect_content: 是否保护内容区（仅裁切边框区域），默认 False
         bg_color: 背景色 tuple(r,g,b)，用于 classify_gap_layers 间隙判定
         content_ref_arr: 内容参考色 np.ndarray(3,) float64，用于 classify_gap_layers；
@@ -103,18 +90,6 @@ def _build_multi_layer_corner_mask(
     valid_corners = {k: v for k, v in corners_px.items() if v > 0}
     if not valid_corners:
         return Image.new('L', (w, h), 255)
-
-    # ---- 检测嵌套矩形层 ----
-    if nested_rects is None:
-        try:
-            from .corner.detection import detect_nested_rect_layers
-            # 构造临时假图用于检测（基于 mask_arr 无法直接检测，需要真实图像）
-            # 注意：此函数在调用方 apply_border_only_corners 中已传入 img，
-            # 但此处没有，所以先 fallback 为空列表；调用方应优先传入预检测结果。
-            nested_rects = []  # 调用方会通过新参数传入
-        except Exception as e:
-            logger.warning(f"嵌套矩形层检测导入失败: {e}")
-            nested_rects = []
 
     raw_depth = sum(t for _, t in border_layers) if border_layers else 0
 
@@ -288,103 +263,10 @@ def _build_multi_layer_corner_mask(
         mask_local = mask_arr[y1:y2, x1:x2]
         mask_local[outer_cut] = 0
 
-        # ===== [B) 嵌套矩形层感知：逐层恢复被误切区域] =====
-        # [Fix 2026-08-17] 保护模式下跳过 nested_rects 处理：
-        #   当 corner_protect=True（即 r <= 2*raw_depth）时，只裁剪边框条带，
-        #   内部图案完全保持直角。nested_rects 处理可能因检测误差（抗锯齿等）
-        #   导致 Dk 计算不准，从而错误地恢复或裁切内部区域。
-        #   因此在保护模式下直接跳过此段逻辑，确保内部图案不受影响。
-        if corner_protect:
-            pass  # 保护模式：内部图案完全保持直角，不进行 nested_rects 处理
-        elif nested_rects:
-            # [Fix P2] nested_rects 伪层过滤（花野 10 层伪层 → 3 层）。
-            # 根因：_scan_edge_boundaries 会把花纹的颜色突变也识别为矩形边界，
-            # 导致 rects 层数远超实际边框层数。例如花野实际边框 3 层，
-            # 扫描检测出 10 层 → 多出来的 7 层都是花纹区的"假矩形"，
-            # 它们的 R_eff 都很大，叠加恢复后把不该恢复的花纹尖角也保留了，
-            # 导致花野案例圆角处"多层杂乱"。
-            # 修复：如果有 border_layers，rects 最多处理 len(border_layers) 层
-            # （最外层的几层才是真实边框），内层的花纹伪矩形直接跳过。
-            max_rects_from_layers = max(2, len(border_layers) + 1) if border_layers else 4
-            effective_rects = nested_rects[:max(2, min(len(nested_rects), max_rects_from_layers))]
-
-            # [Fix P1 IN_PAD 真正应用] 修复：旧版 IN_PAD=4 定义了但完全没用到
-            # （bx1,by1,bx2,by2 全等于 rx1,ry1,rx2,ry2，IN_PAD 形同虚设）。
-            # 这会导致内层矩形的恢复区域正好卡在检测边界上，而真实边框可能
-            # 比检测 rect 稍宽/稍窄 2-4px（抗锯齿、渐变、扫描步长误差），
-            # 结果内层边框的一部分仍被误切 → 婉卉案例内层黑色小弧形缺口。
-            # 修复：按注释，把矩形「靠近本角的一端」向中心方向推 IN_PAD 像素，
-            # 远端保持不变（远端远离本角，不会被本角的 L-cut 影响）。
-            for rect_k in effective_rects[1:]:
-                rx1, ry1, rx2, ry2 = rect_k
-                # 坐标合法性
-                if rx2 - rx1 < 20 or ry2 - ry1 < 20:
-                    continue
-                # 计算该层矩形到图像外边缘的距离 D_k（本角）
-                if corner_key == 'tl':
-                    Dk = max(rx1, ry1)
-                elif corner_key == 'tr':
-                    Dk = max((w - 1) - rx2, ry1)
-                elif corner_key == 'bl':
-                    Dk = max(rx1, (h - 1) - ry2)
-                else:  # br
-                    Dk = max((w - 1) - rx2, (h - 1) - ry2)
-
-                # 如果该层矩形已超出边框厚度范围（即属于内部图案/花纹区域），
-                # 则强制保持直角，不进行圆角裁剪
-                if raw_depth > 0 and Dk > raw_depth:
-                    R_eff_k = 0
-                else:
-                    R_eff_k = max(0, r - int(round(Dk)))
-                # 钳制有效半径 <= min(rect_w, rect_h)//2（局部半径不变量）
-                local_max = max(1, min(rx2 - rx1, ry2 - ry1) // 2)
-                R_eff_k = min(R_eff_k, local_max)
-
-                if R_eff_k >= r:
-                    # 此层有效半径与外层相同或更大（理论上不发生），无需恢复
-                    continue
-
-                IN_PAD = 4
-                # [Fix P1 真正应用 IN_PAD]
-                # 朝中心扩张规则：只把矩形的「角近端」向中心推 IN_PAD
-                #   tl: 近端 = (rx1, ry1) → 向内 = x+, y+ → rx1+IN_PAD, ry1+IN_PAD
-                #   tr: 近端 = (rx2, ry1) → 向内 = x-, y+ → rx2-IN_PAD, ry1+IN_PAD
-                #   bl: 近端 = (rx1, ry2) → 向内 = x+, y- → rx1+IN_PAD, ry2-IN_PAD
-                #   br: 近端 = (rx2, ry2) → 向内 = x-, y- → rx2-IN_PAD, ry2-IN_PAD
-                # 远端不变。
-                if corner_key == 'tl':
-                    bx1, by1 = rx1 + IN_PAD, ry1 + IN_PAD
-                    bx2, by2 = rx2, ry2
-                elif corner_key == 'tr':
-                    bx1, by1 = rx1, ry1 + IN_PAD
-                    bx2, by2 = rx2 - IN_PAD, ry2
-                elif corner_key == 'bl':
-                    bx1, by1 = rx1 + IN_PAD, ry1
-                    bx2, by2 = rx2, ry2 - IN_PAD
-                else:  # br
-                    bx1, by1 = rx1, ry1
-                    bx2, by2 = rx2 - IN_PAD, ry2 - IN_PAD
-                # 安全内敛：整体区间 clip 到 [0, W-1] × [0, H-1]
-                in_x = (xx >= max(0, bx1)) & (xx <= min(w - 1, bx2))
-                in_y = (yy >= max(0, by1)) & (yy <= min(h - 1, by2))
-                in_rect_k = in_x & in_y
-
-                # 本层需要恢复的区域（严格不越界）：
-                # [Fix INV-5] 使用 <= ang_max 与 base_cut 保持一致，
-                # 防止花漾之约等案例在 ang_max 边界出现白色扇形角伪影
-                # [Fix 绕接] 0°/360° 绕接处纳入 sector
-                in_ang = _angle_in_corner_sector(angle, corner_key, tol=2.0)
-                dist_in_r = (dist > float(R_eff_k)) & (dist <= float(r))  # 严格 <= r，杜绝 > r 的伪保留
-                if R_eff_k <= 0:
-                    # 本层及内层应保持直角 → dist ∈ [0, r] 的 in_rect_k 像素全恢复
-                    restore_k = in_ang & in_rect_k & (dist <= float(r))
-                else:
-                    # 本层及内层：dist ∈ (R_eff_k, r] 属于被外层误切的区域
-                    restore_k = in_ang & in_rect_k & dist_in_r
-
-                # 应用恢复
-                if np.any(restore_k):
-                    mask_local[restore_k] = 255
+        # [Fix 2026-09-12 N-P1-03] 嵌套矩形恢复段已删除（死代码清理）。
+        # 原因：调用方 image_cropper_border.py 的 corner_protect_map 对所有圆角角
+        #   恒为 True（r_px > 0），故保护模式恒启用，原 B 段 90+ 行逻辑永不被执行。
+        #   统一走保护模式：只裁剪边框条带，内部图案保持直角。
 
         mask_arr[y1:y2, x1:x2] = mask_local
 
@@ -725,15 +607,26 @@ def _post_cleanup_gap_regions(
     w, h = result_img.size
     arr = np.array(result_img, dtype=np.uint8)
 
-    # 计算 content_ref
-    src_arr = np.array(src_img, dtype=np.float64)
-    x_start, x_end = int(w * 0.15), int(w * 0.85)
-    y_start, y_end = int(h * 0.15), int(h * 0.85)
+    # 计算 content_ref（降采样避免全图 float64；2亿像素≈4.8GB）
+    MAX_SIDE = 200
+    w_src, h_src = src_img.size
+    if max(w_src, h_src) > MAX_SIDE:
+        scale = MAX_SIDE / max(w_src, h_src)
+        img_small = src_img.resize(
+            (max(1, int(w_src * scale)), max(1, int(h_src * scale))),
+            Image.BILINEAR,
+        )
+        src_f = np.array(img_small, dtype=np.float64)
+    else:
+        src_f = np.array(src_img, dtype=np.float64)
+    h_f, w_f = src_f.shape[:2]
+    x_start, x_end = int(w_f * 0.15), int(w_f * 0.85)
+    y_start, y_end = int(h_f * 0.15), int(h_f * 0.85)
     STEPS = 21
-    xs = np.linspace(x_start, x_end, STEPS, dtype=np.int64).clip(0, w - 1)
-    ys = np.linspace(y_start, y_end, STEPS, dtype=np.int64).clip(0, h - 1)
+    xs = np.linspace(x_start, x_end, STEPS, dtype=np.int64).clip(0, w_f - 1)
+    ys = np.linspace(y_start, y_end, STEPS, dtype=np.int64).clip(0, h_f - 1)
     gx, gy = np.meshgrid(xs, ys)
-    samples = src_arr[gy, gx, :].reshape(-1, 3)
+    samples = src_f[gy, gx, :].reshape(-1, 3)
     content_ref = np.median(samples, axis=0)
     CONTENT_COLOR_DIST = 60.0  # 放宽阈值：覆盖浅色间隙与内容色的差异
     BORDER_COLOR_DIST = 20.0

@@ -501,9 +501,9 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
     创建一个临时的 LOD 版本的 CropDesign。
     所有像素相关的参数按比例缩放，保持几何结构不变。
     """
-    from copy import deepcopy
-    
-    lod_design = deepcopy(design)
+    # [Fix 2026-09-12 N-P1-02] 使用 clone() 代替 deepcopy，
+    # 共享 _cached_outer_image 只读引用，避免大图像素数据被深拷贝（内存翻倍）。
+    lod_design = design.clone()
     orig_w = design.canvas_w_px
     orig_h = design.canvas_h_px
     
