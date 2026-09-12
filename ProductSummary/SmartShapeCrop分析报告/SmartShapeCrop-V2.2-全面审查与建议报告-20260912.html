@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop V2.2 全面审查与建议报告 · V1.0</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2430; --ink2:#4a5262; --ink3:#7b8494;
+    --line:#e3e6ec; --line2:#eef1f5;
+    --blue:#2563eb; --blue-bg:#eef4ff;
+    --red:#d92d20; --red-bg:#fef3f2; --red-line:#fda29b;
+    --amber:#b54708; --amber-bg:#fffaeb; --amber-line:#fec84b;
+    --green:#067647; --green-bg:#ecfdf3; --green-line:#75e0a7;
+    --purple:#6941c6; --purple-bg:#f4f1fe;
+    --mono:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0 0 60px; background:var(--bg); color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px;}
+
+  /* header */
+  header{background:linear-gradient(135deg,#1e293b 0%,#334155 55%,#3f4d63 100%);color:#fff;padding:40px 0 34px;margin-bottom:26px;}
+  header .wrap{padding:0 22px;}
+  .eyebrow{font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:#94a3b8;margin-bottom:12px;font-weight:600;}
+  h1{margin:0 0 10px;font-size:29px;line-height:1.35;font-weight:700;letter-spacing:-.01em;}
+  .sub{color:#cbd5e1;font-size:14.5px;margin-bottom:20px;}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;}
+  .meta span{background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.17);border-radius:6px;padding:5px 11px;font-size:12.5px;color:#e2e8f0;}
+
+  /* verdict */
+  .verdict{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--red);border-radius:10px;padding:20px 24px;margin-bottom:26px;box-shadow:0 1px 2px rgba(16,24,40,.04);}
+  .verdict h2{margin:0 0 10px;font-size:16px;color:var(--red);letter-spacing:.02em;}
+  .verdict p{margin:0 0 9px;color:var(--ink2);}
+  .verdict p:last-child{margin-bottom:0;}
+  .verdict strong{color:var(--ink);}
+
+  /* kpi */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:13px;margin-bottom:26px;}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 17px;box-shadow:0 1px 2px rgba(16,24,40,.04);}
+  .kpi .k{font-size:11.5px;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase;font-weight:600;margin-bottom:7px;}
+  .kpi .v{font-size:25px;font-weight:700;letter-spacing:-.02em;line-height:1.15;}
+  .kpi .n{font-size:12px;color:var(--ink3);margin-top:5px;}
+  .v.g{color:var(--green);} .v.r{color:var(--red);} .v.a{color:var(--amber);} .v.b{color:var(--blue);}
+
+  /* sections */
+  section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:26px 28px;margin-bottom:22px;box-shadow:0 1px 2px rgba(16,24,40,.04);}
+  h2.sec{font-size:19px;margin:0 0 6px;letter-spacing:-.01em;}
+  .sec-note{color:var(--ink3);font-size:13.5px;margin:0 0 20px;padding-bottom:16px;border-bottom:1px solid var(--line2);}
+  h3{font-size:16px;margin:26px 0 12px;letter-spacing:-.005em;}
+  h3:first-of-type{margin-top:0;}
+  p{margin:0 0 12px;}
+  ul,ol{margin:0 0 12px;padding-left:22px;}
+  li{margin-bottom:6px;}
+  code{font-family:var(--mono);font-size:12.8px;background:#f1f3f7;border:1px solid var(--line);border-radius:4px;padding:1.5px 5px;color:#334155;}
+
+  pre{font-family:var(--mono);font-size:12.6px;line-height:1.65;background:#f8f9fb;border:1px solid var(--line);border-left:3px solid #94a3b8;border-radius:7px;padding:14px 16px;overflow-x:auto;margin:0 0 14px;color:#1e293b;}
+  pre.err{background:var(--red-bg);border-left-color:var(--red);color:#7a271a;}
+  pre.ok{background:var(--green-bg);border-left-color:var(--green);color:#054f31;}
+
+  table{width:100%;border-collapse:collapse;font-size:13.6px;margin:0 0 16px;}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line2);vertical-align:top;}
+  th{background:#f8f9fb;font-weight:600;color:var(--ink2);font-size:12.6px;letter-spacing:.02em;border-bottom:1px solid var(--line);}
+  tbody tr:hover{background:#fafbfc;}
+  td code{font-size:12.2px;}
+
+  /* issue card */
+  .issue{border:1px solid var(--line);border-radius:9px;margin-bottom:16px;overflow:hidden;}
+  .issue-head{display:flex;align-items:flex-start;gap:11px;padding:13px 16px;background:#f8f9fb;border-bottom:1px solid var(--line);}
+  .issue-body{padding:15px 16px 4px;}
+  .tag{flex:0 0 auto;font-size:11px;font-weight:700;letter-spacing:.06em;border-radius:5px;padding:3px 8px;margin-top:2px;}
+  .tag.p0{background:var(--red-bg);color:var(--red);border:1px solid var(--red-line);}
+  .tag.p1{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line);}
+  .tag.p2{background:#f2f4f7;color:var(--ink2);border:1px solid var(--line);}
+  .issue-title{font-weight:650;font-size:15px;line-height:1.5;}
+  .issue-title small{display:block;font-weight:400;color:var(--ink3);font-size:12.6px;margin-top:3px;}
+  .row{display:flex;gap:10px;margin-bottom:11px;font-size:14px;}
+  .row .lbl{flex:0 0 62px;color:var(--ink3);font-weight:600;font-size:12.6px;padding-top:2px;letter-spacing:.04em;}
+  .row .txt{flex:1;min-width:0;}
+
+  .callout{border-radius:8px;padding:13px 16px;margin:0 0 14px;font-size:13.8px;border:1px solid;}
+  .callout.warn{background:var(--amber-bg);border-color:var(--amber-line);color:#7a2e0e;}
+  .callout.info{background:var(--blue-bg);border-color:#bfdbfe;color:#1e40af;}
+  .callout.good{background:var(--green-bg);border-color:var(--green-line);color:#054f31;}
+  .callout strong{display:block;margin-bottom:4px;}
+
+  /* score bars */
+  .bars{margin:4px 0 6px;}
+  .bar{display:flex;align-items:center;gap:13px;margin-bottom:11px;}
+  .bar .name{flex:0 0 118px;font-size:13.4px;color:var(--ink2);}
+  .bar .track{flex:1;height:9px;background:#eef1f5;border-radius:5px;overflow:hidden;}
+  .bar .fill{height:100%;border-radius:5px;}
+  .bar .num{flex:0 0 46px;text-align:right;font-size:13.4px;font-weight:650;font-variant-numeric:tabular-nums;}
+  .score-total{display:flex;align-items:baseline;gap:14px;padding:16px 18px;background:#f8f9fb;border:1px solid var(--line);border-radius:9px;margin-top:16px;}
+  .score-total .big{font-size:34px;font-weight:750;letter-spacing:-.02em;color:var(--amber);}
+  .score-total .desc{font-size:13.5px;color:var(--ink2);}
+
+  .footer{max-width:1080px;margin:30px auto 0;padding:20px 22px 0;border-top:1px solid var(--line);color:var(--ink3);font-size:12.8px;text-align:center;line-height:1.9;}
+  .footer strong{color:var(--ink2);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">Code Audit Report</div>
+    <h1>SmartShapeCrop V2.2 全面审查与建议报告</h1>
+    <div class="sub">基于全量源码静态分析 + 实跑验证的只读审查 &nbsp;·&nbsp; 不依赖历史报告的结论，逐条回到代码取证</div>
+    <div class="meta">
+      <span>报告版本 V1.0</span>
+      <span>审查日期 2026-09-12</span>
+      <span>被审查代码 HEAD aa676a9</span>
+      <span>工作区含未提交改动</span>
+      <span>只读审查 · 源码零改动</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="verdict">
+    <h2>核心判断</h2>
+    <p>工程底座扎实——<strong>433 个用例全绿、打包白名单零漏收、core 层无 GUI 反向依赖、线程退役协议已闭环</strong>，算法实现（距离场 mask、OCR 稳定性投票、Profile 剖面扫描）质量明显高于同类内部工具。</p>
+    <p>但本次审查<strong>推翻了一项昨日报告的关键结论</strong>：昨日称「<code>crash.log</code> 不存在、崩溃未复发」，实测 <code>crash.log</code> 中记录了<strong>今晨（09-12）三次真实崩溃，同一根因、必现、修复成本仅一行</strong>——而 433 个测试全绿完全没能拦住它。</p>
+    <p>根因是 <code>main.py:307</code> 对 PIL 的 <code>IFDRational</code> 类型做 <code>:.0f</code> 格式化。值得注意的对比是：同一项目的 <code>save_jpg</code> <strong>已经做了同样的防御</strong>（<code>int(round(dpi[0]))</code>），唯独状态栏这一处漏了。</p>
+    <p>叠加 <strong>发布产物落后于源码、且当前 <code>.venv</code> 内未安装 PyInstaller 无法重新出包</strong>，意味着今天已修复的问题一个也发不出去。这是发布前的双重阻塞。</p>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="k">实测测试</div><div class="v g">433</div><div class="n">passed · 0 failed · 0 skipped</div></div>
+    <div class="kpi"><div class="k">今日崩溃</div><div class="v r">3</div><div class="n">同根因 · 必现 · 一行可修</div></div>
+    <div class="kpi"><div class="k">源码规模</div><div class="v b">38,351</div><div class="n">行 / 108 文件（core+gui+tests）</div></div>
+    <div class="kpi"><div class="k">P0 阻塞项</div><div class="v r">3</div><div class="n">P1 六项 · P2 八项</div></div>
+    <div class="kpi"><div class="k">未使用导入</div><div class="v a">250</div><div class="n">处 / 46 文件</div></div>
+    <div class="kpi"><div class="k">健康度</div><div class="v a">64</div><div class="n">C+ · 发布前需清 P0</div></div>
+  </div>
+
+  <!-- ============ 0. 报告修订 ============ -->
+  <section>
+    <h2 class="sec">零、对昨日报告结论的修订</h2>
+    <p class="sec-note">本次审查要求「不能仅根据之前的分析报告」，故对 2026-09-11 报告的每项结论回到代码与日志复核。以下为复核后<strong>需要修订</strong>的条目——包括两条被证伪的结论。</p>
+
+    <table>
+      <thead><tr><th style="width:26%">昨日报告结论</th><th style="width:40%">本次实测</th><th style="width:34%">证据</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>崩溃：<code>crash.log</code> 不存在、今日未复发</strong><br><span style="color:#7b8494;font-size:12.4px">「0xC0000409 今日未复发」</span></td>
+          <td><span style="color:#d92d20;font-weight:650">✗ 被证伪</span> — <code>crash.log</code> 存在，含 <strong>09-12 三次崩溃</strong>（09:46:55 / 09:47:12 / 09:59:15），均为同一 <code>TypeError</code></td>
+          <td><code>crash.log</code> 原文 3 条堆栈；<code>logs/smartshapecrop.log</code> 同时间窗有活动记录</td>
+        </tr>
+        <tr>
+          <td><strong>P1-06 三条路由 scale 公式不一致，仍存在</strong></td>
+          <td><span style="color:#067647;font-weight:650">✓ 报告过期</span> — 已于<strong>今日修复</strong>：改算术平均为几何平均 <code>sqrt(sx*sy)</code>，与 Profile 路径口径统一</td>
+          <td><code>core/lshape_border.py:643-650</code> 标注 <code>[Fix P1-06 2026-09-12]</code></td>
+        </tr>
+        <tr>
+          <td>测试基线 433 passed / 0 skipped</td>
+          <td><span style="color:#067647;font-weight:650">✓ 一致</span> — 实测 433 passed，退出码 0</td>
+          <td>本地实跑 84.38s，全绿无回归</td>
+        </tr>
+        <tr>
+          <td>打包链路「从脚本修好进展到实际跑通」</td>
+          <td><span style="color:#b54708;font-weight:650">⚠ 部分成立</span> — exe 已生成，但<strong>落后于源码</strong>，且 <code>.venv</code> 内 <strong>PyInstaller 缺失</strong>，无法重新出包</td>
+          <td>exe 2026-09-11 16:42 vs 源码 2026-09-12 11:01；<code>pyinstaller=MISSING</code></td>
+        </tr>
+        <tr>
+          <td>README 主要漂移「已修正」</td>
+          <td><span style="color:#b54708;font-weight:650">⚠ 部分成立</span> — 测试数字未同步（三处仍写 430），且「27 个文件 · 342 个用例」自相矛盾</td>
+          <td><code>README.md</code> 第 99 / 233 / 660 行；实测 433 passed / 收集 430</td>
+        </tr>
+        <tr>
+          <td>N-P0-02 线程退役修复已落地</td>
+          <td><span style="color:#067647;font-weight:650">✓ 确认成立</span> — closeEvent 与 aboutToQuit 各接管 4 路 <code>shutdown()</code></td>
+          <td><code>main.py:466-473</code>、<code>main.py:531-537</code></td>
+        </tr>
+        <tr>
+          <td>三层失败掩盖已消除</td>
+          <td><span style="color:#067647;font-weight:650">✓ 确认成立</span> — <code>_skip_unified</code> 加条件，三层全失败时补画统一黑框兜底</td>
+          <td><code>core/image_ops.py:1159-1166</code>、<code>:1256-1267</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout warn">
+      <strong>方法论提示</strong>
+      昨日报告的「未复验」条目（P1-04/07/08/10、P2-03~P2-15 等共 20 余项）中，至少 <strong>P1-06 一项已在报告发布后被修复</strong>。这说明带「待复验」标记的清单会随时间快速腐化——建议后续报告只保留<strong>当天实测</strong>的状态，或在每条后标注取证时间戳。
+    </div>
+  </section>
+
+  <!-- ============ 1. 方法与基线 ============ -->
+  <section>
+    <h2 class="sec">一、审查方法与实测基线</h2>
+    <p class="sec-note">全部结论均来自本次实测，不引用历史报告的判断。</p>
+
+    <h3>1.1 取证手段</h3>
+    <ul>
+      <li><strong>AST 静态分析</strong>：对 108 个源码文件全量 <code>ast.parse</code>，统计异常处理模式、函数/类规模、导入使用、分层依赖</li>
+      <li><strong>实跑验证</strong>：以项目 <code>.venv</code> 解释器全量执行 <code>pytest tests/</code>，并单独做用例收集统计</li>
+      <li><strong>崩溃现场取证</strong>：读取 <code>crash.log</code> 与滚动日志的真实堆栈，并编写最小复现脚本确证机理</li>
+      <li><strong>构建链路核查</strong>：解析打包脚本的 <code>hiddenimports</code> 白名单与源码模块集合求差集，扫描函数内延迟导入</li>
+      <li><strong>仓库卫生核查</strong>：<code>git ls-files</code> 比对 <code>.gitignore</code>，统计跟踪文件体积</li>
+    </ul>
+
+    <h3>1.2 实测基线</h3>
+    <table>
+      <thead><tr><th style="width:32%">项目</th><th style="width:38%">实测值</th><th>备注</th></tr></thead>
+      <tbody>
+        <tr><td>测试结果</td><td><strong>433 passed / 0 failed / 0 skipped</strong></td><td>84.38s，退出码 0，无环境干扰</td></tr>
+        <tr><td>用例收集</td><td>430 collected（core 223 / integration 77 / sketch 64 / gui 56 / border 10）</td><td>与执行数差 3，未定位</td></tr>
+        <tr><td>语法检查</td><td>108 / 108 文件通过 <code>ast.parse</code></td><td>零语法错误</td></tr>
+        <tr><td>源码规模</td><td>38,351 行</td><td>core 17,755 · tests 8,306 · gui 6,663 · scripts 2,871</td></tr>
+        <tr><td>解释器</td><td>Python 3.13.14（项目 <code>.venv</code>）</td><td>PyQt5 5.15.11 / Pillow 12.3.0 / numpy 2.5.3</td></tr>
+        <tr><td>Tesseract</td><td>可用（<code>D:\Programs\Tesseract-OCR</code>）</td><td>由日志 <code>PathResolver</code> 确认，非默认安装路径</td></tr>
+        <tr><td>代码版本</td><td>HEAD <code>aa676a9</code>（09-12 10:53）</td><td>工作区 <code>core/lshape_border.py</code> 有未提交修改</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <strong>关于「工作区有未提交改动」</strong>
+      本次审查时 <code>core/lshape_border.py</code> 处于已修改未提交状态（今日 11:01），包含 P1-06 几何平均修复。本报告所述代码事实<strong>以此工作区状态为准</strong>，而非 HEAD 提交内容。
+    </div>
+  </section>
+
+  <!-- ============ 2. P0 ============ -->
+  <section>
+    <h2 class="sec">二、P0 级问题（阻塞发布）</h2>
+    <p class="sec-note">三项均直接影响可用性或发布能力，建议在下次出包前全部处理。</p>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0-01</span>
+        <div class="issue-title">主窗口状态栏对 <code>IFDRational</code> 类型格式化崩溃 —— 今晨发生 3 次
+          <small>上传带 EXIF 分辨率标记的图片即触发，必现</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt"><code>main.py:307</code> 用 <code>f"{...:.0f}"</code> 直接格式化 <code>img.info['dpi'][0]</code>。当该图来自 <code>Image.open()</code>（JPEG 含 EXIF 的 XResolution/YResolution）时，PIL 返回的是 <code>IFDRational</code> 而非 <code>int</code>，该类型<strong>不支持任何格式说明符</strong>，抛 <code>TypeError</code>。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+<pre class="err">崩溃时间: 2026-09-12 09:46:55
+Traceback (most recent call last):
+  File "F:\SmartShapeCrop\main.py", line 307, in _on_rendered
+    self._status_size.setText(f"画布尺寸：{img.width} × {img.height} px (... @ DPI {img.info.get('dpi',(150,))[0]:.0f})" ...)
+                                                                                                      ^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to IFDRational.__format__</pre>
+          同一根因在 <code>crash.log</code> 中记录 <strong>3 次</strong>（09:46:55 / 09:47:12 / 09:59:15）。机理复现（Pillow 12.3.0）：
+<pre>IFDRational(300,1) 类型 = IFDRational
+  format(r, ''    ) -> OK 值='300.0'
+  format(r, 'd'   ) -> *** TypeError
+  format(r, 'f'   ) -> *** TypeError
+  format(r, '.0f' ) -> *** TypeError
+带 EXIF 分辨率的 JPEG -> info["dpi"] = (300.0, 300.0)，元素类型 = IFDRational
+  *** 格式化 :.0f 崩溃：与 crash.log 记录完全一致</pre>
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">
+          触发路径是两条日常操作：<code>main.py:331</code> <code>_on_sketch_loaded</code>（上传草图）与 <code>main.py:314</code> <code>_on_cropped_image</code>（裁剪回填），二者都把 <code>Image.open()</code> 的产物 emit 给 <code>_on_rendered</code>。<strong>用户只要上传一张相机/手机拍摄的、或经微信/PS 处理过并保留了 EXIF 分辨率的图片，状态栏刷新即抛异常。</strong>
+          <br><br>异常从 Qt 槽函数抛出后经 <code>sys.excepthook</code>（<code>main.py:507</code>）写入 <code>crash.log</code>；而 PyQt5 对槽内未捕获异常的标准处理是中止进程。这与项目长期追查的 <strong>0xC0000409 属于同一类失败模式</strong>——此前排查聚焦于 QThread 生命周期，本路径是独立且更易触发的一条。
+          <br><br>另一个观察：项目自有 204 张图片<strong>无一例外</strong> <code>dpi</code> 为 <code>IFDRational</code>（都是程序生成的图，dpi 为 <code>int</code>），所以靠项目内素材永远复现不出来——这解释了它为何能长期潜伏。
+        </div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">
+          与 <code>core/image_ops.py:1697-1701</code> 的既有防御口径保持一致（那里已经写好了正确的处理）：
+<pre class="ok"># 推荐：与 save_jpg 完全同源
+_dpi = img.info.get('dpi')
+if _dpi:
+    _dx = float(_dpi[0]) if isinstance(_dpi, (tuple, list)) else float(_dpi)
+    _dy = float(_dpi[1]) if isinstance(_dpi, (tuple, list)) and len(_dpi) > 1 else _dx
+else:
+    _dx = _dy = 150.0
+self._status_size.setText(f"画布尺寸：{img.width} × {img.height} px "
+                          f"({img.width/_dx*2.54:.1f}cm × {img.height/_dy*2.54:.1f}cm @ DPI {_dx:.0f})")</pre>
+          顺带修掉两个同源隐患：<code>'dpi' in img.info</code> 只判存在、不判类型与长度，若 <code>dpi</code> 是单值（非序列）则 <code>[1]</code> 会抛 <code>IndexError</code> 或 <code>TypeError</code>；建议一并加类型兜底。
+        </div></div>
+      </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0-02</span>
+        <div class="issue-title">发布产物落后于源码，且打包环境不可复现
+          <small>已有修复无法出包</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt"><code>dist/智能裁剪设计器V2.2.exe</code>（202.3 MB）构建于 09-11 16:42；而源码最新修改为 09-12 11:01。今日落地的 P1-06 修复、以及将要做的 P0-01 修复，<strong>都不在现有 exe 中</strong>。同时项目 <code>.venv</code> 内<strong>未安装 PyInstaller</strong>。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+<pre>exe: 智能裁剪设计器V2.2.exe  202.3 MB  修改于 2026-09-11 16:42
+最新源码: core\lshape_border.py        修改于 2026-09-12 11:01
+=> exe 是否落后于源码: 是（需重新打包）
+
+.venv 关键包：
+  pyinstaller=MISSING
+  PyQt5=5.15.11  Pillow=12.3.0  numpy=2.5.3
+  psd-tools=1.19.0  opencv-python-headless=5.0.0.93  pytesseract=0.3.13</pre>
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">V2.2 的核心卖点（L 形挖角边框补全、三级路由）当前只在源码层可用，发布版 exe 是过期快照。若按现状交付，用户拿到的版本<strong>不包含今日全部修复</strong>；且团队无法在本机重新构建，需先补装工具链。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">
+          1) 在 <code>.venv</code> 内安装 PyInstaller（<code>pip install pyinstaller</code>，注意与 PyQt5 5.15.11 / Python 3.13 的兼容版本）；<br>
+          2) 补 <code>requirements.txt</code> 的构建依赖分组（当前只列了运行依赖 + pytest）；<br>
+          3) 出包后对 <strong>V2.2 主卖点 L 形挖角</strong>做一次发布版端到端冒烟——该验证在昨日报告中即已标记「未验证」，至今仍是空缺；<br>
+          4) 把「exe 时间戳 ≥ 最新源码时间戳」纳入发布前检查清单。
+        </div></div>
+      </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p0">P0-03</span>
+        <div class="issue-title">433 个测试全绿，却拦不住一个必现崩溃 —— GUI 测试网存在结构性盲区
+          <small>测试断言的是「信号已接线」，而非「槽函数能跑通」</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt"><code>tests/gui/test_main_window.py</code> 对 <code>_on_rendered</code> 的验证方式是 <code>assert_signal_connected(...)</code>——只断言「<code>rendered</code> 信号连接到了 <code>_on_rendered</code>」，<strong>从未真正构造一张图调用它</strong>。因此函数体内的格式化逻辑处于零覆盖状态。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+          <code>tests/gui/test_main_window.py:97-98</code>：
+<pre>        assert_signal_connected(
+            main_window.canvas.rendered,
+            main_window._on_rendered,
+            'PreviewCanvas.rendered -> MainWindow._on_rendered',
+        )</pre>
+          全 <code>tests/</code> 目录检索 <code>_on_rendered</code>，仅命中上述 2 行（另一处为 <code>test_signals_contract.py</code> 的信号名清单），<strong>没有任何测试真正传入 PIL 图像调用该槽</strong>。
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">测试的「接线正确性」覆盖得很好（这本身很有价值，能抓到「点了没反应」类静默失效），但<strong>槽函数体的执行路径完全裸奔</strong>。P0-01 之所以能长期潜伏并在今晨连撞三次，正是因为这个盲区——它同时也意味着其他槽函数体内可能存在同类隐患。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">
+          为「槽函数体」补一组行为用例，而非仅仅接线用例。以本问题为例，用已有夹具即可写出来：
+<pre class="ok">def test_on_rendered_accepts_exif_rational_dpi(main_window):
+    """回归 P0-01：带 EXIF 分辨率的图片不得让状态栏刷新崩溃。"""
+    from PIL import Image
+    from PIL.TiffImagePlugin import IFDRational
+    img = Image.new('RGB', (100, 60))
+    img.info['dpi'] = (IFDRational(300, 1), IFDRational(300, 1))
+    main_window._on_rendered(img)          # 修复前必抛 TypeError
+    assert 'DPI' in main_window._status_size.text()</pre>
+          该用例成本极低、价值极高：它是唯一能在测试阶段拦住 P0-01 的手段。建议同时盘点其余「纯格式化/纯计算」型槽函数，按同一模式补齐。
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. P1 ============ -->
+  <section>
+    <h2 class="sec">三、P1 级问题（发布前应处理）</h2>
+    <p class="sec-note">不直接阻塞功能，但持续放大回归成本与协作摩擦。</p>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p1">P1-01</span>
+        <div class="issue-title">250 处未使用导入，集中在 GUI 与 core 的拆分产物
+          <small>模块拆分脚本机械保留了原文件的 import 头</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt">全量 AST 比对「导入名」与「文件内引用」，剔除 <code>__future__</code> 与 <code>__init__.py</code> 再导出后，仍有 <strong>250 处</strong>未使用导入，分布：<code>gui</code> 125 · <code>core</code> 96 · <code>tests</code> 19 · <code>scripts</code> 7。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+          典型的「拆分复制头」特征——同一批导入名在多个 mixin 文件中重复出现却无人使用：
+<pre>gui/property_panel_layers.py
+    :10  date / datetime / timedelta     :11  QSize / QThread / Qt / pyqtSignal
+    :12  QColor / QPixmap                :19  QMimeData
+    :20  Image                           :23  parse_filename
+    :24  TemplateMatcher                 :25  get_app_settings
+    :31  ColorButton / _SketchDropLabel  :32  PoolRenderWorker / _SketchParseWorker
+
+core/pool_designer/sketch_parser_numbers.py
+    :10  os   :12  sys   :13  threading   :14  time   :15  dataclass   :16  Optional   :18  np</pre>
+          项目在 <code>scripts/</code> 下保留了 <code>split_*.py</code> 拆分辅助脚本，可佐证这批导入是机械拆分时整段复制而来。<strong>按目录汇总：gui 125 / core 96 / tests 19。</strong>
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">不构成功能缺陷，但三重成本：① 读者无法从 import 头判断模块真实依赖；② 掩盖真实的循环依赖与分层问题；③ 每次重构都要连带维护这些死导入。对 core 层的 96 处尤其值得清理——core 是「纯业务层」定位，导入头失真正在削弱这个声明的可信度。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">引入 <code>pyflakes</code> 或 <code>ruff</code>（一条命令即可列出全部 F401），先对 <code>core/</code> 与 <code>gui/</code> 做一次清理；在 CI 或 <code>pytest.ini</code> 里加一道 lint 关卡防止回流。注意：<code>core/compat/</code> 的 <code>sys.modules</code> 别名机制依赖模块级导入，清理时需排除。</div></div>
+      </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p1">P1-02</span>
+        <div class="issue-title">59 处静默吞异常（<code>pass</code> / <code>continue</code> 且无日志）
+          <small>与 OCR「静默失败无计数」是同一类可观测性缺口</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt"><code>bare except</code> 为 <strong>0 处</strong>（值得肯定）；<code>except Exception</code> 共 186 处；其中 <strong>59 处</strong> 的 except 体仅为 <code>pass</code>/<code>continue</code> 且不含任何 logger 调用。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+<pre>静默吞异常分布 TOP：
+  core/pool_designer/sketch_parser_multihole.py   12
+  core/parser/template_matcher.py                  9
+  gui/property_panel_generate.py                   6
+  tests/gui/conftest.py                            5
+  gui/property_panel.py                            3
+  core/parser/name_parser.py                       2
+  gui/property_panel_layers.py                     2</pre>
+          最高密度的 <code>sketch_parser_multihole.py</code> 正是 OCR 多洞识别的核心路径。昨日报告也独立指出 OCR 循环 <code>except → continue</code> 无日志、无失败计数，本轮扫描在静态层面对该结论形成了交叉印证。
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">Tesseract 配置异常、字体缺失一类的环境问题会让整轮 OCR 静默失败，用户只看到「识别不出来」，排障时日志里没有任何线索。考虑到 Tesseract 是<strong>非默认路径安装</strong>（<code>D:\Programs\Tesseract-OCR</code>）且依赖环境变量探测，这类静默失败的实际发生概率并不低。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">在 OCR 相关的 except 分支加 <code>logger.debug/warning</code> + 失败计数器，在 7 步法 / 多洞法收尾时汇总输出一次「本轮 OCR 调用 N 次，失败 M 次」。不要全局批量改——优先覆盖 <code>sketch_parser_*</code> 与 <code>lshape_sketch_parser</code>。</div></div>
+      </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p1">P1-03</span>
+        <div class="issue-title">版本库混入约 90 MB 非源码内容，<code>.gitignore</code> 未覆盖工具目录
+          <small>含 47.8 MB 的 PyQt5 wheel 备份</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt">git 跟踪文件共 591 个，其中 <strong>51 个</strong>位于 <code>.workbuddy/</code> 与 <code>.dumate/</code> 之下。这两个目录均<strong>未被 <code>.gitignore</code> 覆盖</strong>。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+<pre>被跟踪的大体积文件 TOP：
+   47.76 MB  .workbuddy/wheels_backup/PyQt5_Qt5-5.15.2-py3-none-win_amd64.whl
+    7.30 MB  .dumate/inbox/test_result_full.jpg
+    7.30 MB  .dumate/inbox/test_current.jpg
+    7.30 MB  .dumate/inbox/test_result_after_fix.jpg
+    6.55 MB  .workbuddy/wheels_backup/PyQt5-5.15.11-cp38-abi3-win_amd64.whl
+    0.58 MB  scripts/_archive/test_cropper_output/test_design_bands_WITHcorner_debug.jpg
+    ...
+
+其它被跟踪的调试产物：
+  .workbuddy/image_cropper_border.py.bak-20260905-1530   ← 源码 .bak 备份
+  .workbuddy/diag/{1..7}_*.png, debug_r2.py, diag7.py, diag_results.json</pre>
+          现有 <code>.gitignore</code> 覆盖了 <code>.venv/ dist/ build/ .idea/ logs/ _archive/</code>，但<strong>遗漏 <code>.workbuddy/</code> 与 <code>.dumate/</code></strong>。注意 <code>_archive/</code> 规则只匹配项目根同名目录，不匹配 <code>scripts/_archive/</code>。
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">克隆体积与仓库历史被非源码内容显著放大（仅两个 whl 就占 54 MB）；<code>.bak</code> 备份与诊断脚本混在版本库中，容易被误当作当前实现。另外 <code>.workbuddy/memory/*.md</code> 也被跟踪——若团队协作时希望共享记忆，应明确约定，否则同样属于噪声。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">
+          注意 <strong>补写 <code>.gitignore</code> 对已跟踪文件无效</strong>，必须配合「退跟踪」：
+<pre># 1) 先补规则
+echo ".workbuddy/" >> .gitignore
+echo ".dumate/"   >> .gitignore
+echo "scripts/_archive/" >> .gitignore
+
+# 2) 退跟踪（保留本地文件，不删除磁盘内容）
+git rm -r --cached .workbuddy .dumate
+git rm -r --cached scripts/_archive
+
+# 3) 提交
+git commit -m "chore: 停止跟踪工具目录与归档产物"</pre>
+          该操作<strong>只影响索引，不删除工作区文件</strong>，风险低；但仍建议先 <code>git status</code> 留档。若确实需要团队共享记忆文件，可单独保留 <code>.workbuddy/memory/</code> 白名单。
+        </div></div>
+      </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p1">P1-04</span>
+        <div class="issue-title">超长函数与巨类集中，回归成本高
+          <small>单函数最长 848 行；30 个函数超过 150 行</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt">共 1,202 个函数，其中 <strong>78 个超过 80 行、30 个超过 150 行</strong>。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+<pre>  848 行  core/image_ops.py:548            def render_design()
+  737 行  core/pool_designer/sketch_parser_numbers.py:274  def _extract_direction_label_numbers()
+  574 行  core/pool_designer/lshape_sketch_parser.py:104    def _detect_lshape_geometry()
+  515 行  gui/property_panel_workers.py:130                 def run()
+  431 行  gui/property_panel_generate.py:166               def _on_pool_finished_ok()
+  413 行  core/pool_designer/sketch_parser_multihole.py:1487 def _9step_multi_hole_parse()
+  392 行  core/pool_designer/sketch_parser_margins.py:191    def _validate_and_fix_margins()
+  ...
+
+超大类：
+  gui/cropper_panel.py:122      class CropperPanel     — 48 方法 / 1030 行
+  core/parser/template_matcher.py:361 class TemplateMatcher — 27 方法 / 1032 行
+  gui/property_panel_poolbox.py:34  class _PoolBoxMixin — 27 方法 / 920 行</pre>
+          <code>render_design()</code> 单函数 848 行，内部串起了 L 形挖角、多洞、三层边框路由、残留清理等多条互不相干的路径——阅读时需在近千行内来回跳转。
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">这类函数是「改一处、连带碰坏另一处」的高发区。P0-01 与 P1-06 都出现在长函数/强耦合路径附近。当前测试能提供一定保护，但测试覆盖的是行为契约，长函数内部的状态耦合不在其射程内。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">不要求全面重构（会与「源码零改动」的诉求冲突），建议采用<strong>增量提纯</strong>：每次因业务需要改动这些函数时，<strong>顺手把其中边界清晰的一段抽成带 docstring 的私有函数</strong>，并为其补一个直接用例。避免「为拆而拆」的大规模重构——项目历史上已多次因重构引入回归（如昨日报告记录的 N0-01 二次操作崩溃）。</div></div>
+      </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p1">P1-05</span>
+        <div class="issue-title">依赖版本全部使用下界约束，实际装载已跨越大版本
+          <small>numpy 2.5.3 / opencv-python-headless 5.0.0.93</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt"><code>requirements.txt</code> 8 个依赖全部为 <code>&gt;=</code> 形式，无上界；且未区分运行依赖与构建依赖。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+<pre>requirements.txt（节选）
+PyQt5>=5.15.0        numpy>=1.21.0       Pillow>=9.0.0
+psd-tools>=1.9.28    opencv-python-headless>=4.5.0    pytesseract>=0.3.10
+pytest>=7.0.0
+
+.venv 实际安装
+  numpy=2.5.3                  （上界声明为 1.21 → 跨 2 个大版本）
+  opencv-python-headless=5.0.0.93（声明 4.5 → 跨 1 个大版本）
+  Pillow=12.3.0                （声明 9.0 → 跨 3 个大版本）
+  psd-tools=1.19.0 / pytesseract=0.3.13 / PyQt5=5.15.11</pre>
+          numpy 2.x 对 <code>np.float64</code> 语义、C-API 有破坏性变更；Pillow 12 亦调整了若干 API。项目当前恰好全绿，但这属于「运气型兼容」。
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">在另一台机器上按 <code>requirements.txt</code> 干净安装，可能装到与开发机不同的组合，出现「我这里能跑」。对于需要交付 exe 的桌面项目，环境一致性本身就是交付质量的一部分。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">① 补出实际验证过的上界（如 <code>numpy&gt;=1.21,&lt;3</code>、<code>Pillow&gt;=9,&lt;13</code>）；② 增加 <code>requirements-dev.txt</code> 承载 pytest / pyinstaller 等构建与测试依赖；③ 生成 <code>requirements.lock</code>（<code>pip freeze</code>）固化当前可用的精确组合，作为交付基线。</div></div>
+      </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-head">
+        <span class="tag p1">P1-06</span>
+        <div class="issue-title">README 测试基线与实测不符，且自身表述矛盾
+          <small>三处写 430 passed，实测 433</small>
+        </div>
+      </div>
+      <div class="issue-body">
+        <div class="row"><div class="lbl">现状</div><div class="txt">README 出现三处测试数字，均与实测不一致；其中一处内部自相矛盾。</div></div>
+        <div class="row"><div class="lbl">证据</div><div class="txt">
+<pre>README> ├── tests/  # 单元测试（... 2026-09-11 失效测试清理后实测 430 passed / 0 skipped）
+README> # 全部测试（实测 430 passed / 0 skipped，约 43 秒）
+README> 实测基线（2026-09-11，失效测试清理后）：**430 passed / 0 skipped / 0 failed**
+         （27 个文件 · 342 个用例）    <- 430 passed 与 342 个用例自相矛盾
+
+本次实测：433 passed / 0 skipped / 0 failed（84.38s，退出码 0）
+用例收集：430 collected（core 223 / integration 77 / sketch 64 / gui 56 / border 10）
+测试文件：34 个 .py（含 3 个 conftest/__init__），README 称 27 个</pre>
+        </div></div>
+        <div class="row"><div class="lbl">影响</div><div class="txt">测试基线是判断「本次改动有没有引入回归」的标尺。标尺本身不准，会让后续审查的结论失去参照——昨日报告即出现过「374 / 430 / 433」三个数字在不同位置流转的情况。</div></div>
+        <div class="row"><div class="lbl">建议</div><div class="txt">统一改为实测值，并<strong>在数字后标注取证日期</strong>，例如「433 passed / 0 skipped（2026-09-12 实测，84.4s）」。同时修正文件数表述。另外建议补一句「收集 430 / 执行 433，差异 3 例未定位」——本轮扫描发现该差异但未能归因，如实标注比掩盖更有价值。</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4. P2 ============ -->
+  <section>
+    <h2 class="sec">四、P2 级技术债一览</h2>
+    <p class="sec-note">不阻塞交付，建议穿插处理。每项均给出可直接核对的证据位置。</p>
+    <table>
+      <thead><tr><th style="width:5%">#</th><th style="width:30%">问题</th><th style="width:45%">证据</th><th style="width:20%">建议</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>根目录存在与 <code>packaging/specs/</code> 完全重复的 spec 文件</td>
+          <td>根目录 <code>智能裁剪设计器V2.2.spec</code>（2870 B）与 <code>packaging/specs/智能裁剪设计器V2.2.spec</code> 内容逐字节相同（已比对）</td>
+          <td>删除根目录副本，保留 <code>packaging/specs/</code> 单一来源</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>根目录遗留调试产物 3 个</td>
+          <td><code>debug.log</code>（19 KB，实为搜狗输入法内核日志）· <code>debug_outer.txt</code>（grep 输出）· <code>debug_path.txt</code>（同），均为 09-11 16:30 前后生成</td>
+          <td>删除，并在 <code>.gitignore</code> 补 <code>/debug*.log</code>、<code>/debug_*.txt</code></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>旧版打包脚本未归档</td>
+          <td><code>packaging/</code> 下仍有 <code>package.py</code> / <code>packageV2.0.py</code> / <code>packageV2.1.py</code>；仅 <code>packageV2.1.2.py</code> 进了 <code>legacy/</code></td>
+          <td>一并移入 <code>packaging/legacy/</code>，与已归档项保持一致</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><code>GAP_*</code> 常量仍硬编码在检测模块，与「常量集中于 config.py」的声明不符</td>
+          <td><code>core/corner/detection.py</code> 内 <code>GAP_MAX_THICKNESS_GLOBAL=40.0</code>、<code>GAP_NEIGHBOR_MIN_DIST_GLOBAL=25.0</code>、<code>GAP_BG_DIST_GLOBAL=80.0</code>、<code>GAP_CONTENT_DIST_GLOBAL=70.0</code>；<code>config.py</code> 中无 <code>GAP_</code> 键</td>
+          <td>迁入 <code>config.py</code>（<code>BORDER_*</code> 系列已在其中，可参照）</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>模板库缓存使用 <code>pickle.load</code> 反序列化</td>
+          <td><code>core/parser/template_matcher.py:295</code>：<code>data = pickle.load(f)</code></td>
+          <td>改为 JSON 或加缓存文件签名/路径白名单校验；至少确认缓存路径不含用户可控输入</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>core 层依赖 PyQt5，削弱「纯业务层」定位</td>
+          <td><code>core/app_settings.py:25</code>：<code>from PyQt5.QtCore import QSettings</code>（分层检查中 core 目录唯一命中）</td>
+          <td>抽成 <code>core</code> 内定义的后端接口，QSettings 实现移到 gui 层注入；或明确接受该依赖并更新分层说明</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>空文件 <code>tests/__init__.py</code></td>
+          <td>0 行</td>
+          <td>删除或补充说明其存在必要性（子目录并非包，无 <code>__init__.py</code>）</td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>用例收集数（430）与执行数（433）差 3，未归因</td>
+          <td><code>pytest --collect-only</code> 报 430 collected；实跑报 433 passed</td>
+          <td>定位差异来源（疑为 fixture 级参数化展开），或如实标注</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <strong>一句话说明</strong>
+      P2 清单里没有发现真实功能缺陷，全部为卫生、一致性、可维护性层面的问题。其中第 5 项（pickle）是唯一带安全语义的条目，虽然缓存文件由程序自身写入、当前不可被外部替换，仍建议纳入中期整改。
+    </div>
+  </section>
+
+  <!-- ============ 5. 亮点 ============ -->
+  <section>
+    <h2 class="sec">五、工程亮点（经代码核实的正面结论）</h2>
+    <p class="sec-note">以下每一条都在本次审查中回到代码确认，而非沿用历史结论。</p>
+    <table>
+      <thead><tr><th style="width:30%">亮点</th><th style="width:70%">代码证据</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>打包白名单零漏收</strong></td>
+          <td><code>core/</code> 30 个模块 + <code>gui/</code> 10 个模块与 <code>packageV2.2.py</code>、<code>智能裁剪设计器V2.2.spec</code> 的 hiddenimports 求差集，结果 <strong>40/40 全部声明</strong>。同时扫描出的 <strong>9 处函数内延迟导入</strong>（漏收高发区）也已被白名单覆盖，包括 <code>gui/property_panel_layers.py:436</code> 的 <code>core.psd_loader</code>。</td>
+        </tr>
+        <tr>
+          <td><strong>兼容层设计规范</strong></td>
+          <td><code>core/compat/__init__.py</code> 用 <code>sys.modules</code> 注册旧路径别名（<code>core.psd_loader</code> → <code>core.psd.loader</code> 等 4 条），并把 <code>from . import compat</code> 放在 <code>core/__init__.py</code> 最前以保证时序。文档写明了工作原理与退役路径，是标准的渐进式迁移做法。</td>
+        </tr>
+        <tr>
+          <td><strong>线程退役协议已闭环</strong></td>
+          <td><code>main.py:466-473</code>（closeEvent）与 <code>:531-537</code>（aboutToQuit）双通道各接管 4 路 <code>shutdown()</code>（cropper / canvas / panel / lshape_panel）。覆盖了关闭窗口与系统级退出两条路径，解决了项目长期追查的 QThread 析构崩溃。</td>
+        </tr>
+        <tr>
+          <td><strong>失败掩盖已消除</strong></td>
+          <td><code>core/image_ops.py:1159-1166</code> 中 <code>_skip_unified</code> 改为条件跳过；<code>:1256-1267</code> 在 <code>_completion_ok=False</code>（V13 / Profile / 旧路径三层全失败）时补画统一黑框兜底。三层静默失效不再被掩盖成「看起来正常」。</td>
+        </tr>
+        <tr>
+          <td><strong>大图内存与类型防御</strong></td>
+          <td><code>save_jpg</code>（<code>image_ops.py:1695-1702</code>）对 <code>dpi</code> 做了完整的类型规范化（<code>int(round(...))</code> + 元组/标量分支）；<code>:1703-1713</code> 的原子写入（tmp + <code>os.replace</code>）在异常时清理临时文件后重新抛出。这两处正是 P0-01 应当对齐的口径。</td>
+        </tr>
+        <tr>
+          <td><strong>测试基础设施质量高</strong></td>
+          <td><code>tests/gui/conftest.py</code> 用 <code>setdefault('QT_QPA_PLATFORM','offscreen')</code> 离屏运行、独立 <code>organization/app_name</code> 隔离 QSettings、<code>findChildren(QThread)</code> 统一收尾线程；<code>pytest.ini</code> 将 <code>PytestReturnNotNoneWarning</code> 升为 ERROR 防止 <code>return</code> 冒充断言；<code>tests/conftest.py</code> 的 <code>collect_ignore</code> 机制保留为空清单（问题已治理而非堆积）。</td>
+        </tr>
+        <tr>
+          <td><strong>静态卫生达标</strong></td>
+          <td>全量 108 文件通过 <code>ast.parse</code>；<code>bare except</code> <strong>0 处</strong>；<code>TODO/FIXME/HACK</code> 标记 <strong>0 处</strong>；硬编码凭据 <strong>0 处</strong>；<code>eval</code> / <code>os.system</code> / <code>shell=True</code> 均为 0，<code>subprocess</code> 仅出现在打包脚本中。</td>
+        </tr>
+        <tr>
+          <td><strong>缺陷修复有注释溯源</strong></td>
+          <td>关键改动带日期与编号标记，如 <code>[Fix P1-06 2026-09-12]</code>、<code>[Fix 2026-09-12 三层失败掩盖]</code>、<code>[Fix N-P0-02]</code>、<code>[Fix 0xC0000409]</code>，并可回溯到具体缺陷描述。这让本次审查能快速区分「已修」与「未修」，是很好的工程习惯。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============ 6. 评分 ============ -->
+  <section>
+    <h2 class="sec">六、健康度评分</h2>
+    <p class="sec-note">各维度 0–100，按对交付质量的影响加权。</p>
+
+    <div class="bars">
+      <div class="bar"><div class="name">功能正确性</div><div class="track"><div class="fill" style="width:62%;background:#d92d20"></div></div><div class="num">62</div></div>
+      <div class="bar"><div class="name">测试与验证</div><div class="track"><div class="fill" style="width:68%;background:#b54708"></div></div><div class="num">68</div></div>
+      <div class="bar"><div class="name">代码质量</div><div class="track"><div class="fill" style="width:66%;background:#b54708"></div></div><div class="num">66</div></div>
+      <div class="bar"><div class="name">架构与分层</div><div class="track"><div class="fill" style="width:82%;background:#067647"></div></div><div class="num">82</div></div>
+      <div class="bar"><div class="name">构建与发布</div><div class="track"><div class="fill" style="width:45%;background:#d92d20"></div></div><div class="num">45</div></div>
+      <div class="bar"><div class="name">文档与仓库卫生</div><div class="track"><div class="fill" style="width:58%;background:#b54708"></div></div><div class="num">58</div></div>
+    </div>
+
+    <div class="score-total">
+      <div class="big">64</div>
+      <div class="desc"><strong>综合评分 64 / 100 · C+（可用，但发布前必须清理 P0）</strong><br>
+      底座分数被「架构与分层 82」显著托高，被「构建与发布 45」与「功能正确性 62」拖低。<br>
+      P0-01 修复后功能正确性可升至 ~85，P0-02 解决后构建项可升至 ~80，综合分预期达 <strong>82 / 100</strong>。</div>
+    </div>
+
+    <h3>评分解读</h3>
+    <ul>
+      <li><strong>架构与分层 82（最高）</strong>——core 层几乎无 GUI 反向依赖（唯一例外是 QSettings）、依赖单向、无循环导入、兼容层设计规范。</li>
+      <li><strong>构建与发布 45（最低）</strong>——本次审查中最被低估的短板。exe 落后源码 + 打包工具链缺失，使所有其他改进都停留在「无法交付」状态。</li>
+      <li><strong>功能正确性 62</strong>——算法与业务逻辑本身扎实，扣分主要来自今晨的必现崩溃及其长期潜伏所反映的验证盲区。</li>
+      <li><strong>测试与验证 68</strong>——数量与通过率都很好（433 全绿），扣分点是覆盖的<em>结构</em>：接线覆盖充分、函数体覆盖薄弱。</li>
+    </ul>
+  </section>
+
+  <!-- ============ 7. 路线 ============ -->
+  <section>
+    <h2 class="sec">七、行动路线</h2>
+    <p class="sec-note">按「先恢复可用与可交付，再降本增效」排序。风险标注指该操作本身的副作用。</p>
+
+    <h3>第一阶段 · 立即（恢复可用与可交付）</h3>
+    <table>
+      <thead><tr><th style="width:8%">序</th><th style="width:12%">编号</th><th style="width:38%">动作</th><th style="width:22%">验收标准</th><th style="width:20%">风险</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>P0-01</td><td>修复 <code>main.py:307</code> 的 dpi 格式化，对齐 <code>save_jpg</code> 既有防御口径</td><td>新增用例：传入 <code>IFDRational</code> dpi 的图不抛异常</td><td>极低（单点、语义不变）</td></tr>
+        <tr><td>2</td><td>P0-03</td><td>为 <code>_on_rendered</code> 补一条真实调用用例（回归防护）</td><td>修复前该用例必红（建议做变异检验）</td><td>低（仅新增测试）</td></tr>
+        <tr><td>3</td><td>P0-02</td><td>安装 PyInstaller、补构建依赖、重新出包</td><td>exe 时间戳 ≥ 最新源码；L 形挖角在发布版跑通一次</td><td>中（工具链与 PyQt5 5.15.11 的兼容需实测）</td></tr>
+        <tr><td>4</td><td>P1-03</td><td>补 <code>.gitignore</code> 并对 <code>.workbuddy/</code>、<code>.dumate/</code> 执行 <code>git rm --cached</code></td><td><code>git ls-files</code> 不再含 whl / 诊断图 / .bak</td><td>低（不动工作区文件，仅索引）</td></tr>
+      </tbody>
+    </table>
+
+    <h3>第二阶段 · 短期（1–2 周，降低回归成本）</h3>
+    <table>
+      <thead><tr><th style="width:8%">序</th><th style="width:12%">编号</th><th style="width:40%">动作</th><th style="width:40%">说明</th></tr></thead>
+      <tbody>
+        <tr><td>5</td><td>P1-01</td><td>引入 <code>ruff</code>/<code>pyflakes</code>，清理 250 处未使用导入（优先 core 96 / gui 125）</td><td>排除 <code>core/compat/</code>（依赖模块级导入）</td></tr>
+        <tr><td>6</td><td>P1-02</td><td>为 OCR 相关 except 分支补日志与失败计数</td><td>重点 <code>sketch_parser_*</code> / <code>lshape_sketch_parser</code>，不做全局批量改</td></tr>
+        <tr><td>7</td><td>P1-05</td><td>依赖补上界 + 拆分 dev 依赖 + 生成 lock 文件</td><td>固化「已验证组合」，支撑交付一致性</td></tr>
+        <tr><td>8</td><td>P1-06</td><td>README 测试基线改为实测值并标注取证日期</td><td>同时修正「27 个文件 / 342 用例」表述</td></tr>
+      </tbody>
+    </table>
+
+    <h3>第三阶段 · 中期（2–4 周，技术债）</h3>
+    <ul>
+      <li><strong>P2-1~3</strong> 仓库卫生：删除根目录重复 spec、清理 3 个调试残留文件、归档旧打包脚本</li>
+      <li><strong>P2-4</strong> 阈值收敛：<code>GAP_*</code> 四个常量迁入 <code>config.py</code>，与 <code>BORDER_*</code> 系列统一</li>
+      <li><strong>P2-5</strong> <code>pickle.load</code> 改 JSON（或加缓存文件校验）</li>
+      <li><strong>P2-6</strong> 解除 <code>core/app_settings.py</code> 对 PyQt5 的依赖，恢复分层纯净</li>
+      <li><strong>P1-04</strong> 长函数增量提纯：仅在业务改动触及处抽取，<strong>不做大规模重构</strong></li>
+    </ul>
+
+    <div class="callout warn">
+      <strong>执行纪律提醒</strong>
+      项目历史上多次因重构引入回归（N0-01 二次操作崩溃即为典型）。建议所有改动遵循：<strong>单点修改 → 立即跑全量测试对比 433 基线 → 新用例做过变异检验（故意改错期望值确认能变红）</strong>。切勿把「修 P0-01」与「清理 250 处导入」放在同一次改动里。
+    </div>
+  </section>
+
+  <!-- ============ 8. 结论 ============ -->
+  <section>
+    <h2 class="sec">八、结论</h2>
+    <p>SmartShapeCrop V2.2 是一个<strong>功能完整、算法扎实、工程习惯良好</strong>的项目。433 个用例全绿、40/40 打包白名单无漏收、线程退役双通道闭环、失败掩盖已消除、core 层分层基本干净——这些都经过了本次逐行核实，不是沿用历史结论。</p>
+    <p>本次审查的核心增量是<strong>推翻了「崩溃未复发」的判断</strong>：<code>crash.log</code> 中今晨三次崩溃指向一个必现的 <code>IFDRational</code> 格式化缺陷，且项目自有素材永远复现不出（204 张图的 dpi 全为 <code>int</code>），只能靠用户上传的外部图片触发。它之所以能穿过 433 个测试，是因为 GUI 测试断言的是「信号已接线」而非「槽函数能跑通」——这是本次最值得修复的结构性问题，而不只是修一行代码。</p>
+    <p>另一处需要正视的是<strong>交付链条</strong>：产物落后于源码、打包工具链缺失，使得任何改进都无法到达用户。建议把「P0-01 修复 + 回归用例 + 重新出包」作为一组最小闭环一起推进——只修代码不出包，等于没修。</p>
+    <div class="callout good">
+      <strong>预期</strong>
+      完成第一阶段的四项后，项目将回到「可交付且崩溃窗口关闭」的状态，综合健康度预期从 <strong>64 升至 82</strong>。剩余 P1/P2 属于持续降本，不构成发布阻塞。
+    </div>
+  </section>
+
+</div>
+
+<div class="footer">
+  <strong>SmartShapeCrop V2.2 全面审查与建议报告 · 报告版本 V1.0</strong><br>
+  审查日期 2026-09-12 &nbsp;·&nbsp; 被审查代码 HEAD <code>aa676a9</code>（工作区含未提交改动）<br>
+  审查方式：AST 全量静态分析 + 全量测试实跑 + 崩溃现场取证 + 构建链路核查 &nbsp;·&nbsp; <strong>只读审查，未修改任何源码</strong>
+</div>
+
+</body>
+</html>
