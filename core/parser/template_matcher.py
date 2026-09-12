@@ -23,6 +23,7 @@ import logging
 import os
 import pickle
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -381,6 +382,8 @@ class TemplateMatcher:
         self.disk_cache_enabled: bool = True
         self.enable_match_debug_log: bool = False
         self.force_rebuild = False
+        # [Fix 2026-09-12 N-P1-04] 线程安全锁：保护 _cache / _idx_* / 评分写入
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------
     # 基础接口
@@ -394,17 +397,18 @@ class TemplateMatcher:
             self._on_log(msg)
 
     def set_template_dir(self, dir_path: str):
-        if self._template_dir == dir_path:
-            return
-        self._template_dir = dir_path
-        self._cache = {}
-        self._idx_pattern = {}
-        self._idx_layout = {}
-        self._idx_circular = {True: [], False: []}
-        self._idx_ratio = {}
-        self._subdir_mtimes = {}
-        self._dir_mtime = 0
-        self._last_full_walk_at = 0.0
+        with self._lock:
+            if self._template_dir == dir_path:
+                return
+            self._template_dir = dir_path
+            self._cache = {}
+            self._idx_pattern = {}
+            self._idx_layout = {}
+            self._idx_circular = {True: [], False: []}
+            self._idx_ratio = {}
+            self._subdir_mtimes = {}
+            self._dir_mtime = 0
+            self._last_full_walk_at = 0.0
 
     def get_template_dir(self) -> str:
         return self._template_dir
@@ -474,6 +478,13 @@ class TemplateMatcher:
         check_cancel: 可选无参回调，返回 True 表示调用方请求取消扫描；
         取消时提前返回（磁盘缓存不落盘）。默认 None 行为与旧版一致。
         """
+        self._lock.acquire()
+        try:
+            return self._scan_library_impl(force, check_cancel)
+        finally:
+            self._lock.release()
+
+    def _scan_library_impl(self, force: bool, check_cancel) -> dict[str, TemplateEntry]:
         if not self._template_dir:
             self._log("⚠️ 未设置模板库目录")
             return {}
@@ -785,6 +796,13 @@ class TemplateMatcher:
     # ------------------------------------------------------------
 
     def find_best_match(self, target_filename: str) -> tuple[Optional[TemplateEntry], list[TemplateEntry]]:
+        self._lock.acquire()
+        try:
+            return self._find_best_match_impl(target_filename)
+        finally:
+            self._lock.release()
+
+    def _find_best_match_impl(self, target_filename: str) -> tuple[Optional[TemplateEntry], list[TemplateEntry]]:
         if not self._template_dir:
             self._log("⚠️ 请先设置模板库目录")
             return None, []
@@ -1321,15 +1339,16 @@ class TemplateMatcher:
         )
 
     def get_library_stats(self) -> dict:
-        if self._template_dir and (not self._cache or self._needs_refresh()):
-            self.scan_library()
-        return {
-            'total': len(self._cache),
-            'has_pattern': sum(1 for e in self._cache.values() if e._pattern_name),
-            'has_size': sum(1 for e in self._cache.values() if e._width_cm > 0),
-            'has_material': sum(1 for e in self._cache.values() if e._material),
-            'has_custom': sum(1 for e in self._cache.values() if e.is_custom),
-        }
+        with self._lock:
+            if self._template_dir and (not self._cache or self._needs_refresh()):
+                self.scan_library()
+            return {
+                'total': len(self._cache),
+                'has_pattern': sum(1 for e in self._cache.values() if e._pattern_name),
+                'has_size': sum(1 for e in self._cache.values() if e._width_cm > 0),
+                'has_material': sum(1 for e in self._cache.values() if e._material),
+                'has_custom': sum(1 for e in self._cache.values() if e.is_custom),
+            }
 
     def _needs_refresh(self) -> bool:
         if not self._template_dir:
@@ -1342,33 +1361,35 @@ class TemplateMatcher:
             return True
 
     def clear_cache(self):
-        self._cache = {}
-        self._idx_pattern = {}
-        self._idx_layout = {}
-        self._idx_circular = {True: [], False: []}
-        self._idx_ratio = {}
-        self._subdir_mtimes = {}
-        self._dir_mtime = 0
-        self._last_full_walk_at = 0.0
-        try:
-            base = self._cache_path()
-            for ext in (".pickle", ".json"):
-                p = base + ext
-                if os.path.exists(p):
-                    os.remove(p)
-        except OSError:
-            pass
+        with self._lock:
+            self._cache = {}
+            self._idx_pattern = {}
+            self._idx_layout = {}
+            self._idx_circular = {True: [], False: []}
+            self._idx_ratio = {}
+            self._subdir_mtimes = {}
+            self._dir_mtime = 0
+            self._last_full_walk_at = 0.0
+            try:
+                base = self._cache_path()
+                for ext in (".pickle", ".json"):
+                    p = base + ext
+                    if os.path.exists(p):
+                        os.remove(p)
+            except OSError:
+                pass
 
     def get_index_stats(self) -> dict:
-        return {
-            "total_entries": len(self._cache),
-            "pattern_buckets": len(self._idx_pattern),
-            "layout_buckets": {k: len(v) for k, v in self._idx_layout.items()},
-            "circular_buckets": {k: len(v) for k, v in self._idx_circular.items()},
-            "ratio_buckets": {k: len(v) for k, v in self._idx_ratio.items()},
-            "subdirs_tracked": len(self._subdir_mtimes),
-            "last_full_walk_at": self._last_full_walk_at,
-        }
+        with self._lock:
+            return {
+                "total_entries": len(self._cache),
+                "pattern_buckets": len(self._idx_pattern),
+                "layout_buckets": {k: len(v) for k, v in self._idx_layout.items()},
+                "circular_buckets": {k: len(v) for k, v in self._idx_circular.items()},
+                "ratio_buckets": {k: len(v) for k, v in self._idx_ratio.items()},
+                "subdirs_tracked": len(self._subdir_mtimes),
+                "last_full_walk_at": self._last_full_walk_at,
+            }
 
 
 # ============================================================================

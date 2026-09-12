@@ -756,7 +756,11 @@ def _post_cleanup_gap_regions(
 
             if len(straight_samples) > 20:
                 straight_arr = np.array(straight_samples, dtype=np.int64)
-                straight_colors = src_arr[straight_arr[:, 0], straight_arr[:, 1], :]
+                # [Fix 2026-09-12 P1-01] 钳制索引到 [0,h-1]×[0,w-1]，防止小图负索引越界
+                # 并修复 src_arr 悬空引用（N-P1-02 降采样后变量名已改为 src_f/arr）
+                straight_arr[:, 0] = np.clip(straight_arr[:, 0], 0, h - 1)
+                straight_arr[:, 1] = np.clip(straight_arr[:, 1], 0, w - 1)
+                straight_colors = arr[straight_arr[:, 0], straight_arr[:, 1], :].astype(np.float64)
                 dist_to_content_s = np.sqrt(
                     np.sum((straight_colors - content_ref.reshape(1, 3)) ** 2, axis=1)
                 )

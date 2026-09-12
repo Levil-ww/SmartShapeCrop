@@ -600,8 +600,11 @@ def _get_lshape_cut_rect_at_offset(outer_rect: RectShape, corner_key: str,
     new_right = outer_rect.right - offset
     new_bottom = outer_rect.bottom - offset
 
-    cw = max(0.0, cut_w - offset)
-    ch = max(0.0, cut_h - offset)
+    # [Fix 2026-09-12 N1-01] 钳制 cw/ch 到可用宽/高，防止负坐标导致 numpy 负索引静默切错
+    avail_w = max(0.0, new_right - new_x)
+    avail_h = max(0.0, new_bottom - new_y)
+    cw = max(0.0, min(cut_w - offset, avail_w))
+    ch = max(0.0, min(cut_h - offset, avail_h))
 
     if corner_key == 'tl':
         return RectShape(new_x, new_y, cw, ch)

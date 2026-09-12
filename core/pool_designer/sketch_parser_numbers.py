@@ -529,7 +529,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
     # 克罗印花 67×53 场景：OCR 多列阅读时，左列尾的 "38" 与 右列头的 "右" 在 token 索引上相邻，
     # 但物理坐标跨整张图（cx≈50 vs cx≈650）。旧代码只看 i 与 i+1 索引相邻，导致 margin_right=38 错误绑定。
     # 状态不变量：方向字 + 数值 token 必须在"同一行"且"字间距合理"才能配对。
-    def _tokens_on_same_line_adjacent(l1, t1, w1, h1, l2, t2, w2, h2):
+    def _tokens_on_same_line_adjacent(l1, t1, w1, h1, l2, t2, w2, h2, scale=1.0):
         """判断两个 OCR token bbox 是否在视觉上是同一行内的紧邻文字（参数均为当前 scan 下的像素原始坐标）。"""
         # 1) 同一行：垂直方向重叠 ≥ 较小字高的 45%（红笔手写线条略斜，阈值不宜过严）
         y_overlap_top = max(t1, t2)
@@ -556,8 +556,9 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
         if gap_x > max_gap_by_char:
             return False
         # 绝对上限：1x 图上 350px 足以覆盖跨大半个外框的"不可能邻近距离"；
-        # 2.5x/4x/6x 放大图上字距本身会成比例变大，所以 350 不会成为限制性条件（3×min_width 会更早触发）
-        if gap_x > 350:
+        # [Fix 2026-09-12 P1-03] 旧代码 350px 不随 scale 缩放，2.5x/4x/6x 放大图上
+        #   合理邻近距离可能超过 350px 被误拒。改为 350 * scale。
+        if gap_x > 350 * scale:
             return False
         return True
 
@@ -633,7 +634,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 # [Fix] 物理相邻性前置检查：方向字 token(i) 与 数值 token(i+1) 必须在同一行+紧邻
                                 l_i, t_i, w_i, h_i = int(lefts[i]), int(tops[i]), int(widths[i]), int(heights[i])
                                 l_j, t_j, w_j, h_j = int(lefts[i+1]), int(tops[i+1]), int(widths[i+1]), int(heights[i+1])
-                                if not _tokens_on_same_line_adjacent(l_i, t_i, w_i, h_i, l_j, t_j, w_j, h_j):
+                                if not _tokens_on_same_line_adjacent(l_i, t_i, w_i, h_i, l_j, t_j, w_j, h_j, scale=scale):
                                     pass  # 索引相邻但物理跨图 → 忽略（交给Phase3空间距离场/单token）
                                 else:
                                     vv = float(nm.group(1))
@@ -656,7 +657,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 # [Fix] 物理相邻性前置检查（同上）
                                 l_i, t_i, w_i, h_i = int(lefts[i]), int(tops[i]), int(widths[i]), int(heights[i])
                                 l_j, t_j, w_j, h_j = int(lefts[i+1]), int(tops[i+1]), int(widths[i+1]), int(heights[i+1])
-                                if not _tokens_on_same_line_adjacent(l_i, t_i, w_i, h_i, l_j, t_j, w_j, h_j):
+                                if not _tokens_on_same_line_adjacent(l_i, t_i, w_i, h_i, l_j, t_j, w_j, h_j, scale=scale):
                                     pass
                                 else:
                                     vv = float(m_num.group(1))
@@ -748,7 +749,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 # [Fix] 物理相邻性前置检查（参数为6x放大图的原始像素；helper不关心scale）
                                 sli, sti, swi, shi = int(ls[i]), int(ts_top[i]), int(ws[i]), int(hs[i])
                                 slj, stj, swj, shj = int(ls[i+1]), int(ts_top[i+1]), int(ws[i+1]), int(hs[i+1])
-                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj):
+                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj, scale=scale):
                                     pass
                                 else:
                                     vv_s = float(nm_s.group(1))
@@ -771,7 +772,7 @@ def _extract_direction_label_numbers(cv2, tesseract, gray_img, enhanced_gray=Non
                                 # [Fix] 物理相邻性前置检查
                                 sli, sti, swi, shi = int(ls[i]), int(ts_top[i]), int(ws[i]), int(hs[i])
                                 slj, stj, swj, shj = int(ls[i+1]), int(ts_top[i+1]), int(ws[i+1]), int(hs[i+1])
-                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj):
+                                if not _tokens_on_same_line_adjacent(sli, sti, swi, shi, slj, stj, swj, shj, scale=scale):
                                     pass
                                 else:
                                     vv_s = float(m_ns.group(1))

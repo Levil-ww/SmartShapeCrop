@@ -979,15 +979,29 @@ def _resolve_dimensions(geo, roles):
 
     # —— 数量级校验：A/B 应与 px_h/px_w 同数量级 ——
     # OCR 可能丢失小数点（如 47.5 → 475），导致 A/B 与像素比例差 10 倍。
+    # [Fix 2026-09-12 P1-02] 旧代码恒修正 A，但当 B 是误读的一方时修正 A 是错的。
+    #   新策略：比较 A/px_h 和 B/px_w 的比例（cm/px，即 DPI 量级），谁的偏离大就修谁。
     if A is not None and A > 0 and B is not None and B > 0 and px_w > 0 and px_h > 0:
         r_cm = A / B
         r_px = px_h / px_w
         ratio = r_cm / r_px if r_px > 0 else 1.0
         # 若 cm 比例是像素比例的约 10 倍或 1/10，修正数量级
         if 7.0 < ratio < 13.0:
-            A = A / 10.0
+            # A/B 比 px_h/px_w 大 ~10x：判断是 A 过大还是 B 过小
+            ratio_a = A / px_h
+            ratio_b = B / px_w
+            if ratio_a > 3 * ratio_b:
+                A = A / 10.0
+            else:
+                B = B * 10.0
         elif 0.07 < ratio < 0.13:
-            A = A * 10.0
+            # A/B 比 px_h/px_w 小 ~10x：判断是 A 过小还是 B 过大
+            ratio_a = A / px_h
+            ratio_b = B / px_w
+            if ratio_b > 3 * ratio_a:
+                B = B / 10.0
+            else:
+                A = A * 10.0
 
     # —— 几何一致性校验：仅当 OCR 数值明显异常时才用几何反推 ——
     # E/D 现在直接从凹角附近 OCR 提取，比几何像素比例更可靠。

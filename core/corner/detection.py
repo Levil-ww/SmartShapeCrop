@@ -132,26 +132,19 @@ def _enforce_border_thickness_caps(
     layers = step1
 
     # Step 2: 总厚度上限（从最末层开始丢弃，因为最末层最常受内容区污染）
+    # [Fix 2026-09-12 N-P2-04] 旧代码先 pop 再查总量，若仅需截断即可满足上限，
+    #   也会因 pop 导致整层丢失。修正为：先查总量判断 excess，再决定截断或 pop。
     total = sum(t for _, t in layers)
     while total > MAX_TOTAL_PX and layers:
-        # 丢弃最末层
-        last_color, last_t = layers.pop()
-        total -= last_t
-        # 若仅仅是超出一点点，则截断最末层而不是全丢
-        if layers and total > MAX_TOTAL_PX:
-            # 继续循环丢弃
-            continue
-        if not layers:
-            break
-        # 剩下的最后一层如果仍超出，截断它
-        last_c2, last_t2 = layers[-1]
-        if total > MAX_TOTAL_PX:
-            new_t = max(MIN_PX, last_t2 - (total - MAX_TOTAL_PX))
-            layers[-1] = (last_c2, new_t)
+        last_c, last_t = layers[-1]
+        excess = total - MAX_TOTAL_PX
+        if last_t > excess:
+            new_t = max(MIN_PX, last_t - excess)
+            layers[-1] = (last_c, new_t)
             total = sum(t for _, t in layers)
             break
-        # total <= MAX_TOTAL_PX，退出
-        break
+        layers.pop()
+        total -= last_t
 
     # 再次循环确认（处理极端情况：逐层丢弃后的总厚度）
     total = sum(t for _, t in layers)
