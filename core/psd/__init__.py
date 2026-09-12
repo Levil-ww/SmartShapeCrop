@@ -1,25 +1,5 @@
+"""兼容 shim：实际模块已迁移至 services.psd。
+旧导入路径通过 core/compat 的 sys.modules 别名重定向，
+此文件仅作为目录占位和安全网。
 """
-core/psd/__init__.py
-PSD 加载子包：PSD 分层文件读取与导出。
-"""
-from .loader import (
-    PsdLayer,
-    PsdLoadError,
-    is_psd_file,
-    load_psd_layers,
-    load_psd_flattened,
-    export_psd_layers_as_jpgs,
-    _try_import_psd_tools,
-    _safe_name,
-)
-
-__all__ = [
-    'PsdLayer',
-    'PsdLoadError',
-    'is_psd_file',
-    'load_psd_layers',
-    'load_psd_flattened',
-    'export_psd_layers_as_jpgs',
-    '_try_import_psd_tools',
-    '_safe_name',
-]
+from services.psd import *  # noqa: F401, F403

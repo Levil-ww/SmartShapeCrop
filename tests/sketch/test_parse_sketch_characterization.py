@@ -23,8 +23,8 @@ import os
 import pytest
 from PIL import Image, ImageDraw
 
-from core.pool_designer import parse_sketch
-import core.pool_designer.sketch_parser as sp
+from services.sketch_parser import parse_sketch
+import services.sketch_parser.sketch_parser as sp
 
 
 # ---------------------------------------------------------------------------

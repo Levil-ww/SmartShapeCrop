@@ -61,9 +61,9 @@ def test_f5_no_misleading_geometry_fallback_docs(rel):
 def test_f6_all_ocr_calls_pass_timeout():
     """4 个 image_to_data 调用点都必须带 timeout=_PARSE_TIMEOUT_SEC。"""
     # OCR 实现位于 vision / numbers 子模块（facade 拆分后），facade 仅 re-export
-    src = (_read('core/pool_designer/sketch_parser_vision.py')
-           + _read('core/pool_designer/sketch_parser_numbers.py')
-           + _read('core/pool_designer/sketch_parser.py'))
+    src = (_read('services/sketch_parser/sketch_parser_vision.py')
+           + _read('services/sketch_parser/sketch_parser_numbers.py')
+           + _read('services/sketch_parser/sketch_parser.py'))
     # 统计真正调用点（tesseract.image_to_data( 开头），不含 docstring
     call_sites = [m.start() for m in re.finditer(r'tesseract\.image_to_data\(', src)]
     assert len(call_sites) >= 4, f'OCR 调用点异常: {len(call_sites)}'
@@ -75,7 +75,7 @@ def test_f6_all_ocr_calls_pass_timeout():
 
 def test_f6_ocr_timeout_is_swallowed_and_returns_empty():
     """单次 OCR 超时（TimeoutExpired）被捕获 → 该变体跳过，返回空结果，不抛异常。"""
-    from core.pool_designer import sketch_parser as sp
+    from services.sketch_parser import sketch_parser as sp
 
     class FakeTess:
         class Output:
@@ -94,7 +94,7 @@ def test_f6_ocr_timeout_is_swallowed_and_returns_empty():
 
 def test_f6_7step_deadline_returns_timeout(monkeypatch):
     """总 deadline 过期 → 7 步法在 OCR 阶段前返回明确“超时”失败。"""
-    from core.pool_designer import sketch_parser as sp
+    from services.sketch_parser import sketch_parser as sp
 
     fake_rects = [(30, 30, 270, 170), (60, 60, 240, 140)]
     monkeypatch.setattr(sp, '_find_all_rectangles', lambda *a, **k: list(fake_rects))
@@ -265,7 +265,7 @@ def _silent_except_count(path: Path) -> int:
 
 
 def test_f14_no_silent_bare_except_in_hot_paths():
-    for rel in ('core/pool_designer/sketch_parser.py', 'core/image_ops.py'):
+    for rel in ('services/sketch_parser/sketch_parser.py', 'core/image_ops.py'):
         n = _silent_except_count(PROJECT_ROOT / rel)
         assert n == 0, f'{rel} 仍存在 {n} 处完全静默的裸 except（应记录日志或显式处理）'
 

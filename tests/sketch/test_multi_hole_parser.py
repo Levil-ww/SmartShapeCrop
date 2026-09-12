@@ -32,7 +32,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 def test_01_multihole_module_imports_cleanly():
     """新模块 import 时无异常（零文件/环境依赖）。"""
-    from core.pool_designer import sketch_parser_multihole as mh
+    from services.sketch_parser import sketch_parser_multihole as mh
     assert hasattr(mh, '_classify_hole_layout')
     assert hasattr(mh, '_divide_multi_hole_zones')
     assert hasattr(mh, '_parse_arrow_or_dir_token')
@@ -47,7 +47,7 @@ def test_01_multihole_module_imports_cleanly():
 
 def test_02_sketch_parser_new_fields_have_defaults():
     """SketchParseResult 新增字段都有默认值 → 旧代码实例化不出错。"""
-    from core.pool_designer import SketchParseResult
+    from services.sketch_parser import SketchParseResult
     r = SketchParseResult()
     # 原有字段
     assert r.success is False
@@ -65,7 +65,7 @@ def test_02_sketch_parser_new_fields_have_defaults():
 
 def test_03_package_init_exports():
     """__init__.py 新增导出符号可访问。"""
-    from core.pool_designer import (
+    from services.sketch_parser import (
         HoleInfo,
         MultiHoleParseResult,
         try_parse_multi_hole,
@@ -85,7 +85,7 @@ def test_03_package_init_exports():
 
 def test_10_classify_two_horizontal_holes():
     """典型横排双洞：外框(0,0,500,200)，内洞A(50,40,150,120) 内洞B(300,40,150,120)。"""
-    from core.pool_designer.sketch_parser_multihole import _classify_hole_layout
+    from services.sketch_parser.sketch_parser_multihole import _classify_hole_layout
 
     # (x,y,w,h,score,area)，按面积降序
     all_rects = [
@@ -106,7 +106,7 @@ def test_10_classify_two_horizontal_holes():
 
 def test_11_classify_insufficient_innners_returns_empty():
     """只有 1 个内框 → 返回空（上层回退单洞）。"""
-    from core.pool_designer.sketch_parser_multihole import _classify_hole_layout
+    from services.sketch_parser.sketch_parser_multihole import _classify_hole_layout
     all_rects = [
         (0, 0, 500, 200, 1.0, 500*200),
         (100, 40, 300, 120, 0.9, 300*120),
@@ -120,7 +120,7 @@ def test_11_classify_insufficient_innners_returns_empty():
 
 def test_12_classify_vertical_holes():
     """竖排双洞。"""
-    from core.pool_designer.sketch_parser_multihole import _classify_hole_layout
+    from services.sketch_parser.sketch_parser_multihole import _classify_hole_layout
     all_rects = [
         (0,   0, 200, 500, 1.0, 200*500),
         (40,  50, 120, 150, 0.9, 120*150),   # 上洞
@@ -146,7 +146,7 @@ def test_13_classify_filters_combined_hull():
       - 噪点 1/2
     预期：hull 被 Phase C 正确剔除，2 个真实洞被识别。
     """
-    from core.pool_designer.sketch_parser_multihole import _classify_hole_layout
+    from services.sketch_parser.sketch_parser_multihole import _classify_hole_layout
 
     def _area(x, y, w, h):
         return w * h
@@ -198,7 +198,7 @@ def test_14_classify_no_hull_scenarios_still_work():
 
     验证：不因为 hull 检测逻辑而误伤「无 hull 的纯两洞场景」。
     """
-    from core.pool_designer.sketch_parser_multihole import _classify_hole_layout
+    from services.sketch_parser.sketch_parser_multihole import _classify_hole_layout
 
     # 与 T10 同构但面积比例稍大（两洞面积接近，hull 不存在）
     all_rects = [
@@ -231,7 +231,7 @@ def _make_horizontal_2_holes():
 
 def test_20_zone_shared_margins():
     """共享的 top/bottom 区域点。"""
-    from core.pool_designer.sketch_parser_multihole import _divide_multi_hole_zones
+    from services.sketch_parser.sketch_parser_multihole import _divide_multi_hole_zones
     outer, inners, layout = _make_horizontal_2_holes()
     zone_of = _divide_multi_hole_zones(outer, inners, layout, 500, 200)
     # 共享 top: (cx=洞之间的 x, cy=10 在共享上距区)
@@ -250,7 +250,7 @@ def test_21_zone_hole_0_margin_left_and_inside():
       - cx < icx 且 cy ≤ icy   → inner_h
       - cx >= icx 且 cy ≤ icy  → inner_w
     """
-    from core.pool_designer.sketch_parser_multihole import _divide_multi_hole_zones
+    from services.sketch_parser.sketch_parser_multihole import _divide_multi_hole_zones
     outer, inners, layout = _make_horizontal_2_holes()
     zone_of = _divide_multi_hole_zones(outer, inners, layout, 500, 200)
     # 洞 0 左侧外边距区 (cx 在外框到洞0左之间，y 在洞 0 范围内)
@@ -265,7 +265,7 @@ def test_21_zone_hole_0_margin_left_and_inside():
 
 def test_22_zone_hole_1_margin_right():
     """最右洞的右边距区。"""
-    from core.pool_designer.sketch_parser_multihole import _divide_multi_hole_zones
+    from services.sketch_parser.sketch_parser_multihole import _divide_multi_hole_zones
     outer, inners, layout = _make_horizontal_2_holes()
     zone_of = _divide_multi_hole_zones(outer, inners, layout, 500, 200)
     # 洞 1 右侧 (cx=460 在外框到洞1右之间，y 在洞 1 范围内)
@@ -275,7 +275,7 @@ def test_22_zone_hole_1_margin_right():
 
 def test_23_zone_gap_between_holes():
     """洞与洞之间的 gap 区。"""
-    from core.pool_designer.sketch_parser_multihole import _divide_multi_hole_zones
+    from services.sketch_parser.sketch_parser_multihole import _divide_multi_hole_zones
     outer, inners, layout = _make_horizontal_2_holes()
     zone_of = _divide_multi_hole_zones(outer, inners, layout, 500, 200)
     # gap_0_1 的 x 范围: 洞0右=200 ~ 洞1左=300，y 在洞高交集内 (40~160)
@@ -285,7 +285,7 @@ def test_23_zone_gap_between_holes():
 
 def test_24_zone_outer_w_and_outer_h():
     """外框外侧标注区。"""
-    from core.pool_designer.sketch_parser_multihole import _divide_multi_hole_zones
+    from services.sketch_parser.sketch_parser_multihole import _divide_multi_hole_zones
     outer, inners, layout = _make_horizontal_2_holes()
     zone_of = _divide_multi_hole_zones(outer, inners, layout, 500, 200)
     # outer_w: 外框底部正下方
@@ -302,7 +302,7 @@ def test_24_zone_outer_w_and_outer_h():
 
 def test_30_arrow_chars_map_to_correct_fields():
     """各种箭头符号 → 边距字段。"""
-    from core.pool_designer.sketch_parser_multihole import _parse_arrow_or_dir_token
+    from services.sketch_parser.sketch_parser_multihole import _parse_arrow_or_dir_token
     cases = [
         ('←21.5', 'margin_left', 21.5),
         ('→46',   'margin_right', 46.0),
@@ -328,7 +328,7 @@ def test_30_arrow_chars_map_to_correct_fields():
 
 def test_31_arrow_only_char_returns_none_val():
     """仅单独的箭头字符 → 返回 (field, None)，用于双 token 关联。"""
-    from core.pool_designer.sketch_parser_multihole import _parse_arrow_or_dir_token
+    from services.sketch_parser.sketch_parser_multihole import _parse_arrow_or_dir_token
     assert _parse_arrow_or_dir_token('←') == ('margin_left', None)
     assert _parse_arrow_or_dir_token('→') == ('margin_right', None)
     assert _parse_arrow_or_dir_token('↑') == ('margin_top', None)
@@ -338,7 +338,7 @@ def test_31_arrow_only_char_returns_none_val():
 
 def test_32_invalid_tokens_return_none():
     """无效文本返回 (None, None)。"""
-    from core.pool_designer.sketch_parser_multihole import _parse_arrow_or_dir_token
+    from services.sketch_parser.sketch_parser_multihole import _parse_arrow_or_dir_token
     bad_cases = ['abc', '', '  ', 'hello world', 'XX123']
     for t in bad_cases:
         field, val = _parse_arrow_or_dir_token(t)
@@ -353,7 +353,7 @@ def test_32_invalid_tokens_return_none():
 
 def test_40_perfect_horizontal_consistency_scores_high():
     """完全自洽的横排双洞 → 高分。"""
-    from core.pool_designer.sketch_parser_multihole import _score_multi_hole_consistency
+    from services.sketch_parser.sketch_parser_multihole import _score_multi_hole_consistency
     # outer 350 × 59（模拟用户图）
     # 洞 0: 77.5×45 (左距 21.5)，洞 1: 77.5×45 (右距 59)，gap=46
     # mt=11.5, mb=12
@@ -371,7 +371,7 @@ def test_40_perfect_horizontal_consistency_scores_high():
 
 def test_41_missing_fields_score_lower():
     """缺失部分字段 → 分数低于完全自洽。"""
-    from core.pool_designer.sketch_parser_multihole import _score_multi_hole_consistency
+    from services.sketch_parser.sketch_parser_multihole import _score_multi_hole_consistency
     # 同上但缺失 gap 值
     tw, th = 350.0, 75.0
     holes = [{'w': 140.0, 'h': 45.0}, {'w': 140.0, 'h': 0.0}]
@@ -387,7 +387,7 @@ def test_41_missing_fields_score_lower():
 
 def test_42_zero_outer_scores_zero():
     """外框无效 → 0 分。"""
-    from core.pool_designer.sketch_parser_multihole import _score_multi_hole_consistency
+    from services.sketch_parser.sketch_parser_multihole import _score_multi_hole_consistency
     sc = _score_multi_hole_consistency(0, 0, [], [], 'horizontal', 0, 0, 0, 0)
     assert sc == 0.0
     logger.info("[T42] 零外框正确判 0 分")
@@ -400,7 +400,7 @@ def test_42_zero_outer_scores_zero():
 
 def test_50_spatial_bind_populates_buckets_correctly():
     """根据坐标把 OCR 候选分到正确的桶。"""
-    from core.pool_designer.sketch_parser_multihole import (
+    from services.sketch_parser.sketch_parser_multihole import (
         _divide_multi_hole_zones,
         _multi_hole_spatial_bind,
     )
@@ -437,7 +437,7 @@ def test_50_spatial_bind_populates_buckets_correctly():
 
 def test_60_derive_missing_horizontal():
     """横排双洞：缺失一个横向值 → 可正确反推。"""
-    from core.pool_designer.sketch_parser_multihole import _validate_multi_hole_geometry
+    from services.sketch_parser.sketch_parser_multihole import _validate_multi_hole_geometry
     assignment = {
         'total_w': (350.0, 0.7),
         'total_h': (75.0, 0.7),
@@ -471,7 +471,7 @@ def test_60_derive_missing_horizontal():
 
 def test_70_multihole_entry_graceful_fallback_on_bad_path():
     """不存在的文件 → 失败（不抛异常）。"""
-    from core.pool_designer.sketch_parser_multihole import try_parse_multi_hole
+    from services.sketch_parser.sketch_parser_multihole import try_parse_multi_hole
     result = try_parse_multi_hole("/this/path/does/not/exist/sketch.png")
     assert result.get('success') is False
     assert '不存在' in result.get('message', '') or result.get('_fallback_to_single_hole') is True
@@ -485,7 +485,7 @@ def test_71_parse_sketch_backward_compatible_syntax():
       - 当 validate_sketch_file 失败时返回的 SketchParseResult 与修改前一致
       - 多洞分流的 try/except 包住的代码不会影响早期 return
     """
-    from core.pool_designer import parse_sketch
+    from services.sketch_parser import parse_sketch
     r = parse_sketch("definitely_no_such_file.png")
     assert r.success is False
     # 新字段的默认值也必须正确（单洞场景为默认）
@@ -505,7 +505,7 @@ def test_71_parse_sketch_backward_compatible_syntax():
 def test_80_geometric_containment_drops_split_read_5():
     """T15 复现用户 mt=5.0 的根因：同 field 中 11.5@(708,114,29,13) bbox 完全
     包含 5.0@(730,114,7,13)。Post A 应剔除 5.0。"""
-    from core.pool_designer.sketch_parser_multihole import _multi_hole_spatial_bind
+    from services.sketch_parser.sketch_parser_multihole import _multi_hole_spatial_bind
 
     # 两个候选：11.5 (大bbox) + 5.0 (被完全包含的小bbox)
     ocr_results = [
@@ -534,7 +534,7 @@ def test_80_geometric_containment_drops_split_read_5():
 
 def test_81_weighted_majority_beats_singleton_high_conf():
     """T15 补充：不满足几何包含时，仅众数投票也能让双 11.5(sum conf=167) 胜过 单 5.0(96)。"""
-    from core.pool_designer.sketch_parser_multihole import _multi_hole_spatial_bind
+    from services.sketch_parser.sketch_parser_multihole import _multi_hole_spatial_bind
 
     ocr_results = [
         # 位置都在不同处（没有包含关系），但 11.5 有 2 条总 conf=167 高于 5.0 单条 conf=96
@@ -774,8 +774,8 @@ def test_93_user_multihole_params_override_sketch_in_worker():
         pytest.skip(f"PyQt5 不可用: {e}")
     try:
         from core.geometry import CropDesign
-        from core.parser.template_matcher import TemplateMatcher
-        from core.pool_designer import HoleInfo, MultiHoleParseResult
+        from services.parser.template_matcher import TemplateMatcher
+        from services.sketch_parser import HoleInfo, MultiHoleParseResult
         from gui.property_panel_workers import PoolRenderWorker
     except Exception as e:  # pragma: no cover
         pytest.skip(f"模块导入失败: {e}")
@@ -922,8 +922,8 @@ def test_94_multihole_none_single_hole_no_impact():
         pytest.skip(f"PyQt5 不可用: {e}")
     try:
         from core.geometry import CropDesign
-        from core.parser.template_matcher import TemplateMatcher
-        from core.pool_designer import SketchParseResult
+        from services.parser.template_matcher import TemplateMatcher
+        from services.sketch_parser import SketchParseResult
         from gui.property_panel_workers import PoolRenderWorker
     except Exception as e:  # pragma: no cover
         pytest.skip(f"模块导入失败: {e}")

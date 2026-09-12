@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 logging.basicConfig(level=logging.WARNING, format='%(name)s: %(message)s')
 
 def test_name_parser():
-    from core.parser.name_parser import parse_filename
+    from services.parser.name_parser import parse_filename
     # —— 2026-09-05 校准说明 ——
     # 产品语义（当前代码逻辑，core/parser/name_parser.py:443 + 514-530）：
     #   - 通用模式：无关键词 → 横版（长边=宽、短边=高）

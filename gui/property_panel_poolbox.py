@@ -19,11 +19,11 @@ from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from PIL import Image
 
 from core.geometry import CropDesign, BorderLayer, BorderText
-from core.parser.name_parser import parse_filename
-from core.parser.template_matcher import TemplateMatcher
+from services.parser.name_parser import parse_filename
+from services.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
-from core.pool_designer import validate_sketch_file
-from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
+from services.sketch_parser import validate_sketch_file
+from services.sketch_parser.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
 
 logger = logging.getLogger(__name__)
 
@@ -662,7 +662,7 @@ class _PoolBoxMixin:
             logger.debug(f"[PropertyPanel] L 形预检测图像加载失败: {e}")
             return
         try:
-            from core.pool_designer.lshape_sketch_parser import _detect_lshape_geometry
+            from services.sketch_parser.lshape_sketch_parser import _detect_lshape_geometry
             geo = _detect_lshape_geometry(_cv2, gray)
         except Exception as e:
             logger.debug(f"[PropertyPanel] L 形几何检测异常: {e}")

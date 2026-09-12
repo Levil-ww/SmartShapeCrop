@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from core.pool_designer.lshape_sketch_parser import parse_lshape_sketch, _detect_lshape_geometry
+from services.sketch_parser.lshape_sketch_parser import parse_lshape_sketch, _detect_lshape_geometry
 
 
 def _load_font(size):
@@ -151,7 +151,7 @@ def test_geometry_tr_detects_lshape():
         p = os.path.join(td, 'l_tr.png')
         _make_lshape_sketch(p, corner='tr')
         import cv2
-        from core.pool_designer.sketch_parser_vision import _load_image, _to_gray
+        from services.sketch_parser.sketch_parser_vision import _load_image, _to_gray
         img, _ = _load_image(p)
         gray = _to_gray(img)
         geo = _detect_lshape_geometry(cv2, gray)

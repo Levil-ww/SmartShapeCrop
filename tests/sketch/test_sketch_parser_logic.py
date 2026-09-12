@@ -11,7 +11,7 @@
 """
 import pytest
 
-from core.pool_designer.sketch_parser import (
+from services.sketch_parser.sketch_parser import (
     _compute_gaps,
     _score_assignment_consistency,
     _validate_and_fix_margins,

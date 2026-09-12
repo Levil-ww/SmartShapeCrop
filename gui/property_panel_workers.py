@@ -20,11 +20,11 @@ from PIL import Image
 
 from core.geometry import CropDesign, BorderLayer, BorderText
 from core.config import CUT_LOSS_CM
-from core.parser.name_parser import parse_filename
-from core.parser.template_matcher import TemplateMatcher
+from services.parser.name_parser import parse_filename
+from services.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
-from core.pool_designer import validate_sketch_file
-from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
+from services.sketch_parser import validate_sketch_file
+from services.sketch_parser.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class _InnerMatchWorker(QThread):
             if self.isInterruptionRequested():
                 return
             import re as _re
-            from core.parser.name_parser import parse_filename as _parse_fn
+            from services.parser.name_parser import parse_filename as _parse_fn
             from core.image_ops import load_image_rgb
             if not self._template_dir or not os.path.isdir(self._template_dir):
                 self.finished_err.emit("模板库目录无效")
@@ -377,7 +377,7 @@ class PoolRenderWorker(QThread):
                 else:
                     self.progress.emit(60, "解析尺寸草图（几何检测 + OCR 识别）…")
                     try:
-                        from core.pool_designer import parse_sketch
+                        from services.sketch_parser import parse_sketch
                         def _sketch_progress(pct, msg):
                             self.progress.emit(int(60 + pct * 0.25), msg)
                         sketch_result = parse_sketch(
@@ -846,7 +846,7 @@ class _SketchParseWorker(QThread):
 
     def run(self):
         try:
-            from core.pool_designer import parse_sketch
+            from services.sketch_parser import parse_sketch
             result = parse_sketch(
                 self._sketch_path,
                 target_outer_w_cm=self._target_w,
@@ -883,7 +883,7 @@ class _LShapeParseWorker(QThread):
 
     def run(self):
         try:
-            from core.pool_designer import parse_lshape_sketch
+            from services.sketch_parser import parse_lshape_sketch
             result = parse_lshape_sketch(
                 self._sketch_path,
                 target_outer_w_cm=self._target_w,

@@ -19,11 +19,11 @@ from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from PIL import Image
 
 from core.geometry import CropDesign, BorderLayer, BorderText
-from core.parser.name_parser import parse_filename
-from core.parser.template_matcher import TemplateMatcher
+from services.parser.name_parser import parse_filename
+from services.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
-from core.pool_designer import validate_sketch_file
-from core.pool_designer.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
+from services.sketch_parser import validate_sketch_file
+from services.sketch_parser.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
 
 logger = logging.getLogger(__name__)
 
@@ -395,7 +395,7 @@ class _LayersMixin:
         if not out_dir:
             return
         try:
-            from core.psd_loader import export_psd_layers_as_jpgs
+            from services.psd.loader import export_psd_layers_as_jpgs
             paths = export_psd_layers_as_jpgs(psd, out_dir, auto_crop=True)
             QMessageBox.information(self, "导出完成",
                                     f"成功导出 {len(paths)} 个图层到:\n{out_dir}")

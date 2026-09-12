@@ -25,7 +25,7 @@ from .geometry import (
     compute_inner_corner_radii,
 )
 from .image_ops import render_design, save_jpg, prepare_material_for_rect
-from .psd.loader import (
+from services.psd.loader import (
     PsdLayer, PsdLoadError, load_psd_layers, load_psd_flattened,
     export_psd_layers_as_jpgs,
 )

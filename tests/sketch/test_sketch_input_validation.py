@@ -10,9 +10,9 @@ import os
 import pytest
 from PIL import Image
 
-import core.pool_designer.sketch_parser as sp
-import core.pool_designer.sketch_parser_base as sp_base
-from core.pool_designer.sketch_parser import validate_sketch_file
+import services.sketch_parser.sketch_parser as sp
+import services.sketch_parser.sketch_parser_base as sp_base
+from services.sketch_parser.sketch_parser import validate_sketch_file
 
 
 def _make_png(path: str, w: int = 2, h: int = 2):

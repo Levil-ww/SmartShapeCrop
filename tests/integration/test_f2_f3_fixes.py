@@ -37,7 +37,7 @@ def test_requirements_lists_pytesseract():
 
 def test_image_max_pixels_set():
     """模块导入后 PIL 像素上限应已设置（解炸弹二级防御）。"""
-    from core.pool_designer import sketch_parser as sp
+    from services.sketch_parser import sketch_parser as sp
     # 模块在 PIL 可用时应已设置；PIL 不可用时 Image 为 None（跳过）。
     if sp.Image is not None:
         assert sp.Image.MAX_IMAGE_PIXELS and sp.Image.MAX_IMAGE_PIXELS >= 40_000_000, (
@@ -47,8 +47,8 @@ def test_image_max_pixels_set():
 
 def test_validate_rejects_oversized_image(monkeypatch):
     """validate_sketch_file 在解码前就按像素上限拒绝超大图（解炸弹主闸门）。"""
-    from core.pool_designer import sketch_parser as sp
-    from core.pool_designer import sketch_parser_base as sp_base
+    from services.sketch_parser import sketch_parser as sp
+    from services.sketch_parser import sketch_parser_base as sp_base
     # 把阈值临时调小，便于构造一张“超限但可廉价生成”的图
     # （拆分后常量实现在 sketch_parser_base，monkeypatch 需指向该子模块）
     monkeypatch.setattr(sp_base, '_SKETCH_MAX_PIXELS', 1_000_000)
@@ -67,8 +67,8 @@ def test_parse_sketch_validates_before_decode(monkeypatch):
     通过把像素上限临时调小、构造超限图，确认入口在 decode 之前即以
     校验失败返回，而不是先 cv2.imread 全量解码导致 OOM/卡死。
     """
-    from core.pool_designer import sketch_parser as sp
-    from core.pool_designer import sketch_parser_base as sp_base
+    from services.sketch_parser import sketch_parser as sp
+    from services.sketch_parser import sketch_parser_base as sp_base
 
     calls = {'decode': 0}
 
@@ -97,7 +97,7 @@ def test_parse_sketch_validates_before_decode(monkeypatch):
 
 def test_parse_sketch_invalid_extension_rejected_before_decode(monkeypatch):
     """非图片后缀在解码前即以校验失败返回（进一步证明校验顺序前移）。"""
-    from core.pool_designer import sketch_parser as sp
+    from services.sketch_parser import sketch_parser as sp
 
     calls = {'decode': 0}
     orig_load = sp._load_image

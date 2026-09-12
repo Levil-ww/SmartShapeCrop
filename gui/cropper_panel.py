@@ -19,9 +19,9 @@ from PyQt5.QtWidgets import (
 )
 from PIL import Image
 
-from core.parser.name_parser import parse_filename, generate_filename, format_corner_spec, get_image_info, _fmt_num
+from services.parser.name_parser import parse_filename, generate_filename, format_corner_spec, get_image_info, _fmt_num
 from core.image_cropper import crop_image, CropConfig, get_corner_name, get_default_corners, get_mode_description
-from core.parser.template_matcher import TemplateMatcher, TemplateEntry
+from services.parser.template_matcher import TemplateMatcher, TemplateEntry
 from core.config import CUT_LOSS_CM, CORNER_CUT_LOSS_CM, DEFAULT_DPI
 from core.app_settings import get_app_settings, TemplateDirHistory
 

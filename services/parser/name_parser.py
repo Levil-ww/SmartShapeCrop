@@ -14,7 +14,7 @@ import re
 import logging
 from dataclasses import dataclass
 
-from ..config import px_to_cm  # [N-P2-08] 集中换算函数
+from core.config import px_to_cm  # [N-P2-08] 集中换算函数
 
 logger = logging.getLogger(__name__)
 
