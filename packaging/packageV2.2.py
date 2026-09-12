@@ -141,9 +141,14 @@ HIDDEN_IMPORTS = [
     "gui.property_panel_layers",    # 图层管理
     "gui.property_panel_poolbox",   # 多洞参数面板（QFormLayout + QDoubleSpinBox）
     "gui.property_panel_widgets",   # 自定义控件
-    "gui.property_panel_workers",   # 工作线程（QThread）
+    "gui.property_panel_workers",   # 工作线程 shim（→ workers/）
     # V2.2 新增：L 形挖角独立 GUI 面板
     "gui.lshape_panel",            # L 形挖角设计面板（草图上传 + 目标文件名 + 一键生成）
+    # ===== Workers 层（从 gui/ 提取，QThread Worker 集中管理）=====
+    "workers",
+    "workers.property_panel_workers",  # 水池设计相关 Worker
+    "workers.cropper_workers",         # 裁剪相关 Worker
+    "workers.canvas_workers",          # 画布渲染相关 Worker
 ]
 
 # 需要复制元数据的包（运行时依赖包的元数据）

@@ -173,7 +173,7 @@ def test_rect_hole_pool_render_unchanged(material_path):
 # ---------------------------------------------------------------- worker
 
 def _run_worker(target_name, template_dir, sketch_path, lshape_params):
-    from gui.property_panel_workers import PoolRenderWorker
+    from workers.property_panel_workers import PoolRenderWorker
     from services.parser.template_matcher import TemplateMatcher
     results = {}
 

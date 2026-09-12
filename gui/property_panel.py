@@ -28,7 +28,7 @@ from services.sketch_parser.sketch_parser import _SKETCH_ACCEPT_EXT, get_tessera
 logger = logging.getLogger(__name__)
 
 from .property_panel_widgets import (ColorButton, _SketchDropLabel, _color_to_tuple, _tuple_to_color)
-from .property_panel_workers import PoolRenderWorker, _SketchParseWorker
+from workers.property_panel_workers import PoolRenderWorker, _SketchParseWorker
 from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
 from .property_panel_poolbox import _PoolBoxMixin
 from .property_panel_generate import _GenerateMixin

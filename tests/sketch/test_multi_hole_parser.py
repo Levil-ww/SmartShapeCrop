@@ -776,7 +776,7 @@ def test_93_user_multihole_params_override_sketch_in_worker():
         from core.geometry import CropDesign
         from services.parser.template_matcher import TemplateMatcher
         from services.sketch_parser import HoleInfo, MultiHoleParseResult
-        from gui.property_panel_workers import PoolRenderWorker
+        from workers.property_panel_workers import PoolRenderWorker
     except Exception as e:  # pragma: no cover
         pytest.skip(f"模块导入失败: {e}")
 
@@ -924,7 +924,7 @@ def test_94_multihole_none_single_hole_no_impact():
         from core.geometry import CropDesign
         from services.parser.template_matcher import TemplateMatcher
         from services.sketch_parser import SketchParseResult
-        from gui.property_panel_workers import PoolRenderWorker
+        from workers.property_panel_workers import PoolRenderWorker
     except Exception as e:  # pragma: no cover
         pytest.skip(f"模块导入失败: {e}")
 

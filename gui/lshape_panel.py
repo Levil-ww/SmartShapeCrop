@@ -32,7 +32,7 @@ from PyQt5.QtWidgets import (
 from core.app_settings import get_app_settings
 from core.config import CUT_LOSS_CM
 from .property_panel_widgets import _SketchDropLabel
-from .property_panel_workers import _LShapeParseWorker
+from workers.property_panel_workers import _LShapeParseWorker
 logger = logging.getLogger(__name__)
 
 
