@@ -1265,13 +1265,6 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 cut_w_px = lshape.cut_w + (W - _ir_r)
                 cut_h_px = lshape.cut_h + _ir_y
 
-            # [Fix 2026-09-14] 产品内容内缩量：cut_w/h_px 相对真实挖角尺寸多出来的
-            # 部分，就是 cut 被扩展到画布边缘时「越过产品内容」的那一段留白。
-            # 补边若覆盖该留白即用户报告的「垂直/水平切边画超了」。透传给
-            # apply_lshape_border_completion，约束垂直切边 y 起点 / 水平切边 x 终点。
-            _inset_right = max(0, int(round(cut_w_px - lshape.cut_w)))
-            _inset_top = max(0, int(round(cut_h_px - lshape.cut_h)))
-
             # 使用原始素材图（cached_img）做边框检测，避免 adapt_pool_material
             # 的简单拉伸可能造成的边框像素畸变影响检测精度。
             # 素材已铺满整个 canvas，所以 scale = canvas.size / 原始尺寸。
@@ -1316,10 +1309,6 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 manual_edge_px=getattr(design, 'lshape_manual_edge_px', None),
                 manual_band_px=getattr(design, 'lshape_manual_band_px', None),
                 manual_band_color=getattr(design, 'lshape_manual_band_color', None),
-                # [Fix 2026-09-14] 越界修补：把补边裁进产品内容边界
-                # （默认 0 时行为与改动前完全一致）
-                inset_top=_inset_top,
-                inset_right=_inset_right,
             )
             # [Fix N-P1-01] 补全返回值接入真值（仅日志记录，不改变渲染逻辑）
             if not _completion_ok:

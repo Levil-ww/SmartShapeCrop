@@ -444,27 +444,16 @@ def detect_border_profile(src_img: Image.Image) -> list[tuple[tuple[int, int, in
 
 def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
                                      layers: list[tuple[tuple[int, int, int], int]],
-                                     offs: list[int],
-                                     inset_top: int = 0,
-                                     inset_right: int = 0) -> None:
+                                     offs: list[int]) -> None:
     """在"缺口贴右上角"的画布 b 上按层补齐切边边框。
 
     坐标语义与 lshape_border._fill_vertical_horizontal 完全一致：
       xc = 垂直切边 x（缺口左边界）；yc = 水平切边 y（缺口下边界）；
       产品位于 x<xc 与 y>yc。层 k 铺在深度 [offs[k], offs[k+1])，
       内凹角按 max(dx, dy) 几何分层。
-
-    inset_top   : [Fix 2026-09-14] 垂直切边 y 方向内缩量——缺口被扩到画布
-                  上/下边缘时，[0, inset_top) 属于产品内容之外的画布留白，
-                  补边不得覆盖（默认 0 = 旧行为）。
-    inset_right : [Fix 2026-09-14] 水平切边 x 方向内缩量，含义对称。
     """
     H, W = b.shape[:2]
     T = offs[-1]
-    # 内缩量夹紧（inset_top >= yc → 垂直切边整条跳过）
-    y_inset = max(0, min(int(inset_top), yc))
-    x_inset = max(0, min(int(inset_right), W))
-    x_right = max(0, W - x_inset)
 
     # 垂直切边（保留区在左）：y 从画布顶端向交汇点 yc 递减。
     # 层 k 的 dx 范围 = xc - x，其中 x ∈ [xc-offs[k+1], xc-offs[k]) → dx ∈ [offs[k], offs[k+1])
@@ -473,7 +462,6 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     for k, (color, _t) in enumerate(layers):
         x_lo, x_hi = max(0, xc - offs[k + 1]), min(W, xc - offs[k])
         y_lo = offs[k] if offs[k] < yc else 0
-        y_lo = max(y_lo, y_inset)   # [Fix 2026-09-14] 不画进产品上方留白
         y_hi = min(yc + 1, H)
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
@@ -484,7 +472,7 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     for k, (color, _t) in enumerate(layers):
         y_lo = max(0, yc + 1 + offs[k])
         y_hi = min(H, yc + 1 + offs[k + 1])
-        x_lo, x_hi = max(0, xc), max(0, min(W - offs[k], x_right))
+        x_lo, x_hi = max(0, xc), max(0, min(W - offs[k], W))
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
@@ -508,8 +496,6 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
 def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
                             x0: int, y0: int, cw: int, ch: int,
                             layers: list[tuple[tuple[int, int, int], int]],
-                            inset_top: int = 0,
-                            inset_right: int = 0,
                             ) -> np.ndarray:
     """在最终画布上沿缺口切边按层结构补边（不修改入参，返回新数组）。
 
@@ -518,10 +504,6 @@ def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
         corner: 'tl'|'tr'|'bl'|'br'
         x0, y0, cw, ch: 缺口矩形（画布像素，与渲染 mask 同源）
         layers: [(color, thickness_px), ...] 外→内（画布像素单位，厚度 ≥1）
-        inset_top / inset_right: [Fix 2026-09-14] 缺口沿画布边缘扩展的
-            内缩量（= 缺口尺寸 − 真实挖角尺寸，即产品内容之外的画布留白）。
-            翻转后的归一化坐标系中约束垂直切边 y 起点 / 水平切边 x 终点。
-            默认 0 = 旧行为，完全向后兼容。
 
     契约与 patch_lshape_cut 一致：翻转后缺口必须贴画布右上角，
     否则抛 ValueError。
@@ -552,8 +534,7 @@ def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
     ny1 = ny0 + ch
     if not (nx1 == b.shape[1] and ny0 == 0):
         raise ValueError('缺口矩形不在画布角落, 请检查 x0/y0/cw/ch 与翻转角的一致性')
-    _fill_layers_vertical_horizontal(b, nx0, ny1, layers, offs,
-                                     inset_top=inset_top, inset_right=inset_right)
+    _fill_layers_vertical_horizontal(b, nx0, ny1, layers, offs)
     if flipy:
         b = np.flipud(b)
     if flipx:
@@ -575,14 +556,8 @@ def _apply_profile_path(*,
                         scale_x: float,
                         scale_y: float,
                         bg_color: tuple[int, int, int] = (255, 255, 255),
-                        inset_top: int = 0,
-                        inset_right: int = 0,
                         ) -> bool:
     """Profile 路径：源图层结构 → 画布坐标 → patch_lshape_cut_layers。
-
-    inset_top / inset_right: [Fix 2026-09-14] 缺口沿画布边缘扩展的内缩量，
-    透传给 patch_lshape_cut_layers，阻止补边画进产品内容之外的画布留白。
-    默认 0 = 旧行为。
 
     与 _apply_v13_path 相同的子图/贴角机制；任何几何异常返回 False，
     由调用方回退到 V13 / 旧路径。
@@ -661,7 +636,6 @@ def _apply_profile_path(*,
     try:
         patched = patch_lshape_cut_layers(
             sub, cut_corner, bx0, by0, cw_r, ch_r, layers_canvas,
-            inset_top=inset_top, inset_right=inset_right,
         )
     except ValueError as e:
         logger.info("[LShapeRoute] patch 跳过: %s", e)
