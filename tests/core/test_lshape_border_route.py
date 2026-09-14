@@ -433,3 +433,105 @@ def _make_bordered(border: int, size=(400, 300)) -> Image.Image:
     ImageDraw.Draw(img).rectangle(
         [0, 0, size[0] - 1, size[1] - 1], outline=(10, 10, 10), width=border)
     return img
+
+
+# ---------------------------------------------------------------------------
+# 4. [Fix 2026-09-14] inset_top / inset_right —— 补边不得进入产品内容外的留白
+# ---------------------------------------------------------------------------
+
+class TestCutEdgeInsetBound:
+    """缺口被扩展到画布边缘时，「扩展段」属于产品内容之外的留白，补边必须内缩。
+
+    复现 2026-09-14 用户报告的越界现象：垂直切边沿缺口左边界从画布顶端
+    一路铺到缺口下边界，把产品内容上方的留白 / 顶边花纹整段盖掉。
+
+    几何取自该场景：画布 300×200，缺口贴右上角且沿 x/y 双向扩到画布边缘，
+    inset_top=25（产品上方留白 25px）/ inset_right=30（产品右侧留白 30px）。
+    """
+
+    H, W = 200, 300
+    CW, CH = 90, 70            # 缺口尺寸（已含扩展段）
+    INSET_TOP, INSET_RIGHT = 25, 30
+    PROD = (247, 233, 206)     # 产品内容色
+    BLACK = (18, 18, 18)
+    BAND = (166, 158, 140)
+    LAYERS = [(BLACK, 4), (BAND, 12)]
+    T = 4 + 12
+
+    def _canvas(self):
+        a = np.full((self.H, self.W, 3), self.PROD, dtype=np.uint8)
+        a[0:self.CH, self.W - self.CW:self.W, :] = (255, 255, 255)  # 缺口（洞色）
+        return a
+
+    def _blank_v(self):
+        """垂直切边所在列的「上方留白」段。"""
+        m = np.zeros((self.H, self.W), dtype=bool)
+        m[0:self.INSET_TOP, self.W - self.CW - self.T:self.W - self.CW] = True
+        return m
+
+    def _blank_h(self):
+        """水平切边所在行的「右侧留白」段。"""
+        m = np.zeros((self.H, self.W), dtype=bool)
+        m[self.CH:self.CH + self.T, self.W - self.INSET_RIGHT:self.W] = True
+        return m
+
+    @staticmethod
+    def _changed(arr, base):
+        return (arr != base).any(axis=2)
+
+    def test_default_zero_is_noop_compat(self):
+        """inset 默认 0 → 与不传参逐像素一致（完全向后兼容）。"""
+        c = self._canvas()
+        kw = dict(corner='tr', x0=self.W - self.CW, y0=0,
+                  cw=self.CW, ch=self.CH, layers=self.LAYERS)
+        default = patch_lshape_cut_layers(c.copy(), **kw)
+        explicit = patch_lshape_cut_layers(c.copy(), **kw, inset_top=0, inset_right=0)
+        np.testing.assert_array_equal(default, explicit)
+
+    def test_vertical_edge_covers_blank_without_inset(self):
+        """回归复现：不内缩时垂直切边确实覆盖产品上方留白。"""
+        c = self._canvas()
+        out = patch_lshape_cut_layers(
+            c.copy(), 'tr', self.W - self.CW, 0, self.CW, self.CH, self.LAYERS)
+        assert (self._changed(out, c) & self._blank_v()).sum() > 0
+        assert (self._changed(out, c) & self._blank_h()).sum() > 0
+
+    def test_inset_keeps_blank_untouched(self):
+        """内缩后留白区零改动，且保留区内的补边依然存在（功能未被削掉）。"""
+        c = self._canvas()
+        out = patch_lshape_cut_layers(
+            c.copy(), 'tr', self.W - self.CW, 0, self.CW, self.CH, self.LAYERS,
+            inset_top=self.INSET_TOP, inset_right=self.INSET_RIGHT)
+        ch = self._changed(out, c)
+        assert (ch & self._blank_v()).sum() == 0
+        assert (ch & self._blank_h()).sum() == 0
+        keep_v = np.zeros((self.H, self.W), dtype=bool)
+        keep_v[self.INSET_TOP:self.CH,
+               self.W - self.CW - self.T:self.W - self.CW] = True
+        assert (ch & keep_v).sum() > 0
+        keep_h = np.zeros((self.H, self.W), dtype=bool)
+        keep_h[self.CH:self.CH + self.T, self.W - self.CW:self.W - self.INSET_RIGHT] = True
+        assert (ch & keep_h).sum() > 0
+
+    def test_single_layer_variant_also_bounded(self):
+        """patch_lshape_cut（V13 单层）同样受 inset 约束。"""
+        from core.lshape_border import patch_lshape_cut
+
+        c = self._canvas()
+        out = patch_lshape_cut(
+            c.copy(), 'tr', self.W - self.CW, 0, self.CW, self.CH, 4, 12, self.BAND,
+            black=self.BLACK,
+            inset_top=self.INSET_TOP, inset_right=self.INSET_RIGHT)
+        ch = self._changed(out, c)
+        assert (ch & self._blank_v()).sum() == 0
+        assert (ch & self._blank_h()).sum() == 0
+
+    def test_inset_beyond_gap_is_safe(self):
+        """inset_top 超过缺口高度 → 垂直带整条跳过，不抛异常。"""
+        c = self._canvas()
+        out = patch_lshape_cut_layers(
+            c.copy(), 'tr', self.W - self.CW, 0, self.CW, self.CH, self.LAYERS,
+            inset_top=self.CH + 50)
+        region = np.zeros((self.H, self.W), dtype=bool)
+        region[0:self.CH, self.W - self.CW - self.T:self.W - self.CW] = True
+        assert (self._changed(out, c) & region).sum() == 0
