@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop L 形切边补边越界修复 V1.0</title>
+<style>
+:root{
+  --bg:#f6f8fa; --card:#ffffff; --text:#1f2328; --muted:#656d76;
+  --border:#d8dee4; --border-soft:#eaeef2;
+  --p0:#cf222e; --p0bg:#fff5f5;
+  --p1:#bc4c00; --p1bg:#fff8f0;
+  --p2:#0969da; --p2bg:#f0f6ff;
+  --ok:#1a7f37; --okbg:#edf9f0;
+  --accent:#0969da;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.7;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
+header{
+  background:linear-gradient(135deg,#1f4e9c 0%,#2b6cb0 100%);
+  color:#fff;border-radius:12px;padding:30px 34px;margin-bottom:26px;
+}
+header h1{margin:0 0 8px;font-size:26px;font-weight:650;letter-spacing:.3px}
+header .sub{opacity:.9;font-size:13.5px}
+header .meta{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px}
+header .meta span{
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+  padding:4px 12px;border-radius:20px;font-size:12.5px;
+}
+h2{
+  font-size:19px;margin:34px 0 14px;padding-left:11px;
+  border-left:4px solid var(--accent);font-weight:640;
+}
+h3{font-size:15.5px;margin:22px 0 10px;font-weight:620;color:#24292f}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:20px 22px;margin-bottom:16px;
+}
+.verdict{
+  background:var(--card);border:1px solid var(--border);border-left:5px solid var(--p1);
+  border-radius:10px;padding:18px 22px;margin-bottom:22px;
+}
+.verdict b{color:var(--p1)}
+.verdict.ok{border-left-color:var(--ok)}
+.verdict.ok b{color:var(--ok)}
+.verdict.warn{border-left-color:var(--p0)}
+.verdict.warn b{color:var(--p0)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-bottom:20px}
+.kpi{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:15px 16px;text-align:center;
+}
+.kpi .v{font-size:25px;font-weight:680;line-height:1.25;letter-spacing:-.5px}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:5px}
+.kpi .d{font-size:11px;margin-top:4px;color:var(--ok);font-weight:620}
+.g{color:var(--ok)} .r{color:var(--p0)} .o{color:var(--p1)} .b{color:var(--p2)} .m{color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+th,td{border:1px solid var(--border-soft);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:#f0f3f6;font-weight:620;color:#24292f;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr:nth-child(even){background:#fbfcfd}
+.field{margin:11px 0 0}
+.field .k{
+  font-size:12px;font-weight:660;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;
+}
+.field .val{font-size:13.2px}
+pre{
+  background:#f6f8fa;border:1px solid var(--border-soft);border-radius:7px;
+  padding:11px 13px;overflow-x:auto;font-size:12.2px;line-height:1.6;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  margin:6px 0 0;color:#24292f;white-space:pre;
+}
+code{
+  background:#f0f3f6;padding:1.5px 5px;border-radius:4px;font-size:12.4px;
+  font-family:"SFMono-Regular",Consolas,monospace;
+}
+pre code{background:none;padding:0}
+.note{
+  background:var(--p2bg);border:1px solid #cfe3ff;border-radius:8px;
+  padding:12px 15px;font-size:13px;margin:12px 0;
+}
+.note.warn{background:var(--p0bg);border-color:#ffd7d5}
+.note.warn b{color:var(--p0)}
+.note b{color:#1f4e9c}
+.flow{
+  display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:14px 0;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px 16px;
+}
+.flow .node{
+  flex:1;min-width:132px;border:1px solid var(--border);border-radius:8px;
+  padding:10px 11px;background:#fbfcfd;font-size:12.4px;
+}
+.flow .node .nt{font-weight:650;font-size:12.8px;margin-bottom:3px;color:#24292f}
+.flow .node .nd{color:var(--muted);font-size:11.6px;line-height:1.5}
+.flow .arrow{
+  display:flex;align-items:center;justify-content:center;
+  padding:0 7px;color:var(--muted);font-size:17px;flex-shrink:0;
+}
+.flow .node.warn{border-color:#ffe0c2;background:var(--p1bg)}
+.flow .node.ok{border-color:#d6ecd9;background:var(--okbg)}
+.chk{list-style:none;padding-left:0;margin:8px 0}
+.chk li{padding-left:26px;position:relative;margin:7px 0;font-size:13.2px}
+.chk li:before{
+  content:"\2713";position:absolute;left:0;top:3px;
+  width:17px;height:17px;line-height:17px;text-align:center;border-radius:4px;
+  background:var(--okbg);color:var(--ok);font-size:11px;font-weight:700;
+}
+.chk.x li:before{content:"!";background:var(--p0bg);color:var(--p0)}
+figure{margin:14px 0 6px;text-align:center}
+figure img{
+  max-width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;
+}
+figcaption{font-size:12.4px;color:var(--muted);margin-top:8px}
+footer{
+  margin-top:40px;padding-top:18px;border-top:1px solid var(--border);
+  font-size:12.4px;color:var(--muted);display:flex;justify-content:space-between;
+  flex-wrap:wrap;gap:8px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>SmartShapeCrop L 形切边补边越界修复</h1>
+  <div class="sub">A 档方案 · 新增 <code style="background:rgba(255,255,255,.18);color:#fff">inset_top</code> /
+    <code style="background:rgba(255,255,255,.18);color:#fff">inset_right</code>，把切边补边裁进产品内容边界</div>
+  <div class="meta">
+    <span>报告版本 V1.0</span>
+    <span>2026-09-14</span>
+    <span>模块：core/lshape_border.py · lshape_border_route.py · image_ops.py</span>
+    <span>提交 87b3634</span>
+    <span>全量 457 passed</span>
+  </div>
+</header>
+
+<div class="verdict ok">
+  <b>已修复、已验证、已提交。</b> 越界根因是「切边补边的 y 起点 / x 终点硬编码在画布边缘」，
+  而 cut 矩形被沿画布边缘扩展过，导致补边覆盖到产品内容之外的画布留白。
+  本次为两条补边路径统一增加 <code>inset_top</code> / <code>inset_right</code> 内缩量，
+  <b>默认值 0 使既有行为逐像素不变</b>；传入实际内缩量后越界区改动像素为 <b>0</b>。
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="v b">3</div><div class="l">修复源文件</div><div class="d">+1 测试文件</div></div>
+  <div class="kpi"><div class="v b">7</div><div class="l">函数新增形参</div><div class="d">默认 0，全向后兼容</div></div>
+  <div class="kpi"><div class="v g">457</div><div class="l">全量测试</div><div class="d">0 failed / 0 skipped</div></div>
+  <div class="kpi"><div class="v g">0</div><div class="l">修复后越界像素</div><div class="d">4 角落 × 2 路径</div></div>
+</div>
+
+<h2>1. 现象与像素级取证</h2>
+
+<div class="card">
+  <p style="margin-top:0">用户报告：图 1、图 2 中「垂直切边或水平切边的某一层在切角处画超了，
+  进入了不该画的区域」。对截图做只读像素剖面后，几何量化为：</p>
+
+  <table>
+    <thead><tr><th>量</th><th>值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>缺口左边界</td><td class="num">x = 417</td><td>垂直切边所在列（缺口在右）</td></tr>
+      <tr><td>缺口下边界</td><td class="num">y = 79</td><td>水平切边所在行</td></tr>
+      <tr><td>产品内容上界</td><td class="num">y = 62</td><td>越界区就压在它上方</td></tr>
+      <tr><td>被覆盖列</td><td class="num">x = 402 ~ 416</td><td>15 列被纯色整段覆盖，边界极锐利（x=400 正常）</td></tr>
+      <tr><td>越界竖条厚度</td><td class="num">≈ 15 ~ 16 px</td><td>与缺口下方水平切边厚度完全吻合 → 同源同层</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>已排除的干扰项：</b>缺口内部越界为 <b>0 像素</b>（60×60 合成画布受控实验，两条路径实测）；
+    内凹角的 <code>max(dx, dy)</code> 分层经形态学验算等价于方形结构元腐蚀，
+    正是矩形边框应有的直角结果，<b>不是 bug</b>。
+  </div>
+</div>
+
+<h2>2. 根因</h2>
+
+<div class="card">
+  <p style="margin-top:0">三个条件叠加才触发，缺一不可：</p>
+  <div class="flow">
+    <div class="node warn"><div class="nt">① outer_rect = 整个 canvas</div>
+      <div class="nd">image_ops 传 <code>RectShape(0,0,W,H)</code>，子图就等于全画布，补边没有产品边界可裁</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="node warn"><div class="nt">② cut 被扩到画布边缘</div>
+      <div class="nd"><code>cut_h_px = lshape.cut_h + _ir_y</code>，缺口下边界 yc 因此**越过了产品顶边**</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="node warn"><div class="nt">③ 补边从画布边缘起铺</div>
+      <div class="nd"><code>b[0:yc, ...]</code> 硬编码 y 起点 = 0，于是从顶端一路铺到 yc</div></div>
+    <div class="arrow">=&gt;</div>
+    <div class="node"><div class="nt">越界</div>
+      <div class="nd">产品内容上界之上的那段画布留白被整段盖掉</div></div>
+  </div>
+
+  <p>涉及代码位置（修复前）：</p>
+  <table>
+    <thead><tr><th>位置</th><th>形态</th></tr></thead>
+    <tbody>
+      <tr><td><code>lshape_border.py:1126</code></td><td><code>b[0:yc, xc-edge:xc] = black</code> — 硬编码从 y=0 起铺</td></tr>
+      <tr><td><code>lshape_border.py:1128 / 1130</code></td><td>主带同一病症；水平切边 x 终点写成 <code>W</code></td></tr>
+      <tr><td><code>lshape_border_route.py:464-467</code></td><td><code>y_lo = offs[k] if offs[k] &lt; yc else 0</code>；<code>y_hi = yc+1</code> 同病</td></tr>
+      <tr><td><code>image_ops.py:1266</code></td><td><code>cut_h_px = lshape.cut_h + _ir_y</code> — 放大因素</td></tr>
+      <tr><td><code>image_ops.py:1286 / 1294</code></td><td><code>outer_rect=_canvas_rect</code> — 补边无产品边界可裁</td></tr>
+    </tbody>
+  </table>
+
+  <figure>
+    <img src="assets/20260914-inset-before-after.png"
+         alt="L 形切边补边越界修复前后对比">
+    <figcaption>上排为整幅画布，下排为越界区 8× 放大。修复前垂直切边一路铺到画布顶端，
+      覆盖产品内容上界以上的留白；修复后该区域零改动。</figcaption>
+  </figure>
+</div>
+
+<h2>3. 修复方案（A 档）</h2>
+
+<div class="card">
+  <h3>3.1 新增两个内缩量参数</h3>
+  <p style="margin-top:0">为两条补边路径统一增加 <code>inset_top</code> / <code>inset_right</code>，
+  含义是「缺口沿画布边缘扩展出去的那一段画布留白」，补边不得覆盖。默认 <code>0</code>，
+  因此所有既有调用点行为 <b>逐像素不变</b>。</p>
+
+  <h3>3.2 关键设计：内缩量不需要按角落分别推导</h3>
+  <pre><code>inset_top   = cut_h_px - lshape.cut_h   # 缺口 y 方向多扩出来的部分
+inset_right = cut_w_px - lshape.cut_w   # 缺口 x 方向多扩出来的部分</code></pre>
+  <p>调用侧这两个差值天然等价于「cut 越过产品内容的那一段」，
+  <b>四个角落（tl / tr / bl / br）一律成立</b> —— 无需按角分别写映射，
+  这是本次改动能把七处签名收拢到两个参数的原因。</p>
+
+  <p>在「缺口翻转到右上角」的归一化坐标系里，语义固定为：</p>
+  <table>
+    <thead><tr><th>参数</th><th>约束对象</th><th>实现</th></tr></thead>
+    <tbody>
+      <tr><td><code>inset_top</code></td><td>垂直切边的 y 起点</td>
+        <td><code>y_lo = max(y_lo, inset_top)</code></td></tr>
+      <tr><td><code>inset_right</code></td><td>水平切边的 x 终点</td>
+        <td><code>x_hi = min(x_hi, W - inset_right)</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>内凹角为什么不受影响：</b>角部分层区域在 <code>y &gt; yc</code>，
+    而 <code>yc = inset_top + lshape.cut_h &gt; inset_top</code> 恒成立，
+    所以角部永远落在产品内容之内，无需额外夹紧。同理，<code>inset_top &ge; yc</code>
+    的退化输入会被夹紧为整条垂直带跳过，不会抛异常。
+  </div>
+
+  <h3>3.3 值得一提：A 档顺带覆盖了旧路径</h3>
+  <p style="margin:0">原计划只改两个 <code>patch_*</code> 函数。实施时发现
+  <code>compute_cut_edge_bboxes</code>（旧 <code>detect_pool_material_borders</code> 路径）
+  有完全相同的越界结构 —— 若不改，走旧路径的素材仍会画超。
+  故一并加了内缩裁剪，否则这次修复只能算「三分之二」。</p>
+</div>
+
+<h2>4. 改动清单</h2>
+
+<div class="card">
+  <table>
+    <thead><tr><th>文件</th><th>增删</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><code>core/lshape_border.py</code></td><td class="num">+117 / -7</td>
+        <td><code>compute_cut_edge_bboxes</code>、<code>_fill_vertical_horizontal</code>、
+          <code>patch_lshape_cut</code>、<code>_apply_v13_path</code>、
+          <code>_try_apply_v13</code>、<code>apply_lshape_border_completion</code> 加参并透传</td></tr>
+      <tr><td><code>core/lshape_border_route.py</code></td><td class="num">+32 / -3</td>
+        <td><code>_fill_layers_vertical_horizontal</code>、<code>patch_lshape_cut_layers</code>、
+          <code>_apply_profile_path</code> 加参并透传</td></tr>
+      <tr><td><code>core/image_ops.py</code></td><td class="num">+11</td>
+        <td>调用侧计算两个内缩量并传入 <code>apply_lshape_border_completion</code></td></tr>
+      <tr><td><code>tests/core/test_lshape_border_route.py</code></td><td class="num">+5 例</td>
+        <td>新增 <code>TestCutEdgeInsetBound</code>：默认值等价、越界复现、
+          内缩后留白零改动、单层变体同受约束、越界输入不抛错</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code># core/image_ops.py —— 调用侧
+_inset_right = max(0, int(round(cut_w_px - lshape.cut_w)))
+_inset_top   = max(0, int(round(cut_h_px - lshape.cut_h)))
+...
+apply_lshape_border_completion(..., inset_top=_inset_top, inset_right=_inset_right)</code></pre>
+</div>
+
+<h2>5. 验证结果</h2>
+
+<div class="card">
+  <table>
+    <thead><tr><th>层级</th><th>方法</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td>叶子函数</td>
+        <td><code>verify_inset.py</code>：与「改动前原始实现」逐像素比对 + 留白区改动计数</td>
+        <td class="g">4 角落 × 2 路径，inset=0 全部逐像素一致；inset&gt;0 留白改动 <b>0</b> 像素</td></tr>
+      <tr><td>端到端</td>
+        <td><code>verify_e2e_inset.py</code>：只调公开入口
+          <code>apply_lshape_border_completion</code>，验证 V13 与 Profile 两条路由</td>
+        <td class="g">两路由均：inset=0 复现越界；inset&gt;0 留白干净且保留区补边仍在</td></tr>
+      <tr><td>回归</td>
+        <td>新增 <code>TestCutEdgeInsetBound</code> 5 例</td>
+        <td class="g">5 passed</td></tr>
+      <tr><td>全量</td>
+        <td><code>pytest</code> 全量 + <code>--junitxml</code> 权威统计</td>
+        <td class="g"><b>457 passed / 0 failed / 0 skipped</b>（56.6s）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note warn">
+    <b>本机排障提示（新踩到的坑）：</b>直接跑全量 <code>pytest -q</code> 会返回
+    <b>退出码 1 且汇总行不落盘</b> —— 原因是 WorkBuddy 的 safe-delete 钩子拦下了
+    pytest 临时目录的批量删除（<code>[SAFE_DELETE_BULK_CONFIRM_REQUIRED]</code>），
+    pytest 在收尾阶段被打断。<b>判读全量结果不能只看退出码</b>，
+    应数进度行的 <code>F</code>/<code>E</code>，或改用 <code>--junitxml</code> 取权威计数。
+    带 <code>--basetemp</code> 指到项目内目录反而会让 35 个用例报 <code>SystemExit</code>，勿用。
+  </div>
+</div>
+
+<h2>6. 提交状态与风险处置</h2>
+
+<div class="card">
+  <div class="verdict warn" style="margin-top:0">
+    <b>期间发现一个必须记录的险情：</b>本人实施过程中（14:54）出现提交
+    <code>bf81daa</code>，<b>只收录了 3 个源文件中的 1 个</b>，导致 HEAD 处于「半个改动」状态。
+  </div>
+
+  <p style="margin-top:0">该提交收录了 <code>core/lshape_border.py</code>（其中已调用
+  <code>_apply_profile_path(..., inset_top=, inset_right=)</code>），
+  但没有收录 <code>core/lshape_border_route.py</code> —— 而 HEAD 版的
+  <code>_apply_profile_path</code> 并不接受这两个关键字参数。后果：</p>
+
+  <ul class="chk x">
+    <li>Profile 路由 <b>必然抛 <code>TypeError</code></b>；</li>
+    <li>该异常被 <code>image_ops</code> 外层的 <code>except Exception</code> 静默吞掉，
+      退化成「统一黑框兜底」；</li>
+    <li>于是<b>蔓生花 / 中古雨林类素材的切边补边会丢失</b>，且无任何报错。</li>
+  </ul>
+
+  <p>已按确认补齐提交，HEAD 恢复自洽：</p>
+  <table>
+    <thead><tr><th>提交</th><th>内容</th><th>状态</th></tr></thead>
+    <tbody>
+      <tr><td><code>bf81daa</code></td><td>v2.2.1-修复L形挖角单边色带问题（只含 lshape_border.py）</td><td class="r">自洽性不足</td></tr>
+      <tr><td><code>87b3634</code></td><td>补齐 image_ops.py / lshape_border_route.py / 回归测试</td><td class="g">已恢复自洽</td></tr>
+    </tbody>
+  </table>
+
+  <pre><code># 复核 HEAD 自洽性（两个命令都应非空）
+git show HEAD:core/lshape_border_route.py | grep -n "inset_top"
+git show HEAD:core/lshape_border.py | grep -n "inset_top=inset_top"</code></pre>
+
+  <div class="note">
+    <b>教训：</b>跨文件加参数时，提交必须<b>整组原子提交</b>。
+    只提交其中一个文件，等于制造一个必然报错的中间状态 ——
+    尤其本项目大量使用 <code>except Exception</code> 静默回退，
+    <b>这类错误不会崩，只会静默降级</b>，比崩溃更难发现。
+  </div>
+</div>
+
+<h2>7. 遗留事项</h2>
+
+<div class="card">
+  <p style="margin-top:0">A 档只解决「补边越界」这一个问题。诊断阶段另发现两处次要缺陷，<b>本次刻意未动</b>：</p>
+  <table>
+    <thead><tr><th>档位</th><th>内容</th><th>影响</th></tr></thead>
+    <tbody>
+      <tr><td><b>B 档</b></td>
+        <td>让垂直切边各层与素材顶部边框带的实际 y 结构对齐（扫描定位横向边框带），
+          而非硬编码 <code>0</code> / <code>edge</code></td>
+        <td>更根本，但需新增一次剖面扫描</td></tr>
+      <tr><td><b>C 档</b></td>
+        <td>统一 Profile 与 V13 的口径：<code>yc</code> vs <code>yc+1</code>、
+          <code>edge</code> vs <code>offs[1]</code></td>
+        <td>消掉缺口下边界的 <b>1px 亮缝</b>与多层时的<b>角部层序错位</b></td></tr>
+    </tbody>
+  </table>
+  <p style="margin-bottom:0">建议 B、C 两档合并做一次，改后同样以「全量 + 图 1 同参数重渲染」复核。</p>
+</div>
+
+<footer>
+  <div>SmartShapeCrop L 形切边补边越界修复 · 报告版本 V1.0 · 2026-09-14</div>
+  <div>提交 87b3634 · 全量 457 passed / 0 failed · 项目版本 V2.2.1</div>
+</footer>
+
+</div>
+</body>
+</html>
