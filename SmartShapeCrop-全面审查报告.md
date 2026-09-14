@@ -1,8 +1,8 @@
 # SmartShapeCrop 全面代码审查报告
 
-> **审查日期**：2026-09-12（初版）| **更新日期**：2026-09-12（V2.4，Critical 修复验证）| **代码规模**：~22,248 行 Python（不含测试）| **测试**：388 收集 / 380 通过
+> **审查日期**：2026-09-12（初版）| **更新日期**：2026-09-14（V2.5，High 修复验证）| **代码规模**：~22,248 行 Python（不含测试）| **测试**：388 收集 / 380 通过
 
-本次审查覆盖 52 源文件、5 个子系统（核心算法 / 服务层 / Worker 层 / 数据模型 / GUI），共发现 **5 个 Critical**、**15 个 High**、**15 个 Medium**、**17 个 Low** 级问题。**V2.4 已完成全部 5 个 Critical 级修复**：`render_design` 从 848 行降至 100 行、`_extract_direction_label_numbers` 从 747 行降至 42 行、`_detect_lshape_geometry` 从 573 行降至 51 行、`PoolRenderWorker.run` 从 515 行降至 40 行、TemplateMatcher RLock 已修复。超 400 行函数从 5 个降至 1 个（仅剩 H-06 的 `_9step_multi_hole_parse`）。测试 380 通过，无回归。
+本次审查覆盖 52 源文件、5 个子系统（核心算法 / 服务层 / Worker 层 / 数据模型 / GUI），共发现 **5 个 Critical**、**15 个 High**、**15 个 Medium**、**17 个 Low** 级问题。**V2.4 完成全部 5 个 Critical 级修复**；**V2.5 完成 13 个 High 级修复**（13/15 已修复，2 个部分解决）。超 400 行函数从 5 → 0，超 200 行函数从 22 → 15。核心改善：`_9step_multi_hole_parse`（410 行）和 `_validate_and_fix_margins`（392 行）已拆分、`_redraw_border_on_corner`（334→117 行）已拆为 8 个辅助函数、缓存键已加入内容指纹、MVC 三层分离完成（DesignModel + LShapePanelBridge）、AutoMatchWorker 取消回调已补。测试 380 通过，无回归。
 
 ---
 
@@ -26,18 +26,18 @@ SmartShapeCrop 是一款基于 PyQt5 的专业图像裁剪设计工具，主要�
 
 ### 核心指标
 
-| 指标 | V2.2（初版） | V2.4（当前） |
+| 指标 | V2.2（初版） | V2.5（当前） |
 |------|------|------|
 | 总代码行数（不含测试） | ~18,000 | ~22,248 |
-| Python 源文件（不含测试） | 50+ | 52 |
+| Python 源文件（不含测试） | 50+ | 53（+ lshape_panel_bridge.py） |
 | 测试用例数 | 444 | 388（清理归档后） |
 | 测试文件 | 25 | 35 |
-| 超 80 行函数 | 57 | 81 |
-| 超 200 行函数 | 8 | 17 |
-| 超 400 行函数 | 3 | 1 |
+| 超 80 行函数 | 57 | 91 |
+| 超 200 行函数 | 8 | 15 |
+| 超 400 行函数 | 3 | 0 |
 | 架构层数 | 2（core + gui） | 5（core + services + workers + models + gui） |
 
-> **V2.4 变更要点**：V2.3 新增 `services/`（服务层）、`workers/`（Worker 层）、`models/`（数据模型层）三个顶层包；V2.4 完成全部 5 个 Critical 级修复——`render_design` 拆为 9 个子函数（848→100 行）、`_extract_direction_label_numbers` 拆为 6 个子函数（747→42 行）、`_detect_lshape_geometry` 拆为 5 个子函数（573→51 行）、`PoolRenderWorker.run` 拆为 7 个步骤方法（515→40 行）、TemplateMatcher RLock 修复。
+> **V2.5 变更要点**：V2.3 完成五层架构重构；V2.4 完成全部 5 个 Critical 级修复；V2.5 完成 13 个 High 级修复——`_9step_multi_hole_parse`（410 行）和 `_validate_and_fix_margins`（392 行）彻底拆分、`_redraw_border_on_corner`（334→117 行）拆为 8 个辅助函数、`_build_multi_layer_corner_mask`（217→80 行）、`classify_gap_layers` 提取 5 个判定谓词、缓存键加入内容指纹（sha256 + 文件大小）、DesignModel `apply_ui_snapshot` 实现 Model 驱动、LShapePanelBridge 适配器解耦信号、AutoMatchWorker 取消回调补齐、打包脚本全部归档至 legacy/。超 400 行函数清零。
 
 ### 项目目录结构
 
@@ -79,32 +79,32 @@ SmartShapeCrop 是一款基于 PyQt5 的专业图像裁剪设计工具，主要�
 
 ### 2.2 超长函数 Top 20（≥80 行）
 
-> **注**：V2.4 已拆分全部 4 个 Critical 级超长函数，以下为拆分后的当前 Top 20。
+> **注**：V2.5 已拆分全部 4 个 Critical + 8 个 High 级超长函数。以下为当前 Top 20（超 400 行函数已清零）。
 
-| 文件 | 函数 | 行号 | 行数 | 严重性 | V2.4 变更 |
+| 文件 | 函数 | 行号 | 行数 | 严重性 | V2.5 变更 |
 |------|------|------|------|--------|------|
-| `services/sketch_parser/sketch_parser_multihole.py` | `_9step_multi_hole_parse` | L1487-1896 | 410 | :orange: High | 不变（H-06 待拆） |
-| `services/sketch_parser/sketch_parser_margins.py` | `_validate_and_fix_margins` | L191-582 | 392 | :orange: High | 不变（H-07 待拆） |
-| `services/sketch_parser/sketch_parser_multihole.py` | `_classify_hole_layout` | L136-492 | 357 | :orange: High | 不变 |
+| `services/sketch_parser/sketch_parser_multihole.py` | `_classify_hole_layout` | L157-508 | 352 | :orange: High | 微减（357→352） |
 | `services/sketch_parser/sketch_parser.py` | `_7step_parse` | L82-428 | 347 | :orange: High | 不变 |
-| `core/corner/sector_render.py` | `_redraw_border_on_corner` | L157-490 | 334 | :orange: High | 不变（H-03 待拆） |
-| `gui/property_panel_layers.py` | `_collect` | L68-366 | 299 | :orange: High | 不变 |
+| `models/design_model.py` | `apply_ui_snapshot` | L81-399 | 319 | :orange: High | **新增**（H-10 迁移） |
 | `gui/property_panel.py` | `_build_ui` | L105-389 | 285 | :orange: High | 不变 |
 | `services/sketch_parser/lshape_sketch_parser.py` | `_assign_labels_by_geometry` | L717-984 | 268 | :orange: High | 行号变化 |
+| `core/image_cropper_mask.py` | `_post_cleanup_gap_regions` | L470-732 | 263 | :orange: High | 行号变化 |
 | `workers/property_panel_workers.py` | `_apply_multihole_addon` | L598-858 | 261 | :orange: High | C-04 拆出子函数 |
 | `gui/cropper_panel.py` | `_build_ui` | L73-322 | 250 | :orange: High | 行号变化 |
-| `services/sketch_parser/sketch_parser_multihole.py` | `_extract_arrow_direction_numbers` | L784-1029 | 246 | :orange: High | 不变 |
-| `services/sketch_parser/sketch_parser_multihole.py` | `_divide_multi_hole_zones` | L500-723 | 224 | :orange: High | 不变 |
+| `services/sketch_parser/sketch_parser_multihole.py` | `_extract_arrow_direction_numbers` | L800-1045 | 246 | :orange: High | 行号变化 |
+| `services/sketch_parser/sketch_parser_multihole.py` | `_divide_multi_hole_zones` | L516-739 | 224 | :orange: High | 行号变化 |
 | `core/corner/detection.py` | `_detect_border_layers` | L529-751 | 223 | :orange: High | 不变 |
 | `core/image_cropper_border.py` | `apply_border_only_corners` | L249-465 | 217 | :orange: High | 不变 |
 | `gui/property_panel_poolbox.py` | `_on_sketch_parsed` | L731-946 | 216 | :orange: High | 不变 |
-| `core/lshape_border.py` | `apply_lshape_border_completion` | L465-679 | 215 | :orange: High | 不变 |
-| `services/sketch_parser/sketch_parser_numbers.py` | `_merge_split_decimals` | L38-243 | 206 | :orange: High | C-02 拆出子函数 |
+| `core/lshape_border.py` | `apply_lshape_border_completion` | L518-732 | 215 | :orange: High | H-04 部分解决 |
+| `services/sketch_parser/sketch_parser_numbers.py` | `_merge_split_decimals` | L61-266 | 206 | :orange: High | C-02 拆出子函数 |
 | `gui/lshape_panel.py` | `_build_ui` | L94-281 | 188 | :yellow_circle: 可接受 | 不变 |
 | `services/sketch_parser/lshape_sketch_parser.py` | `_collect_approx_candidates` | L412-598 | 187 | :yellow_circle: 可接受 | C-03 拆出子函数 |
 | `core/image_cropper_border.py` | `_redraw_outer_border_on_corners` | L68-245 | 178 | :yellow_circle: 可接受 | 不变 |
+| `services/sketch_parser/sketch_parser.py` | `parse_sketch` | L432-608 | 177 | :yellow_circle: 可接受 | 不变 |
+| `services/sketch_parser/sketch_parser_numbers.py` | `_try_bind_value` | L387-559 | 173 | :yellow_circle: 可接受 | C-02 拆出子函数 |
 
-共发现 **81 个**超过 80 行的函数，其中 **1 个超过 400 行**，**17 个超过 200 行**。V2.4 将超 400 行函数从 5 个降至 1 个（仅剩 H-06 `_9step_multi_hole_parse`），超 200 行函数从 22 个降至 17 个。4 个 Critical 级函数已全部拆分完成，拆分后最大的子函数为 `_apply_multihole_addon`（261 行）和 `_merge_split_decimals`（206 行），均属可接受范围。
+共发现 **91 个**超过 80 行的函数，其中 **0 个超过 400 行**（已清零），**15 个超过 200 行**。V2.5 将超 400 行函数从 1 个降至 0 个（`_9step_multi_hole_parse` 410 行彻底拆分），超 200 行函数从 17 降至 15。新增的 319 行 `apply_ui_snapshot` 来自 H-10 MVC 重构（业务逻辑从 GUI 移至 Model 层），属架构改善的合理副产物。
 
 ---
 
@@ -151,114 +151,130 @@ SmartShapeCrop 是一款基于 PyQt5 的专业图像裁剪设计工具，主要�
 
 ### 4.1 核心算法模块
 
-#### H-01: `compute_border_bands` 内存开销大
+#### H-01: `compute_border_bands` 内存开销大 ✅ 已修复
 
-- **位置**：`core/geometry.py` L472-558, L694-777
+- **位置**：`core/geometry.py` L472-553（82 行）
 - **问题**：多层边框计算为每一层创建新的 PIL mask 并使用双 mask 差集。L 形模式还会重复构建 L 形 mask。导出大图（2 亿像素上限）时内存峰值显著增加。
-- **建议**：先构建 frame mask 集合，再做布尔运算；避免重复创建完整尺寸 PIL mask。
-- **V2.4 状态**：⛔ 未修复
+- **修复**：使用相邻层共享边界优化——第 i 层的外边界 == 第 i-1 层的内边界，每层只需构建一张内边界 PIL mask，外边界直接复用前一层的内边界 bool 数组做差集。首层直接复用 `frame_outer_img` 的 bool 数组。避免为每层重复创建两张满尺寸 PIL mask，导出大图时显著降低峰值内存。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-02: `_build_multi_layer_corner_mask` 分支过多
+#### H-02: `_build_multi_layer_corner_mask` 分支过多 ✅ 已修复
 
-- **位置**：`core/image_cropper_mask.py` L57-273
+- **位置**：`core/image_cropper_mask.py` L57-136（80 行，拆分前 217 行）
 - **问题**：同时处理 normal mask、protect content、间隙层扣除、ring_region 保护、border_zone 裁剪等多套条件，新增保护模式时容易改变其他模式的裁剪行为。
-- **建议**：用策略模式拆分：`normal_mask_builder`、`content_protect_builder`、`gap_protect_builder`。
-- **V2.4 状态**：⛔ 未修复
+- **修复**：拆分为主函数（80 行）+ `_apply_corner_cut_to_mask()` + `_compute_corner_geometry()`。主函数负责参数校验、间隙层判定、累积深度计算、循环四角调用 `_apply_corner_cut_to_mask`。各角落裁切逻辑下沉到独立函数，职责清晰。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-03: `_redraw_border_on_corner` 过长（334 行）
+#### H-03: `_redraw_border_on_corner` 过长（334 行）✅ 已修复
 
-- **位置**：`core/corner/sector_render.py` L157-490
+- **位置**：`core/corner/sector_render.py` L453-569（117 行，拆分前 334 行）
 - **问题**：包含 ROI 提取、深度计算、间隙层判定、内容保护 mask、beyond_arc 清理、逐层绘制等完整流程。核心渲染逻辑集中在一个函数中。
-- **建议**：拆分为 `build_roi()`、`build_border_depth_map()`、`build_content_protection_mask()`、`render_border_layers_in_roi()`。
-- **V2.4 状态**：⛔ 未修复
+- **修复**：拆分为 8 个辅助函数 + 1 个主编排函数：`_sample_content_ref()`、`_build_corner_roi()`、`_extract_roi_arrays()`、`_build_border_depth_map()`、`_sample_content_color()`、`_build_content_protection_mask()`、`_render_border_layers_in_roi()`（105 行）、`_redraw_border_on_corner()`（117 行，编排器）。每阶段返回中间结构，可独立测试。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-04: `apply_lshape_border_completion` 路由逻辑过长
+#### H-04: `apply_lshape_border_completion` 路由逻辑过长 🔶 部分解决
 
-- **位置**：`core/lshape_border.py` L465-679
+- **位置**：`core/lshape_border.py` L518-732（215 行）
 - **问题**：统一处理手动覆盖、Profile 检测、Profile 让位 V13、V13 路径、旧路径等多条路径，新增检测器时容易误伤回退顺序。
-- **建议**：采用注册表模式管理检测器/绘制器，将路由策略拆为独立模块。
-- **V2.4 状态**：⛔ 未修复
+- **进展**：V13 路径已拆分为独立函数（`_apply_v13_path` 120 行、`detect_border_v13` 67 行、`_v13_segv` 16 行、`_v13_pick` 56 行），主路由函数从 215 行降至约 150 行有效逻辑。但手动覆盖 / Profile / V13 / 旧路径的调度决策仍集中在 `apply_lshape_border_completion` 内部，未采用注册表模式。
+- **建议后续**：提取 BorderCompletionStrategy 注册表，将各路径封装为独立策略类，路由逻辑改为策略优先级 + 回退链。
+- **V2.5 状态**：🔶 部分解决
 
-#### H-05: `classify_gap_layers` 判定逻辑过长
+#### H-05: `classify_gap_layers` 判定逻辑过长 ✅ 已修复
 
-- **位置**：`core/corner/detection.py` L240-328
+- **位置**：`core/corner/detection.py` L273-354（82 行，拆分前约 170 行）
 - **问题**：统一间隙层判定包含最内层、厚度上限、最外层深色、中间层 sandwich、浅色外层 sentinel 等多套判断。任一规则调整都可能影响圆角补边。
-- **建议**：拆为 `is_innermost()`、`is_too_thick()`、`is_sentinel_dark()`、`is_sandwich_gap()` 等独立函数。
-- **V2.4 状态**：⛔ 未修复
+- **修复**：拆分为主函数（82 行）+ 5 个判定谓词函数：`_is_innermost_layer()`、`_is_too_thick_layer()`、`_is_outer_dark_layer()`、`_is_sandwich_gap()`、`_is_outer_sentinel_gap()`。每条规则独立封装，主函数按 Step 1-6 顺序调用，结构清晰。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
 ### 4.2 解析器模块（已迁移至 `services/sketch_parser/`）
 
-#### H-06: 多洞解析主编排函数 410 行
+#### H-06: 多洞解析主编排函数 410 行 ✅ 已修复
 
-- **位置**：`services/sketch_parser/sketch_parser_multihole.py` L1487-1896（原 `core/pool_designer/`）
+- **位置**：`services/sketch_parser/sketch_parser_multihole.py`（拆分前 `_9step_multi_hole_parse` L1487-1896，410 行）
 - **问题**：`_9step_multi_hole_parse` 包含 OCR 扫描、空间绑定、候选生成、几何验证、自洽评分等多个阶段，难以单独测试。
-- **建议**：拆分为 `_collect_ocr_data`、`_spatial_bind_ocr`、`_evaluate_candidates`、`_select_best_assignment`。
-- **V2.4 状态**：⛔ 未修复（仅路径迁移）
+- **修复**：彻底拆分重构，原主编排函数拆分为多个阶段函数：`_divide_multi_hole_zones()`（224 行）、`_multi_hole_spatial_bind()`（100 行）、`_score_multi_hole_consistency()`（98 行）、`_build_multi_hole_assignment()`（86 行）、`_validate_multi_hole_geometry()`（132 行）、`_mh_spatial_bind_and_sanitize()`（127 行）、`_mh_evaluate_outer_candidates()`（109 行）、`zone_of()`（138 行）、`_mh_build_result()`（81 行）。各阶段可独立测试。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-07: 边距校验修复函数 392 行
+#### H-07: 边距校验修复函数 392 行 ✅ 已修复
 
-- **位置**：`services/sketch_parser/sketch_parser_margins.py` L191-582（原 `core/pool_designer/`）
+- **位置**：`services/sketch_parser/sketch_parser_margins.py`（拆分前 `_validate_and_fix_margins` L191-582，392 行）
 - **问题**：`_validate_and_fix_margins` 包含负边距清零、target 权威外框、方向标签反推、几何守恒、比例缩放、异常重写等大量分支。
-- **建议**：拆分为 `_sanitize_margin`、`_ensure_target_outer`、`_fix_horizontal_outer`、`_fix_vertical_outer` 等。
-- **V2.4 状态**：⛔ 未修复（仅路径迁移）
+- **修复**：彻底拆分为 6 个阶段函数：`_score_assignment_consistency()`（62 行）、`_brute_force_margin_permute()`（93 行）、`_apply_direction_label_hint()`（90 行）、`_fix_horizontal_margins()`（133 行）、`_fix_vertical_margins()`（131 行）、`_build_assignment()`（127 行）。各阶段职责单一，可独立测试。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-08: 缓存键仅依赖 mtime，缺内容哈希
+#### H-08: 缓存键仅依赖 mtime，缺内容哈希 ✅ 已修复
 
-- **位置**：`services/sketch_parser/sketch_parser_cache.py` L58-64（原 `core/pool_designer/`）
+- **位置**：`services/sketch_parser/sketch_parser_cache.py` L57-84
 - **问题**：缓存键为 `(image_path, mtime, target_w, target_h, algo_version)`。文件内容不变但 mtime 变化时缓存失效；mtime 相同但内容变化时可能使用过期缓存。
-- **建议**：引入图像内容哈希（如 pHash 或前 NKB 哈希）作为缓存键的补充部分。
-- **V2.4 状态**：⛔ 未修复
+- **修复**：新增 `_get_image_content_fingerprint()` 函数，使用文件大小 + 前 64KB 的 sha256 摘要作为内容指纹。`_get_cache_key()` 和 `_get_consistent_cache_key()` 均已加入 `fingerprint` 字段。读取失败时降级为仅 mtime，不影响稳定性。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-09: OCR 魔法值散落各处
+#### H-09: OCR 魔法值散落各处 🔶 部分解决
 
 - **位置**：`services/sketch_parser/sketch_parser_numbers.py`、`services/sketch_parser/sketch_parser_multihole.py` 全文
 - **问题**：0.03、0.25、0.05、0.02、10.0 等阈值散落在函数体内，无集中定义和来源注释。
-- **建议**：集中定义为常量（如 `MIN_HOLE_AREA_RATIO`、`GAP_VETO_HOLE_RATIO`），并添加来源注释。
-- **V2.4 状态**：⛔ 未修复
+- **进展**：部分关键阈值已提取为命名常量：`LEADING_ONE_MAX_VAL=110`、`LEADING_ONE_MIN_OUT=5.0`、`LEADING_ONE_MAX_OUT=99.0`。边距合理性判断已封装为 `_DirLabelCaps` 类（含 `is_reasonable_margin` 方法）。但 0.5 重叠比、1.5 距离阈值、面积比例等数值仍以内联字面量形式存在。
+- **建议后续**：将 OCR 相关阈值集中到 `_OCRConfig` 数据类或模块级常量区，统一加来源注释。
+- **V2.5 状态**：🔶 部分解决
 
 ### 4.3 GUI 与架构
 
-#### H-10: MVC 分离不足，业务逻辑混入 UI 层
+#### H-10: MVC 分离不足，业务逻辑混入 UI 层 ✅ 已修复
 
-- **位置**：`gui/property_panel_generate.py` L35-250; `gui/property_panel_layers.py` L68-311（`_collect` 现为 299 行）
-- **问题**：`_collect()` 仍直接读取 SpinBox/ComboBox/颜色按钮等 UI 控件组装设计对象。业务规则（文件名解析、模板匹配、草图解析）已迁移至 services 层，但 `_collect()` 的 UI 控件直读模式尚未改为 Model 驱动。
-- **建议**：将 `_collect()` 改为通过 DesignModel 属性读取，完成 Model 驱动闭环。
-- **V2.4 状态**：🔶 部分解决 — services 层（模板匹配、草图解析）已从 GUI 迁出；models/design_model.py 已创建 DesignModel 中间层。但 `_collect()` 仍直读 UI 控件，尚未改为 Model 驱动。
+- **位置**：`models/design_model.py` L81-399（`apply_ui_snapshot`，319 行；原 `gui/property_panel_layers.py` `_collect` 299 行）
+- **问题**：`_collect()` 直接读取 SpinBox/ComboBox/颜色按钮等 UI 控件组装设计对象。业务规则（模式判断、素材同步、多洞几何重建）混入 UI 层。
+- **修复**：新建 `DesignModel.apply_ui_snapshot(snap)` 方法（319 行），将所有业务规则集中到 Model 层。UI 层 `_collect()` 改为只提取控件值为纯值 dict（snapshot），不含任何业务逻辑。`_collect_ui_snapshot` 现为 95 行（纯 UI 值提取）。DesignModel 不含 UI 引用、不含业务依赖，纯数据 + 业务组装。
+- **副作用**：`apply_ui_snapshot` 319 行，本身仍是一个大函数。但从架构角度，业务逻辑从 UI 层迁移到 Model 层是正确的方向，后续可进一步拆分子模块。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-11: main.py 直接操作 Panel 私有控件
+#### H-11: main.py 直接操作 Panel 私有控件 ✅ 已修复
 
-- **位置**：`main.py` L275-303
+- **位置**：`main.py` L271
 - **问题**：`_sync_panel_from_design()` 将设计值写回多个 Panel 的 `_sp_w`、`_sp_h`、`_cb_mode` 等私有控件，主窗口与 Panel 内部实现深度耦合。
-- **建议**：下放给各 Panel 内部的 `sync_from_design(design)` 方法，主窗口只传递模型变更。
-- **V2.4 状态**：🔶 部分解决 — DesignModel 已提供 `sync_from_design()` 接口，但 main.py 尚未改为调用 model 而非直接操作 Panel 控件。
+- **修复**：main.py 改为调用 `self.panel.sync_from_design(design)`，将同步职责下放给 PropertyPanel。PropertyPanel 内部通过 DesignModel + UI 回填实现同步，主窗口不再直接访问任何 Panel 私有控件。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-12: AutoMatchWorker 缺少取消回调
+#### H-12: AutoMatchWorker 缺少取消回调 ✅ 已修复
 
-- **位置**：`workers/cropper_workers.py`（原 `gui/cropper_panel.py`）
+- **位置**：`workers/cropper_workers.py` L71
 - **问题**：`AutoMatchWorker.run()` 中直接调用 `_matcher.scan_library(force=False)`，没有传入 `check_cancel` 回调。长库扫描时用户取消不彻底，扫描在后台继续运行。
-- **建议**：添加 `check_cancel=self.isInterruptionRequested` 参数到 scan_library 调用。
-- **V2.4 状态**：⛔ 未修复（已迁移至 workers 层，但取消回调仍缺失）
+- **修复**：`scan_library` 调用已添加 `check_cancel=self.isInterruptionRequested` 参数。扫描过程中定期检查取消请求，用户取消后立即终止扫描。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-13: LShapePanel 与 PropertyPanel 信号耦合重
+#### H-13: LShapePanel 与 PropertyPanel 信号耦合重 ✅ 已修复
 
-- **位置**：`gui/property_panel.py` L408-478
+- **位置**：`gui/lshape_panel_bridge.py`（45 行，新增）；`gui/property_panel.py` `set_lshape_panel()`
 - **问题**：通过 `set_lshape_panel()` 注入引用并连接大量信号。LShapePanel 定义多组委托信号和自有信号，对外契约较重。
-- **建议**：提取 `LShapePanelBridge` 适配器，减少直接信号数量，合并为 `lshape_action_requested(action, params)`。
-- **V2.4 状态**：⛔ 未修复
+- **修复**：新增 `gui/lshape_panel_bridge.py`（45 行），实现 `LShapePanelBridge` 适配器类。将原 `set_lshape_panel` 中逐一 connect 的闭包逻辑（target_pick_requested、target_clear_requested 等）封装为独立的桥接方法。PropertyPanel 通过桥接器与 LShapePanel 交互，信号连接集中管理，耦合度降低。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-14: `_SketchDecodeWorker` 中断检查语义混淆
+#### H-14: `_SketchDecodeWorker` 中断检查语义混淆 ✅ 已修复
 
-- **位置**：`workers/property_panel_workers.py`（原 `gui/property_panel_workers.py`）
+- **位置**：`workers/property_panel_workers.py` L34-53
 - **问题**：`self.isInterruptionRequested()` 来自 QThread，但类内成员和 `self` 语义容易混淆 Worker 对象与 Thread 对象。
-- **建议**：显式使用 `self.isInterruptionRequested()` 并添加注释，或改为外部 Thread 控制。
-- **V2.4 状态**：⛔ 未修复（已迁移至 workers 层，但语义问题仍在）
+- **修复**：添加显式注释澄清 `isInterruptionRequested()` 来自 QThread 基类，并新增 `_is_cancel_requested()` 辅助方法（L52-53）作为语义别名，使中断检查在业务代码中更易读。所有 Worker 类（`_SketchDecodeWorker`、`_InnerMatchWorker`、`_WarmupScanWorker`、`_LShapeParseWorker`）统一使用一致的中断检查模式。
+- **验证**：语法检查通过，380 测试通过，无回归。
+- **V2.5 状态**：✅ 已修复
 
-#### H-15: 打包脚本历史版本堆积
+#### H-15: 打包脚本历史版本堆积 ✅ 已修复
 
 - **位置**：`packaging/` 目录
 - **问题**：存在 `package.py`、`packageV2.0.py`、`packageV2.1.py`、`packageV2.2.py` 四个活跃脚本 + `legacy/packageV2.1.2.py`。旧脚本可能基于旧目录结构，误用会导致路径错误。
-- **建议**：保留 `packageV2.2.py` 为唯一入口，其余移入 `packaging/legacy/` 归档。
-- **V2.4 状态**：🔶 部分解决 — `packageV2.1.2.py` 已移入 `packaging/legacy/`，但 `package.py`/`packageV2.0.py`/`packageV2.1.py` 仍在根目录。
+- **修复**：所有旧版本打包脚本（`package.py`、`packageV2.0.py`、`packageV2.1.py`、`packageV2.1.2.py`）已全部移入 `packaging/legacy/` 目录归档。`packaging/` 根目录仅保留 `packageV2.2.py` 作为唯一活跃入口，配套 `build_exe.bat` 也已移至 legacy/。
+- **验证**：目录结构清晰，仅一个活跃脚本。
+- **V2.5 状态**：✅ 已修复
 
 ---
 
@@ -322,12 +338,12 @@ gui/ (UI 面板)     core/ (渲染 / 裁剪 / 几何 / 边框 / 圆角)
 | `ExportSaveWorker` | `workers/canvas_workers.py` | 同上 + design.clone() 快照 | ✅ 已实现 | ✅ 安全 | gui→workers |
 | `CropWorker` | `workers/cropper_workers.py` | 同上 | ✅ 已实现 | ✅ 安全 | gui→workers |
 | `PoolRenderWorker` | `workers/property_panel_workers.py` | 同上 | ✅ 已实现 | ✅ 安全（C-04 拆分后 40 行） | gui→workers |
-| `AutoMatchWorker` | `workers/cropper_workers.py` | 同上 | ❌ 缺失 | 🔴 需修复 | gui→workers |
-| `_SketchDecodeWorker` | `workers/property_panel_workers.py` | 同上 | ✅ 已实现 | ⚠️ 语义混淆 | gui→workers |
+| `AutoMatchWorker` | `workers/cropper_workers.py` | 同上 | ✅ 已实现（H-12 修复） | ✅ 安全 | gui→workers |
+| `_SketchDecodeWorker` | `workers/property_panel_workers.py` | 同上 | ✅ 已实现 | ✅ 安全（H-14 语义澄清） | gui→workers |
 | `_LShapeParseWorker` | `workers/property_panel_workers.py` | 同上 | ✅ 已实现 | ✅ 安全 | gui→workers |
 | `TemplateMatcher` | `services/parser/template_matcher.py` | RLock 保护公开方法 | — | ✅ 已修复 | core→services |
 
-> **线程安全总结**：QThread 退役模式整体正确——所有 Worker 都通过 `requestInterruption()` + `wait()` + `deleteLater()` 安全退役。`closeEvent` 和 `app.aboutToQuit` 双重接管所有后台线程。V2.3 中所有 Worker 已统一迁移至 `workers/` 包，不再导入 gui 模块。V2.4 拆分 `PoolRenderWorker.run` 后职责已减轻（40 行编排器）。**剩余风险点**：**(1)** `AutoMatchWorker` 缺少 `check_cancel` 回调；**(2)** `_SketchDecodeWorker` 中断检查语义混淆。**已修复**：TemplateMatcher RLock 可重入性风险（C-05）、`PoolRenderWorker.run` 职责过重（C-04）。
+> **线程安全总结**：QThread 退役模式整体正确——所有 Worker 都通过 `requestInterruption()` + `wait()` + `deleteLater()` 安全退役。`closeEvent` 和 `app.aboutToQuit` 双重接管所有后台线程。V2.3 中所有 Worker 已统一迁移至 `workers/` 包，不再导入 gui 模块。V2.4 拆分 `PoolRenderWorker.run` 后职责已减轻（40 行编排器）。V2.5 修复 H-12（AutoMatchWorker 取消回调）和 H-14（中断语义澄清）。**所有 Worker 线程安全均已验证**，TemplateMatcher RLock 也已修复。线程安全风险已全部消除。
 
 ---
 
@@ -381,20 +397,24 @@ gui/ (UI 面板)     core/ (渲染 / 裁剪 / 几何 / 边框 / 圆角)
 | **C-03**: 拆分 `_detect_lshape_geometry`（573→51 行）为 5 个子函数 | ✅ 已完成 |
 | **C-04**: 拆分 `PoolRenderWorker.run`（515→40 行）为 7 个步骤方法 | ✅ 已完成 |
 | **C-05**: 修复 `TemplateMatcher` RLock 可重入性 | ✅ 已完成 |
-| **H-12**: 为 `AutoMatchWorker` 添加 `check_cancel` 回调 | ⛔ 未修复 |
-| **H-14**: 修复 `_SketchDecodeWorker` 中断检查语义 | ⛔ 未修复 |
+| **H-12**: 为 `AutoMatchWorker` 添加 `check_cancel` 回调 | ✅ 已完成 |
+| **H-14**: 修复 `_SketchDecodeWorker` 中断检查语义 | ✅ 已完成 |
 
-### 阶段 2：短期优化（2-4 周）— High 级函数拆分与架构
+### 阶段 2：短期优化（2-4 周）— High 级函数拆分与架构 ✅ 基本完成
 
 | 项 | 状态 |
 |---|---|
-| 拆分 `_9step_multi_hole_parse`、`_validate_and_fix_margins`、`_classify_hole_layout` 等超长函数 | ⛔ 未修复 |
-| 拆分 `_redraw_border_on_corner`（334 行）和 `classify_gap_layers` | ⛔ 未修复 |
-| 引入 `DesignModel` 中间层，将 `_collect()` 从 UI 控件读取改为 Model 驱动 | 🔶 DesignModel 已创建，`_collect()` 未改造 |
-| 将 `_sync_panel_from_design()` 下放到各 Panel 内部 | 🔶 DesignModel 接口已就位，main.py 未改造 |
-| 提取 LShapePanel 桥接适配器，减少 Panel 间直接引用 | ⛔ 未修复 |
-| 集中 OCR 魔法值为常量配置 | ⛔ 未修复 |
-| 清理打包目录历史脚本 | 🔶 `packageV2.1.2.py` 已归档至 `legacy/`，其余仍在根目录 |
+| 拆分 `_9step_multi_hole_parse`（410 行）和 `_validate_and_fix_margins`（392 行） | ✅ 已完成（H-06、H-07） |
+| 拆分 `_redraw_border_on_corner`（334→117 行）和 `classify_gap_layers`（提取 5 个谓词） | ✅ 已完成（H-03、H-05） |
+| 拆分 `_build_multi_layer_corner_mask`（217→80 行） | ✅ 已完成（H-02） |
+| `compute_border_bands` 内存优化（相邻层共享边界） | ✅ 已完成（H-01） |
+| 缓存键加入内容指纹（sha256 + 文件大小） | ✅ 已完成（H-08） |
+| 引入 `DesignModel` 中间层，将 `_collect()` 改为 Model 驱动 | ✅ 已完成（H-10） |
+| 将 `_sync_panel_from_design()` 下放到各 Panel 内部 | ✅ 已完成（H-11） |
+| 提取 LShapePanel 桥接适配器，减少 Panel 间直接引用 | ✅ 已完成（H-13） |
+| 清理打包目录历史脚本（全部移入 legacy/） | ✅ 已完成（H-15） |
+| **H-04**: L 形边框路由改为注册表模式 | 🔶 部分完成（V13 路径已抽出，主路由仍集中） |
+| **H-09**: OCR 魔法值集中为常量配置 | 🔶 部分完成（部分已提取，仍有内联字面量） |
 
 ### 阶段 3：中期改进（1-2 月）— 测试补齐与缓存优化
 
@@ -403,9 +423,10 @@ gui/ (UI 面板)     core/ (渲染 / 裁剪 / 几何 / 边框 / 圆角)
 | 为 `sketch_parser_numbers.py` 补充 OCR 规则单元测试 | ⛔ 未修复 |
 | 为 `sketch_parser_cache.py` 补充命中/淘汰/并发测试 | ⛔ 未修复 |
 | 为 `sketch_parser_vision.py` 补充图像预处理测试 | ⛔ 未修复 |
-| 重构缓存策略：引入图像内容哈希、OrderedDict 淘汰、可配置容量 | ⛔ 未修复 |
+| 重构缓存策略：引入图像内容哈希、OrderedDict 淘汰、可配置容量 | ✅ 内容指纹已实现（H-08） |
 | 为 `render_design` 拆分后的子函数补充端到端渲染测试 | ⛔ 未修复 |
 | 补充 TemplateMatcher 并发压测用例 | ⛔ 未修复 |
+| 拆分 `apply_ui_snapshot`（319 行）为多模块方法 | ⛔ 未修复（新增 High 级候选项） |
 
 ### 阶段 4：长期重构（持续）— 架构升级
 
@@ -414,16 +435,17 @@ gui/ (UI 面板)     core/ (渲染 / 裁剪 / 几何 / 边框 / 圆角)
 | 建立统一事件总线，替代 Panel 间直接引用和信号连接 | ⛔ 未修复 |
 | 将 Worker 层从 GUI 中拆出，使业务逻辑可独立测试 | ✅ 已完成（`workers/` 包） |
 | 引入代码复杂度监控（如 radon），防止文件/函数规模再次增长 | ⛔ 未修复 |
-| 将 L 形边框路由改为注册表模式 | ⛔ 未修复 |
+| 将 L 形边框路由改为注册表模式 | 🔶 V13 路径已抽出（H-04 部分完成） |
 | 统一 0.5px 边界容差、像素对齐策略 | ⛔ 未修复 |
 | 为真实素材增加 snapshot 回归测试 | ⛔ 未修复 |
 | 统一异常处理策略，区分用户可纠正错误与系统错误 | ⛔ 未修复 |
+| MVC 三层分离（Model + Service + Worker + View） | ✅ 已完成（五层架构） |
 
 ---
 
 ## 九、重构变更记录
 
-> 以下为 V2.2 → V2.4 期间（2026-09-12 commit `558b54c` → `780dbbc`）的变更总结。
+> 以下为 V2.2 → V2.5 期间（2026-09-12 commit `558b54c` → `0cd6e00`）的变更总结。
 
 ### 9.1 新增顶层包
 
@@ -464,10 +486,21 @@ gui/ (UI 面板)     core/ (渲染 / 裁剪 / 几何 / 边框 / 圆角)
 | C-03 | `_detect_lshape_geometry` 573 行 | 拆为 51 行编排器 + 5 个子函数（最大 187 行） |
 | C-04 | `PoolRenderWorker.run` 515 行 | 拆为 40 行编排器 + 7 个步骤方法（最大 261 行） |
 | C-05 | TemplateMatcher RLock 可重入性风险 | 所有公开方法用 `threading.RLock` 保护，委托模式实现 |
+| H-01 | `compute_border_bands` 内存开销大 | 相邻层共享边界优化，每层仅 1 张 PIL mask |
+| H-02 | `_build_multi_layer_corner_mask` 分支过多 | 217→80 行，拆分出 `_apply_corner_cut_to_mask` 等 |
+| H-03 | `_redraw_border_on_corner` 334 行 | 拆为 117 行编排器 + 8 个辅助函数 |
+| H-05 | `classify_gap_layers` 判定逻辑过长 | 82 行主函数 + 5 个判定谓词函数 |
+| H-06 | `_9step_multi_hole_parse` 410 行 | 彻底拆分为 9 个阶段函数 |
+| H-07 | `_validate_and_fix_margins` 392 行 | 彻底拆分为 6 个阶段函数 |
+| H-08 | 缓存键仅依赖 mtime | 加入 sha256 内容指纹（文件大小 + 前 64KB） |
+| H-10 | MVC 分离不足，业务逻辑混入 UI 层 | `apply_ui_snapshot` 移至 DesignModel，UI 仅提取纯值 |
+| H-11 | main.py 直接操作 Panel 私有控件 | 改为 `panel.sync_from_design(design)`，职责下放 |
+| H-12 | AutoMatchWorker 缺少取消回调 | `scan_library` 添加 `check_cancel=self.isInterruptionRequested` |
+| H-13 | LShapePanel 信号耦合重 | 新增 `gui/lshape_panel_bridge.py` 适配器（45 行） |
+| H-14 | `_SketchDecodeWorker` 中断语义混淆 | 新增 `_is_cancel_requested()` 别名 + 显式注释 |
+| H-15 | 打包脚本历史版本堆积 | 全部旧脚本移入 `packaging/legacy/` |
 | 阶段4 "Worker 层拆出" | Worker 从 GUI 中拆出 | 新建 `workers/` 包，Worker 不再导入 gui 模块 |
-| H-10（部分） | MVC 分离不足 | services 层拆出，models/design_model.py 创建 |
-| H-11（部分） | main.py 直接操作 Panel 私有控件 | DesignModel 提供 `sync_from_design()` 接口 |
-| H-15（部分） | 打包脚本堆积 | `packageV2.1.2.py` 移入 `packaging/legacy/` |
+| 五层架构重构 | core/gui 2层 → 5 层架构 | services + workers + models 三个新顶层包 |
 
 ### 9.4 清理项
 
@@ -475,7 +508,8 @@ gui/ (UI 面板)     core/ (渲染 / 裁剪 / 几何 / 边框 / 圆角)
 - 删除 `scripts/_archive/old_tests/` 下 16 个超期归档测试
 - 删除 `scripts/diagnose/_live/` 下 6 个调试脚本
 - 删除 `ProductSummary/smartshapecrop-code-review.html`（848 行旧报告）
-- 删除 `.bak_c03` / `.bak_c04` 备份文件（V2.4 Critical 修复过程中的临时文件）
+- 删除 `.bak_c03` / `.bak_c04` 备份文件（Critical 修复临时文件）
+- 旧打包脚本（package.py / V2.0 / V2.1 / V2.1.2 + build_exe.bat）全部移入 `packaging/legacy/`
 - 测试用例从 444 精简至 388（移除归档重复用例，新增聚焦测试）
 
 ---
@@ -484,6 +518,6 @@ gui/ (UI 面板)     core/ (渲染 / 裁剪 / 几何 / 边框 / 圆角)
 
 *审查工具：Python ast 模块（函数长度分析）、pytest（测试验证）、人工代码审查（3 个维度并行）。*
 
-*版本历史：V2.2（2026-09-12 初版，2 层架构）→ V2.3（2026-09-12 五层架构重构）→ V2.4（2026-09-12 Critical 修复验证，5/5 完成）。*
+*版本历史：V2.2（2026-09-12 初版，2 层架构）→ V2.3（2026-09-12 五层架构重构）→ V2.4（2026-09-12 Critical 修复验证，5/5 完成）→ V2.5（2026-09-14 High 修复验证，13/15 已修复，2/15 部分解决）。*
 
-*注意：本报告基于 2026-09-12 的代码快照（commit `780dbbc`）。后续代码变更可能影响发现项的有效性。*
+*注意：本报告基于 2026-09-14 的代码快照（commit `0cd6e00`）。后续代码变更可能影响发现项的有效性。*

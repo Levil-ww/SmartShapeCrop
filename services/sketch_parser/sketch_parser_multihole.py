@@ -59,6 +59,27 @@ from .sketch_parser_vision import (
 
 # ===== 公共常量 =====
 
+# ---- [H-09] OCR / 几何判定阈值集中定义（来源：多洞识别经验阈值，见各注释）----
+# 单洞面积与整体画布之比 ≥ 3% 才视为有效矩形候选
+# （来源：草图矩形检测的噪声过滤经验阈值，过小矩形多为标注/装饰）
+MIN_HOLE_AREA_RATIO = 0.03
+# 间距否决（PhaseD.5）：主轴上两洞 gap 小于洞尺寸 × 5% 且小于外框主轴 × 2%
+# 时判定为"同洞被分割"（来源：多洞布局几何一致性经验阈值）
+GAP_VETO_HOLE_RATIO = 0.05
+GAP_VETO_OUTER_RATIO = 0.02
+# 洞数一致性验证（PhaseD.6）：候选面积比 < 最大候选 × 25% → 判定为噪点矩形
+# （真实多洞的面积差通常 ≤ 50%，25% 是保守下界；来源：2026-09-05 洞数误识别修复）
+D6_MIN_RATIO_RATIO = 0.25
+# 几何校验时 gap 的平均估计值（cm）：实际 gap 通常在 5~20cm，取保守中值 10cm
+# （来源：多洞外框尺寸几何反推的估算常量）
+EST_AVG_GAP_CM = 10.0
+# 真实洞面积比"甜蜜区间"：[0.05, 0.50]（联合 hull 约 30%、单洞约 10%）
+# （来源：multihole 布局分类排序的区间经验阈值）
+SWEET_SPOT_MIN_RATIO = 0.05
+SWEET_SPOT_MAX_RATIO = 0.50
+
+
+
 # 箭头字符 → 标准边距字段映射
 # (同时覆盖 Unicode 箭头和常见 OCR 误读替代字符)
 _ARROW_CHAR_MAP = {
@@ -243,7 +264,7 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
 
     def _pick_key(p):
         ix, iy, iw, ih, area, ratio, src = p
-        sweet_spot = 1.0 if 0.05 <= ratio <= 0.50 else 0.0
+        sweet_spot = 1.0 if SWEET_SPOT_MIN_RATIO <= ratio <= SWEET_SPOT_MAX_RATIO else 0.0
         sim_to_avg = -abs(area - area_avg) / max(1.0, area_avg)   # 越接近 avg 越大
         return (sweet_spot, sim_to_avg, -area)   # sweet_spot 是最高优先级
 
@@ -298,7 +319,6 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
     # =================================================================
 
     _outer_area = ow * oh
-    _MIN_AREA_RATIO = 0.03  # 3% threshold
 
     # Step 1: 按面积降序排列 inners4
     inners_by_area = sorted(inners4, key=lambda r: r[2] * r[3], reverse=True)
@@ -308,17 +328,17 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
     for r in inners_by_area:
         area = r[2] * r[3]
         ratio = area / max(1, _outer_area)
-        if ratio >= _MIN_AREA_RATIO:
+        if ratio >= MIN_HOLE_AREA_RATIO:
             substantial.append(r)
         else:
             logger.debug(
                 f"[MH Step1-2 PhaseD.5] 面积过滤剔除候选: "
-                f"rect={r} area={area} ratio={ratio:.4f} < {_MIN_AREA_RATIO} → 噪点"
+                f"rect={r} area={area} ratio={ratio:.4f} < {MIN_HOLE_AREA_RATIO} → 噪点"
             )
 
     logger.info(
         f"[MH Step1-2 PhaseD.5] 面积预过滤: {len(inners4)} → {len(substantial)} 个"
-        f"（阈值 {_MIN_AREA_RATIO*100:.0f}%）"
+        f"（阈值 {MIN_HOLE_AREA_RATIO*100:.0f}%）"
     )
 
     # 过滤后不足 2 个 → 肯定不是多洞
@@ -356,14 +376,12 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
     # Step 4: 间距否决
     # 若两洞在主轴上几乎贴着（gap 远小于洞尺寸）→ 判定为同洞分割
     # 条件：gap < min(洞尺寸)×5% AND gap < 外框主轴×2%（需同时满足）
-    _GAP_VETO_RATIO_HOLE = 0.05   # gap < 洞尺寸 × 5%
-    _GAP_VETO_RATIO_OUTER = 0.02  # gap < 外框主轴 × 2%
-    if (gap_main < hole_dim_main * _GAP_VETO_RATIO_HOLE and
-            gap_main < outer_span_main * _GAP_VETO_RATIO_OUTER):
+    if (gap_main < hole_dim_main * GAP_VETO_HOLE_RATIO and
+            gap_main < outer_span_main * GAP_VETO_OUTER_RATIO):
         logger.warning(
             f"[MH Step1-2 PhaseD.5 VETO] 间距否决: "
-            f"gap_{main_axis}={gap_main:.1f} < hole_dim×3%={hole_dim_main*_GAP_VETO_RATIO_HOLE:.1f} "
-            f"AND < outer×0.5%={outer_span_main*_GAP_VETO_RATIO_OUTER:.1f} → 同洞被分割"
+            f"gap_{main_axis}={gap_main:.1f} < hole_dim×3%={hole_dim_main*GAP_VETO_HOLE_RATIO:.1f} "
+            f"AND < outer×0.5%={outer_span_main*GAP_VETO_OUTER_RATIO:.1f} → 同洞被分割"
         )
         return None, [], ''
 
@@ -398,17 +416,16 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
         _inners_by_area = sorted(inners4, key=lambda r: r[2] * r[3], reverse=True)
         _ratio_max = (_inners_by_area[0][2] * _inners_by_area[0][3]) / max(1, _outer_area_check)
 
-        _D6_MIN_RATIO_RATIO = 0.25   # 候选面积比 < 最大候选 × 25% → 噪点
         _pruned = []
         for _r in _inners_by_area:
             _a = _r[2] * _r[3]
             _ratio = _a / max(1, _outer_area_check)
-            if _ratio >= _ratio_max * _D6_MIN_RATIO_RATIO:
+            if _ratio >= _ratio_max * D6_MIN_RATIO_RATIO:
                 _pruned.append(_r)
             else:
                 logger.info(
                     f"[MH Step1-2 PhaseD.6 面积差距否决] 剔除候选 rect={_r} "
-                    f"ratio={_ratio:.4f} < max_ratio×0.25={_ratio_max * _D6_MIN_RATIO_RATIO:.4f}"
+                    f"ratio={_ratio:.4f} < max_ratio×0.25={_ratio_max * D6_MIN_RATIO_RATIO:.4f}"
                 )
 
         if len(_pruned) >= 2:
@@ -433,8 +450,7 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
                 _N = len(inners4)
                 _total_hw_cm = sum(r[2] / _px_per_cm for r in inners4)
                 # 假设 gap 平均 10cm（保守估计，实际 gap 通常在 5~20cm）
-                _avg_gap_cm = 10.0
-                _total_gap_cm = _avg_gap_cm * (_N - 1)
+                _total_gap_cm = EST_AVG_GAP_CM * (_N - 1)
 
                 if _cx_span > _cy_span:  # 横排
                     _cm_span_check = _total_hw_cm + _total_gap_cm
@@ -1484,25 +1500,23 @@ def _validate_multi_hole_geometry(assignment, n_holes, layout,
 # ======================================================================
 
 
-def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
-                             target_outer_w_cm=0.0, target_outer_h_cm=0.0,
-                             enhanced_gray=None, deadline=None):
-    """多洞模式 9 步串行解析。成功返回 dict，失败返回 {'success': False, message: '...'}。"""
+def _mh_check_deadline(deadline, phase):
+    """[H-06] 多洞解析超时检查（原 _9step_multi_hole_parse 内嵌闭包提升）。"""
+    if deadline is not None and time.monotonic() > deadline:
+        return {'success': False,
+                'message': f'多洞解析超时（{phase}阶段超过 {_PARSE_TIMEOUT_SEC} 秒）'}
+    return None
 
-    def _check_deadline(phase):
-        if deadline is not None and time.monotonic() > deadline:
-            return {'success': False,
-                    'message': f'多洞解析超时（{phase}阶段超过 {_PARSE_TIMEOUT_SEC} 秒）'}
-        return None
 
-    h_img, w_img = gray_img.shape[:2]
+def _mh_detect_layout(cv2, gray_img, color_img, target_outer_w_cm, target_outer_h_cm):
+    """[H-06] Step1 矩形检测 + Step2 布局分类 + Step3 多洞区域划分。
 
-    # ==== Step 1: 矩形检测 ====
+    失败返回失败 dict；成功返回 (outer, inners, layout, n_holes, zone_of)。
+    """
     all_rects = _find_all_rectangles(cv2, gray_img, color_img)
     if len(all_rects) < 3:
         return {'success': False, 'message': f'矩形候选不足({len(all_rects)}<3)，非多洞布局'}
 
-    # ==== Step 2: 布局分类 ====
     outer, inners, layout = _classify_hole_layout(
         all_rects,
         target_outer_w_cm=target_outer_w_cm,
@@ -1510,18 +1524,21 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
     if outer is None or len(inners) < 2:
         return {'success': False, 'message': '无法分类出多洞布局（内框<2个）'}
     n_holes = len(inners)
-    ox, oy, ow, oh = outer
 
-    # ==== Step 3: 多洞区域划分 ====
+    h_img, w_img = gray_img.shape[:2]
     zone_of = _divide_multi_hole_zones(outer, inners, layout, w_img, h_img)
+    return outer, inners, layout, n_holes, zone_of
 
-    # ==== Step 4: 全局 OCR ====
-    if (early := _check_deadline('OCR扫描')) is not None:
-        return early
+
+def _mh_collect_ocr(cv2, tesseract, gray_img, enhanced_gray, target_outer_w_cm, target_outer_h_cm):
+    """[H-06] Step4 全局 OCR（含小数合并）+ Step5 方向标签与排除值。
+
+    OCR 空时返回 None；成功返回 (ocr_raw, dir_locked, excluded_fields, excluded_values)。
+    """
     ocr_raw = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
                                     enhanced_gray=enhanced_gray)
     if not ocr_raw:
-        return {'success': False, 'message': '多洞OCR未识别到任何数值'}
+        return None
 
     # 小数合并（复用单洞已有的 _merge_split_decimals）
     try:
@@ -1530,9 +1547,6 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
     except Exception:
         pass
 
-    # ==== Step 5: 方向标签 + 箭头符号 ====
-    if (early := _check_deadline('方向/箭头识别')) is not None:
-        return early
     dir_locked = _extract_arrow_direction_numbers(
         cv2, tesseract, gray_img,
         enhanced_gray=enhanced_gray,
@@ -1548,8 +1562,14 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         excluded_values.extend([tw_t + d for d in (0, -0.5, 0.5, -1.0, 1.0) if tw_t + d > 0])
     if th_t > 0:
         excluded_values.extend([th_t + d for d in (0, -0.5, 0.5, -1.0, 1.0) if th_t + d > 0])
+    return ocr_raw, dir_locked, excluded_fields, excluded_values
 
-    # ==== Step 6: 空间归属 ====
+
+def _mh_spatial_bind_and_sanitize(
+    ocr_raw, zone_of, excluded_fields, excluded_values,
+    n_holes, layout, target_outer_w_cm, target_outer_h_cm,
+):
+    """[H-06] Step6 空间归属 + Dim-In-Margin 大值搬移 + Numeric Sanity 修正。返回 buckets。"""
     buckets = _multi_hole_spatial_bind(
         ocr_raw, zone_of, excluded_fields, excluded_values,
         n_holes, layout)
@@ -1629,7 +1649,6 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
                 f'margin_bottom_{_idx}', f'inner_h_{_idx}',
                 _outer_min * 0.15, _outer_max * 0.5)
 
-
     # ===== [NUMERIC SANITY Add-On 2026-08-29] per-hole 桶 outlier 修正 =====
     # OCR 偶发把「21.7」读成「217」（丢小数点），Step6 Post A 错删了几何包含
     # 的正确值，留下错误的整数。这里在进入 Step7 之前做合理性 cap + 小数点
@@ -1641,8 +1660,6 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         # 只处理 margin_* 和 inner_* 桶，gap/outer 等不动
         is_margin = f.startswith('margin_')
         is_inner_dim = f.startswith('inner_')
-        is_gap = f.startswith('gap_')
-        is_outer = f in ('outer_w', 'outer_h')
         if not (is_margin or is_inner_dim):
             continue
         # 判定轴向上限（margin_top/bottom 用 _cap_v；margin_left/right 用 _cap_h）
@@ -1674,7 +1691,14 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         else:
             del buckets[f]  # 所有候选都是 outlier → 删桶（后续 fallback）
 
-    # ==== Step 7: 外框候选枚举选优 ====
+    return buckets
+
+
+def _mh_evaluate_outer_candidates(
+    dir_locked, buckets, ocr_raw, n_holes, layout, ow, oh,
+    target_outer_w_cm, target_outer_h_cm,
+):
+    """[H-06] Step7 外框候选枚举选优。返回 (assignment, sc_after)。"""
     def _try_assignment(tw_cand, th_cand):
         asg = _build_multi_hole_assignment(
             dir_locked, buckets, tw_cand, th_cand, n_holes, layout)
@@ -1778,7 +1802,11 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
             assignment = best_asg
             sc_after = best_sc
 
-    # ==== Step 6.5: 像素比例 vs cm 比例 swap（与单洞类似）====
+    return assignment, sc_after
+
+
+def _mh_ratio_swap(assignment, n_holes, layout, ow, oh, target_outer_w_cm, target_outer_h_cm):
+    """[H-06] Step6.5 像素比例 vs cm 比例 swap（与单洞类似）。返回处理后的 assignment。"""
     tw_val = assignment.get('total_w', (0, 0))[0]
     th_val = assignment.get('total_h', (0, 0))[0]
     if tw_val > 0 and th_val > 0 and target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
@@ -1813,8 +1841,11 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
             assignment = _validate_multi_hole_geometry(
                 assignment, n_holes, layout,
                 target_outer_w=0, target_outer_h=0)
+    return assignment
 
-    # ==== 构建结果 ====
+
+def _mh_build_result(assignment, ocr_raw, dir_locked, outer, inners, n_holes, layout, sc_after):
+    """[H-06] Step9 构建多洞解析结果（per-hole margin 折叠 + 兼容单洞输出）。"""
     tw = assignment.get('total_w', (0, 0))[0]
     th = assignment.get('total_h', (0, 0))[0]
     mt = assignment.get('margin_top', (0, 0))[0]
@@ -1895,6 +1926,57 @@ def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
         'self_consistency': sc_after,
         'is_multi_hole': True,
     }
+
+
+def _9step_multi_hole_parse(cv2, gray_img, color_img, tesseract,
+                             target_outer_w_cm=0.0, target_outer_h_cm=0.0,
+                             enhanced_gray=None, deadline=None):
+    """多洞模式 9 步串行解析。成功返回 dict，失败返回 {'success': False, message: '...'}。
+
+    [H-06] 本函数已拆分为 6 个模块级阶段函数：
+      _mh_detect_layout / _mh_collect_ocr / _mh_spatial_bind_and_sanitize /
+      _mh_evaluate_outer_candidates / _mh_ratio_swap / _mh_build_result
+      （超时检查 _mh_check_deadline）。拆分仅提取代码，行为与原实现等价。
+    """
+    # ==== Step 1-3: 矩形检测 + 布局分类 + 多洞区域划分 ====
+    detect = _mh_detect_layout(cv2, gray_img, color_img,
+                               target_outer_w_cm, target_outer_h_cm)
+    if isinstance(detect, dict):
+        return detect
+    outer, inners, layout, n_holes, zone_of = detect
+    ox, oy, ow, oh = outer
+
+    # ==== Step 4: 全局 OCR ====
+    if (early := _mh_check_deadline(deadline, 'OCR扫描')) is not None:
+        return early
+    ocr_data = _mh_collect_ocr(cv2, tesseract, gray_img,
+                               enhanced_gray, target_outer_w_cm, target_outer_h_cm)
+    if ocr_data is None:
+        return {'success': False, 'message': '多洞OCR未识别到任何数值'}
+    ocr_raw, dir_locked, excluded_fields, excluded_values = ocr_data
+
+    # ==== Step 5: 方向标签 + 箭头符号 ====
+    if (early := _mh_check_deadline(deadline, '方向/箭头识别')) is not None:
+        return early
+
+    # ==== Step 6: 空间归属 + Dim-In-Margin / Numeric Sanity 修正 ====
+    buckets = _mh_spatial_bind_and_sanitize(
+        ocr_raw, zone_of, excluded_fields, excluded_values,
+        n_holes, layout, target_outer_w_cm, target_outer_h_cm)
+
+# ==== Step 7: 外框候选枚举选优 ====
+    assignment, sc_after = _mh_evaluate_outer_candidates(
+        dir_locked, buckets, ocr_raw, n_holes, layout, ow, oh,
+        target_outer_w_cm, target_outer_h_cm)
+
+    # ==== Step 6.5: 像素比例 vs cm 比例 swap（与单洞类似）====
+    assignment = _mh_ratio_swap(
+        assignment, n_holes, layout, ow, oh,
+        target_outer_w_cm, target_outer_h_cm)
+
+    # ==== Step 9: 构建结果 ====
+    return _mh_build_result(assignment, ocr_raw, dir_locked, outer, inners,
+                            n_holes, layout, sc_after)
 
 
 # ======================================================================

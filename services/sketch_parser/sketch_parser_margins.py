@@ -188,28 +188,32 @@ def _brute_force_margin_permute(assignment, dir_locked_fields, buckets=None,
 
 
 
-def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0, dir_locked_fields=None):
-    """用几何约束修正边距：缺失反推 / 比例缩放 / 异常裁剪 / 负边距清零。
+def _sanitize_margin_value(v, axis, sanity_min, sanity_cap_for_filter):
+    """[H-07] 边距值合理性检查：返回 (清洗后值, 是否被清洗)。
 
-    1. outer_w 优先用 target（若提供），其次用 OCR 值
-    2. 负边距清零（无外框几何约束时）
-    3. 若 left+right+inner_w ≠ outer_w，按比例缩放或反推
-    4. 边距值不得超过外框对应边的 80%
-    5. 方向标签锁定的字段不修改，改为反推外框尺寸
-    6. [防OCR噪声] 方向标签边距反推外框前校验合理性：
-       - 若 target 已知且反推值偏离 target 超过 40%，保留 target 不覆盖
-       - 避免 OCR 把装饰文字识别为"边距"导致外框被放大数倍
+    原 _validate_and_fix_margins 内嵌闭包提升，行为逐字等价。
     """
-    if dir_locked_fields is None:
-        dir_locked_fields = set()
+    if v <= 0:
+        return v, False
+    if v < sanity_min:
+        return 0.0, True
+    if v > sanity_cap_for_filter:
+        logger.info(
+            f"[Step6] OCR噪声边距剔除: {axis}={v:.1f}cm > cap={sanity_cap_for_filter:.1f}cm "
+            f"(判定为装饰文字/尺寸误识别，归零)"
+        )
+        return 0.0, True
+    return v, False
 
+
+def _fix_negative_margins(assignment, target_outer_w, target_outer_h):
+    """[H-07] 负边距清零（无外框时）。返回 (tw0, th0)。"""
     def get(name, default=0.0):
         return assignment.get(name, (default, 0.5))[0]
 
     def put(name, val, conf=0.4):
         assignment[name] = (val, conf)
 
-    # ---- 负边距清零（无外框时） ----
     tw0 = target_outer_w if target_outer_w > 0 else get('total_w')
     th0 = target_outer_h if target_outer_h > 0 else get('total_h')
     if tw0 <= 0 and th0 <= 0:
@@ -218,16 +222,23 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             if v < 0:
                 put(fn, 0.0, 0.4)
                 logger.info(f"[Step6] 负边距清零: {fn} {v:.1f}→0")
+    return tw0, th0
 
-    tw = tw0
-    th = th0
 
-    # ---- [核心不变量] 当 target 尺寸可用时，target 为权威外框尺寸 ----
-    # 不变量：total_w/total_h 必须等于 target_outer_w/target_outer_h（若两者都可用）
-    # 方向标签边距用于：
-    #   a) 反推缺失的非方向边距（通过 target - inner - known_margins）
-    #   b) 当无 target 时，反推外框尺寸
-    # 绝不允许：方向标签边距覆盖 target 外框尺寸
+def _apply_direction_label_hint(
+    assignment, dir_locked_fields, target_outer_w, target_outer_h, tw, th,
+):
+    """[H-07] 方向标签边距：权威模式保留 target / 无 target 用方向标签反推外框。
+
+    返回修正后的 (tw, th)。原 _validate_and_fix_margins 方向标签块逐字平移。
+    """
+    def get(name, default=0.0):
+        return assignment.get(name, (default, 0.5))[0]
+
+    def put(name, val, conf=0.4):
+        assignment[name] = (val, conf)
+
+    # [核心不变量] 当 target 尺寸可用时，target 为权威外框尺寸
     target_is_authoritative = (target_outer_w > 0 and target_outer_h > 0)
 
     # 如果有方向标签锁定的边距，用它们反推外框尺寸（仅当无 target 时）
@@ -244,8 +255,6 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
         mb = get('margin_bottom')
 
         # ---- [防OCR噪声] 边距合理性预过滤 ----
-        # 当 target 为权威时，放宽边距 cap（因为非方向边距由 target-inner-known_margins 反推，
-        # 可能大于比例上限，这是正确的非对称边框，不是噪声）
         ref_long = max(target_outer_w, target_outer_h, tw, th)
         if target_is_authoritative:
             # 权威模式下，边距仅作极端噪声过滤：>=0.3cm 且 < 外框的90%
@@ -254,30 +263,13 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             sanity_cap_for_filter = min(ref_long * 0.30, 30.0) if ref_long > 0 else 30.0
         sanity_min = 0.3
 
-        def _sanitize_margin(v, axis):
-            """边距值合理性检查：返回 (清洗后值, 是否被清洗)。"""
-            if v <= 0:
-                return v, False
-            if v < sanity_min:
-                return 0.0, True
-            if v > sanity_cap_for_filter:
-                logger.info(
-                    f"[Step6] OCR噪声边距剔除: {axis}={v:.1f}cm > cap={sanity_cap_for_filter:.1f}cm "
-                    f"(判定为装饰文字/尺寸误识别，归零)"
-                )
-                return 0.0, True
-            return v, False
-
-        ml_s, _ = _sanitize_margin(ml, 'margin_left')
-        mr_s, _ = _sanitize_margin(mr, 'margin_right')
-        mt_s, _ = _sanitize_margin(mt, 'margin_top')
-        mb_s, _ = _sanitize_margin(mb, 'margin_bottom')
+        ml_s, _ = _sanitize_margin_value(ml, 'margin_left', sanity_min, sanity_cap_for_filter)
+        mr_s, _ = _sanitize_margin_value(mr, 'margin_right', sanity_min, sanity_cap_for_filter)
+        mt_s, _ = _sanitize_margin_value(mt, 'margin_top', sanity_min, sanity_cap_for_filter)
+        mb_s, _ = _sanitize_margin_value(mb, 'margin_bottom', sanity_min, sanity_cap_for_filter)
 
         if target_is_authoritative:
             # ---- 权威模式：target 为外框，不允许方向标签覆盖外框 ----
-            # 方向标签边距已正确识别，保持原值即可
-            # 非方向边距/缺失边距将在后续 Step6 的横向/纵向修正中自动计算
-            # （公式: missing = target - inner - known_margins）
             logger.info(
                 f"[Step6] 权威模式: 保留 target 外框 "
                 f"total_w={target_outer_w:.1f} total_h={target_outer_h:.1f} "
@@ -322,8 +314,17 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             put('total_w', tw, 0.95 if target_outer_w > 0 else 0.6)
         if th > 0:
             put('total_h', th, 0.95 if target_outer_h > 0 else 0.6)
+    return tw, th
 
-    # ---- 横向修正：outer_w = left + inner_w + right ----
+
+def _fix_horizontal_margins(assignment, tw, dir_locked_fields):
+    """[H-07] 横向修正：outer_w = left + inner_w + right。原逻辑逐字平移。"""
+    def get(name, default=0.0):
+        return assignment.get(name, (default, 0.5))[0]
+
+    def put(name, val, conf=0.4):
+        assignment[name] = (val, conf)
+
     if tw > 0:
         iw = get('inner_w')
         ml = get('margin_left')
@@ -334,11 +335,6 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             gap = tw - iw  # 预期边距总和
             margin_sum = ml + mr
             # --- [不变量 S6/S7 守护] 内框候选异常时，优先用边距推导内框，而非按异常内框缩放边距 ---
-            # 触发条件：
-            #   (a) iw < max(ml, mr)                  ← 几何不可能：内宽比边距还小
-            #   (b) 两侧边距都被方向标签锁定            ← 两侧方向锁都在，outer-margins 更可信
-            #   (c) gap/margin_sum >2 或 <0.5          ← 马上会触发比例缩放(说明当前iw极不兼容)
-            # 命中任意一条 + 推导 iw=tw-ml-mr 在合理范围内 → 直接重写 iw，避免后续病态比例放大
             _ml_lock = 'margin_left' in dir_locked_fields
             _mr_lock = 'margin_right' in dir_locked_fields
             _derived_iw = tw - ml - mr
@@ -455,7 +451,15 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             put('margin_right', m_est, 0.2)
             logger.info(f"[Step6] 横向估算(0已知): inner={iw_est:.1f} left=right={m_est:.1f}")
 
-    # ---- 纵向修正：outer_h = top + inner_h + bottom ----
+
+def _fix_vertical_margins(assignment, th, dir_locked_fields):
+    """[H-07] 纵向修正：outer_h = top + inner_h + bottom。原逻辑逐字平移。"""
+    def get(name, default=0.0):
+        return assignment.get(name, (default, 0.5))[0]
+
+    def put(name, val, conf=0.4):
+        assignment[name] = (val, conf)
+
     if th > 0:
         ih = get('inner_h')
         mt = get('margin_top')
@@ -579,6 +583,35 @@ def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0
             put('margin_top', m_est, 0.2)
             put('margin_bottom', m_est, 0.2)
             logger.info(f"[Step6] 纵向估算(0已知): inner={ih_est:.1f} top=bottom={m_est:.1f}")
+
+
+def _validate_and_fix_margins(assignment, target_outer_w=0.0, target_outer_h=0.0, dir_locked_fields=None):
+    """用几何约束修正边距：缺失反推 / 比例缩放 / 异常裁剪 / 负边距清零。
+
+    1. outer_w 优先用 target（若提供），其次用 OCR 值
+    2. 负边距清零（无外框几何约束时）
+    3. 若 left+right+inner_w ≠ outer_w，按比例缩放或反推
+    4. 边距值不得超过外框对应边的 80%
+    5. 方向标签锁定的字段不修改，改为反推外框尺寸
+    6. [防OCR噪声] 方向标签边距反推外框前校验合理性：
+       - 若 target 已知且反推值偏离 target 超过 40%，保留 target 不覆盖
+       - 避免 OCR 把装饰文字识别为"边距"导致外框被放大数倍
+
+    [H-07] 本函数已拆分为 4 个模块级阶段函数（_fix_negative_margins /
+    _apply_direction_label_hint / _fix_horizontal_margins / _fix_vertical_margins），
+    调度顺序与原实现一致，行为等价。
+    """
+    if dir_locked_fields is None:
+        dir_locked_fields = set()
+
+    tw0, th0 = _fix_negative_margins(assignment, target_outer_w, target_outer_h)
+
+    tw, th = _apply_direction_label_hint(
+        assignment, dir_locked_fields, target_outer_w, target_outer_h, tw0, th0)
+
+    _fix_horizontal_margins(assignment, tw, dir_locked_fields)
+
+    _fix_vertical_margins(assignment, th, dir_locked_fields)
     return assignment
 
 

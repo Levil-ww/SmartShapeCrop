@@ -462,6 +462,59 @@ def draw_border_layers_on_cut_edges(
 # 4. 对外统一入口：补全 L 形挖角处的素材边框
 # ---------------------------------------------------------------------------
 
+def _try_apply_v13(
+    canvas_arr: np.ndarray,
+    material_img: Image.Image,
+    outer_rect: RectShape,
+    cut_corner: str,
+    cut_w_px: float,
+    cut_h_px: float,
+    src_material_img: Image.Image | None,
+    scale_x: float,
+    scale_y: float,
+    edge_px: int | None,
+    band_px: int | None,
+    band_color: tuple[int, int, int] | None,
+) -> bool:
+    """[H-04] V13 路径统一绘制尝试（manual 覆盖 / 自动路由公共出口）。"""
+    return _apply_v13_path(
+        canvas_arr=canvas_arr,
+        material_img=material_img,
+        outer_rect=outer_rect,
+        cut_corner=cut_corner,
+        cut_w_px=cut_w_px,
+        cut_h_px=cut_h_px,
+        src_material_img=src_material_img,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        manual_edge_px=edge_px,
+        manual_band_px=band_px,
+        manual_band_color=band_color,
+    )
+
+
+def _detect_lshape_border_auto(detect_img: Image.Image):
+    """[H-04] 自动检测路由：Profile 优先，让位判定 V13。
+
+    返回 (profile_layers, v13, v13_computed, v13_preferred)：
+      - v13_preferred=True 且 v13 非 None：Profile 让位给 V13，调用方应优先试 V13；
+      - v13_preferred=True 且 v13 is None：V13 未命中，Profile 接管；
+      - v13_preferred=False：V13 尚未计算，调用方按需补算 / 旧路径兜底。
+    """
+    # inner import 保持原函数行为（避免模块级循环依赖）
+    from .lshape_border_route import detect_border_profile, profile_yields_to_v13
+
+    profile_layers = detect_border_profile(detect_img)
+    v13_result = None
+    v13_computed = False
+    v13_preferred = False
+    if profile_layers and profile_yields_to_v13(profile_layers):
+        v13_preferred = True
+        v13_result = detect_border_v13(detect_img)
+        v13_computed = True
+    return profile_layers, v13_result, v13_computed, v13_preferred
+
+
 def apply_lshape_border_completion(
     canvas_arr: np.ndarray,
     material_img: Image.Image,
@@ -507,7 +560,7 @@ def apply_lshape_border_completion(
               —— 对「米色/白色边距 + 细线 + 点带 + 细框」类素材（蔓生花/中古雨林）可靠；
             * 若 Profile 首层是厚黑且 profile_yields_to_v13(_layers) 判定 V13 更适用，
               → 优先试 V13 detect_border_v13（黑描边+主带结构）；
-                - V13 命中 → _apply_v13_path 绘制；V13 patch 绘制失败仍继续回退 Profile/旧路径；
+                - V13 命中 → _try_apply_v13 绘制；V13 patch 绘制失败仍继续回退 Profile/旧路径；
                 - V13 未命中（返回 None）→ Profile 接管（庄园秘境等）；
             * 然后依次尝试：Profile 路径绘制 → V13 路径绘制（含未计算过的重试）→
               旧 detect_pool_material_borders 路径；每级绘制失败都回退到下一级；
@@ -517,6 +570,9 @@ def apply_lshape_border_completion(
             * 缺失项用 detect_border_v13 自动补齐
             * patch_lshape_cut 沿切边在保留区一侧补「黑描边+主带」
               （黑带沿 L 形轮廓连续 + 主带直角衔接 + 杜绝白色竖线）
+
+    [H-04] 路由策略已拆分为 _detect_lshape_border_auto（检测选路）与
+    _try_apply_v13（V13 绘制尝试），主函数保持原三级回退顺序不变。
     """
     # ===== [V13 集成] 手动覆盖路径：任一 manual_* 非 None → 走 V13 路径 =====
     manual_active = (
@@ -525,7 +581,7 @@ def apply_lshape_border_completion(
         or manual_band_color is not None
     )
     if manual_active:
-        return _apply_v13_path(
+        return _try_apply_v13(
             canvas_arr=canvas_arr,
             material_img=material_img,
             outer_rect=outer_rect,
@@ -535,9 +591,9 @@ def apply_lshape_border_completion(
             src_material_img=src_material_img,
             scale_x=scale_x,
             scale_y=scale_y,
-            manual_edge_px=manual_edge_px,
-            manual_band_px=manual_band_px,
-            manual_band_color=manual_band_color,
+            edge_px=manual_edge_px,
+            band_px=manual_band_px,
+            band_color=manual_band_color,
         )
 
     # Step 1: 边框检测
@@ -557,37 +613,34 @@ def apply_lshape_border_completion(
     #   - 几何均值 scale → 对 adapt_pool_material 的 ROTATE_270 稳健
     # 让位判定 profile_yields_to_v13 在路由层：V13 已验证场景先问 V13，
     # V13 未命中（庄园秘境：内侧无主色带）Profile 接管。
-    from .lshape_border_route import (
-        _apply_profile_path, detect_border_profile, profile_yields_to_v13,
-    )
-    _profile_layers = detect_border_profile(detect_img)
-    _v13 = None
-    _v13_computed = False
-    if _profile_layers and profile_yields_to_v13(_profile_layers):
-        _v13 = detect_border_v13(detect_img)
-        _v13_computed = True
-        if _v13 is not None:
-            logger.info(
-                "[LShapeBorder] V13 检测命中（Profile 让位）: edge=%dpx band=%dpx color=%s",
-                _v13[0], _v13[1], _v13[2],
-            )
-            _v13_ok = _apply_v13_path(
-                canvas_arr=canvas_arr,
-                material_img=material_img,
-                outer_rect=outer_rect,
-                cut_corner=cut_corner,
-                cut_w_px=cut_w_px,
-                cut_h_px=cut_h_px,
-                src_material_img=src_material_img,
-                scale_x=scale_x,
-                scale_y=scale_y,
-                manual_edge_px=_v13[0],
-                manual_band_px=_v13[1],
-                manual_band_color=_v13[2],
-            )
-            if _v13_ok:
-                return True
-            logger.info("[LShapeBorder] V13 patch 绘制失败，继续向下回退 Profile/旧路径")
+    # [H-04] 检测与让位判定已提取至 _detect_lshape_border_auto
+    from .lshape_border_route import _apply_profile_path
+
+    _profile_layers, _v13, _v13_computed, _v13_preferred = _detect_lshape_border_auto(detect_img)
+
+    if _v13_preferred and _v13 is not None:
+        logger.info(
+            "[LShapeBorder] V13 检测命中（Profile 让位）: edge=%dpx band=%dpx color=%s",
+            _v13[0], _v13[1], _v13[2],
+        )
+        _v13_ok = _try_apply_v13(
+            canvas_arr=canvas_arr,
+            material_img=material_img,
+            outer_rect=outer_rect,
+            cut_corner=cut_corner,
+            cut_w_px=cut_w_px,
+            cut_h_px=cut_h_px,
+            src_material_img=src_material_img,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            edge_px=_v13[0],
+            band_px=_v13[1],
+            band_color=_v13[2],
+        )
+        if _v13_ok:
+            return True
+        logger.info("[LShapeBorder] V13 patch 绘制失败，继续向下回退 Profile/旧路径")
+    if _v13_preferred:
         logger.info("[LShapeBorder] Profile 首层厚黑但 V13 未命中，Profile 接管")
 
     if _profile_layers:
@@ -622,7 +675,7 @@ def apply_lshape_border_completion(
             "[LShapeBorder] V13 检测命中: edge=%dpx band=%dpx color=%s，走 V13 路径",
             v13[0], v13[1], v13[2],
         )
-        _v13_ok2 = _apply_v13_path(
+        _v13_ok2 = _try_apply_v13(
             canvas_arr=canvas_arr,
             material_img=material_img,
             outer_rect=outer_rect,
@@ -632,9 +685,9 @@ def apply_lshape_border_completion(
             src_material_img=src_material_img,
             scale_x=scale_x,
             scale_y=scale_y,
-            manual_edge_px=v13[0],
-            manual_band_px=v13[1],
-            manual_band_color=v13[2],
+            edge_px=v13[0],
+            band_px=v13[1],
+            band_color=v13[2],
         )
         if _v13_ok2:
             return True

@@ -66,304 +66,115 @@ class _LayersMixin:
 
 
     def _collect(self):
-        d = self.design
-        d.canvas_w_cm = self._sp_w.value()
-        d.canvas_h_cm = self._sp_h.value()
-        d.dpi = self._sp_dpi.value()
-        d.mode = self._cb_mode.currentData()
-        # outer_margin: rect_lshape 和 rect_hole 都由 Worker 强制设为 0.0（水池花纹素材
-        #   本身就是外框，不需要额外留白），不从 SpinBox 覆盖。仅 ellipse_hole 模式
-        #   从 SpinBox 读取（Worker 未对椭圆模式设 outer_margin）。
-        if d.mode == 'ellipse_hole':
-            d.outer_margin_cm = self._sp_outer_margin.value()
-        # inner_margins: 仅 rect_lshape 由 Worker 固定为 0.0（L 形语义），
-        # 其他模式允许 SpinBox 覆盖（property_panel_generate.py:204 也有同样的保护）
-        if d.mode != 'rect_lshape':
-            d.inner_margin_top_cm = self._sp_mt.value()
-            d.inner_margin_bottom_cm = self._sp_mb.value()
-            d.inner_margin_left_cm = self._sp_ml.value()
-            d.inner_margin_right_cm = self._sp_mr.value()
-        # ===== [L-Shape Panel Refactor 2026-09-02] L 形参数从 LShapePanel 读取 =====
-        # 原 self._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
-        # 通过 self._lshape_panel.get_corner()/get_cut_w_cm()/get_cut_h_cm() 读取，
-        # 语义与原直读控件完全一致。
-        if self._lshape_panel is not None:
-            d.l_corner = self._lshape_panel.get_corner()
-            # 挖角值直接取草图识别的成品真值，不做额外损耗补偿
-            d.l_cut_w_cm = self._lshape_panel.get_cut_w_cm()
-            d.l_cut_h_cm = self._lshape_panel.get_cut_h_cm()
-        else:
-            d.l_corner = 'br'
-            d.l_cut_w_cm = 0.0
-            d.l_cut_h_cm = 0.0
-        # 圆角设置
-        d.corner_tl_cm = self._sp_design_corners['tl'].value()
-        d.corner_tr_cm = self._sp_design_corners['tr'].value()
-        d.corner_bl_cm = self._sp_design_corners['bl'].value()
-        d.corner_br_cm = self._sp_design_corners['br'].value()
-        d.ellipse_rx_ratio = self._sp_erx.value()
-        d.ellipse_ry_ratio = self._sp_ery.value()
-        d.outer_bg_color = self._btn_outer_color.color()
-        d.hole_bg_color = self._btn_hole_color.color()
-        d.outer_bg_image = self._ed_outer_img.text().strip() or None
-        d.hole_bg_image = self._ed_hole_img.text().strip() or None
-        # 文字
-        if self._gb_txt.isChecked():
-            bt = d.border_text or BorderText()
-            bt.text = self._ed_txt.text()
-            bt.font_size_px = self._sp_fs.value()
-            bt.color = self._btn_txt_color.color()
-            bt.mirror_bottom = self._ck_mirror.isChecked()
-            d.border_text = bt
-        else:
-            d.border_text = None
-        # —— 水池模式字段同步 ——
-        try:
-            # [2026-09-04 Fix] L 形挖角模式：cut 区域语义就是"挖空/白色"，
-            # 强制 pool_hole_transparent=True，跳过 UI 控件覆盖。
-            # 否则 PoolWorker 正确设置的 True 会被 _pool_hole_mode=="image" 覆盖为 False，
-            # 导致 cut 区域显示米色 hole_bg_color(250,245,230) 而非纯白。
-            if d.mode == 'rect_lshape':
-                d.pool_hole_transparent = True
-            else:
-                hm = self._pool_hole_mode.currentData()
-                if hm == "blank":
-                    d.pool_hole_transparent = True
-                    # 空白模式：清空内挖素材相关字段（与 _on_pool_hole_mode_change 保持一致）
-                    if getattr(d, 'pool_inner_material_image', None) is not None:
-                        d.pool_inner_material_image = None
-                    if d.hole_bg_image is not None:
-                        d.hole_bg_image = None
-                elif hm == "image":
-                    d.pool_hole_transparent = False
-        except Exception:
-            # 控件未初始化（_build_ui 中途），忽略
-            pass
-        # 外框素材：如果用户在"背景设置"里直接改了路径，同步到 pool_outer_material_image
-        # （否则水池一键生成路径是反向写入 pool_outer_material_image → outer_bg_image）
-        if d.outer_bg_image and (d.pool_outer_material_image is None
-                                 or d.pool_outer_material_image != d.outer_bg_image):
-            d.pool_outer_material_image = d.outer_bg_image
-        # 内挖素材：同步 pool_inner_material_image 与 hole_bg_image（仅素材填充模式）
-        hm_now = self._pool_hole_mode.currentData() if hasattr(self, '_pool_hole_mode') else None
-        if hm_now == "image":
-            # 防御性 getattr：兼容旧 CropDesign 实例（未声明 pool_inner_material_image 字段）
-            cur_inner = getattr(d, 'pool_inner_material_image', None)
-            # ===== [SINGLE-HOLE Add-On 2026-08-31] basename 防御 —— basename-only 不覆盖全路径 =====
-            # 背景：_on_pool_finished_ok 将 _ed_hole_img 用于显示，有时写入 basename（文件名）、
-            #   有时写入 path（全路径）。若 UI 控件中当前仅保留 basename（非有效路径），
-            #   却直接用它覆盖 pool_inner（已有的全路径真值） → 后续 render_design 中
-            #   os.path.isfile(pool_inner) 失败 → 内挖素材加载链路断裂，退回纯色占位。
-            # 修复：只有当 hole_bg_image 本身是有效路径（isfile / isabs / 含目录分隔符）时，
-            #   才允许同步覆盖 pool_inner_material_image；否则保留已有全路径真值。
-            # 纯加法条件收窄，不改变 hole_bg_image=有效全路径 场景的任何行为。
-            _bg_path = d.hole_bg_image
-            _bg_path_valid = False
-            if _bg_path:
-                _bg_path_valid = (
-                    os.path.isfile(_bg_path)
-                    or os.path.isabs(_bg_path)
-                    or (os.path.dirname(_bg_path) != '')
-                )
-            if _bg_path_valid:
-                if _bg_path and (cur_inner is None or cur_inner != _bg_path):
-                    d.pool_inner_material_image = _bg_path
-            # ===== [END SINGLE-HOLE Add-On basename 防御] =====
+        # ===== [H-10] Model 驱动组装 =====
+        # 原实现直接读 SpinBox/ComboBox/颜色按钮并内嵌模式判断、素材同步、
+        # 多洞几何重建等业务规则。现改为：UI 层只提取纯值 dict（snap），
+        # 业务规则全部由 DesignModel.apply_ui_snapshot() 执行（行为等价）。
+        # model 惰性创建并每次 sync_from_design：self.design 可能被
+        # _on_pool_finished_ok / main.py 整体替换引用，必须跟随最新引用。
+        from models.design_model import DesignModel
+        model = getattr(self, '_model', None)
+        if model is None:
+            model = DesignModel(self.design)
+            self._model = model
+        model.sync_from_design(self.design)
+        model.apply_ui_snapshot(self._collect_ui_snapshot())
 
-        # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 SpinBox → design.pool_holes_cm/gaps =====
-        # 仅当 pool_is_multi_hole=True 且 UI 已构建多洞控件时，才把控件值同步回 design。
-        # 单洞模式下：pool_is_multi_hole=False → pool_holes_cm 默认为空 → 零行为影响；
-        # 旧单洞 L 形/椭圆/矩形 代码完全不经过这里。
+    def _collect_ui_snapshot(self) -> dict:
+        """[H-10] 从控件提取纯值快照（不含任何业务规则，只读控件当前值）。
+
+        返回值直接传给 DesignModel.apply_ui_snapshot()。所有模式判断、
+        素材同步、多洞几何重建逻辑均位于 Model 层。
+        """
+        # L 形参数：无 LShapePanel 时传 None（Model 内写默认值 br/0.0/0.0）
+        if self._lshape_panel is not None:
+            lshape = {
+                'corner': self._lshape_panel.get_corner(),
+                'cut_w_cm': self._lshape_panel.get_cut_w_cm(),
+                'cut_h_cm': self._lshape_panel.get_cut_h_cm(),
+            }
+        else:
+            lshape = None
+        # 水池挖空方式：控件可缺失（_build_ui 中途）时传 None
+        _pool_hole_mode = getattr(self, '_pool_hole_mode', None)
+        hole_mode = _pool_hole_mode.currentData() if _pool_hole_mode is not None else None
+        snap = {
+            'canvas_w_cm': self._sp_w.value(),
+            'canvas_h_cm': self._sp_h.value(),
+            'dpi': self._sp_dpi.value(),
+            'mode': self._cb_mode.currentData(),
+            'outer_margin_cm': self._sp_outer_margin.value(),
+            'inner': {
+                'top': self._sp_mt.value(),
+                'bottom': self._sp_mb.value(),
+                'left': self._sp_ml.value(),
+                'right': self._sp_mr.value(),
+            },
+            'lshape': lshape,
+            'corners': {
+                'tl': self._sp_design_corners['tl'].value(),
+                'tr': self._sp_design_corners['tr'].value(),
+                'bl': self._sp_design_corners['bl'].value(),
+                'br': self._sp_design_corners['br'].value(),
+            },
+            'ellipse': {'rx': self._sp_erx.value(), 'ry': self._sp_ery.value()},
+            'colors': {
+                'outer': self._btn_outer_color.color(),
+                'hole': self._btn_hole_color.color(),
+            },
+            'images': {
+                'outer': self._ed_outer_img.text().strip() or None,
+                'hole': self._ed_hole_img.text().strip() or None,
+            },
+            'text': {
+                'enabled': self._gb_txt.isChecked(),
+                'text': self._ed_txt.text(),
+                'font_size_px': self._sp_fs.value(),
+                'color': self._btn_txt_color.color(),
+                'mirror_bottom': self._ck_mirror.isChecked(),
+            },
+            'hole_mode': hole_mode,
+        }
+        # —— 多洞控件值提取（严格限 active_count 范围内取前 N 个）——
+        # 与原 _collect 相同的防御：任一前置不满足 → multihole=None → Model 跳过。
+        # 注意：active_count<2 也构造 multihole（holes_w 为空/不足），
+        # 由 Model 侧走"激活洞数不足 2 → 清空多洞字段"分支，语义与原 _collect 一致。
         try:
-            if (getattr(d, 'pool_is_multi_hole', False)
+            if (getattr(self.design, 'pool_is_multi_hole', False)
                     and hasattr(self, '_mh_sp_hole_w')
                     and isinstance(self._mh_sp_hole_w, list)
                     and len(self._mh_sp_hole_w) >= 2):
-                # ==== 严格按「激活洞数」取数据：避免 8 个 SpinBox 预分配 0 值被整体写回 ====
-                # active_count 由 _fill_multi_hole_ui(n) / _hide_multi_hole_ui() 维护；
-                # 检测为 2 洞 → N=2 → 只写回洞1/洞2 + 间1_2，其他洞3..洞8 不写入 status / mask。
                 active_count = int(getattr(self, '_mh_active_count', 0) or 0)
-                if active_count < 2:
-                    active_count = 0
-                n_holes = max(0, min(active_count, len(self._mh_sp_hole_w)))
-                n_gaps = max(0, min(n_holes - 1, len(getattr(self, '_mh_sp_gaps', []) or [])))
-                if n_holes < 2:
-                    # 激活洞数不足 2 → 把多洞字段清空（后续 mask 退回单洞分支，保证单洞语义正确）
-                    try:
-                        d.pool_holes_cm = []
-                        d.pool_holes_gaps_cm = []
-                        setattr(d, 'pool_is_multi_hole', False)
-                    except Exception:
-                        pass
-                else:
-                    # 优先用 design 上存的 pool_layout_type；取不到则退化 horizontal（横排占 90% 业务）
-                    layout = getattr(d, 'pool_layout_type', None) or 'horizontal'
-                    ox_cm = d.outer_margin_cm
-                    oy_cm = d.outer_margin_cm
-                    # 洞宽/高：range(n_holes) 限定前 N 个 SpinBox
-                    new_wh = []
-                    for i in range(n_holes):
-                        wv = max(0.0, self._mh_sp_hole_w[i].value())
-                        hv = max(0.0, self._mh_sp_hole_h[i].value())
-                        new_wh.append((wv, hv))
-                    # 间距：range(n_gaps) 限定前 N-1 个 SpinBox
-                    new_gaps = []
-                    for i in range(n_gaps):
-                        new_gaps.append(max(0.0, self._mh_sp_gaps[i].value()))
-                    # 按 layout 重算绝对坐标（画布相对 cm）
-                    # ===== [PER-HOLE Add-On 2026-08-29 + 2026-09-05 FIX] 每洞独立 mt/ml 坐标 =====
-                    # 2026-09-05 FIX: 优先从 UI SpinBox 直接读取（用户手动编辑的值），
-                    # 再 fallback 到 old_holes 存储值，最后才用全局默认。
-                    old_holes = getattr(d, 'pool_holes_cm', []) or []
-
-                    # 防御性检查：SpinBox 列表是否初始化且足够长
-                    _has_mt_sp = (hasattr(self, '_mh_sp_mt') and isinstance(self._mh_sp_mt, list)
-                                  and len(self._mh_sp_mt) > i) if 'i' in dir() else False
-
-                    def _mt_i(i, default_mt):
-                        # [2026-09-05] 优先从 UI SpinBox 读取（用户手动编辑）
-                        if (hasattr(self, '_mh_sp_mt') and isinstance(self._mh_sp_mt, list)
-                                and 0 <= i < len(self._mh_sp_mt)):
-                            v = self._mh_sp_mt[i].value()
-                            if v and v > 0:
-                                return v
-                        if 0 <= i < len(old_holes):
-                            v = old_holes[i].get('mt_cm', 0.0)
-                            if v and v > 0:
-                                return v
-                        h_attr = getattr(d, '_mh_hole_margins', None)
-                        if isinstance(h_attr, list) and 0 <= i < len(h_attr):
-                            v = h_attr[i].get('mt_cm', 0.0)
-                            if v and v > 0:
-                                return v
-                        return default_mt
-
-                    def _mb_i(i, default_mb):
-                        # [2026-09-05] 优先从 UI SpinBox 读取
-                        if (hasattr(self, '_mh_sp_mb') and isinstance(self._mh_sp_mb, list)
-                                and 0 <= i < len(self._mh_sp_mb)):
-                            v = self._mh_sp_mb[i].value()
-                            if v and v > 0:
-                                return v
-                        if 0 <= i < len(old_holes):
-                            v = old_holes[i].get('mb_cm', 0.0)
-                            if v and v > 0:
-                                return v
-                        return default_mb
-
-                    def _ml_i(i, default_ml):
-                        # [2026-09-05] 优先从 UI SpinBox 读取
-                        if (hasattr(self, '_mh_sp_ml') and isinstance(self._mh_sp_ml, list)
-                                and 0 <= i < len(self._mh_sp_ml)):
-                            v = self._mh_sp_ml[i].value()
-                            if v and v > 0:
-                                return v
-                        if 0 <= i < len(old_holes):
-                            v = old_holes[i].get('ml_cm', 0.0)
-                            if v and v > 0:
-                                return v
-                        if i == 0:
-                            return default_ml
-                        return 0.0
-
-                    def _mr_i(i, default_mr):
-                        # [2026-09-05] 优先从 UI SpinBox 读取
-                        if (hasattr(self, '_mh_sp_mr') and isinstance(self._mh_sp_mr, list)
-                                and 0 <= i < len(self._mh_sp_mr)):
-                            v = self._mh_sp_mr[i].value()
-                            if v and v > 0:
-                                return v
-                        if 0 <= i < len(old_holes):
-                            v = old_holes[i].get('mr_cm', 0.0)
-                            if v and v > 0:
-                                return v
-                        if i == n_holes - 1:
-                            return default_mr
-                        return 0.0
-
-                    # ===== [INNER MATERIAL Add-On 2026-08-29] 继承 per-hole 素材字段 =====
-                    # _collect() 完全重建 pool_holes_cm（L219-278），会丢失 UI 层素材匹配写入的
-                    # inner_material_path / _cached_inner_image / _src_design_w_cm 等。
-                    # 在每个洞构建完几何字段后，从 old_holes[i] 继承素材相关键。
-                    _MATERIAL_KEYS = ('inner_material_path', '_cached_inner_image',
-                                      '_src_design_w_cm', '_src_design_h_cm')
-
-                    def _inherit_material(i):
-                        """从 old_holes[i] 继承素材相关字段（_collect 重建会丢失）。"""
-                        src = old_holes[i] if (0 <= i < len(old_holes) and isinstance(old_holes[i], dict)) else {}
-                        return {k: src[k] for k in _MATERIAL_KEYS if k in src}
-
-                    new_holes_cm = []
-                    if layout == 'horizontal':
-                        shared_ml = d.inner_margin_left_cm
-                        shared_mt = d.inner_margin_top_cm
-                        cursor_x = ox_cm + _ml_i(0, shared_ml)
-                        for i, (wv, hv) in enumerate(new_wh):
-                            if i > 0 and i - 1 < len(new_gaps):
-                                cursor_x += new_gaps[i - 1]
-                            hmt = _mt_i(i, shared_mt)
-                            hmb = _mb_i(i, d.inner_margin_bottom_cm)
-                            hml = _ml_i(i, shared_ml)
-                            hmr = _mr_i(i, d.inner_margin_right_cm)
-                            _hole_dict = {
-                                'x_cm': cursor_x,
-                                'y_cm': oy_cm + hmt,
-                                'w_cm': wv, 'h_cm': hv,
-                                'mt_cm': hmt, 'mb_cm': hmb,
-                                'ml_cm': hml, 'mr_cm': hmr,
-                            }
-                            _hole_dict.update(_inherit_material(i))
-                            new_holes_cm.append(_hole_dict)
-                            cursor_x += wv
-                    elif layout == 'vertical':
-                        shared_ml = d.inner_margin_left_cm
-                        shared_mt = d.inner_margin_top_cm
-                        cursor_y = oy_cm + _mt_i(0, shared_mt)
-                        for i, (wv, hv) in enumerate(new_wh):
-                            if i > 0 and i - 1 < len(new_gaps):
-                                cursor_y += new_gaps[i - 1]
-                            hmt = _mt_i(i, shared_mt)
-                            hmb = _mb_i(i, d.inner_margin_bottom_cm)
-                            hml = _ml_i(i, shared_ml)
-                            hmr = _mr_i(i, d.inner_margin_right_cm)
-                            _hole_dict = {
-                                'x_cm': ox_cm + hml,
-                                'y_cm': cursor_y,
-                                'w_cm': wv, 'h_cm': hv,
-                                'mt_cm': hmt, 'mb_cm': hmb,
-                                'ml_cm': hml, 'mr_cm': hmr,
-                            }
-                            _hole_dict.update(_inherit_material(i))
-                            new_holes_cm.append(_hole_dict)
-                            cursor_y += hv
-                    else:  # mixed：退化横排
-                        shared_ml = d.inner_margin_left_cm
-                        shared_mt = d.inner_margin_top_cm
-                        cursor_x = ox_cm + _ml_i(0, shared_ml)
-                        for i, (wv, hv) in enumerate(new_wh):
-                            if i > 0 and i - 1 < len(new_gaps):
-                                cursor_x += new_gaps[i - 1]
-                            hmt = _mt_i(i, shared_mt)
-                            hmb = _mb_i(i, d.inner_margin_bottom_cm)
-                            hml = _ml_i(i, shared_ml)
-                            hmr = _mr_i(i, d.inner_margin_right_cm)
-                            _hole_dict = {
-                                'x_cm': cursor_x,
-                                'y_cm': oy_cm + hmt,
-                                'w_cm': wv, 'h_cm': hv,
-                                'mt_cm': hmt, 'mb_cm': hmb,
-                                'ml_cm': hml, 'mr_cm': hmr,
-                            }
-                            _hole_dict.update(_inherit_material(i))
-                            new_holes_cm.append(_hole_dict)
-                            cursor_x += wv
-                    # 写回 design：pool_holes_cm 长度严格 == n_holes，不会含 0 值洞
-                    d.pool_holes_cm = new_holes_cm
-                    d.pool_holes_gaps_cm = new_gaps
-        except Exception as e:
-            # 静默失败：不影响主预览流程
-            import logging as _logging
-            _logging.getLogger(__name__).warning(f"[Multi-hole UI] 多洞字段回写 design 失败: {e}")
+                _W = self._mh_sp_hole_w
+                _H = self._mh_sp_hole_h
+                _G = getattr(self, '_mh_sp_gaps', []) or []
+                snap['multihole'] = {
+                    'active_count': active_count,
+                    'holes_w': [float(_W[i].value()) for i in range(min(active_count, len(_W)))],
+                    'holes_h': [float(_H[i].value()) for i in range(min(active_count, len(_H)))],
+                    'gaps': [float(_G[i].value()) for i in range(min(active_count - 1, len(_G)))],
+                    # 每洞独立边距 SpinBox（可缺失；值非正时 Model 内 fallback 到 old_holes）
+                    'mt': [float(_W[i].value()) and (getattr(self, '_mh_sp_mt', None) or [])[i].value()
+                           if hasattr(self, '_mh_sp_mt') and isinstance(getattr(self, '_mh_sp_mt', None), list)
+                           and i < len(self._mh_sp_mt) else None
+                           for i in range(min(active_count, len(_W)))],
+                    'mb': [float(_W[i].value()) and (getattr(self, '_mh_sp_mb', None) or [])[i].value()
+                           if hasattr(self, '_mh_sp_mb') and isinstance(getattr(self, '_mh_sp_mb', None), list)
+                           and i < len(self._mh_sp_mb) else None
+                           for i in range(min(active_count, len(_W)))],
+                    'ml': [float(_W[i].value()) and (getattr(self, '_mh_sp_ml', None) or [])[i].value()
+                           if hasattr(self, '_mh_sp_ml') and isinstance(getattr(self, '_mh_sp_ml', None), list)
+                           and i < len(self._mh_sp_ml) else None
+                           for i in range(min(active_count, len(_W)))],
+                    'mr': [float(_W[i].value()) and (getattr(self, '_mh_sp_mr', None) or [])[i].value()
+                           if hasattr(self, '_mh_sp_mr') and isinstance(getattr(self, '_mh_sp_mr', None), list)
+                           and i < len(self._mh_sp_mr) else None
+                           for i in range(min(active_count, len(_W)))],
+                }
+        except Exception:
+            # 控件未初始化或结构异常：按单洞语义跳过多洞回写
+            pass
+        return snap
 
 
     def _apply_quiet(self):

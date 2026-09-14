@@ -154,45 +154,30 @@ def _sample_border_color(
     return tuple(int(round(v)) for v in median_color.tolist())
 
 
-def _redraw_border_on_corner(
-    result_img: Image.Image, corner_key: str,
-    corner_radius_px: int,
-    border_layers: list[tuple[tuple[int, int, int], int]],
-    src_img: Image.Image | None = None,
-    validity_mask: Image.Image | None = None,
-    only_outermost: bool = False,
-    bg_color: tuple[int, int, int] = (255, 255, 255),
-    paint_inside_arc: bool = True,
-) -> None:
-    """
-    在圆角区域重新绘制边框颜色。
+def _sample_content_ref(arr_roi: np.ndarray, rw: int, rh: int) -> np.ndarray:
+    """[H-03] 采样 ROI 内容参考色（原 _redraw_border_on_corner 内嵌函数提升）。"""
+    x_start = int(rw * 0.15)
+    x_end = int(rw * 0.85)
+    y_start = int(rh * 0.15)
+    y_end = int(rh * 0.85)
+    STEPS = 21
+    xs = np.linspace(x_start, x_end, STEPS, dtype=np.int64).clip(0, rw - 1)
+    ys = np.linspace(y_start, y_end, STEPS, dtype=np.int64).clip(0, rh - 1)
+    gx, gy = np.meshgrid(xs, ys)
+    samples = arr_roi[gy, gx, :].reshape(-1, 3).astype(np.float64)
+    if samples.shape[0] == 0:
+        return np.array([255.0, 255.0, 255.0])
+    return np.median(samples, axis=0)
 
-    [PERF 优化] 使用 ROI（Region of Interest）区域操作，
-    仅对角落 r×r 区域进行 numpy 转换和计算，
-    避免处理 1-2 亿像素的全图转换开销。
 
-    Args:
-        result_img: 结果图片（原地修改）
-        corner_key: 角落标识 ('tl','tr','bl','br')
-        corner_radius_px: 总圆角半径像素 (R_total)
-        border_layers: 边框层 [(color_fallback, thickness), ...]
-        src_img: 原图（用于采样颜色 + 判断是否为装饰像素）
-        validity_mask: 可选，L模式。非零像素才允许修改
-        only_outermost: 若为 True，只绘制最外层边框
-        bg_color: 背景色，间隙层使用此色填充创建干净弧线
-        paint_inside_arc: 若为 False，跳过与源 bg_color 接近的像素 (保留源间隙)。
-                          仅在 border_only mode + 源含间隙 inside R 的场景下设为 False。
-                          默认 True 保持原行为。
+def _build_corner_roi(
+    result_img: Image.Image, corner_key: str, R_total: int,
+):
+    """[H-03] 计算角落圆心与 ROI 边界（原 L196-215 提取）。
+
+    返回 (cx, cy, x1, y1, x2, y2, roi_w, roi_h)；ROI 为空时返回 None。
     """
     w, h = result_img.size
-    if corner_radius_px <= 0 or not border_layers:
-        return
-
-    R_total = corner_radius_px
-    R_total = min(R_total, max(1, min(w, h) // 2))
-    if R_total <= 0:
-        return
-
     if corner_key == 'tl':
         cx, cy = R_total, R_total
     elif corner_key == 'tr':
@@ -209,11 +194,16 @@ def _redraw_border_on_corner(
     y2 = min(h, cy + R_total + 1)
 
     if x2 <= x1 or y2 <= y1:
-        return
+        return None
+    return cx, cy, x1, y1, x2, y2, x2 - x1, y2 - y1
 
-    roi_w = x2 - x1
-    roi_h = y2 - y1
 
+def _extract_roi_arrays(
+    result_img: Image.Image, x1: int, y1: int, x2: int, y2: int,
+    src_img: Image.Image | None, validity_mask: Image.Image | None,
+    w: int, h: int,
+):
+    """[H-03] 提取 ROI numpy 数组（原 L217-234 提取）。"""
     # [PERF] 仅提取 ROI 区域的 numpy 数组
     result_roi_img = result_img.crop((x1, y1, x2, y2))
     result_arr = np.array(result_roi_img, dtype=np.uint8)
@@ -233,10 +223,13 @@ def _redraw_border_on_corner(
         validity_roi_img = validity_mask.crop((x1, y1, x2, y2))
         validity_arr = np.array(validity_roi_img, dtype=bool)
 
-    # ROI 相对坐标的圆心
-    cx_roi = cx - x1
-    cy_roi = cy - y1
+    return result_arr, src_arr, validity_arr
 
+
+def _build_border_depth_map(
+    border_layers: list[tuple[tuple[int, int, int], int]],
+):
+    """[H-03] 构建累计深度与 d→层索引映射（原 L240-256 提取）。"""
     cumulative_depths = [0]
     for _, thickness in border_layers:
         cumulative_depths.append(cumulative_depths[-1] + thickness)
@@ -254,134 +247,119 @@ def _redraw_border_on_corner(
             elif d >= cum_next and i == len(border_layers) - 1:
                 color_idx = i
         depth_mapping[d] = color_idx
+    return cumulative_depths, total_border_depth, depth_mapping
 
-    border_colors_arr = np.array(
-        [np.array(c, dtype=np.float64) for c, _ in border_layers]
-    )
 
-    # [PERF] _sample_content_ref 使用 ROI 切片尺寸
-    def _sample_content_ref(arr_roi: np.ndarray, rw: int, rh: int) -> np.ndarray:
-        x_start = int(rw * 0.15)
-        x_end = int(rw * 0.85)
-        y_start = int(rh * 0.15)
-        y_end = int(rh * 0.85)
-        STEPS = 21
-        xs = np.linspace(x_start, x_end, STEPS, dtype=np.int64).clip(0, rw - 1)
-        ys = np.linspace(y_start, y_end, STEPS, dtype=np.int64).clip(0, rh - 1)
-        gx, gy = np.meshgrid(xs, ys)
-        samples = arr_roi[gy, gx, :].reshape(-1, 3).astype(np.float64)
-        if samples.shape[0] == 0:
-            return np.array([255.0, 255.0, 255.0])
-        return np.median(samples, axis=0)
-
+def _sample_content_color(
+    src_arr: np.ndarray | None, result_arr: np.ndarray,
+    roi_w: int, roi_h: int,
+) -> np.ndarray:
+    """[H-03] 采样内容参考色（原 L277-281 提取）。"""
     content_ref_arr: np.ndarray | None = None
     if src_arr is not None:
         content_ref_arr = _sample_content_ref(src_arr, roi_w, roi_h)
     if content_ref_arr is None:
         content_ref_arr = _sample_content_ref(result_arr, roi_w, roi_h)
+    return content_ref_arr
 
-    # [Fix v7] 统一间隙层判定
-    # 删除原先独立的 100+ 行间隙检测逻辑（与 image_cropper.py/diagnose 判定不一致），
-    # 统一调用 classify_gap_layers（单一判定来源），确保：
-    #   - INV-B4: 最内层永不判间隙
-    #   - INV-G1: 最外层深色边框永不判间隙
-    #   - INV-G3: 中间层sandwich(两侧色差大)→间隙
+
+def _build_content_protection_mask(
+    src_arr: np.ndarray | None,
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    bg_color: tuple[int, int, int],
+    corner_key: str,
+    roi_w: int,
+    roi_h: int,
+    depth: np.ndarray,
+    xx: np.ndarray,
+    yy: np.ndarray,
+    total_border_depth: int,
+) -> np.ndarray | None:
+    """[H-03] 三区域渐进内容保护掩码（原 L318-362 提取）。
+
+    1. 核心边框区 (depth < CORE_BORDER_DEPTH)：始终绘制（保证圆角边框实心）
+    2. 过渡区 (CORE_BORDER_DEPTH <= depth < total_border_depth)：保护内容像素
+       —— 仅边框带最内沿 2px，避免覆盖弧内侧紧贴边框的花纹/文字。过渡区过宽
+       （如 4px）会导致圆角内层边框末端缺像素、粗细不一致；完全移除过渡区则会
+       过度覆盖内容（婉卉 CASE4 内容保留率下降）。
+    3. 边框外 (depth >= total_border_depth)：保护内容像素
+    """
+    if src_arr is None:
+        return None
+    BORDER_SIGMA = 6.0
     bg_arr_detect = np.array(bg_color, dtype=np.float64)
-    is_gap_layer = classify_gap_layers(
-        border_layers, bg_color=bg_color, content_ref_arr=content_ref_arr
-    )
+    src_f64 = src_arr.astype(np.float64)
+    color_dist_to_border_min = np.full((roi_h, roi_w), np.inf, dtype=np.float64)
+    for bc, _ in border_layers:
+        bc_arr = np.array(bc, dtype=np.float64)
+        d = np.sqrt(np.sum((src_f64 - bc_arr) ** 2, axis=2))
+        color_dist_to_border_min = np.minimum(color_dist_to_border_min, d)
+    dist_to_bg = np.sqrt(np.sum((src_f64 - bg_arr_detect) ** 2, axis=2))
+    is_content_pixel = (color_dist_to_border_min > BORDER_SIGMA) & (dist_to_bg > BORDER_SIGMA)
 
-    ang_min, ang_max = CORNER_ANGLES[corner_key]
+    # 过渡区宽度固定 2px：只保护边框带最内沿 2px，平衡实心度与内容保留
+    TRANSITION_PX = 2
+    CORE_BORDER_DEPTH = max(0, total_border_depth - TRANSITION_PX)
 
-    yy, xx = np.mgrid[0:roi_h, 0:roi_w].astype(np.float64)
+    # 空间判断：过渡区内容保护只作用于靠近直边的像素（xx/yy 接近 ROI 边缘）。
+    #   圆角内部（远离两边直边）的过渡区始终绘制——否则圆角内层边框末端缺像素。
+    #   直边附近的过渡区保护紧贴边框的花纹/文字（婉卉 CASE4）。
+    T = float(total_border_depth) * 1.5
+    if corner_key == 'tl':
+        near_edge = (xx <= T) | (yy <= T)
+    elif corner_key == 'tr':
+        near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy <= T)
+    elif corner_key == 'bl':
+        near_edge = (xx <= T) | (yy >= float(roi_h) - 1.0 - T)
+    else:  # br
+        near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy >= float(roi_h) - 1.0 - T)
+    in_transition_zone = near_edge & (depth >= float(CORE_BORDER_DEPTH)) & (depth < float(total_border_depth))
+    outside_border_zone = (depth >= float(total_border_depth))
+    return is_content_pixel & (in_transition_zone | outside_border_zone)
 
-    dx = xx - float(cx_roi)
-    dy = yy - float(cy_roi)
-    dist = np.sqrt(dx * dx + dy * dy)
-    angle = np.degrees(np.arctan2(dy, dx))
-    angle = np.mod(angle, 360.0)
 
-    depth = float(R_total) - dist
+def _clear_beyond_arc_pixels(
+    result_arr: np.ndarray,
+    valid_angle: np.ndarray,
+    dist: np.ndarray,
+    R_total: int,
+    validity_arr: np.ndarray | None,
+    bg_color: tuple[int, int, int],
+) -> None:
+    """[H-03] 弧线外侧越界像素清为背景色（原两次 beyond_arc 清理的统一逻辑）。
 
-    # [Fix 白色竖线] 统一使用 _angle_in_corner_sector 处理 0°/360° 绕接，
-    # 避免 BR/TR 角在右边缘/上边缘接缝处漏绘形成白线。
-    valid_angle = _angle_in_corner_sector(angle, corner_key, tol=2.0)
-    # [Fix 边框线粗细] valid_region 采用 R+2 容差，包含所有 inside_arc 像素
-    #   (dist <= R_total + 2)，确保弧-直交界处无 1-2px 白色间隙。
-    #   多层结构感知重绘见下方 content_protect_mask（核心区始终绘制，
-    #   过渡区/边框外保护内容像素）。
-    valid_region = valid_angle & (dist <= float(R_total) + 2.0)
-
-    if validity_arr is not None:
-        valid_region = valid_region & validity_arr
-
-    # === [Fix 圆角断触/白色空隙/粗细不一致 2026-09-05] ===
-    # 回退 d246636 的「多层结构感知重绘」：所有非间隙实心边框层（含内层）
-    #   都在圆弧上重绘，形成与直边厚度一致的同心圆弧。
-    # 根因（96d3031 引入）：只重绘 color_idx==0 的最外层，内层依赖 mask 自然裁圆，
-    #   导致圆角处内层边框断触、露白、与直边粗细不一致。
-    #
-    # 三区域渐进内容保护（避免覆盖花纹/文字）：
-    #   1. 核心边框区 (depth < CORE_BORDER_DEPTH)：始终绘制（保证圆角边框实心）
-    #   2. 过渡区 (CORE_BORDER_DEPTH <= depth < total_border_depth)：保护内容像素
-    #      —— 仅边框带最内沿 2px，避免覆盖弧内侧紧贴边框的花纹/文字。
-    #      过渡区过宽（如 4px）会导致圆角内层边框末端缺像素、粗细不一致；
-    #      完全移除过渡区则会过度覆盖内容（婉卉 CASE4 内容保留率下降）。
-    #   3. 边框外 (depth >= total_border_depth)：保护内容像素
-    content_protect_mask = None
-    if src_arr is not None:
-        BORDER_SIGMA = 6.0
-        bg_arr_detect = np.array(bg_color, dtype=np.float64)
-        src_f64 = src_arr.astype(np.float64)
-        color_dist_to_border_min = np.full((roi_h, roi_w), np.inf, dtype=np.float64)
-        for bc, _ in border_layers:
-            bc_arr = np.array(bc, dtype=np.float64)
-            d = np.sqrt(np.sum((src_f64 - bc_arr) ** 2, axis=2))
-            color_dist_to_border_min = np.minimum(color_dist_to_border_min, d)
-        dist_to_bg = np.sqrt(np.sum((src_f64 - bg_arr_detect) ** 2, axis=2))
-        is_content_pixel = (color_dist_to_border_min > BORDER_SIGMA) & (dist_to_bg > BORDER_SIGMA)
-
-        # 过渡区宽度固定 2px：只保护边框带最内沿 2px，平衡实心度与内容保留
-        TRANSITION_PX = 2
-        CORE_BORDER_DEPTH = max(0, total_border_depth - TRANSITION_PX)
-
-        # 空间判断：过渡区内容保护只作用于靠近直边的像素（xx/yy 接近 ROI 边缘）。
-        #   圆角内部（远离两边直边）的过渡区始终绘制——否则圆角内层边框末端缺像素。
-        #   直边附近的过渡区保护紧贴边框的花纹/文字（婉卉 CASE4）。
-        T = float(total_border_depth) * 1.5
-        if corner_key == 'tl':
-            near_edge = (xx <= T) | (yy <= T)
-        elif corner_key == 'tr':
-            near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy <= T)
-        elif corner_key == 'bl':
-            near_edge = (xx <= T) | (yy >= float(roi_h) - 1.0 - T)
-        else:  # br
-            near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy >= float(roi_h) - 1.0 - T)
-        in_transition_zone = near_edge & (depth >= float(CORE_BORDER_DEPTH)) & (depth < float(total_border_depth))
-        outside_border_zone = (depth >= float(total_border_depth))
-        content_protect_mask = is_content_pixel & (in_transition_zone | outside_border_zone)
-
-    # === [Fix INV-1/INV-3/INV-5 + 玛利亚玫瑰] 处理弧线外侧区域 ===
-    #
-    # [Fix 花漾之约] 扩大 beyond_arc 范围：
-    #   填充所有 dist > R_total 的像素（ROI 范围内），确保弧外侧干净。
-    #
-    # [Fix 玛利亚玫瑰 v8] 临界像素容差：
-    #   dist > R_total 的严格比较会漏掉距离刚好为 R（浮点误差）的 1px 边
-    #   界环，导致内容残留在扇形角。使用 R - 0.5 作为阈值，把边界上的像素
-    #   也一起清为底色（边界像素稍后会在绘制循环里作为边框重新上色，不会造成
-    #   副作用）。
+    [Fix 花漾之约] 填充所有 dist > R_total 的像素（ROI 范围内），确保弧外侧干净。
+    [Fix 玛利亚玫瑰 v8] 临界像素容差：dist > R_total 的严格比较会漏掉距离刚好为
+    R（浮点误差）的 1px 边界环，导致内容残留在扇形角。使用 R - 0.5 作为阈值。
+    [Fix v9 越界清底] 只清理被 mask 真正裁掉的像素（validity=False），禁止误伤
+    角附近的直边边框像素。
+    """
     bg_arr_uint8 = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
     beyond_arc = valid_angle & (dist > float(R_total) - 0.5)
-    # [Fix v9 越界清底] 只清理被 mask 真正裁掉的像素（validity=False），禁止误伤
-    # 角附近的直边边框像素。否则会在角外直边"咬出缺口"并导致弧端点异常对接，
-    # 看起来像额外线头/扇形角。
     if validity_arr is not None:
         beyond_arc = beyond_arc & (~validity_arr)
     if np.any(beyond_arc):
         beyond_coords = np.where(beyond_arc)
         result_arr[beyond_coords[0], beyond_coords[1], :] = bg_arr_uint8
 
+
+def _render_border_layers_in_roi(
+    result_arr: np.ndarray,
+    valid_region: np.ndarray,
+    depth: np.ndarray,
+    dist: np.ndarray,
+    R_total: int,
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    depth_mapping: dict[int, int],
+    is_gap_layer: np.ndarray,
+    total_border_depth: int,
+    only_outermost: bool,
+    paint_inside_arc: bool,
+    src_arr: np.ndarray | None,
+    bg_color: tuple[int, int, int],
+    content_protect_mask: np.ndarray | None,
+) -> None:
+    """[H-03] 逐深度层绘制同心圆弧边框（原 L385-472 提取）。"""
     for d in range(total_border_depth):
         # [Fix INV-2/INV-5] Include pixels at dist == R_total in d_region
         # These pixels are at the arc boundary and must be painted with border color
@@ -471,19 +449,120 @@ def _redraw_border_on_corner(
         result_arr[local_coords[0], local_coords[1], :] = color_fill.reshape(1, 3)
         continue
 
-    # === V1.0 风格简化：二次确保弧外侧 + 边界像素为背景色 ===
-    # [v8] 使用与第一次 beyond_arc 相同的 R - 0.5 容差，保证角尖临界像素
-    # 都被清理（防止 玛利亚玫瑰 等的扇形角漏底）。
-    bg_uint8 = np.array(bg_color, dtype=np.uint8).reshape(1, 1, 3)
 
-    final_beyond = valid_angle & (dist > float(R_total) - 0.5)
-    # [Fix v9 越界清底] 同第一次 beyond_arc：只清理已被 mask 裁掉的像素，
-    # 避免"咬直边"造成弧端点对接异常。
+def _redraw_border_on_corner(
+    result_img: Image.Image, corner_key: str,
+    corner_radius_px: int,
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    src_img: Image.Image | None = None,
+    validity_mask: Image.Image | None = None,
+    only_outermost: bool = False,
+    bg_color: tuple[int, int, int] = (255, 255, 255),
+    paint_inside_arc: bool = True,
+) -> None:
+    """
+    在圆角区域重新绘制边框颜色。
+
+    [PERF 优化] 使用 ROI（Region of Interest）区域操作，
+    仅对角落 r×r 区域进行 numpy 转换和计算，
+    避免处理 1-2 亿像素的全图转换开销。
+
+    [H-03] 本函数已从超长单函数拆分为模块级辅助函数：
+      _build_corner_roi / _extract_roi_arrays / _build_border_depth_map /
+      _sample_content_color / _build_content_protection_mask /
+      _clear_beyond_arc_pixels / _render_border_layers_in_roi。
+      拆分仅提取代码，行为与原实现 bit 级一致。
+
+    Args:
+        result_img: 结果图片（原地修改）
+        corner_key: 角落标识 ('tl','tr','bl','br')
+        corner_radius_px: 总圆角半径像素 (R_total)
+        border_layers: 边框层 [(color_fallback, thickness), ...]
+        src_img: 原图（用于采样颜色 + 判断是否为装饰像素）
+        validity_mask: 可选，L模式。非零像素才允许修改
+        only_outermost: 若为 True，只绘制最外层边框
+        bg_color: 背景色，间隙层使用此色填充创建干净弧线
+        paint_inside_arc: 若为 False，跳过与源 bg_color 接近的像素 (保留源间隙)。
+                          仅在 border_only mode + 源含间隙 inside R 的场景下设为 False。
+                          默认 True 保持原行为。
+    """
+    w, h = result_img.size
+    if corner_radius_px <= 0 or not border_layers:
+        return
+
+    R_total = corner_radius_px
+    R_total = min(R_total, max(1, min(w, h) // 2))
+    if R_total <= 0:
+        return
+
+    # [H-03] 角落圆心 + ROI 边界
+    roi = _build_corner_roi(result_img, corner_key, R_total)
+    if roi is None:
+        return
+    cx, cy, x1, y1, x2, y2, roi_w, roi_h = roi
+
+    # [H-03] 提取 ROI numpy 数组
+    result_arr, src_arr, validity_arr = _extract_roi_arrays(
+        result_img, x1, y1, x2, y2, src_img, validity_mask, w, h
+    )
+
+    # ROI 相对坐标的圆心
+    cx_roi = cx - x1
+    cy_roi = cy - y1
+
+    # [H-03] 累计深度与 d→层索引映射
+    _, total_border_depth, depth_mapping = _build_border_depth_map(border_layers)
+
+    # [H-03] 采样内容参考色
+    content_ref_arr = _sample_content_color(src_arr, result_arr, roi_w, roi_h)
+
+    # [Fix v7] 统一间隙层判定
+    # 统一调用 classify_gap_layers（单一判定来源），确保：
+    #   - INV-B4: 最内层永不判间隙
+    #   - INV-G1: 最外层深色边框永不判间隙
+    #   - INV-G3: 中间层sandwich(两侧色差大)→间隙
+    is_gap_layer = classify_gap_layers(
+        border_layers, bg_color=bg_color, content_ref_arr=content_ref_arr
+    )
+
+    yy, xx = np.mgrid[0:roi_h, 0:roi_w].astype(np.float64)
+
+    dx = xx - float(cx_roi)
+    dy = yy - float(cy_roi)
+    dist = np.sqrt(dx * dx + dy * dy)
+    angle = np.degrees(np.arctan2(dy, dx))
+    angle = np.mod(angle, 360.0)
+
+    depth = float(R_total) - dist
+
+    # [Fix 白色竖线] 统一使用 _angle_in_corner_sector 处理 0°/360° 绕接，
+    # 避免 BR/TR 角在右边缘/上边缘接缝处漏绘形成白线。
+    valid_angle = _angle_in_corner_sector(angle, corner_key, tol=2.0)
+    # [Fix 边框线粗细] valid_region 采用 R+2 容差，包含所有 inside_arc 像素
+    #   (dist <= R_total + 2)，确保弧-直交界处无 1-2px 白色间隙。
+    valid_region = valid_angle & (dist <= float(R_total) + 2.0)
+
     if validity_arr is not None:
-        final_beyond = final_beyond & (~validity_arr)
-    if np.any(final_beyond):
-        final_coords = np.where(final_beyond)
-        result_arr[final_coords[0], final_coords[1], :] = bg_uint8
+        valid_region = valid_region & validity_arr
+
+    # === [Fix 圆角断触/白色空隙/粗细不一致 2026-09-05] 三区域渐进内容保护 ===
+    content_protect_mask = _build_content_protection_mask(
+        src_arr, border_layers, bg_color, corner_key, roi_w, roi_h,
+        depth, xx, yy, total_border_depth,
+    )
+
+    # === [Fix INV-1/INV-3/INV-5 + 玛利亚玫瑰] 处理弧线外侧区域（第一次清理） ===
+    _clear_beyond_arc_pixels(result_arr, valid_angle, dist, R_total, validity_arr, bg_color)
+
+    # === 主绘制循环：逐深度层绘制同心圆弧边框 ===
+    _render_border_layers_in_roi(
+        result_arr, valid_region, depth, dist, R_total,
+        border_layers, depth_mapping, is_gap_layer, total_border_depth,
+        only_outermost, paint_inside_arc, src_arr, bg_color, content_protect_mask,
+    )
+
+    # === V1.0 风格简化：二次确保弧外侧 + 边界像素为背景色 ===
+    _clear_beyond_arc_pixels(result_arr, valid_angle, dist, R_total, validity_arr, bg_color)
 
     # 回写结果
     new_img = Image.fromarray(result_arr.astype(np.uint8), mode='RGB')

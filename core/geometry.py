@@ -505,23 +505,21 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
 
     frame_mask = np.array(frame_outer_img, dtype=bool) & ~np.array(frame_inner_img, dtype=bool)
 
-    # 2. 按每层边框 offset 切分 band（双 mask 差集）
+# 2. 按每层边框 offset 切分 band。
+    #    [H-01] 内存优化：相邻层共享边界 —— 第 i 层的外边界 == 第 i-1 层的内边界
+    #    (t_inner_{i-1} = cumulative + t_layer == t_outer_i)，因此每层只需构建一张
+    #    内边界 PIL mask，外边界直接复用前一层的内边界 bool 数组做差集，避免为每层
+    #    重复创建两张满尺寸 PIL mask（导出大图时显著降低峰值内存）。
     bands: list[tuple[np.ndarray, BorderLayer]] = []
     cumulative_offset = 0
+    # 首层外边界 t=0 即 outer 本身，与 frame_outer 参数完全一致，直接复用其 bool 数组
+    prev_inner_bool: np.ndarray = np.array(frame_outer_img, dtype=bool)
 
     for layer in design.borders:
         layer.offset_px = design.cm2px(layer.offset_cm)
         t_layer = int(round(max(1, layer.offset_px)))
         t_outer = cumulative_offset
         cumulative_offset += t_layer
-
-        # 外层：距 outer_rect 偏移 t_outer 的圆角矩形
-        outer_rect_i = RectShape(
-            x=outer.x + t_outer, y=outer.y + t_outer,
-            w=outer.w - 2 * t_outer, h=outer.h - 2 * t_outer,
-            corner_r=0.0
-        )
-        outer_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_outer) for ck in ('tl', 'tr', 'bl', 'br')}
 
         # 内层：距 outer_rect 偏移 t_outer + t_layer 的圆角矩形
         t_inner = t_outer + t_layer
@@ -532,19 +530,16 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
         )
         inner_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_inner) for ck in ('tl', 'tr', 'bl', 'br')}
 
-        # 双 mask：外层 255 - 内层 255 = band
-        band_outer_img = make_mask((w, h))
-        fill_rect_mask(band_outer_img, outer_rect_i, 255)
-        if any(r > 0 for r in outer_radii_i.values()):
-            apply_rounded_corners_to_mask(band_outer_img, outer_rect_i, outer_radii_i, fill_value=255)
-
         band_inner_img = make_mask((w, h))
         fill_rect_mask(band_inner_img, inner_rect_i, 255)
         if any(r > 0 for r in inner_radii_i.values()):
             apply_rounded_corners_to_mask(band_inner_img, inner_rect_i, inner_radii_i, fill_value=255)
+        band_inner_bool = np.array(band_inner_img, dtype=bool)
 
-        band = np.array(band_outer_img, dtype=bool) & ~np.array(band_inner_img, dtype=bool)
+        # band = 本层外边界(复用前层内边界) - 本层内边界
+        band = prev_inner_bool & ~band_inner_bool
         bands.append((band, layer))
+        prev_inner_bool = band_inner_bool
 
     # 3. 处理剩余区域
     all_bands = np.zeros((h, w), dtype=bool)
@@ -717,32 +712,19 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
 
     frame_mask = np.array(frame_outer_img, dtype=bool) & ~np.array(frame_inner_img, dtype=bool)
 
-    # 2. 按每层 border offset 切分 band
+# 2. 按每层 border offset 切分 band
+    #    [H-01] 内存优化：与 rect_hole 同理，第 i 层外边界 == 第 i-1 层内边界，
+    #    每层只构建一张内边界 L 形 mask，外边界复用前一层的内边界 bool 数组。
     bands: list[tuple[np.ndarray, BorderLayer]] = []
     cumulative_offset = 0
+    # 首层外边界 t=0 即 outer，与 frame_outer 参数完全一致，直接复用其 bool 数组
+    prev_inner_bool: np.ndarray = np.array(frame_outer_img, dtype=bool)
 
     for layer in design.borders:
         layer.offset_px = design.cm2px(layer.offset_cm)
         t_layer = int(round(max(1, layer.offset_px)))
         t_outer = cumulative_offset
         cumulative_offset += t_layer
-
-        # 外层 L 形（偏移 t_outer）
-        outer_at = RectShape(
-            x=outer.x + t_outer, y=outer.y + t_outer,
-            w=max(1, outer.w - 2 * t_outer),
-            h=max(1, outer.h - 2 * t_outer),
-            corner_r=0.0
-        )
-        outer_cut_w = max(0.0, cut_w - t_outer)
-        outer_cut_h = max(0.0, cut_h - t_outer)
-        outer_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_outer)
-                         for ck in ('tl', 'tr', 'bl', 'br')}
-
-        band_outer_img = build_lshape_mask(
-            (w, h), outer_at, cut_corner,
-            outer_cut_w, outer_cut_h,
-            outer_radii_i, fill_value=255)
 
         # 内层 L 形（偏移 t_outer + t_layer）
         t_inner = t_outer + t_layer
@@ -761,9 +743,12 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
             (w, h), inner_at, cut_corner,
             inner_cut_w, inner_cut_h,
             inner_radii_i, fill_value=255)
+        band_inner_bool = np.array(band_inner_img, dtype=bool)
 
-        band = np.array(band_outer_img, dtype=bool) & ~np.array(band_inner_img, dtype=bool)
+        # band = 本层外边界(复用前层内边界) - 本层内边界
+        band = prev_inner_bool & ~band_inner_bool
         bands.append((band, layer))
+        prev_inner_bool = band_inner_bool
 
     # 3. 处理剩余区域
     all_bands = np.zeros((h, w), dtype=bool)

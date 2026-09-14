@@ -237,6 +237,39 @@ from ..config import (  # noqa: F401  (模块级再导出)
 )
 
 
+def _is_innermost_layer(i: int, n: int) -> bool:
+    """[INV-B4] 最内层 (i=n-1) → 实心（结构性不变量：间隙需要两侧边框夹住，最内层无内侧邻居）"""
+    return i == n - 1
+
+
+def _is_too_thick_layer(t: int) -> bool:
+    """[INV-G2] 厚度 > GAP_MAX_THICKNESS → 实心（不可能是间隙）"""
+    return t > GAP_MAX_THICKNESS_GLOBAL
+
+
+def _is_outer_dark_layer(i: int, max_rgb: float) -> bool:
+    """[INV-G1] 最外层(i=0) 深色边框 max(RGB) ≤ SENTINEL_OUTER_DARK_MAX_RGB → 实心（S-1 安全锚）"""
+    return i == 0 and max_rgb <= SENTINEL_OUTER_DARK_MAX_RGB
+
+
+def _is_sandwich_gap(i: int, n: int, d_left: float, d_right: float) -> bool:
+    """中间层 (0 < i < n-1)：两侧都有邻居 AND 与两侧差异均 > GAP_NEIGHBOR_MIN → 间隙"""
+    if not (0 < i < n - 1):
+        return False
+    return d_left >= GAP_NEIGHBOR_MIN_DIST_GLOBAL and \
+        d_right >= GAP_NEIGHBOR_MIN_DIST_GLOBAL
+
+
+def _is_outer_sentinel_gap(i: int, max_rgb: float, d_right: float, d_bg: float, d_content: float) -> bool:
+    """sentinel 外层 (i=0)：浅色 (maxRGB>阈值) AND 与下一层差异 > 阈值 AND (接近BG 或 接近内容) → 间隙"""
+    if i != 0 or d_right <= 0.0:
+        return False
+    near_bg_or_content = d_bg < GAP_BG_DIST_GLOBAL or d_content < GAP_CONTENT_DIST_GLOBAL
+    return max_rgb > SENTINEL_OUTER_DARK_MAX_RGB and \
+        d_right >= GAP_NEIGHBOR_MIN_DIST_GLOBAL and \
+        near_bg_or_content
+
+
 def classify_gap_layers(
     border_layers: list[tuple[tuple[int, int, int], int]],
     bg_color: tuple[int, int, int] = (255, 255, 255),
@@ -285,15 +318,15 @@ def classify_gap_layers(
         d_content = float(np.sqrt(np.sum((c_arr - content_ref) ** 2)))
 
         # Step 1. [INV-B4] 最内层(i=n-1) -> 实心（结构性不变量）
-        if i == n - 1:
+        if _is_innermost_layer(i, n):
             continue
 
         # Step 2. 厚度太大 -> 实心
-        if t > GAP_MAX_THICKNESS_GLOBAL:
+        if _is_too_thick_layer(t):
             continue
 
         # Step 3. [INV-G1] 最外层深色边框 -> 实心 (永不间隙)
-        if i == 0 and max_rgb <= SENTINEL_OUTER_DARK_MAX_RGB:
+        if _is_outer_dark_layer(i, max_rgb):
             continue
 
         has_left = i > 0
@@ -307,21 +340,14 @@ def classify_gap_layers(
             d_right = float(np.sqrt(np.sum((c_arr - rc) ** 2)))
 
         # Step 4. 中间层 sandwiched -> 间隙
-        if 0 < i < n - 1 and has_left and has_right:
-            if d_left >= GAP_NEIGHBOR_MIN_DIST_GLOBAL and \
-               d_right >= GAP_NEIGHBOR_MIN_DIST_GLOBAL:
-                is_gap_layer[i] = True
-                continue
+        if _is_sandwich_gap(i, n, d_left, d_right):
+            is_gap_layer[i] = True
+            continue
 
         # Step 5. sentinel 外层 -> 间隙条件
-        if i == 0 and has_right:
-            # 浅色外层 + 与下一层差异大 + (接近BG or 接近内容)
-            near_bg_or_content = d_bg < GAP_BG_DIST_GLOBAL or d_content < GAP_CONTENT_DIST_GLOBAL
-            if max_rgb > SENTINEL_OUTER_DARK_MAX_RGB and \
-               d_right >= GAP_NEIGHBOR_MIN_DIST_GLOBAL and \
-               near_bg_or_content:
-                is_gap_layer[i] = True
-                continue
+        if _is_outer_sentinel_gap(i, max_rgb, d_right, d_bg, d_content):
+            is_gap_layer[i] = True
+            continue
 
         # Step 6. 其余 -> 实心（默认 False 已设）
 

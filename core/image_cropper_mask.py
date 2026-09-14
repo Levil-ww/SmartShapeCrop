@@ -122,155 +122,240 @@ def _build_multi_layer_corner_mask(
     mask_arr = np.ones((h, w), dtype=np.uint8) * 255
 
     for corner_key, r in valid_corners.items():
-        if r <= 0:
-            continue
-
-        r = min(r, max(1, min(w, h) // 2))
-        if r <= 0:
-            continue
-
-        if corner_key == 'tl':
-            cx, cy = r, r
-        elif corner_key == 'tr':
-            cx, cy = w - r, r
-        elif corner_key == 'bl':
-            cx, cy = r, h - r
-        else:  # br
-            cx, cy = w - r, h - r
-
-        x1 = max(0, cx - r)
-        y1 = max(0, cy - r)
-        x2 = min(w, cx + r)
-        y2 = min(h, cy + r)
-
-        if x2 <= x1 or y2 <= y1:
-            continue
-
-        yy, xx = np.mgrid[y1:y2, x1:x2].astype(np.float64)
-        dx = xx - float(cx)
-        dy = yy - float(cy)
-        dist = np.sqrt(dx * dx + dy * dy)
-        angle = np.degrees(np.arctan2(dy, dx))
-        angle = np.mod(angle, 360.0)
-        ang_min, ang_max = CORNER_ANGLES[corner_key]
-
-        # ===== [A) 基础 outer L-cut + 智能 ring 保护（仅实心边框）] =====
-        # Step 1: 标准 L 形裁切（外层半径 r）
-        # 当 protect_content=True 时，只在边框条带内裁切（内容区保持直角）
-        # 当 protect_content=False 时，裁掉整个扇形外部（正常圆角）
-        # 支持 per-corner dict 或 全局 bool
-        if isinstance(protect_content, dict):
-            corner_protect = protect_content.get(corner_key, False)
-        else:
-            corner_protect = protect_content
-
-        # 基础裁切区域：扇形外部（dist > r）
-        # [Fix INV-5] 使用 <= ang_max 而非 < ang_max，确保边界像素被裁切，
-        # 防止花漾之约等案例出现白色三角伪影
-        # [Fix 绕接] 0°/360° 绕接处纳入 sector，避免右边缘直边边框被误切
-        base_cut = _angle_in_corner_sector(angle, corner_key, tol=2.0) & (dist > r)
-
-        # [Fix 深色弧形缺口] border_zone 无条件定义，用于后续 ring_region 限制
-        T_plus = max(raw_depth + 2, 4)
-        if corner_key == 'tl':
-            border_zone = (xx <= T_plus) | (yy <= T_plus)
-        elif corner_key == 'tr':
-            border_zone = (((w - 1) - xx) <= T_plus) | (yy <= T_plus)
-        elif corner_key == 'bl':
-            border_zone = (xx <= T_plus) | (((h - 1) - yy) <= T_plus)
-        else:
-            border_zone = (((w - 1) - xx) <= T_plus) | (((h - 1) - yy) <= T_plus)
-
-        if corner_protect and raw_depth > 0:
-            # [Fix 白色竖线] inner_cut 只裁切边框环带 [r - raw_depth - 2, r]，
-            # 不裁切内容区（dist < r - raw_depth - 2）。
-            # 旧逻辑 inner_cut = (dist <= r) & border_zone 切了 border_zone 内 dist<=r
-            # 的全部像素——包括内容区——这些像素在 ring_region 的保护范围之外，
-            # 被 mask 切白后形成紧贴直边的白色竖线（庄园秘境、有细边框的产品）。
-            border_ring_inner = max(0.0, float(r) - float(raw_depth) - 2.0)
-            inner_cut = (dist <= r) & (dist >= border_ring_inner) & border_zone
-            outer_cut = base_cut | inner_cut
-        else:
-            outer_cut = base_cut
-
-        # Step 2: 构建实心边框保护区域（仅保护实心边框层，间隙层必须裁切）
-        # [Fix v5] 核心修复：重建 ring_region 逻辑，确保间隙区域完全不被保护。
-        #
-        # 旧逻辑缺陷：
-        #   ring_region 基于 solid_border_depths 计算 inner_bound，但间隙层的
-        #   扣除逻辑（gap_protect_removed）在某些情况下失效，导致间隙像素残留。
-        #   特别是当 r 较大时，保护范围可能覆盖间隙层。
-        #
-        # 新逻辑：
-        #   1. 计算基础保护区域（从 r - total_border_depth 到 r + 2）
-        #   2. 如果间隙层在最外层或最内层，强制从基础保护中扣除
-        #   3. 确保间隙区域（gap_regions）的径向范围完全被排除
-        if total_border_depth > 0:
-            # 基础保护区域的内边界
-            # 使用 total_border_depth（所有层厚度）确保覆盖所有边框和间隙
-            if r <= total_border_depth * 2.0:
-                # r 较小：保护厚度限制在 r 以内
-                max_protect = max(0, r - 2)
-            else:
-                max_protect = total_border_depth + 2  # 总厚度 + 2px 容差
-
-            if max_protect > 0:
-                ring_inner_bound = max(0.0, float(r) - float(max_protect))
-                ring_region = _angle_in_corner_sector(angle, corner_key, tol=2.0) & \
-                              (dist >= ring_inner_bound) & (dist <= float(r) + 1.5)
-                # [Fix 深色弧形缺口] dist > r 的像素必须在 border_zone 内才保护。
-                # 弧线外侧（dist > r 且不在 border_zone）必须被 base_cut 切为白色，
-                # 不能保留原图深色边框色形成弧形缺口线（蔓生花、素锦）。
-                # border_zone 内的直边边框像素仍需保护，保证边框连续。
-                ring_region = ring_region & (~(dist > float(r)) | border_zone)
-                # [Fix 0°/90° 接缝] 弧线内侧（dist <= r）的边框条带像素一律保护，
-                # 避免角落扇区角度边界把右/底直边边框条带误切出白点。
-                # 弧线外侧仍由上方条件约束：必须在 sector 内且位于 border_zone。
-                ring_region = ring_region | (
-                    border_zone & (dist >= ring_inner_bound) & (dist <= float(r))
-                )
-            else:
-                ring_region = np.zeros_like(base_cut, dtype=bool)
-
-            # [Fix v7] 强制扣除所有间隙层的径向范围
-            # 无论间隙层在哪个位置（最外层、中间、最内层），都必须从保护中移除
-            # 使用精确的间隙范围（不过度扩展，避免清除内容像素）
-            if gap_layer_indices:
-                gap_protect_removed = np.zeros_like(ring_region, dtype=bool)
-                for g_idx in gap_layer_indices:
-                    if g_idx < len(border_layers):
-                        g_thickness = border_layers[g_idx][1]
-                        # 使用原始 cumulative_depths（包含间隙层）来计算径向位置
-                        cum_before = cumulative_depths[g_idx]  # 间隙前的累积深度
-                        cum_after = cum_before + g_thickness  # 间隙后的累积深度
-                        # 间隙层在圆弧上的径向范围：
-                        gap_dist_near = float(r) - float(cum_before)  # 靠近外弧的一侧
-                        gap_dist_far = float(r) - float(cum_after)    # 靠近内弧的一侧
-                        # 确保方向正确：靠近外弧的 dist 更大
-                        if gap_dist_near > gap_dist_far:
-                            # [Fix v7] 使用精确范围，不过度扩展
-                            # 仅清除间隙层本身，不影响相邻边框和内容
-                            gap_mask = ring_region & (dist >= gap_dist_far - 0.5) & (dist <= gap_dist_near + 0.5)
-                            gap_protect_removed = gap_protect_removed | gap_mask
-                # 将间隙区域从 ring_region 中移除
-                ring_region = ring_region & (~gap_protect_removed)
-        else:
-            ring_region = np.zeros_like(base_cut, dtype=bool)
-
-        outer_cut = outer_cut & (~ring_region)
-
-        mask_local = mask_arr[y1:y2, x1:x2]
-        mask_local[outer_cut] = 0
-
-        # [Fix 2026-09-12 N-P1-03] 嵌套矩形恢复段已删除（死代码清理）。
-        # 原因：调用方 image_cropper_border.py 的 corner_protect_map 对所有圆角角
-        #   恒为 True（r_px > 0），故保护模式恒启用，原 B 段 90+ 行逻辑永不被执行。
-        #   统一走保护模式：只裁剪边框条带，内部图案保持直角。
-
-        mask_arr[y1:y2, x1:x2] = mask_local
+        _apply_corner_cut_to_mask(
+            mask_arr, corner_key, r, w, h,
+            raw_depth=raw_depth,
+            border_layers=border_layers,
+            gap_layer_indices=gap_layer_indices,
+            cumulative_depths=cumulative_depths,
+            total_border_depth=total_border_depth,
+            protect_content=protect_content,
+        )
 
     mask = Image.fromarray(mask_arr, mode='L')
     return mask
+
+
+def _compute_corner_geometry(
+    w: int, h: int, corner_key: str, r: int,
+) -> tuple[int, int, int, int, int, int] | None:
+    """[H-02] 计算单个角落的圆心、扇区 bbox。
+
+    Returns:
+        (cx, cy, x1, y1, x2, y2)；几何退化（r<=0 或 bbox 为空）时返回 None。
+    """
+    r = min(r, max(1, min(w, h) // 2))
+    if r <= 0:
+        return None
+
+    if corner_key == 'tl':
+        cx, cy = r, r
+    elif corner_key == 'tr':
+        cx, cy = w - r, r
+    elif corner_key == 'bl':
+        cx, cy = r, h - r
+    else:  # br
+        cx, cy = w - r, h - r
+
+    x1 = max(0, cx - r)
+    y1 = max(0, cy - r)
+    x2 = min(w, cx + r)
+    y2 = min(h, cy + r)
+
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    return cx, cy, x1, y1, x2, y2
+
+
+def _build_base_cut_region(
+    angle: np.ndarray,
+    dist: np.ndarray,
+    r: int,
+    corner_key: str,
+    protect_content: dict[str, bool] | bool,
+    raw_depth: int,
+    border_zone: np.ndarray,
+) -> np.ndarray:
+    """[H-02] 构建该角落的基础裁切区域（含内容保护模式下的内环裁切）。
+
+    Returns:
+        outer_cut: bool 数组 —— True 表示该像素需要被裁掉。
+    """
+    # 基础裁切区域：扇形外部（dist > r）
+    # [Fix INV-5] 使用 <= ang_max 而非 < ang_max，确保边界像素被裁切，
+    # 防止花漾之约等案例出现白色三角伪影
+    # [Fix 绕接] 0°/360° 绕接处纳入 sector，避免右边缘直边边框被误切
+    base_cut = _angle_in_corner_sector(angle, corner_key, tol=2.0) & (dist > r)
+
+    # per-corner dict 或 全局 bool
+    if isinstance(protect_content, dict):
+        corner_protect = protect_content.get(corner_key, False)
+    else:
+        corner_protect = protect_content
+
+    if corner_protect and raw_depth > 0:
+        # [Fix 白色竖线] inner_cut 只裁切边框环带 [r - raw_depth - 2, r]，
+        # 不裁切内容区（dist < r - raw_depth - 2）。
+        # 旧逻辑 inner_cut = (dist <= r) & border_zone 切了 border_zone 内 dist<=r
+        # 的全部像素——包括内容区——这些像素在 ring_region 的保护范围之外，
+        # 被 mask 切白后形成紧贴直边的白色竖线（庄园秘境、有细边框的产品）。
+        border_ring_inner = max(0.0, float(r) - float(raw_depth) - 2.0)
+        inner_cut = (dist <= r) & (dist >= border_ring_inner) & border_zone
+        return base_cut | inner_cut
+    return base_cut
+
+
+def _build_ring_region(
+    angle: np.ndarray,
+    dist: np.ndarray,
+    r: int,
+    corner_key: str,
+    border_zone: np.ndarray,
+    total_border_depth: int,
+    gap_layer_indices: set[int],
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    cumulative_depths: list[int],
+) -> np.ndarray:
+    """[H-02] 构建实心边框保护区域（仅保护实心边框层，间隙层必须裁切）。
+
+    Returns:
+        ring_region: bool 数组 —— True 表示该像素受保护（不被裁掉）。
+    """
+    if total_border_depth <= 0:
+        return np.zeros_like(angle, dtype=bool)
+
+    # [Fix v5] 核心修复：重建 ring_region 逻辑，确保间隙区域完全不被保护。
+    #
+    # 旧逻辑缺陷：
+    #   ring_region 基于 solid_border_depths 计算 inner_bound，但间隙层的
+    #   扣除逻辑（gap_protect_removed）在某些情况下失效，导致间隙像素残留。
+    #   特别是当 r 较大时，保护范围可能覆盖间隙层。
+    #
+    # 新逻辑：
+    #   1. 计算基础保护区域（从 r - total_border_depth 到 r + 2）
+    #   2. 如果间隙层在最外层或最内层，强制从基础保护中扣除
+    #   3. 确保间隙区域（gap_regions）的径向范围完全被排除
+    #
+    # 基础保护区域的内边界
+    # 使用 total_border_depth（所有层厚度）确保覆盖所有边框和间隙
+    if r <= total_border_depth * 2.0:
+        # r 较小：保护厚度限制在 r 以内
+        max_protect = max(0, r - 2)
+    else:
+        max_protect = total_border_depth + 2  # 总厚度 + 2px 容差
+
+    if max_protect > 0:
+        ring_inner_bound = max(0.0, float(r) - float(max_protect))
+        ring_region = _angle_in_corner_sector(angle, corner_key, tol=2.0) & \
+                      (dist >= ring_inner_bound) & (dist <= float(r) + 1.5)
+        # [Fix 深色弧形缺口] dist > r 的像素必须在 border_zone 内才保护。
+        # 弧线外侧（dist > r 且不在 border_zone）必须被 base_cut 切为白色，
+        # 不能保留原图深色边框色形成弧形缺口线（蔓生花、素锦）。
+        # border_zone 内的直边边框像素仍需保护，保证边框连续。
+        ring_region = ring_region & (~(dist > float(r)) | border_zone)
+        # [Fix 0°/90° 接缝] 弧线内侧（dist <= r）的边框条带像素一律保护，
+        # 避免角落扇区角度边界把右/底直边边框条带误切出白点。
+        # 弧线外侧仍由上方条件约束：必须在 sector 内且位于 border_zone。
+        ring_region = ring_region | (
+            border_zone & (dist >= ring_inner_bound) & (dist <= float(r))
+        )
+    else:
+        ring_region = np.zeros_like(angle, dtype=bool)
+
+    # [Fix v7] 强制扣除所有间隙层的径向范围
+    # 无论间隙层在哪个位置（最外层、中间、最内层），都必须从保护中移除
+    # 使用精确的间隙范围（不过度扩展，避免清除内容像素）
+    if gap_layer_indices:
+        gap_protect_removed = np.zeros_like(ring_region, dtype=bool)
+        for g_idx in gap_layer_indices:
+            if g_idx < len(border_layers):
+                g_thickness = border_layers[g_idx][1]
+                # 使用原始 cumulative_depths（包含间隙层）来计算径向位置
+                cum_before = cumulative_depths[g_idx]  # 间隙前的累积深度
+                cum_after = cum_before + g_thickness  # 间隙后的累积深度
+                # 间隙层在圆弧上的径向范围：
+                gap_dist_near = float(r) - float(cum_before)  # 靠近外弧的一侧
+                gap_dist_far = float(r) - float(cum_after)    # 靠近内弧的一侧
+                # 确保方向正确：靠近外弧的 dist 更大
+                if gap_dist_near > gap_dist_far:
+                    # [Fix v7] 使用精确范围，不过度扩展
+                    # 仅清除间隙层本身，不影响相邻边框和内容
+                    gap_mask = ring_region & (dist >= gap_dist_far - 0.5) & (dist <= gap_dist_near + 0.5)
+                    gap_protect_removed = gap_protect_removed | gap_mask
+        # 将间隙区域从 ring_region 中移除
+        ring_region = ring_region & (~gap_protect_removed)
+    return ring_region
+
+
+def _apply_corner_cut_to_mask(
+    mask_arr: np.ndarray,
+    corner_key: str,
+    r: int,
+    w: int,
+    h: int,
+    raw_depth: int,
+    border_layers: list[tuple[tuple[int, int, int], int]],
+    gap_layer_indices: set[int],
+    cumulative_depths: list[int],
+    total_border_depth: int,
+    protect_content: dict[str, bool] | bool,
+) -> None:
+    """[H-02] 对单个角落应用多层边框动态圆角裁切（原主循环体拆分）。"""
+    # 与原实现一致：先将 r 限制到合理范围，后续几何/基础裁切/ring 保护均用裁剪后的 r
+    r = min(r, max(1, min(w, h) // 2))
+    if r <= 0:
+        return
+    geom = _compute_corner_geometry(w, h, corner_key, r)
+    if geom is None:
+        return
+    cx, cy, x1, y1, x2, y2 = geom
+
+    yy, xx = np.mgrid[y1:y2, x1:x2].astype(np.float64)
+    dx = xx - float(cx)
+    dy = yy - float(cy)
+    dist = np.sqrt(dx * dx + dy * dy)
+    angle = np.degrees(np.arctan2(dy, dx))
+    angle = np.mod(angle, 360.0)
+
+    # [Fix 深色弧形缺口] border_zone 无条件定义，用于后续 ring_region 限制
+    T_plus = max(raw_depth + 2, 4)
+    if corner_key == 'tl':
+        border_zone = (xx <= T_plus) | (yy <= T_plus)
+    elif corner_key == 'tr':
+        border_zone = (((w - 1) - xx) <= T_plus) | (yy <= T_plus)
+    elif corner_key == 'bl':
+        border_zone = (xx <= T_plus) | (((h - 1) - yy) <= T_plus)
+    else:
+        border_zone = (((w - 1) - xx) <= T_plus) | (((h - 1) - yy) <= T_plus)
+
+    outer_cut = _build_base_cut_region(
+        angle, dist, r, corner_key,
+        protect_content=protect_content,
+        raw_depth=raw_depth,
+        border_zone=border_zone,
+    )
+
+    ring_region = _build_ring_region(
+        angle, dist, r, corner_key,
+        border_zone=border_zone,
+        total_border_depth=total_border_depth,
+        gap_layer_indices=gap_layer_indices,
+        border_layers=border_layers,
+        cumulative_depths=cumulative_depths,
+    )
+
+    outer_cut = outer_cut & (~ring_region)
+
+    mask_local = mask_arr[y1:y2, x1:x2]
+    mask_local[outer_cut] = 0
+
+    # [Fix 2026-09-12 N-P1-03] 嵌套矩形恢复段已删除（死代码清理）。
+    # 原因：调用方 image_cropper_border.py 的 corner_protect_map 对所有圆角角
+    #   恒为 True（r_px > 0），故保护模式恒启用，原 B 段 90+ 行逻辑永不被执行。
+    #   统一走保护模式：只裁剪边框条带，内部图案保持直角。
+
+    mask_arr[y1:y2, x1:x2] = mask_local
 
 def _estimate_outer_background(img: Image.Image, ring_px: int = 5) -> tuple[int, int, int]:
     """

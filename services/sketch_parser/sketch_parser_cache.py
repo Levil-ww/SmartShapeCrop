@@ -54,6 +54,25 @@ _SKETCH_CONSISTENT_CACHE_MAX = 50
 _SKETCH_CONSISTENT_CACHE_LOCK = threading.Lock()
 
 
+def _get_image_content_fingerprint(image_path: str) -> str | None:
+    """[H-08] 图像内容指纹：文件大小 + 前 64KB 的 sha256 摘要。
+
+    缓存键仅依赖 mtime 时，文件内容不变但 mtime 变化会失效、mtime 相同但内容
+    变化可能误用过期缓存。此处引入内容指纹（前 N KB 哈希，避免大图全量读取开销）
+    作为缓存键补充，使缓存键同时反映内容特征。读取失败时返回 None（降级为仅 mtime）。
+    """
+    try:
+        size = os.path.getsize(image_path)
+        with open(image_path, 'rb') as f:
+            head = f.read(64 * 1024)
+        import hashlib
+        digest = hashlib.sha256(head).hexdigest()
+        return f"{size}:{digest}"
+    except Exception:
+        logger.debug("[_get_image_content_fingerprint] 忽略异常", exc_info=True)
+        return None
+
+
 
 def _get_cache_key(image_path: str, target_w: float, target_h: float) -> tuple:
     try:
@@ -61,7 +80,8 @@ def _get_cache_key(image_path: str, target_w: float, target_h: float) -> tuple:
     except Exception:
         logger.debug("[_get_cache_key] 忽略异常", exc_info=True)
         mtime = 0
-    return (image_path, mtime, round(target_w, 1), round(target_h, 1), _ALGO_VERSION)
+    fingerprint = _get_image_content_fingerprint(image_path)
+    return (image_path, mtime, fingerprint, round(target_w, 1), round(target_h, 1), _ALGO_VERSION)
 
 
 
@@ -94,7 +114,8 @@ def _get_consistent_cache_key(image_path: str) -> tuple:
     except Exception:
         logger.debug("[_get_consistent_cache_key] 忽略异常", exc_info=True)
         mtime = 0
-    return (image_path, mtime, _ALGO_VERSION)
+    fingerprint = _get_image_content_fingerprint(image_path)
+    return (image_path, mtime, fingerprint, _ALGO_VERSION)
 
 
 

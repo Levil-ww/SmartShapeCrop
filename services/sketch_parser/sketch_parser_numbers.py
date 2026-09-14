@@ -27,6 +27,29 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
+# ---- [H-09] OCR 数值处理阈值集中定义（来源：各位注释中的 OCR 经验规则）----
+# 浮点比较容差（同一数字重复检测 / 整数判定）
+FLOAT_EPS = 0.01
+# 两位数判定边界：[10, 99] —— 小数恢复仅对 2 位整数尝试（74 → 7.4）
+TWO_DIGIT_MIN = 10
+TWO_DIGIT_MAX = 99
+# 拼接值合理上限（0.5 ~ 500：边距/尺寸小数合并的物理范围）
+CONCAT_MIN = 0.5
+CONCAT_MAX = 500.0
+# 防误合并阈值：a >= 10 且拼接结果 > 50（边距一般 < 50，内框不需要小数合并）
+MERGE_SKIP_GT = 50.0
+# 前导虚假数字去除（110 → 10）上限：仅处理 <= 110 的 3 位数，避免误伤 150/200
+LEADING_ONE_MAX_VAL = 110
+# 前导 1 去除后的合理输出范围 [5.0, 99.0]
+LEADING_ONE_MIN_OUT = 5.0
+LEADING_ONE_MAX_OUT = 99.0
+# 恢复值覆盖阈值：新恢复值原始 conf 需比已有恢复值高 10% 以上（来源：同源检测规则）
+RECOVER_CONF_BOOST = 1.10
+# 小标签 conf 阈值：略低于主 OCR 的 10，多给小标签一次机会（来源：方向标签数字扫描）
+SMALL_LABEL_CONF_MIN = 8
+
+
+
 from .sketch_parser_base import _PARSE_TIMEOUT_SEC
 from .sketch_parser_base import _normalize_ocr_text
 
@@ -54,7 +77,7 @@ def _merge_split_decimals(ocr_results):
             a_val, a_conf, a_bb = ordered[i]
             b_val, b_conf, b_bb = ordered[i+1]
             # 跳过：已有小数
-            if abs(a_val - round(a_val)) > 0.01 or abs(b_val - round(b_val)) > 0.01:
+            if abs(a_val - round(a_val)) > FLOAT_EPS or abs(b_val - round(b_val)) > FLOAT_EPS:
                 continue
             # bbox紧邻检查
             acx, acy = a_bb[0]+a_bb[2]/2, a_bb[1]+a_bb[3]/2
@@ -75,7 +98,7 @@ def _merge_split_decimals(ocr_results):
             is_high_overlap = overlap_area > min_area * 0.5
             if is_high_overlap:
                 # 高重叠：如果两个值相同（重复检测）则跳过；如果值不同则继续尝试小数合并
-                if abs(a_val - b_val) < 0.01:
+                if abs(a_val - b_val) < FLOAT_EPS:
                     continue  # 同一数字的重复检测，跳过
                 # 值不同 → 可能是小数被拆成两个数字
                 # [Fix] 但如果是 两位数+个位数（a>=10, b<10）的高重叠，说明a本身就是完整独立值，b是别处碎片
@@ -98,12 +121,12 @@ def _merge_split_decimals(ocr_results):
                     # 如果是相邻的非高重叠（如43+5=43.5）：结果需<=999且 > 前整数
                     if a_val >= 10 and is_high_overlap:
                         pass  # 已在前面排除，这里不执行
-                    if 0.5 <= concat <= 500 and concat > a_val:
+                    if CONCAT_MIN <= concat <= CONCAT_MAX and concat > a_val:
                         # [防误合并] 两位数或更大整数 + 个位数 的拼接：
                         # 非高重叠（相邻排列）场景下，74+4=74.4 > 50，基本不可能是边距小数，只允许当 合并值 <= 99.9 且 合并后的值 看起来像"内框尺寸"才允许
                         # 更简单：若 a >= 10 且 拼接后的整数部分(a_val) >= 10 且 结果值 > 50 → 跳过
                         # （边距一般 < 50；内框尺寸 > 50 不需要这种小数合并）
-                        if a_val >= 10 and concat > 50.0:
+                        if a_val >= TWO_DIGIT_MIN and concat > MERGE_SKIP_GT:
                             pass  # 不允许 74+4→74.4 这类误合并
                         else:
                             forward_concat = concat
@@ -114,9 +137,9 @@ def _merge_split_decimals(ocr_results):
             if a_val < 10 and a_val >= 1 and small_first:
                 try:
                     concat = float(f"{int(b_val)}.{int(a_val)}")
-                    if 0.5 <= concat <= 500 and concat > b_val:
+                    if CONCAT_MIN <= concat <= CONCAT_MAX and concat > b_val:
                         # [防误合并] 两位数或更大整数 + 个位数 的反向拼接 >50 跳过
-                        if b_val >= 10 and concat > 50.0:
+                        if b_val >= TWO_DIGIT_MIN and concat > MERGE_SKIP_GT:
                             pass
                         else:
                             reverse_concat = concat
@@ -163,7 +186,7 @@ def _merge_split_decimals(ocr_results):
     # 原理：OCR常漏小数点，或末尾多加0
     phase3 = []
     for val, conf, bb in merged:
-        if abs(val - round(val)) > 0.01:
+        if abs(val - round(val)) > FLOAT_EPS:
             continue  # 已是小数，跳过
         s = str(int(val))
         if not (2 <= len(s) <= 3):
@@ -225,15 +248,15 @@ def _merge_split_decimals(ocr_results):
     # 仅对 110→10 这种高频OCR误差做去除尝试（不影响150、200等正确整百数）
     phase4 = []
     for val, conf, bb in merged:
-        if abs(val - round(val)) > 0.01:
+        if abs(val - round(val)) > FLOAT_EPS:
             continue
         s = str(int(val))
         # 仅处理以1开头、末位为0、值<=110的3位数：110→10
         # 限制<=110是为了避免把150→50（150是正确的外框值）
-        if len(s) == 3 and s[0] == '1' and s[2] == '0' and s[1] != '0' and val <= 110:
+        if len(s) == 3 and s[0] == '1' and s[2] == '0' and s[1] != '0' and val <= LEADING_ONE_MAX_VAL:
             try:
                 vv = float(s[1:])  # 110→10
-                if 5.0 <= vv <= 99.0:
+                if LEADING_ONE_MIN_OUT <= vv <= LEADING_ONE_MAX_OUT:
                     phase4.append((vv, conf * 0.5, bb))
                     logger.info(f"[OCR前导1去除] {val} → {vv}")
             except ValueError:
@@ -417,7 +440,7 @@ def _try_bind_value(state, caps, dir_char, val, conf, bx, by, bw, bh, tag):
             _, _, old_raw_conf = _recovered_meta[existing_field]
             if is_recovered:
                 # 新值也是恢复值：需要比已有恢复值高10%以上的原始conf
-                return new_conf > old_raw_conf * 1.10
+                return new_conf > old_raw_conf * RECOVER_CONF_BOOST
             else:
                 # 新值是直接值：直接值可以覆盖恢复值（直接OCR更可信）
                 return conf > old_conf
@@ -442,7 +465,7 @@ def _try_bind_value(state, caps, dir_char, val, conf, bx, by, bw, bh, tag):
     if not _is_reasonable_margin_for_field(val, field_hint=field):
         # ----- 小数点恢复尝试：OCR把"7.4"读成"74"的补漏 -----
         # 仅对整数值尝试（非整数已经是正确的小数格式）
-        if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
+        if abs(val - round(val)) <= FLOAT_EPS and TWO_DIGIT_MIN <= val <= TWO_DIGIT_MAX:
             s = str(int(val))
             src_int = int(val)  # 记录源整数用于同源检测
             candidates = []
@@ -485,7 +508,7 @@ def _try_bind_value(state, caps, dir_char, val, conf, bx, by, bw, bh, tag):
                             return
                     # [同值检测] 恢复值与已有其他字段值相同 → 拒绝（左右/上下重复识别）
                     for other_field, (o_val, _, _) in result.items():
-                        if other_field != field and abs(o_val - dec_val) < 0.01:
+                        if other_field != field and abs(o_val - dec_val) < FLOAT_EPS:
                             if other_field in _recovered_meta:
                                 logger.info(
                                     f"[Step4] 同值冲突拒绝: {dir_char}={src_int}→{dec_val:.1f}cm → {field} "
@@ -653,7 +676,7 @@ def _scan_ocr_pass(state, caps, cv2, tesseract, gray_img, enhanced_gray, check_c
                     except Exception:
                         logger.debug("[_extract_direction_label_numbers] 忽略异常", exc_info=True)
                         ci = 0
-                    if ci < 8:  # 略低于主OCR的阈值10，多给小标签一次机会
+                    if ci < SMALL_LABEL_CONF_MIN:  # 略低于主OCR的阈值10，多给小标签一次机会
                         continue
 
                     # ---- 形式A/A2：单token双向匹配 ----
@@ -1022,7 +1045,7 @@ def _phase4_decimal_recovery(state, caps):
         # 跳过已经是恢复值的字段（由_try_bind锁定，不重复处理）
         if field_name in _recovered_meta:
             continue
-        if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
+        if abs(val - round(val)) <= FLOAT_EPS and TWO_DIGIT_MIN <= val <= TWO_DIGIT_MAX:
             s = str(int(val))
             src_int = int(val)
             # 2位数恢复：74 → 7.4，85 → 8.5
@@ -1074,7 +1097,7 @@ def _phase4_decimal_recovery(state, caps):
                 continue
         # 同值检测
         for other_field, (o_val, _, _) in result.items():
-            if other_field != fn and abs(o_val - rv) < 0.01:
+            if other_field != fn and abs(o_val - rv) < FLOAT_EPS:
                 if other_field in _recovered_meta:
                     logger.info(
                         f"[Step4] Phase4同值冲突拒绝: {fn}={src_int}→{rv:.1f} "

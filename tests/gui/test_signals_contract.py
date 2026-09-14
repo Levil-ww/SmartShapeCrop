@@ -102,15 +102,32 @@ class TestCrossPanelInjection:
         )
 
     def test_injection_establishes_wiring(self, property_panel, lshape_panel, gui_helpers):
+        """[H-13] 注入后建立桥接：LShapePanel 13 信号经 LShapePanelBridge 合并为
+        lshape_action_requested -> _on_lshape_action（原逐信号直连契约收敛为 1 条 action 线，
+        行为等价由 h13_smoke 的 13/13 冒烟保障）。"""
+        from gui.lshape_panel_bridge import LShapePanelBridge
         property_panel.set_lshape_panel(lshape_panel)
         assert property_panel._lshape_panel is lshape_panel, '注入后应持有引用'
-        gui_helpers.assert_signal_connected(
-            lshape_panel.lshape_params_changed,
-            property_panel._on_lshape_params_changed,
-            'LShapePanel.lshape_params_changed -> PropertyPanel._on_lshape_params_changed',
+        assert isinstance(property_panel._lshape_bridge, LShapePanelBridge), (
+            '注入后应建立 LShapePanelBridge（H-13 桥接）'
         )
         gui_helpers.assert_signal_connected(
-            lshape_panel.lshape_applied,
-            property_panel._on_lshape_applied,
-            'LShapePanel.lshape_applied -> PropertyPanel._on_lshape_applied',
+            property_panel._lshape_bridge.lshape_action_requested,
+            property_panel._on_lshape_action,
+            'LShapePanelBridge.lshape_action_requested -> PropertyPanel._on_lshape_action',
+        )
+        # 行为级验证：LShapePanel 信号经 Bridge 触发统一分派（替代原直连断言）
+        for name in ('lshape_params_changed', 'lshape_applied', 'lshape_recognize_finished',
+                     'sketch_pick_requested', 'target_changed', 'generate_requested',
+                     'save_requested'):
+            assert hasattr(lshape_panel, name), f'LShapePanel 应保留信号 {name}'
+        calls = []
+        orig = property_panel._on_lshape_applied
+        property_panel._on_lshape_applied = lambda *a: calls.append(a)
+        try:
+            lshape_panel.lshape_applied.emit({'mode': 'rect_lshape'})
+        finally:
+            property_panel._on_lshape_applied = orig
+        assert calls == [({'mode': 'rect_lshape'},)], (
+            f'lshape_applied 应经 Bridge 分派到 _on_lshape_applied，实际 {calls}'
         )

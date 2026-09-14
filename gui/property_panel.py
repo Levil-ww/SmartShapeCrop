@@ -408,73 +408,108 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def set_lshape_panel(self, panel) -> None:
         """main.py 在创建两个面板后调用，注入 LShapePanel 引用并连接信号。
 
-        [2026-09-03 状态隔离]：目标文件名文本在两个面板之间不再双向同步（Safety 1）。
+[2026-09-03 状态隔离]：目标文件名文本在两个面板之间不再双向同步（Safety 1）。
         仅共享"尺寸解析结果、草图路径、渲染参数"等共享工作状态；
         历史记录按来源面板单独写入（Safety 2），不再通过 pool_generate_succeeded 互串。
         """
         self._lshape_panel = panel
 
-        # —— L 形挖角原有信号（LShapePanel → PropertyPanel）——
-        panel.lshape_params_changed.connect(self._on_lshape_params_changed)
-        panel.lshape_applied.connect(self._on_lshape_applied)
-        panel.lshape_recognize_started.connect(self._on_lshape_recognize_started)
-        # [2026-09-02 自动 L 形检测] L 形识别结束信号（成功/失败/取消）
-        # PropertyPanel 用来清除 _lshape_auto_pending 标记
-        panel.lshape_recognize_finished.connect(self._on_lshape_recognize_finished)
-
-        # —— 新增：草图上传/清除/查看/拖入（LShapePanel → PropertyPanel，委托同一套方法）——
-        # [2026-09-03 状态隔离 Safety S3/S4] 所有 L 形面板来源的草图操作都传 source='lshape'，
-        # 让 PropertyPanel 内部跳过水池缩略图更新、跳过矩形 7 步解析，仅做：
-        #   内部 _sketch_path 设置、主画布 overlay、L 形面板缩略图更新、L 形自动识别。
-        # 注意：sketch_view_requested 无需 source，因为读的是最新 _sketch_path（两边共享
-        # 最新值即可，不会改变 UI 状态）。
-        panel.sketch_pick_requested.connect(lambda: self._pool_pick_sketch(source='lshape'))
-        panel.sketch_clear_requested.connect(lambda: self._pool_clear_sketch(source='lshape'))
-        panel.sketch_view_requested.connect(self._pool_view_sketch)
-        panel.sketch_load_requested.connect(lambda p: self._pool_load_sketch_from_path(p, source='lshape'))
-
-        # —— 目标文件名变更/选文件/清空（LShapePanel → 仅改 LShape 自己的 LineEdit）——
-        # [2026-09-03 状态隔离] 每个面板的 LineEdit 独立持有自己的 target 文本。
-        # 尺寸解析仍通过 target_changed → _on_lshape_target_changed 走共享逻辑。
-        panel.target_changed.connect(self._on_lshape_target_changed)
-
-        def _lshape_pick_target():
-            """LShapePanel 的「选文件」：写入 LShape 自己的 LineEdit，不改动 Pool 面板。"""
-            p, _ = QFileDialog.getOpenFileName(
-                self, "选择目标文件（或任意文件，程序只用文件名解析）",
-                "", "所有文件 (*.*);;JPG 图片 (*.jpg *.jpeg);;PNG 图片 (*.png)"
-            )
-            if p:
-                basename = os.path.basename(p)
-                # sync_target_from_panel 内部 block_target_signal=True，因此需要手动 emit
-                panel.sync_target_from_panel(basename)
-                panel.target_changed.emit(basename)
-        panel.target_pick_requested.connect(_lshape_pick_target)
-
-        def _lshape_clear_target():
-            """LShapePanel 的「清空」：仅清空 LShape 自己的 LineEdit。"""
-            panel.sync_target_from_panel("")
-            panel.target_changed.emit("")
-        panel.target_clear_requested.connect(_lshape_clear_target)
-
-        # —— 一键生成（LShapePanel → PropertyPanel）。来源参数标记为 lshape，携带自身 target 文本 ——
-        # [2026-09-03 状态隔离]：_pool_run_generate 通过 target_name_override 直接读取 LShape
-        # 面板当前有效值，避免读 Pool 面板的 _pool_target。source 参数用于历史记录隔离。
-        def _lshape_run_generate(_p=panel):
-            self._pool_run_generate(
-                source='lshape',
-                target_name_override=_p.get_target_text(),
-            )
-        panel.generate_requested.connect(_lshape_run_generate)
-
-        # —— 新增：导出 JPG（LShapePanel → PropertyPanel，委托同一套保存流程）——
-        # LShapePanel.save_requested 转发到 PropertyPanel.save_requested，
-        # 后者在 main.py 中已连接到 MainWindow._on_save，保证两个面板导出逻辑完全一致。
-        panel.save_requested.connect(self.save_requested.emit)
+        # —— [H-13] LShapePanel 信号桥接：13 个细粒度信号统一经 LShapePanelBridge
+        # 合并为 lshape_action_requested(action, params)，再由 _on_lshape_action 分派。
+        # 行为与原逐一连接完全等价（各分支调用同一个 handler / 委托方法），
+        # PropertyPanel 对外契约从 13 条信号线收敛为 1 条 action 线。
+        from gui.lshape_panel_bridge import LShapePanelBridge
+        self._lshape_bridge = LShapePanelBridge(panel, self)
+        self._lshape_bridge.lshape_action_requested.connect(self._on_lshape_action)
 
         # —— 草图同步：把当前草图状态回填到 LShapePanel（目标文件名不再同步，保持独立）——
         panel.sync_sketch_preview(getattr(self, '_sketch_path', ''))
         panel.set_sketch_path_for_view(getattr(self, '_sketch_path', ''))
+
+    def _on_lshape_action(self, action: str, params):
+        """[H-13] 统一分派 LShapePanel 的合并 action 信号（替代原逐信号连接）。
+
+        action 与 params 语义由 LShapePanelBridge 约定；各分支调用原有 handler /
+        委托方法，行为与原 set_lshape_panel 中逐一 connect 完全一致：
+
+        - lshape_params_changed / lshape_applied / lshape_recognize_started /
+          lshape_recognize_finished → PropertyPanel 原有 handler；
+        - sketch_pick / sketch_clear / sketch_view / sketch_load →
+          委托 Pool 面板同一套方法，source='lshape' 保持状态隔离；
+        - target_changed → 共享尺寸解析逻辑；
+        - target_pick / target_clear → 仅写 LShape 自己的 LineEdit；
+        - generate_requested → _pool_run_generate(source='lshape',
+          target_name_override=自身 target)；
+        - save_requested → 转发 PropertyPanel.save_requested（main.py 已连接）。
+        """
+        if action == 'lshape_params_changed':
+            self._on_lshape_params_changed()
+        elif action == 'lshape_applied':
+            self._on_lshape_applied(params)
+        elif action == 'lshape_recognize_started':
+            self._on_lshape_recognize_started()
+        elif action == 'lshape_recognize_finished':
+            self._on_lshape_recognize_finished(params)
+        elif action == 'sketch_pick_requested':
+            # [2026-09-03 状态隔离 Safety S3/S4] 草图操作带 source='lshape'
+            self._pool_pick_sketch(source='lshape')
+        elif action == 'sketch_clear_requested':
+            self._pool_clear_sketch(source='lshape')
+        elif action == 'sketch_view_requested':
+            # 无需 source：读最新 _sketch_path（两边共享最新值即可）
+            self._pool_view_sketch()
+        elif action == 'sketch_load_requested':
+            self._pool_load_sketch_from_path(params, source='lshape')
+        elif action == 'target_changed':
+            self._on_lshape_target_changed(params)
+        elif action == 'target_pick_requested':
+            self._lshape_pick_target_file()
+        elif action == 'target_clear_requested':
+            self._lshape_clear_target_file()
+        elif action == 'generate_requested':
+            self._lshape_run_generate()
+        elif action == 'save_requested':
+            # LShapePanel.save_requested 转发到 PropertyPanel.save_requested
+            self.save_requested.emit()
+        else:
+            logger.warning(f"[PropertyPanel] 未知 LShapePanel action: {action}")
+
+    def _lshape_pick_target_file(self):
+        """[H-13] 原 set_lshape_panel 中 target_pick_requested 的闭包逻辑。
+
+        写入 LShape 自己的 LineEdit，不改动 Pool 面板（状态隔离）。
+        """
+        panel = self._lshape_panel
+        if panel is None:
+            return
+        p, _ = QFileDialog.getOpenFileName(
+            self, "选择目标文件（或任意文件，程序只用文件名解析）",
+            "", "所有文件 (*.*);;JPG 图片 (*.jpg *.jpeg);;PNG 图片 (*.png)"
+        )
+        if p:
+            basename = os.path.basename(p)
+            # sync_target_from_panel 内部 block_target_signal=True，因此需要手动 emit
+            panel.sync_target_from_panel(basename)
+            panel.target_changed.emit(basename)
+
+    def _lshape_clear_target_file(self):
+        """[H-13] 原 set_lshape_panel 中 target_clear_requested 的闭包逻辑。"""
+        panel = self._lshape_panel
+        if panel is None:
+            return
+        panel.sync_target_from_panel("")
+        panel.target_changed.emit("")
+
+    def _lshape_run_generate(self):
+        """[H-13] 原 set_lshape_panel 中 generate_requested 的闭包逻辑。
+
+        来源标记为 lshape，通过 target_name_override 携带自身 target 文本（状态隔离）。
+        """
+        panel = self._lshape_panel
+        self._pool_run_generate(
+            source='lshape',
+            target_name_override=panel.get_target_text() if panel is not None else None,
+        )
 
     def _on_lshape_params_changed(self, *_):
         """用户改动 L 形参数（挖角或外框尺寸）→ 同步外框到画布 SpinBox + 状态提示。

@@ -106,21 +106,22 @@ class TestMainWindowSignalWiring:
         )
 
     def test_lshape_signals_wired_into_property_panel(self, main_window, gui_helpers):
-        """set_lshape_panel 内部建立的关键接线（取 3 条代表性链路）。"""
+        """[H-13] set_lshape_panel 建立桥接：LShapePanel 的 13 个信号经
+        LShapePanelBridge 合并为 lshape_action_requested -> _on_lshape_action。
+        原逐信号直连契约收敛为 1 条 action 线（行为等价，见 h13_smoke 验证）。"""
+        from gui.lshape_panel_bridge import LShapePanelBridge
         panel = main_window.panel
         lp = main_window.lshape_panel
-        gui_helpers.assert_signal_connected(
-            lp.lshape_params_changed, panel._on_lshape_params_changed,
-            'LShapePanel.lshape_params_changed -> PropertyPanel._on_lshape_params_changed',
+        assert isinstance(panel._lshape_bridge, LShapePanelBridge), (
+            'PropertyPanel 应持有 LShapePanelBridge（H-13 桥接）'
         )
         gui_helpers.assert_signal_connected(
-            lp.lshape_applied, panel._on_lshape_applied,
-            'LShapePanel.lshape_applied -> PropertyPanel._on_lshape_applied',
+            panel._lshape_bridge.lshape_action_requested, panel._on_lshape_action,
+            'LShapePanelBridge.lshape_action_requested -> PropertyPanel._on_lshape_action',
         )
-        gui_helpers.assert_signal_connected(
-            lp.lshape_recognize_started, panel._on_lshape_recognize_started,
-            'LShapePanel.lshape_recognize_started -> PropertyPanel._on_lshape_recognize_started',
-        )
+        # 原信号定义必须保留（LShapePanel 零改动）
+        for name in ('lshape_params_changed', 'lshape_applied', 'lshape_recognize_started'):
+            assert hasattr(lp, name), f'LShapePanel 应保留信号 {name}'
 
 
 class TestMainWindowShutdownContract:
