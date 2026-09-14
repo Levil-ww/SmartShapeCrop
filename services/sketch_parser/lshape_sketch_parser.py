@@ -1231,6 +1231,11 @@ def parse_lshape_sketch(
         result.debug['stage'] = 'geometry'
         return result
 
+    # G1 审计字段先于 OCR/尺寸求解写入，确保部分结果也能说明检测到的角数。
+    n_detected = geo.get('n_detected', 1)
+    result.notches_detected = n_detected
+    result.notches_consumed = 0
+
     _progress(40, "OCR 识别尺寸数值...")
     tesseract = _safe_import_tesseract()
     ocr_numbers = []
@@ -1310,22 +1315,20 @@ def parse_lshape_sketch(
         return result
 
     # —— G1 闸口：检测到的凹角数 vs 实际消费数 ——
-    n_detected = geo.get('n_detected', 1)
     n_consumed = 1  # 第一期：下游管线仍为单角，只消费 1 个
-    result.notches_detected = n_detected
     result.notches_consumed = n_consumed
-
-    result.success = True
+    g1_blocked = n_detected != n_consumed
+    result.success = not g1_blocked
     msg = (
-        f"L 形识别成功（corner={geo['corner']}, "
+        f"L 形识别{'成功' if not g1_blocked else '部分完成'}（corner={geo['corner']}, "
         f"外框 {dims['outer_w_cm']:.1f}×{dims['outer_h_cm']:.1f}cm, "
         f"挖角 {dims['cut_w_cm']:.1f}×{dims['cut_h_cm']:.1f}cm, 自洽={sc:.2f}）"
     )
-    if n_detected > n_consumed:
+    if g1_blocked:
         all_corners = geo.get('all_corners', [])
         unused = [c['corner'] for c in all_corners[n_consumed:]]
         msg += (
-            f" ⚠️ 检测到 {n_detected} 个凹角，当前仅应用 1 个"
+            f" ⚠️ G1 闸口：检测到 {n_detected} 个凹角，当前仅应用 {n_consumed} 个"
             f"（{geo['corner']}），其余角位 {unused} 需手动补充"
         )
     result.message = msg
@@ -1351,6 +1354,8 @@ def parse_lshape_sketch(
         'verts': geo['verts'],
         'all_corners': geo.get('all_corners', []),
         'n_detected': n_detected,
+        'n_consumed': n_consumed,
+        'g1_blocked': g1_blocked,
         'n_detected_hull': geo.get('n_detected_hull', 0),
         'n_detected_sliding': geo.get('n_detected_sliding', 0),
     })

@@ -117,7 +117,7 @@ class TestDualCornerDetection:
             res = parse_lshape_sketch(
                 p, target_outer_w_cm=143.0, target_outer_h_cm=62.8
             )
-            assert res.success, f"应成功（含 G1 告警）: {res.message}"
+            assert not res.success, f"G1 应阻止不完整结果报告成功: {res.message}"
             assert res.notches_detected >= 2, (
                 f"G1 应检测到 ≥2 个角，实际 {res.notches_detected}"
             )
@@ -125,7 +125,9 @@ class TestDualCornerDetection:
                 f"第一期应只消费 1 个角，实际 {res.notches_consumed}"
             )
             assert res.notches_detected > res.notches_consumed, "G1 闸口应触发"
+            assert res.debug.get('g1_blocked') is True
             assert '⚠️' in res.message, f"消息应含告警，实际: {res.message}"
+            assert 'G1 闸口' in res.message
 
 
 class TestSingleCornerBackwardCompat:
@@ -159,6 +161,7 @@ class TestSingleCornerBackwardCompat:
             assert res.notches_detected <= 1, (
                 f"单角 notches_detected 应 ≤1，实际 {res.notches_detected}"
             )
+            assert res.notches_consumed == 1
             assert '⚠️' not in res.message, f"单角不应有 G1 告警: {res.message}"
 
 
