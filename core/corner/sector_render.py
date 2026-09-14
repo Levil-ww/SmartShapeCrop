@@ -301,18 +301,29 @@ def _build_content_protection_mask(
     TRANSITION_PX = 2
     CORE_BORDER_DEPTH = max(0, total_border_depth - TRANSITION_PX)
 
-    # 空间判断：过渡区内容保护只作用于靠近直边的像素（xx/yy 接近 ROI 边缘）。
+# 空间判断：过渡区内容保护只作用于靠近直边的像素（xx/yy 接近 ROI 边缘）。
     #   圆角内部（远离两边直边）的过渡区始终绘制——否则圆角内层边框末端缺像素。
     #   直边附近的过渡区保护紧贴边框的花纹/文字（婉卉 CASE4）。
-    T = float(total_border_depth) * 1.5
+#   [Fix bug2] T 从 1.5 倍收紧为 1 倍边框带实际宽度，且 near_edge 精确对齐
+    #   直边带几何本身：TL/BL: 距左缘/上缘 < T-1；TR/BR: 距右缘/下缘 < T-1。
+    #   两处修正原因：
+    #   1) 原 1.5 倍宽度把圆弧描边带内沿（距直边 8~12px 的原底色）误判为
+    #      "靠直边的过渡区内容"而跳过绘制，圆角与直边衔接处露出原底色带（断层/毛边）；
+    #   2) 检测厚度 T 常含 1px 抗锯齿合并（如实际 8px 描边检测为 9px），若按
+    #      `xx >= rw - T`（含等号）判定，圆弧带内沿紧贴直边带的 1px 列/行仍在
+    #      保护区内（xx 恰等于 rw-T），同样造成断层。收紧到 T-1 后 near_edge
+    #      恰好覆盖直边带几何（如 x∈[792,799]），直边带内花纹保护语义不变，
+    #      圆弧带内沿完整覆盖。
+    T = max(1.0, float(total_border_depth))
+    T_EDGE = max(0.0, T - 1.0)
     if corner_key == 'tl':
-        near_edge = (xx <= T) | (yy <= T)
+        near_edge = (xx < T_EDGE) | (yy < T_EDGE)
     elif corner_key == 'tr':
-        near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy <= T)
+        near_edge = (xx >= float(roi_w) - T_EDGE) | (yy < T_EDGE)
     elif corner_key == 'bl':
-        near_edge = (xx <= T) | (yy >= float(roi_h) - 1.0 - T)
+        near_edge = (xx < T_EDGE) | (yy >= float(roi_h) - T_EDGE)
     else:  # br
-        near_edge = (xx >= float(roi_w) - 1.0 - T) | (yy >= float(roi_h) - 1.0 - T)
+        near_edge = (xx >= float(roi_w) - T_EDGE) | (yy >= float(roi_h) - T_EDGE)
     in_transition_zone = near_edge & (depth >= float(CORE_BORDER_DEPTH)) & (depth < float(total_border_depth))
     outside_border_zone = (depth >= float(total_border_depth))
     return is_content_pixel & (in_transition_zone | outside_border_zone)

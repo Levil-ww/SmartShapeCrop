@@ -475,8 +475,14 @@ def _try_apply_v13(
     edge_px: int | None,
     band_px: int | None,
     band_color: tuple[int, int, int] | None,
+    edge_color: tuple[int, int, int] | None = None,
 ) -> bool:
-    """[H-04] V13 路径统一绘制尝试（manual 覆盖 / 自动路由公共出口）。"""
+    """[H-04] V13 路径统一绘制尝试（manual 覆盖 / 自动路由公共出口）。
+
+    edge_color: [Fix 2026-09-14] 黑描边真实颜色（detect_border_v13 四元组
+    的第 3 项），透传给 patch_lshape_cut 的 black 参数，修复重绘色差。
+    None → _apply_v13_path 自动检测补齐，仍无则纯黑兜底（旧行为）。
+    """
     return _apply_v13_path(
         canvas_arr=canvas_arr,
         material_img=material_img,
@@ -490,6 +496,7 @@ def _try_apply_v13(
         manual_edge_px=edge_px,
         manual_band_px=band_px,
         manual_band_color=band_color,
+        manual_edge_color=edge_color,
     )
 
 
@@ -613,7 +620,7 @@ def apply_lshape_border_completion(
     #   - 几何均值 scale → 对 adapt_pool_material 的 ROTATE_270 稳健
     # 让位判定 profile_yields_to_v13 在路由层：V13 已验证场景先问 V13，
     # V13 未命中（庄园秘境：内侧无主色带）Profile 接管。
-    # [H-04] 检测与让位判定已提取至 _detect_lshape_border_auto
+# [H-04] 检测与让位判定已提取至 _detect_lshape_border_auto
     from .lshape_border_route import _apply_profile_path
 
     _profile_layers, _v13, _v13_computed, _v13_preferred = _detect_lshape_border_auto(detect_img)
@@ -635,7 +642,8 @@ def apply_lshape_border_completion(
             scale_y=scale_y,
             edge_px=_v13[0],
             band_px=_v13[1],
-            band_color=_v13[2],
+            band_color=_v13[3],
+            edge_color=_v13[2],
         )
         if _v13_ok:
             return True
@@ -687,7 +695,8 @@ def apply_lshape_border_completion(
             scale_y=scale_y,
             edge_px=v13[0],
             band_px=v13[1],
-            band_color=v13[2],
+            band_color=v13[3],
+            edge_color=v13[2],
         )
         if _v13_ok2:
             return True
@@ -750,6 +759,7 @@ def _apply_v13_path(
     manual_edge_px: int | None,
     manual_band_px: int | None,
     manual_band_color: tuple[int, int, int] | None,
+    manual_edge_color: tuple[int, int, int] | None = None,
 ) -> bool:
     """V13 路径：手动覆盖或原检测兜底时使用。
 
@@ -759,6 +769,9 @@ def _apply_v13_path(
       3. patch_lshape_cut（确认 V13 交付模块 lshape_border_module.py 移植）：
          沿两条切边在**保留区一侧**补齐「黑描边 + 主色带」，
          内凹角 max(dx,dy) 几何分层，黑带沿 L 形轮廓连续。
+
+    manual_edge_color: [Fix 2026-09-14] 黑描边真实颜色。None → 从
+    detect_border_v13 自动补齐（四元组第 3 项）；检测失败则纯黑兜底。
     """
     detect_img = src_material_img if src_material_img is not None else material_img
     if detect_img is None:
@@ -768,10 +781,11 @@ def _apply_v13_path(
     edge_src: int | None = manual_edge_px
     band_src: int | None = manual_band_px
     color_src: tuple[int, int, int] | None = manual_band_color
+    edge_color_src: tuple[int, int, int] | None = manual_edge_color
 
     need_auto = (edge_src is None) or (band_src is None) or (
         band_src > 0 and color_src is None
-    )
+    ) or (edge_color_src is None)
     if need_auto:
         v13 = detect_border_v13(detect_img)
         if v13 is not None:
@@ -780,7 +794,11 @@ def _apply_v13_path(
             if band_src is None:
                 band_src = v13[1]
             if color_src is None and band_src and band_src > 0:
-                color_src = v13[2]
+                color_src = v13[3]
+            # [Fix 2026-09-14] 黑描边色取自检测结果（四元组第 3 项），
+            # 不再硬编码纯黑 → 重绘描边与素材原色一致
+            if edge_color_src is None:
+                edge_color_src = v13[2]
         # V13 检测失败时保留手动值（若仅有 manual_band_color 缺失则用黑色兜底）
 
     # 兜底：edge 仍 None → 视为无边框，跳过
@@ -794,6 +812,9 @@ def _apply_v13_path(
         color_src = (0, 0, 0)
     elif band_src == 0:
         color_src = (0, 0, 0)  # 占位，不会被绘制
+    # 黑描边色兜底：检测失败仍无 → 纯黑（保持旧行为，不抛错）
+    if edge_color_src is None:
+        edge_color_src = (0, 0, 0)
 
     # —— 2) 厚度换算到画布坐标系（预览 LOD 时 scale 相应变小，自动适配）——
     # [Fix P1-06 2026-09-12] 与旧路径 / Profile 路径（lshape_border_route）统一：
@@ -850,6 +871,7 @@ def _apply_v13_path(
             max(1, int(round(edge_canvas))),
             max(0, int(round(band_canvas))),
             color_src,
+            black=edge_color_src,  # [Fix 2026-09-14] 真实描边色，替换硬编码纯黑
         )
     except ValueError as e:
         logger.info("[LShapeBorder/V13] patch 跳过: %s", e)
@@ -884,7 +906,10 @@ def _v13_segv(arr: np.ndarray, tol: int = 12):
     """V13 的 1D 段切分：相邻像素 L1 距离 > tol 即断段。
 
     返回 [(start_idx, end_idx, representative_color_tuple), ...]。
-    representative_color 取该段起始像素的 RGB（与 V13 原版一致）。
+    representative_color 取该段内全部像素的中位数色（抗抗锯齿偏色）：
+    原实现取段边界像素（起始/末尾像素），在暗描边与浅色底之间的
+    抗锯齿过渡带上易偏浅或偏深，导致 L 形挖角重绘颜色不一致；中位数
+    更能代表整段真实颜色。
     """
     out = []
     prev = tuple(int(v) for v in arr[0])
@@ -892,16 +917,21 @@ def _v13_segv(arr: np.ndarray, tol: int = 12):
     for i in range(1, len(arr)):
         c = tuple(int(v) for v in arr[i])
         if abs(c[0] - prev[0]) + abs(c[1] - prev[1]) + abs(c[2] - prev[2]) > tol:
-            out.append((s, i - 1, prev))
+            med = tuple(int(round(v)) for v in np.median(arr[s:i], axis=0))
+            out.append((s, i - 1, med))
             s, prev = i, c
-    out.append((s, len(arr) - 1, prev))
+    med = tuple(int(round(v)) for v in np.median(arr[s:], axis=0))
+    out.append((s, len(arr) - 1, med))
     return out
 
 
 def _v13_pick(segs, window_size: int | None = None):
     """V13 段选择：最外暗色段=黑描边，其后第一个彩色段=主色带。
 
-    返回 (black_width, band_width, band_color) 或 None。
+    返回 (black_width, band_width, black_color, band_color) 或 None。
+    black_color：最外暗色段的中位色（真实描边色）。重绘时必须透传该色
+                 给 patch_lshape_cut 的 black 参数，否则会用硬编码纯黑，
+                 与深棕/深咖等真实描边色不一致（L 形挖角重绘色差根因）。
     band_width=0 表示只有黑边无主带（如 庄园秘境/中古大花 纯黑宽边素材）。
 
     Args:
@@ -916,6 +946,8 @@ def _v13_pick(segs, window_size: int | None = None):
         edge>120 → None（绽蔓 400px 全窗口黑段）
         edge∈(50,120] → band=0（巴洛克 148 / 蝴蝶契约 118 厚黑边框=完整 border 体）
         edge≤50 → 正常搜 band（MIN_BAND=15，无上限，安妮森林 140px band 保留）
+      - Fix #3 (2026-09-14): 返回四元组，新增 black_color 真实描边色，
+        修复 patch 硬编码纯黑导致的 L 形重绘色差。
     """
     MIN_BAND = 15  # 捕捉 20-30px 真实 border band
     MAX_EDGE_EXTREME = 200  # edge 超过此值视为噪声（绽蔓 400px 全窗口黑段）
@@ -927,6 +959,7 @@ def _v13_pick(segs, window_size: int | None = None):
     if i >= len(segs):
         return None
     if max(segs[i][2]) < 90:
+        edge_color = segs[i][2]  # 最外暗色段的中位色 = 真实描边色
         bw = segs[i][1] - segs[i][0] + 1
         i += 1
     else:
@@ -936,11 +969,10 @@ def _v13_pick(segs, window_size: int | None = None):
     if bw > MAX_EDGE_EXTREME:
         # 极端厚黑段：大概率是棋盘格/纹理噪声（绽蔓 400px 全窗口黑段）
         return None
-
     if bw > MAX_EDGE_THICK:
         # 50-120px 厚黑段：完整的纯黑厚边框（巴洛克 148px / 蝴蝶契约 118px）
         # band=0 表示没有独立的"主色带"，厚黑段本身就是 border 体
-        return (bw, 0, (0, 0, 0))
+        return (bw, 0, edge_color, (0, 0, 0))
 
     # === 正常 edge（≤50px）：搜索独立 band ===
     for j in range(i, len(segs)):
@@ -948,27 +980,34 @@ def _v13_pick(segs, window_size: int | None = None):
         c = segs[j][2]
         color_ok = max(c) >= 60 and max(c) <= 235  # 排除近黑/近白的花纹底色
         min_ok = w >= MIN_BAND                       # 够宽才像 border band
-        if min_ok and color_ok:
-            return (bw, w, c)
+        # [Fix 2026-09-14] band 必须是"中间段"：其后还要有接续段，否则
+        # 黑边后整片内容区直达剖面尽头会被误当成超宽主色带（如庄园秘境
+        # 30px 纯黑边 + 米色内容区曾误检 band=236px）。
+        if min_ok and color_ok and j + 1 < len(segs):
+            return (bw, w, edge_color, c)
         # 遇到纯黑段（max<60）：可能是多层边框的内层黑描边，跳过继续
         # 遇到近白段（max>235）：可能是留白，跳过继续
         # 不提前 break — 允许 band 间有窄过渡段
-    return (bw, 0, (0, 0, 0))
+    return (bw, 0, edge_color, (0, 0, 0))
 
 
-def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, int]] | None:
-    """V13 自动边框检测：返回 (黑描边宽 px, 主带宽 px, 主带色 RGB) 或 None。
+def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, int], tuple[int, int, int]] | None:
+    """V13 自动边框检测：返回 (黑描边宽px, 主带宽px, 黑描边色RGB, 主带色RGB) 或 None。
 
     规则（_v13_pick 内部已有完整分段逻辑）：
       - edge>120px → None（极端噪声如绽蔓全窗口黑段）
       - edge∈(50,120] → band=0（厚黑完整边框如巴洛克 148px / 蝴蝶契约 118px）
       - edge≤50px → 搜独立 band（MIN_BAND=15，无上限，安妮森林 140px 保留）
 
+    [Fix 2026-09-14] 返回值由三元组扩展为四元组：新增黑描边代表色。
+    修复前只返回黑边宽度，patch 重绘时用硬编码纯黑 (0,0,0)，对深棕/深咖
+    等真实描边素材（堇色素颜等）产生明显色差。
+
     Args:
         src_img: 原始素材 PIL Image（建议未拉伸）
 
     Returns:
-        (edge_px, band_px, (r, g, b)) 或 None（未检测到有效黑描边）
+        (edge_px, band_px, (r, g, b), (r, g, b)) 或 None（未检测到有效黑描边）
 
     最终校验：
       - edge 不得超过素材短边的 10%（防止大块图案被误当成黑描边）
@@ -1022,7 +1061,8 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
         )
         return None
 
-    return (edge, pt[1], pt[2])
+    # 返回四元组：edge/band 宽度 + 真实描边色（取自顶边剖面） + 主带色
+    return (edge, pt[1], pt[2], pt[3])
 
 
 def detect_border(img: Image.Image) -> tuple[int, int, tuple[int, int, int]]:
@@ -1031,11 +1071,14 @@ def detect_border(img: Image.Image) -> tuple[int, int, tuple[int, int, int]]:
     返回 (黑描边宽px, 主带宽px, 主带色RGB)；
     未检测到最外黑描边时抛 ValueError（与交付模块行为一致）。
     项目内部路由请用 detect_border_v13（返回 None 便于回退）。
+
+    [Fix 2026-09-14] 内部改为四元组检测后，此处保持三元组公开契约：
+    取 v13 的 (edge, band, 主带色)。黑描边色仅供内部 patch 重绘使用。
     """
     v13 = detect_border_v13(img)
     if v13 is None:
         raise ValueError('未检测到最外黑描边')
-    return v13
+    return (v13[0], v13[1], v13[3])
 
 
 # ---------------------------------------------------------------------------

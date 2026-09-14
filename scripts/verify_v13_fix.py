@@ -43,9 +43,11 @@ sim2[:, -40:-10] = (128, 64, 0)
 v13_r = detect_border_v13(Image.fromarray(sim2))
 print(f"  V13 结果: {v13_r}")
 assert v13_r is not None, "V13 不应返回 None"
-edge, band, color = v13_r
+# [Fix 2026-09-14] detect_border_v13 返回四元组 (edge, band, black_color, band_color)
+edge, band, black_color, color = v13_r
 check("edge=10", 10, edge)
 check("band=30", 30, band)
+check("black_color=(0,0,0)", (0, 0, 0), black_color)
 check("color=(128,64,0)", (128, 64, 0), color)
 
 # === 测试3: 克罗印花 (经典黑描边+米色过渡+棕带) ===
@@ -68,7 +70,7 @@ sim4[:30, :] = (0, 0, 0)
 v14 = detect_border_v13(Image.fromarray(sim4))
 print(f"  V13 结果: {v14}")
 if v14:
-    e4, b4, _ = v14
+    e4, b4, _, _ = v14
     check("edge~=30 (纯黑边)", 30, e4)
     check("band=0 (无主带)", 0, b4)
 

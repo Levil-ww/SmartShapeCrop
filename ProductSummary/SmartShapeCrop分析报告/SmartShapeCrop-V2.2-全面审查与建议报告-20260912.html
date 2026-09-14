@@ -701,6 +701,130 @@ README> 实测基线（2026-09-11，失效测试清理后）：**430 passed / 0 
     </div>
   </section>
 
+  <!-- ============ 7.5 增量修复审查 (2026-09-14) ============ -->
+  <section>
+    <h2 class="sec">七·五、增量修复审查（L 形边框色 / 圆角抗锯齿 / 水池素材填充）</h2>
+    <p class="sec-note">审查日期 2026-09-14 · 审查方式：全量 diff 逐行复核 + 调用链兼容性验证 + 376 用例回归 + V13/bug1/bug2 验证脚本实跑</p>
+
+    <h3>审查范围</h3>
+    <p>本次审查覆盖三个修复方向的 5 个已修改文件（未提交工作区改动），使用 <code>agent-pr-review</code> 专项进行 pre-merge 审查：</p>
+    <table>
+      <thead><tr><th style="width:22%">修复方向</th><th style="width:30%">涉及文件</th><th style="width:48%">核心改动</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Bug1 · L 形边框色差</strong></td>
+          <td><code>core/lshape_border.py</code></td>
+          <td><code>detect_border_v13</code> 返回值从三元组扩展为四元组，新增黑描边真实色；<code>_v13_segv</code> 段代表色从边界像素改为中位数色（抗抗锯齿偏色）；<code>_v13_pick</code> 返回四元组并增加 <code>j+1 &lt; len(segs)</code> 防末段误判；<code>patch_lshape_cut</code> 的 <code>black</code> 参数从硬编码纯黑改为透传检测色</td>
+        </tr>
+        <tr>
+          <td><strong>Bug2 · 圆角抗锯齿</strong></td>
+          <td><code>core/corner/sector_render.py</code>、<code>core/image_cropper.py</code></td>
+          <td><code>_build_content_protection_mask</code> 的 <code>T</code> 从 1.5 倍收紧为 1.0 倍边框带宽度，<code>near_edge</code> 改用 <code>T_EDGE = T-1</code> 精确对齐直边带几何；<code>apply_rounded_corners</code> 移除冗余的 Step A/B 边框重绘（生产路径使用 <code>apply_border_only_corners</code> 统一处理）</td>
+        </tr>
+        <tr>
+          <td><strong>Bug3 · 水池素材填充</strong></td>
+          <td><code>core/image_ops.py</code></td>
+          <td><code>_stale_decor_residual_cleaner</code> 新增 20px 膨胀环带限制，残留清理仅作用于洞口附近，远离洞口的合法外框文字/花纹不被误伤</td>
+        </tr>
+        <tr>
+          <td><strong>验证脚本同步</strong></td>
+          <td><code>scripts/verify_v13_fix.py</code></td>
+          <td>解包从 3 变量改为 4 变量，新增 <code>black_color</code> 断言</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>审查锚点</h3>
+    <ul>
+      <li><code>core/lshape_border.py:794</code> — <code>color_src = v13[3]</code>（主带色索引从 2→3 修正）</li>
+      <li><code>core/lshape_border.py:871</code> — <code>black=edge_color_src</code>（真实描边色透传给 patch）</li>
+      <li><code>core/corner/sector_render.py:311</code> — <code>T = max(1.0, float(total_border_depth))</code>（保护带宽度收紧）</li>
+      <li><code>core/image_ops.py:1378</code> — <code>import cv2 as _cv2</code>（修复前在此行之前使用 <code>_cv2</code>）</li>
+    </ul>
+
+    <h3>发现与修复</h3>
+    <table>
+      <thead><tr><th style="width:10%">编号</th><th style="width:14%">级别</th><th style="width:36%">发现</th><th style="width:40%">处置</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>R-01</td>
+          <td><span class="tag p0">Blocker</span></td>
+          <td><code>image_ops.py:1379</code> 使用 <code>_cv2.dilate()</code> 但 <code>import cv2 as _cv2</code> 在第 1386 行——<strong>使用先于导入</strong>。当 <code>rect_hole</code> 设计且洞口附近有近黑残留像素时必现 <code>NameError</code>。测试未覆盖此路径。</td>
+          <td><strong>已修复</strong>：将 <code>import cv2 as _cv2</code> 移至 <code>_cv2.dilate()</code> 调用之前（第 1378 行），删除原位置重复导入。</td>
+        </tr>
+        <tr>
+          <td>R-02</td>
+          <td><span class="tag p2">Follow-up</span></td>
+          <td><code>apply_rounded_corners</code> 的 docstring 仍声称"在圆角边缘重新绘制最外层边框"，但实际代码已移除该逻辑（边框重绘由 <code>apply_border_only_corners</code> 统一处理）。文档与代码不一致。</td>
+          <td><strong>已修复</strong>：更新 docstring，明确边框重绘不在本函数处理，指向 <code>apply_border_only_corners</code>。</td>
+        </tr>
+        <tr>
+          <td>R-03</td>
+          <td><span class="tag p2">Follow-up</span></td>
+          <td><code>apply_rounded_corners</code> 中 <code>border_layers = _get_border_layers_robust(img, bg_color)</code> 赋值后未使用（移除重绘后的死变量）。</td>
+          <td>记录为 follow-up，不本次清理（避免扩大改动范围）。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>调用链兼容性验证</h3>
+    <table>
+      <thead><tr><th style="width:30%">检查项</th><th style="width:10%">状态</th><th style="width:60%">说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>detect_border_v13</code> 全部调用点</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">兼容</span></td><td>7 处调用点均按索引访问或 4 变量解包，无 3 变量解包的破损调用</td></tr>
+        <tr><td><code>_v13_pick</code> 全部调用点</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">兼容</span></td><td>2 处内部调用均按索引访问</td></tr>
+        <tr><td><code>detect_border</code> 公开 API</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">兼容</span></td><td>内部 <code>return (v13[0], v13[1], v13[3])</code> 切片保持三元组契约；无外部调用方</td></tr>
+        <tr><td><code>patch_lshape_cut</code> 签名</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">兼容</span></td><td><code>black=(0,0,0)</code> 默认参数已存在，透传 <code>black=edge_color_src</code> 正确</td></tr>
+        <tr><td><code>_redraw_border_on_corner</code> / <code>_redraw_outer_border_on_corners</code></td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">兼容</span></td><td>函数未删除，仍在 <code>apply_border_only_corners</code> 中正常调用；生产路径不受影响</td></tr>
+      </tbody>
+    </table>
+
+    <h3>行为验证</h3>
+    <table>
+      <thead><tr><th style="width:30%">验证项</th><th style="width:10%">结果</th><th style="width:60%">证据</th></tr></thead>
+      <tbody>
+        <tr><td>全量回归（376 用例，排除 PyQt5 环境）</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">通过</span></td><td>376 passed, 7 skipped, 0 failed（42.05s）</td></tr>
+        <tr><td>V13 验证脚本（5 场景）</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">通过</span></td><td>绽蔓→None、蝴蝶契约→(10,30,(0,0,0),(128,64,0))、庄园秘境→(30,0,...)、纯内容→None 全部正确</td></tr>
+        <tr><td>Bug1 深棕描边色</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">通过</span></td><td><code>detect_border_v13=(12,20,(40,25,18),(139,69,19))</code>，深棕描边色 (40,25,18) 被正确检测并原色重绘</td></tr>
+        <tr><td>Bug2 圆角裁剪</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">通过</span></td><td>弧外侧 0 非 bg 残留（无墨迹溢出）；保护带收紧后圆弧描边带内沿完整覆盖</td></tr>
+        <tr><td>R-01 修复后回归</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">通过</span></td><td>376 passed，无新增失败</td></tr>
+      </tbody>
+    </table>
+
+    <h3>失败模式审查</h3>
+    <table>
+      <thead><tr><th style="width:25%">检查项</th><th style="width:10%">结果</th><th style="width:65%">说明</th></tr></thead>
+      <tbody>
+        <tr><td>静默假设</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">无</span></td><td>所有色值兜底（<code>edge_color_src=(0,0,0)</code>）保留旧行为，不抛错</td></tr>
+        <tr><td>似是而非的逻辑</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">无</span></td><td><code>_v13_pick</code> 的 <code>j+1 &lt; len(segs)</code> 检查防止末段误判为 band，逻辑正确</td></tr>
+        <tr><td>幻觉 API / 导入</td><td><span class="tag p0">发现并修复</span></td><td>R-01：<code>_cv2.dilate()</code> 在导入前使用——已修复</td></tr>
+        <tr><td>删除但仍被引用的代码</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">无</span></td><td><code>_redraw_border_on_corner</code> / <code>_redraw_outer_border_on_corners</code> 从 <code>apply_rounded_corners</code> 移除但仍在 <code>apply_border_only_corners</code> 中调用</td></tr>
+        <tr><td>无动机编辑</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">无</span></td><td>所有改动均有明确注释标注 <code>[Fix 2026-09-14]</code> 或 <code>[Fix bug2/3]</code></td></tr>
+        <tr><td>缺失边界情况</td><td><span class="tag p2">已记录</span></td><td>R-03：<code>border_layers</code> 死变量；<code>np.median</code> 在空数组上的行为已被 <code>if _residual.any()</code> 前置保护</td></tr>
+        <tr><td>范围蔓延</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">无</span></td><td>改动严格限制在三个 bug 的修复范围内，无超范围编辑</td></tr>
+      </tbody>
+    </table>
+
+    <h3>代码质量维度</h3>
+    <table>
+      <thead><tr><th style="width:15%">维度</th><th style="width:10%">状态</th><th style="width:75%">说明</th></tr></thead>
+      <tbody>
+        <tr><td>设计</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">OK</span></td><td>四元组扩展保持公开 API 向后兼容；保护带收紧有几何论证</td></tr>
+        <tr><td>功能</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">OK</span></td><td>三个 bug 的根因均被正确定位并修复</td></tr>
+        <tr><td>复杂度</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">OK</span></td><td>未增加圈复杂度；20px 膨胀限制简化了清理范围</td></tr>
+        <tr><td>测试</td><td><span class="tag p2">Follow-up</span></td><td>V13 验证脚本覆盖 5 场景，但 <code>_stale_decor_residual_cleaner</code> 的 20px 环带限制无专项单元测试</td></tr>
+        <tr><td>命名</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">OK</span></td><td><code>edge_color</code> / <code>edge_color_src</code> / <code>T_EDGE</code> 语义清晰</td></tr>
+        <tr><td>注释</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">OK</span></td><td>每处改动均有 <code>[Fix 2026-09-14]</code> 标注和根因说明</td></tr>
+        <tr><td>风格</td><td><span class="tag" style="background:var(--green-bg);color:var(--green);border:1px solid var(--green-line)">OK</span></td><td>与项目既有风格一致</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout good">
+      <strong>裁定：可合并</strong>
+      Blocker R-01 已修复（<code>_cv2</code> 导入顺序），R-02 docstring 已更新。三个修复方向的根因定位准确、实现规范、回归零新增失败。376 用例 + 3 个验证脚本全部通过。建议后续为 <code>_stale_decor_residual_cleaner</code> 的 20px 环带限制补充专项单元测试。
+    </div>
+  </section>
+
   <!-- ============ 8. 结论 ============ -->
   <section>
     <h2 class="sec">八、结论</h2>
@@ -716,9 +840,10 @@ README> 实测基线（2026-09-11，失效测试清理后）：**430 passed / 0 
 </div>
 
 <div class="footer">
-  <strong>SmartShapeCrop V2.2 全面审查与建议报告 · 报告版本 V1.0</strong><br>
-  审查日期 2026-09-12 &nbsp;·&nbsp; 被审查代码 HEAD <code>aa676a9</code>（工作区含未提交改动）<br>
-  审查方式：AST 全量静态分析 + 全量测试实跑 + 崩溃现场取证 + 构建链路核查 &nbsp;·&nbsp; <strong>只读审查，未修改任何源码</strong>
+  <strong>SmartShapeCrop V2.2 全面审查与建议报告 · 报告版本 V1.1</strong><br>
+  审查日期 2026-09-12（初版）&nbsp;·&nbsp; 增量审查 2026-09-14（第七·五节）<br>
+  被审查代码 HEAD <code>aa676a9</code>（工作区含未提交改动）&nbsp;·&nbsp; 增量审查覆盖工作区 <code>7f521d2</code> 之后的未提交改动<br>
+  审查方式：AST 全量静态分析 + 全量测试实跑 + 崩溃现场取证 + 构建链路核查 &nbsp;·&nbsp; 初版为只读审查；增量审查修复了 1 个 Blocker（<code>_cv2</code> 导入顺序）并更新了 1 处 docstring
 </div>
 
 </body>

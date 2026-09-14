@@ -1372,8 +1372,18 @@ def _stale_decor_residual_cleaner(canvas_arr, design, W, H, border_mask, inner_m
             #    会被误判为"旧黑线"，被左上角米色色块覆盖 → 花纹变黑为咖（用户截图）
             _residual = _near_black & ~border_mask & ~inner_mask
             if _residual.any():
-                # ===== [V2.1 Fix ①] 连通域 bbox 过滤：细条( min(w,h)≤30px ) 才保留 =====
+                # [Fix bug3] 仅清理靠近内挖边缘的残留，远离洞口的合法外框文字/花纹
+                # 不被误伤。border_mask 膨胀 20px 形成洞口周围环带，残留必须落在此
+                # 环带内才进入清理流程。
                 import cv2 as _cv2
+                _dilate_k = np.ones((20, 20), dtype=np.uint8)
+                _near_hole = _cv2.dilate(
+                    border_mask.astype(np.uint8), _dilate_k, iterations=1
+                ).astype(bool)
+                _residual = _residual & _near_hole
+                if not _residual.any():
+                    return
+                # ===== [V2.1 Fix ①] 连通域 bbox 过滤：细条( min(w,h)≤30px ) 才保留 =====
                 _res_u8 = (_residual.astype(np.uint8) * 255)
                 _n_lbl, _lbl, _st, _cen = _cv2.connectedComponentsWithStats(
                     _res_u8, connectivity=8)

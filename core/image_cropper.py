@@ -150,10 +150,9 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     对整张图片应用四角圆角裁剪。
     裁剪半径 = 指定的圆角半径（不做扩展）。
 
-    [关键修正]：采用 Mask 剪切策略 + 重绘最外层边框
-    - 使用 carve_corner_on_mask 创建准确的圆角 mask（避免 PIL rounded_rectangle 的边界缺口）
-    - 在圆角边缘重新绘制最外层边框，确保边框在圆角处连续
-    - 内部线条保持直线，被圆角自然截断
+    采用 Mask 剪切策略：使用 carve_corner_on_mask 创建准确的圆角 mask，
+    通过 Image.paste(mask=mask) 完成剪切。边框重绘不在此函数处理——
+    生产路径 crop_image 使用 apply_border_only_corners 统一完成边框重绘。
 
     [Fix C-shaped gap 0812]：
     - 使用 carve_corner_on_mask 替代 rounded_rectangle 创建 mask
@@ -184,32 +183,6 @@ def apply_rounded_corners(img: Image.Image, corners: dict[str, float], dpi: int 
     # 应用遮罩
     result = Image.new('RGB', (w, h), bg_color)
     result.paste(img, mask=mask)
-
-    # [Fix 安妮森林 v3 — 同步修复 apply_rounded_corners]
-    #
-    # 历史问题：同 apply_border_only_corners — 1) 用 outermost_thickness 计算
-    #   inner_r 导致几乎整圆被清空；2) 只传 border_layers[:1] 给重绘。
-    #
-    # 修复: 1) 移除 _clear_inner_arc_to_bg；2) 传完整 border_layers。
-    #   详见 apply_border_only_corners 内的长篇注释 (Fix 安妮森林 v3)。
-
-    # Step A: 重绘所有边框层在圆弧上（完整 border_layers）
-    if corners_px and border_layers:
-        for ck, rp in corners_px.items():
-            if rp <= 0:
-                continue
-            _redraw_border_on_corner(
-                result, ck, rp, border_layers,
-                src_img=img, validity_mask=mask,
-                bg_color=bg_color,
-            )
-
-    # Step B: 安全的最外轮廓薄层补绘
-    if corners_px:
-        _redraw_outer_border_on_corners(
-            result, img, corners_px, border_layers, mask, bg_color,
-            skip_outside_arc=True,  # 非保护模式：裁切区域不应重绘边框
-        )
 
     return result
 
