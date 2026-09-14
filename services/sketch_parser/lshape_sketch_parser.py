@@ -66,6 +66,8 @@ class LSketchParseResult:
     notch_w_cm: float = 0.0                # E
     notch_h_cm: float = 0.0                # D
     self_consistency: float = 0.0          # 0~1 结构自洽度
+    notches_detected: int = 0              # G1: 检测到的凹角数
+    notches_consumed: int = 0             # G1: 实际应用的凹角数
     debug: dict = field(default_factory=dict)
 
 
@@ -197,9 +199,9 @@ def _detect_concave_sliding_window(pts, outer_w, outer_h, diag, corners,
     # 伪凹角（数字笔画短）跨越拐点后邻接 cut 与 bbox cut 不一致 → cf 降低
     k_dir = max(8, int(min(outer_w, outer_h) * 0.05))
     k_dir = min(k_dir, n // 6)
-    best_score = -1.0
-    best_pt = None
-    best_corner = None
+    # [V1.1 多角改造] 解除收敛点 ③：不再只保留 best_score，
+    # 改为按 bbox 四角分桶，每桶留最优 1 个，最多 4 个。
+    detected = {}  # corner -> (score, pt)
 
     for i in range(n):
         if concavity[i] < 0.1:
@@ -259,163 +261,177 @@ def _detect_concave_sliding_window(pts, outer_w, outer_h, diag, corners,
         cf = min(_agr(adj_cut_w, cut_w), _agr(adj_cut_h, cut_h))
 
         score = concavity[i] * cf
-        if score > best_score:
-            best_score = score
-            best_pt = pt
-            best_corner = corner
+        if corner not in detected or score > detected[corner][0]:
+            detected[corner] = (score, pt)
 
-    if best_pt is None:
-        return None
+    if not detected:
+        return []
 
-    pt = best_pt
-    corner = best_corner
-
-    # 构造 6 顶点多边形，凹角在 index 0
-    if corner == 'tr':
-        verts = np.array([
-            [pt[0], pt[1]], [maxx, pt[1]], [maxx, maxy],
-            [minx, maxy], [minx, miny], [pt[0], miny],
-        ])
-    elif corner == 'tl':
-        verts = np.array([
-            [pt[0], pt[1]], [minx, pt[1]], [minx, maxy],
-            [maxx, maxy], [maxx, miny], [pt[0], miny],
-        ])
-    elif corner == 'br':
-        verts = np.array([
-            [pt[0], pt[1]], [pt[0], maxy], [minx, maxy],
-            [minx, miny], [maxx, miny], [maxx, pt[1]],
-        ])
-    else:
-        verts = np.array([
-            [pt[0], pt[1]], [pt[0], maxy], [maxx, maxy],
-            [maxx, miny], [minx, miny], [minx, pt[1]],
-        ])
-
-    return {
-        'score': best_score * 10000.0,  # 绝对最高优先级
-        'verts': verts,
-        'concave_pt': pt,
-        'corner': corner,
-    }
+    results = []
+    for corner, (score, pt) in detected.items():
+        # 构造 6 顶点多边形，凹角在 index 0
+        if corner == 'tr':
+            verts = np.array([
+                [pt[0], pt[1]], [maxx, pt[1]], [maxx, maxy],
+                [minx, maxy], [minx, miny], [pt[0], miny],
+            ])
+        elif corner == 'tl':
+            verts = np.array([
+                [pt[0], pt[1]], [minx, pt[1]], [minx, maxy],
+                [maxx, maxy], [maxx, miny], [pt[0], miny],
+            ])
+        elif corner == 'br':
+            verts = np.array([
+                [pt[0], pt[1]], [pt[0], maxy], [minx, maxy],
+                [minx, miny], [maxx, miny], [maxx, pt[1]],
+            ])
+        else:
+            verts = np.array([
+                [pt[0], pt[1]], [pt[0], maxy], [maxx, maxy],
+                [maxx, miny], [minx, miny], [minx, pt[1]],
+            ])
+        results.append({
+            'score': score * 10000.0,  # 绝对最高优先级
+            'verts': verts,
+            'concave_pt': pt,
+            'corner': corner,
+        })
+    return results
 
 
 # ------------------------------------------------------------------
 # 凸包差异法（V3：缺口角与 cut 尺寸检测，对数字粘连鲁棒）
 # ------------------------------------------------------------------
 def _detect_by_convex_hull(cv2, cnt_pts, global_minx, global_miny, global_maxx, global_maxy):
+    """凸包差异法检测挖角区域。
+
+    [V1.1 多角改造] 解除收敛点 ①：不再只取 argmax(areas) 最大连通域，
+    改为用 §5.3 判据（面积 ≥0.5% bbox 且触碰 ≥2 条 bbox 边）过滤全部连通域，
+    返回所有合格挖角的列表。单角时列表长度为 1，等价于旧行为。
+    """
     minx, miny = float(global_minx), float(global_miny)
     maxx, maxy = float(global_maxx), float(global_maxy)
     W = maxx - minx
     H = maxy - miny
     if W <= 0 or H <= 0:
-        return None
+        return []
 
-    # 创建掩码
     h = int(H) + 4
     w = int(W) + 4
     shifted = (cnt_pts - np.array([minx, miny])).astype(np.int32)
 
-    # 轮廓填充
     mask_cnt = np.zeros((h, w), dtype=np.uint8)
     cv2.fillPoly(mask_cnt, [shifted], 1)
 
-    # 凸包填充
     hull = cv2.convexHull(shifted)
     mask_hull = np.zeros((h, w), dtype=np.uint8)
     cv2.fillPoly(mask_hull, [hull], 1)
 
-    # 缺口 = 凸包 - 轮廓
     gap = mask_hull - mask_cnt
     if gap.sum() == 0:
-        return None  # 没有缺口（矩形）
+        return []
 
-    # 取缺口的最大连通域作为真实挖角区域。
-    # 数字标注若与轮廓分离但落在 bbox 内（如贴边文字），会产生零散 gap 噪点，
-    # 直接对全部 gap 取 bbox 会把挖角 bbox 撑满全图、凹角判反。
-    # 最大连通域即为真实挖角（面积远大于文字噪点）。
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
         gap.astype(np.uint8), connectivity=8)
     if num_labels <= 1:
-        return None
-    # stats[label] = [x, y, w, h, area]；跳过背景 label=0
-    areas = stats[1:, cv2.CC_STAT_AREA]
-    best_label = 1 + int(np.argmax(areas))
-    gx0 = int(stats[best_label, cv2.CC_STAT_LEFT])
-    gy0 = int(stats[best_label, cv2.CC_STAT_TOP])
-    gw = int(stats[best_label, cv2.CC_STAT_WIDTH])
-    gh = int(stats[best_label, cv2.CC_STAT_HEIGHT])
-    gx1 = gx0 + gw - 1
-    gy1 = gy0 + gh - 1
-    cut_w = float(gw)
-    cut_h = float(gh)
+        return []
 
-    # 比例校验（深挖角场景 cut_h 可达 0.68，上限放宽到 0.75）
-    cwr = cut_w / W
-    chr_ = cut_h / H
-    if not (0.02 <= cwr <= 0.75 and 0.02 <= chr_ <= 0.75):
-        return None
+    bbox_area = W * H
+    results = []
+    for label_idx in range(1, num_labels):
+        comp_area = int(stats[label_idx, cv2.CC_STAT_AREA])
+        # §5.3 判据 1：面积 ≥ bbox 的 0.5%（排除文字噪点）
+        if comp_area < bbox_area * 0.005:
+            continue
+        gx0 = int(stats[label_idx, cv2.CC_STAT_LEFT])
+        gy0 = int(stats[label_idx, cv2.CC_STAT_TOP])
+        gw = int(stats[label_idx, cv2.CC_STAT_WIDTH])
+        gh = int(stats[label_idx, cv2.CC_STAT_HEIGHT])
+        # §5.3 判据 2：触碰 ≥ 2 条 bbox 边（拓扑性质，排除贴边文字）
+        # 注意：mask 尺寸为 (H+4, W+4)，但 gap 连通域只延伸到轮廓 bbox (W, H)
+        # 容差 5px：草图描边宽度（stroke=6）导致 gap 不到达 bbox 真正边缘
+        touches = 0
+        if gx0 <= 5:
+            touches += 1
+        if gy0 <= 5:
+            touches += 1
+        if gx0 + gw >= int(W) - 5:
+            touches += 1
+        if gy0 + gh >= int(H) - 5:
+            touches += 1
+        if touches < 2:
+            continue
 
-    # 判断缺口在哪个角
-    cx_gap = (gx0 + gx1) / 2.0
-    cy_gap = (gy0 + gy1) / 2.0
-    cx_bbox = w / 2.0
-    cy_bbox = h / 2.0
-    if cx_gap < cx_bbox and cy_gap < cy_bbox:
-        corner = 'tl'
-    elif cx_gap >= cx_bbox and cy_gap < cy_bbox:
-        corner = 'tr'
-    elif cx_gap < cx_bbox and cy_gap >= cy_bbox:
-        corner = 'bl'
-    else:
-        corner = 'br'
+        gx1 = gx0 + gw - 1
+        gy1 = gy0 + gh - 1
+        cut_w = float(gw)
+        cut_h = float(gh)
 
-    # 凹角位置
-    if corner == 'tr':
-        cx, cy = maxx - cut_w, miny + cut_h
-    elif corner == 'tl':
-        cx, cy = minx + cut_w, miny + cut_h
-    elif corner == 'br':
-        cx, cy = maxx - cut_w, maxy - cut_h
-    else:
-        cx, cy = minx + cut_w, maxy - cut_h
+        cwr = cut_w / W
+        chr_ = cut_h / H
+        if not (0.02 <= cwr <= 0.75 and 0.02 <= chr_ <= 0.75):
+            continue
 
-    if corner == 'tr':
-        verts = np.array([
-            [cx, cy], [maxx, cy], [maxx, maxy],
-            [minx, maxy], [minx, miny], [cx, miny],
-        ])
-    elif corner == 'tl':
-        verts = np.array([
-            [cx, cy], [minx, cy], [minx, maxy],
-            [maxx, maxy], [maxx, miny], [cx, miny],
-        ])
-    elif corner == 'br':
-        verts = np.array([
-            [cx, cy], [cx, maxy], [minx, maxy],
-            [minx, miny], [maxx, miny], [maxx, cy],
-        ])
-    else:
-        verts = np.array([
-            [cx, cy], [cx, maxy], [maxx, maxy],
-            [maxx, miny], [minx, miny], [minx, cy],
-        ])
+        cx_gap = (gx0 + gx1) / 2.0
+        cy_gap = (gy0 + gy1) / 2.0
+        cx_bbox = w / 2.0
+        cy_bbox = h / 2.0
+        if cx_gap < cx_bbox and cy_gap < cy_bbox:
+            corner = 'tl'
+        elif cx_gap >= cx_bbox and cy_gap < cy_bbox:
+            corner = 'tr'
+        elif cx_gap < cx_bbox and cy_gap >= cy_bbox:
+            corner = 'bl'
+        else:
+            corner = 'br'
 
-    return {
-        'score': 200000.0,
-        'verts': verts,
-        'concave_pt': np.array([cx, cy]),
-        'corner': corner,
-    }
+        if corner == 'tr':
+            cx, cy = maxx - cut_w, miny + cut_h
+        elif corner == 'tl':
+            cx, cy = minx + cut_w, miny + cut_h
+        elif corner == 'br':
+            cx, cy = maxx - cut_w, maxy - cut_h
+        else:
+            cx, cy = minx + cut_w, maxy - cut_h
+
+        if corner == 'tr':
+            verts = np.array([
+                [cx, cy], [maxx, cy], [maxx, maxy],
+                [minx, maxy], [minx, miny], [cx, miny],
+            ])
+        elif corner == 'tl':
+            verts = np.array([
+                [cx, cy], [minx, cy], [minx, maxy],
+                [maxx, maxy], [maxx, miny], [cx, miny],
+            ])
+        elif corner == 'br':
+            verts = np.array([
+                [cx, cy], [cx, maxy], [minx, maxy],
+                [minx, miny], [maxx, miny], [maxx, cy],
+            ])
+        else:
+            verts = np.array([
+                [cx, cy], [cx, maxy], [maxx, maxy],
+                [maxx, miny], [minx, miny], [minx, cy],
+            ])
+
+        results.append({
+            'score': 200000.0,
+            'verts': verts,
+            'concave_pt': np.array([cx, cy]),
+            'corner': corner,
+        })
+    return results
 
 
 def _collect_approx_candidates(cv2, cnt, cnt_pts, global_minx, global_miny,
                                global_maxx, global_maxy,
                                g_outer_w, g_outer_h, g_diag, g_corners,
-                               sliding_result, hull_result):
+                               sliding_results, hull_results):
     """approxPolyDP 多 epsilon 简化 + 凹角评分（V2/V3），生成 tier1/2/3。
 
-    sliding_result / hull_result 为最高优先级候选，先入 tier1。
+    [V1.1 多角改造] sliding_results / hull_results 改为列表（每角一个 dict）。
+    单角时列表长度为 1，等价于旧行为。
     返回 (tier1, tier2, tier3)。
     """
     _tier1 = []  # 5~8 verts + 1 凹角（首选）
@@ -423,14 +439,16 @@ def _collect_approx_candidates(cv2, cnt, cnt_pts, global_minx, global_miny,
     _tier3 = []  # 兜底
 
     # 滑动窗口 + 凸包结果优先并入 tier1
-    if sliding_result is not None:
-        _tier1.append((sliding_result['score'],
-                       sliding_result['verts'],
-                       [(1.0, 0)]))
-    if hull_result is not None:
-        _tier1.append((hull_result['score'],
-                       hull_result['verts'],
-                       [(1.0, 0)]))
+    if sliding_results:
+        for sr in sliding_results:
+            _tier1.append((sr['score'],
+                           sr['verts'],
+                           [(1.0, 0)]))
+    if hull_results:
+        for hr in hull_results:
+            _tier1.append((hr['score'],
+                           hr['verts'],
+                           [(1.0, 0)]))
 
     peri = cv2.arcLength(cnt, True)
     eps_range = (0.0012, 0.0015, 0.002, 0.003, 0.005, 0.008, 0.012, 0.02, 0.03)
@@ -599,61 +617,84 @@ def _collect_approx_candidates(cv2, cnt, cnt_pts, global_minx, global_miny,
 
 
 def _finalize_lshape_geometry(chosen_list):
-    """从候选列表中选优，计算 L 形参数与顶点。返回最终 dict。"""
-    chosen_list.sort(key=lambda t: -t[0])
+    """从候选列表中选优，计算 L 形参数与顶点。
+
+    [V1.1 多角改造] 不再只取 1 个 reflex，而是对 entry 内全部 reflex
+    逐个计算 corner + cut，返回 all_corners 列表。
+    单角时 all_corners 长度为 1，主字段等价于旧行为。
+    """
+    # [V1.1] 解除收敛点 ②：不再按 score 排序取第一个，
+    # 改为按 reflex 数量降序（多角优先）、再按 score 降序
+    chosen_list.sort(key=lambda t: (-len(t[2]), -t[0]))
     _, verts, reflex = chosen_list[0]
     n = len(verts)
-    _, concave_idx = max(reflex, key=lambda t: t[0])
-    conc = verts[concave_idx]
-    p_prev = verts[(concave_idx - 1) % n]
-    p_next = verts[(concave_idx + 1) % n]
-
-    # —— V3: corner + cut 尺寸统一用 bbox 边界距离 ——
-    # 先用邻接顶点方向判定 corner，再用凹角到 bbox 两条相邻边的距离作为 cut 尺寸。
-    # 这样 cut 尺寸不受 approxPolyDP 顶点偏差 / 数字标注粘连的影响。
-    dx1, dy1 = float(p_prev[0] - conc[0]), float(p_prev[1] - conc[1])
-    dx2, dy2 = float(p_next[0] - conc[0]), float(p_next[1] - conc[1])
-    if abs(dx1) >= abs(dy1):
-        h_nbr, v_nbr = (dx1, dy1), (dx2, dy2)
-    else:
-        h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
-
-    sx = 1 if h_nbr[0] > 0 else -1
-    sy = 1 if v_nbr[1] > 0 else -1
-    _CORNER_MAP = {(1, -1): 'tr', (1, 1): 'br', (-1, -1): 'tl', (-1, 1): 'bl'}
-    corner = _CORNER_MAP.get((sx, sy))
-    if corner is None:
-        return None
 
     xs = verts[:, 0]
     ys = verts[:, 1]
     minx, maxx = int(xs.min()), int(xs.max())
     miny, maxy = int(ys.min()), int(ys.max())
 
-    cx, cy = float(conc[0]), float(conc[1])
-    if corner == 'tr':
-        cut_w_px = maxx - cx          # 凹角到右边 = E
-        cut_h_px = cy - miny          # 凹角到上边 = D
-    elif corner == 'tl':
-        cut_w_px = cx - minx          # 凹角到左边 = E
-        cut_h_px = cy - miny          # 凹角到上边 = D
-    elif corner == 'br':
-        cut_w_px = maxx - cx          # 凹角到右边 = E
-        cut_h_px = maxy - cy          # 凹角到下边 = D
-    else:  # bl
-        cut_w_px = cx - minx          # 凹角到左边 = E
-        cut_h_px = maxy - cy          # 凹角到下边 = D
+    _CORNER_MAP = {(1, -1): 'tr', (1, 1): 'br', (-1, -1): 'tl', (-1, 1): 'bl'}
 
+    # 对全部 reflex 逐个计算 corner + cut
+    sorted_reflexes = sorted(reflex, key=lambda t: -t[0])
+    all_corners = []
+    for score, concave_idx in sorted_reflexes:
+        conc = verts[concave_idx]
+        p_prev = verts[(concave_idx - 1) % n]
+        p_next = verts[(concave_idx + 1) % n]
+
+        dx1, dy1 = float(p_prev[0] - conc[0]), float(p_prev[1] - conc[1])
+        dx2, dy2 = float(p_next[0] - conc[0]), float(p_next[1] - conc[1])
+        if abs(dx1) >= abs(dy1):
+            h_nbr, v_nbr = (dx1, dy1), (dx2, dy2)
+        else:
+            h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
+
+        sx = 1 if h_nbr[0] > 0 else -1
+        sy = 1 if v_nbr[1] > 0 else -1
+        corner = _CORNER_MAP.get((sx, sy))
+        if corner is None:
+            continue
+
+        cx, cy = float(conc[0]), float(conc[1])
+        if corner == 'tr':
+            cut_w_px = maxx - cx
+            cut_h_px = cy - miny
+        elif corner == 'tl':
+            cut_w_px = cx - minx
+            cut_h_px = cy - miny
+        elif corner == 'br':
+            cut_w_px = maxx - cx
+            cut_h_px = maxy - cy
+        else:  # bl
+            cut_w_px = cx - minx
+            cut_h_px = maxy - cy
+
+        all_corners.append({
+            'corner': corner,
+            'cut_w_px': float(cut_w_px),
+            'cut_h_px': float(cut_h_px),
+            'concave': (int(conc[0]), int(conc[1])),
+            'score': float(score),
+        })
+
+    if not all_corners:
+        return None
+
+    primary = all_corners[0]
     return {
-        'corner': corner,
-        'cut_w_px': float(cut_w_px),
-        'cut_h_px': float(cut_h_px),
+        'corner': primary['corner'],
+        'cut_w_px': primary['cut_w_px'],
+        'cut_h_px': primary['cut_h_px'],
         'outer_w_px': float(maxx - minx),
         'outer_h_px': float(maxy - miny),
-        'concave': (int(conc[0]), int(conc[1])),
+        'concave': primary['concave'],
         'bbox': (minx, miny, maxx, maxy),
         'verts': [(int(x), int(y)) for x, y in verts],
         'n_verts': n,
+        'all_corners': all_corners,
+        'n_detected': len(all_corners),
     }
 
 
@@ -689,25 +730,35 @@ def _detect_lshape_geometry(cv2, gray):
     ]
 
     # —— 几何自洽：滑动窗口凹角检测（最高优先级）——
-    _sliding_result = _detect_concave_sliding_window(
+    _sliding_results = _detect_concave_sliding_window(
         cnt_pts, g_outer_w, g_outer_h, g_diag, g_corners,
         global_minx, global_miny, global_maxx, global_maxy)
     # —— 凸包差异法（最高优先级）——
-    _hull_result = _detect_by_convex_hull(
+    _hull_results = _detect_by_convex_hull(
         cv2, cnt_pts, global_minx, global_miny, global_maxx, global_maxy)
 
     # 多边形简化 + 凹角评分（V2/V3）：组织 tier 候选
     _tier1, _tier2, _tier3 = _collect_approx_candidates(
         cv2, cnt, cnt_pts, global_minx, global_miny, global_maxx, global_maxy,
         g_outer_w, g_outer_h, g_diag, g_corners,
-        _sliding_result, _hull_result)
+        _sliding_results, _hull_results)
 
-    chosen_list = _tier1 or _tier2 or _tier3
-    if not chosen_list:
+    # [V1.1 多角改造] 解除收敛点 ②：不再用 _tier1 or _tier2 or _tier3 短路，
+    # 改为合并全部 tier，按 reflex 数量降序（多角优先）+ score 降序择优。
+    # 单角场景：所有 entry 的 reflex 数 = 1，退化为按 score 取最高，等价于旧行为。
+    all_entries = _tier1 + _tier2 + _tier3
+    if not all_entries:
         return None
 
     # L 形参数计算
-    return _finalize_lshape_geometry(chosen_list)
+    geo = _finalize_lshape_geometry(all_entries)
+    if geo is None:
+        return None
+
+    # G1 闸口数据：记录各通道检测到的角数
+    geo['n_detected_hull'] = len(_hull_results) if _hull_results else 0
+    geo['n_detected_sliding'] = len(_sliding_results) if _sliding_results else 0
+    return geo
 
 
 # ---------------------------------------------------------------------------
@@ -1258,12 +1309,26 @@ def parse_lshape_sketch(
         })
         return result
 
+    # —— G1 闸口：检测到的凹角数 vs 实际消费数 ——
+    n_detected = geo.get('n_detected', 1)
+    n_consumed = 1  # 第一期：下游管线仍为单角，只消费 1 个
+    result.notches_detected = n_detected
+    result.notches_consumed = n_consumed
+
     result.success = True
-    result.message = (
+    msg = (
         f"L 形识别成功（corner={geo['corner']}, "
         f"外框 {dims['outer_w_cm']:.1f}×{dims['outer_h_cm']:.1f}cm, "
         f"挖角 {dims['cut_w_cm']:.1f}×{dims['cut_h_cm']:.1f}cm, 自洽={sc:.2f}）"
     )
+    if n_detected > n_consumed:
+        all_corners = geo.get('all_corners', [])
+        unused = [c['corner'] for c in all_corners[n_consumed:]]
+        msg += (
+            f" ⚠️ 检测到 {n_detected} 个凹角，当前仅应用 1 个"
+            f"（{geo['corner']}），其余角位 {unused} 需手动补充"
+        )
+    result.message = msg
     result.method = f"lshape_v{_ALGO_VERSION}(sc={sc:.2f})"
     result.corner = geo['corner']
     result.outer_w_cm = round(dims['outer_w_cm'], 2)
@@ -1284,6 +1349,10 @@ def parse_lshape_sketch(
         'cut_w_px': geo['cut_w_px'],
         'cut_h_px': geo['cut_h_px'],
         'verts': geo['verts'],
+        'all_corners': geo.get('all_corners', []),
+        'n_detected': n_detected,
+        'n_detected_hull': geo.get('n_detected_hull', 0),
+        'n_detected_sliding': geo.get('n_detected_sliding', 0),
     })
     _progress(100, "识别完成")
     return result
