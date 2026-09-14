@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartShapeCrop 多角 L 形挖角可行性分析 V1.1</title>
+<style>
+:root{
+  --bg:#f6f8fa; --card:#ffffff; --text:#1f2328; --muted:#656d76;
+  --border:#d8dee4; --border-soft:#eaeef2;
+  --p0:#cf222e; --p0bg:#fff5f5;
+  --p1:#bc4c00; --p1bg:#fff8f0;
+  --p2:#0969da; --p2bg:#f0f6ff;
+  --ok:#1a7f37; --okbg:#edf9f0;
+  --accent:#0969da;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.7;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
+header{
+  background:linear-gradient(135deg,#1f4e9c 0%,#2b6cb0 100%);
+  color:#fff;border-radius:12px;padding:30px 34px;margin-bottom:26px;
+}
+header h1{margin:0 0 8px;font-size:26px;font-weight:650;letter-spacing:.3px}
+header .sub{opacity:.9;font-size:13.5px}
+header .meta{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px}
+header .meta span{
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+  padding:4px 12px;border-radius:20px;font-size:12.5px;
+}
+h2{
+  font-size:19px;margin:34px 0 14px;padding-left:11px;
+  border-left:4px solid var(--accent);font-weight:640;
+}
+h3{font-size:15.5px;margin:22px 0 10px;font-weight:620;color:#24292f}
+h4{font-size:14px;margin:16px 0 8px;font-weight:620;color:#24292f}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:20px 22px;margin-bottom:16px;
+}
+.verdict{
+  background:var(--card);border:1px solid var(--border);border-left:5px solid var(--p1);
+  border-radius:10px;padding:18px 22px;margin-bottom:22px;
+}
+.verdict b{color:var(--p1)}
+.verdict.ok{border-left-color:var(--ok)}
+.verdict.ok b{color:var(--ok)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-bottom:20px}
+.kpi{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:15px 16px;text-align:center;
+}
+.kpi .v{font-size:25px;font-weight:680;line-height:1.25;letter-spacing:-.5px}
+.kpi .l{font-size:12px;color:var(--muted);margin-top:5px}
+.kpi .n{font-size:11px;margin-top:5px}
+.kpi .d{font-size:11px;margin-top:4px;color:var(--ok);font-weight:620}
+.g{color:var(--ok)} .r{color:var(--p0)} .o{color:var(--p1)} .b{color:var(--p2)} .m{color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+th,td{border:1px solid var(--border-soft);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:#f0f3f6;font-weight:620;color:#24292f;white-space:nowrap}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr:nth-child(even){background:#fbfcfd}
+.issue{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  margin-bottom:14px;overflow:hidden;
+}
+.issue .hd{padding:13px 18px;display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.issue .hd .tag{
+  font-size:11px;font-weight:700;padding:2.5px 9px;border-radius:5px;
+  color:#fff;letter-spacing:.5px;flex-shrink:0;
+}
+.issue .hd .t{font-weight:640;font-size:14.5px}
+.issue .bd{padding:0 18px 16px}
+.p0 .hd{background:var(--p0bg);border-bottom:1px solid #ffd7d5}
+.p0 .tag{background:var(--p0)}
+.p1 .hd{background:var(--p1bg);border-bottom:1px solid #ffe0c2}
+.p1 .tag{background:var(--p1)}
+.p2 .hd{background:var(--p2bg);border-bottom:1px solid #cfe3ff}
+.p2 .tag{background:var(--p2)}
+.p3 .hd{background:#f2f7f2;border-bottom:1px solid #d6ecd9}
+.p3 .tag{background:var(--ok)}
+.field{margin:11px 0 0}
+.field .k{
+  font-size:12px;font-weight:660;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;
+}
+.field .val{font-size:13.2px}
+pre{
+  background:#f6f8fa;border:1px solid var(--border-soft);border-radius:7px;
+  padding:11px 13px;overflow-x:auto;font-size:12.2px;line-height:1.6;
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  margin:6px 0 0;color:#24292f;white-space:pre;
+}
+code{
+  background:#f0f3f6;padding:1.5px 5px;border-radius:4px;font-size:12.4px;
+  font-family:"SFMono-Regular",Consolas,monospace;
+}
+pre code{background:none;padding:0}
+.phase{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:16px 20px;margin-bottom:13px;
+}
+.phase .ph{font-weight:660;font-size:14.5px;margin-bottom:9px;color:#24292f;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.phase .ph .no{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;
+  font-size:12.5px;font-weight:700;flex-shrink:0;
+}
+.phase ul{margin:6px 0 0;padding-left:20px}
+.phase li{margin:5px 0;font-size:13.2px}
+.risk{font-size:11.5px;padding:1.5px 8px;border-radius:4px;margin-left:8px;font-weight:620}
+.risk.lo{background:var(--okbg);color:var(--ok)}
+.risk.mid{background:var(--p1bg);color:var(--p1)}
+.risk.hi{background:var(--p0bg);color:var(--p0)}
+.flow{
+  display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:14px 0;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px 16px;
+}
+.flow .node{
+  flex:1;min-width:132px;border:1px solid var(--border);border-radius:8px;
+  padding:10px 11px;background:#fbfcfd;font-size:12.4px;
+}
+.flow .node .nt{font-weight:650;font-size:12.8px;margin-bottom:3px;color:#24292f}
+.flow .node .nd{color:var(--muted);font-size:11.6px;line-height:1.5}
+.flow .arrow{
+  display:flex;align-items:center;justify-content:center;
+  padding:0 7px;color:var(--muted);font-size:17px;flex-shrink:0;
+}
+.flow .node.hi{border-color:#cfe3ff;background:var(--p2bg)}
+.flow .node.warn{border-color:#ffe0c2;background:var(--p1bg)}
+.chk{list-style:none;padding-left:0;margin:8px 0}
+.chk li{padding-left:26px;position:relative;margin:7px 0;font-size:13.2px}
+.chk li:before{
+  content:"✓";position:absolute;left:0;top:0;
+  width:17px;height:17px;line-height:17px;text-align:center;border-radius:4px;
+  background:var(--okbg);color:var(--ok);font-size:11px;font-weight:700;
+}
+.chk.x li:before{content:"!";background:var(--p0bg);color:var(--p0)}
+footer{
+  margin-top:44px;padding-top:20px;border-top:1px solid var(--border);
+  font-size:12.3px;color:var(--muted);display:flex;justify-content:space-between;
+  flex-wrap:wrap;gap:10px;
+}
+.toc{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:16px 22px;margin-bottom:22px;
+}
+.toc .tt{font-weight:640;font-size:13.5px;margin-bottom:8px;color:#24292f}
+.toc ol{margin:0;padding-left:22px;columns:2;column-gap:30px}
+.toc li{margin:4px 0;font-size:13px}
+.toc a{color:var(--accent);text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.note{
+  background:var(--p2bg);border:1px solid #cfe3ff;border-radius:8px;
+  padding:11px 15px;font-size:12.8px;margin:12px 0;
+}
+.note.warn{background:var(--p1bg);border-color:#ffe0c2}
+.note.bad{background:var(--p0bg);border-color:#ffd7d5}
+.note.ok{background:var(--okbg);border-color:#d6ecd9}
+.note b{color:#24292f}
+.bars{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px 22px;margin-bottom:16px}
+.bar{display:flex;align-items:center;gap:12px;margin:9px 0}
+.bar .bl{width:150px;flex-shrink:0;font-size:12.8px;font-weight:600;color:#24292f;text-align:right}
+.bar .bt{flex:1;height:22px;background:#f0f3f6;border-radius:5px;overflow:hidden;position:relative}
+.bar .bf{height:100%;border-radius:5px;display:flex;align-items:center;padding-left:9px;color:#fff;font-size:11.5px;font-weight:600;white-space:nowrap}
+.bar .bz{font-size:12px;color:var(--muted);width:76px;flex-shrink:0}
+.dsvg{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;text-align:center}
+.cap{font-size:12.3px;color:var(--muted);margin-top:8px;text-align:center}
+.q-table td:first-child{width:34%}
+.delta td:nth-child(2){color:var(--muted)}
+.delta td:nth-child(3){color:#24292f;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>SmartShapeCrop 多角 L 形挖角可行性分析 V1.1</h1>
+  <div class="sub">L 形面板「单角挖角 → 多角复合挖角」扩展评估；本版新增识别层实测复检、闸口设计与手动修正通路</div>
+  <div class="meta">
+    <span>报告版本 V1.1</span>
+    <span>日期 2026-09-14</span>
+    <span>项目版本 V2.2.1</span>
+    <span>基线 commit 44c4fd1</span>
+    <span>性质：只读分析 · 未改动任何代码</span>
+    <span>替代：V1.0（同日）</span>
+  </div>
+</header>
+
+<div class="toc">
+  <div class="tt">目录</div>
+  <div style="font-size:13px;margin-bottom:9px"><b>本版修订</b>：<a href="#s0" style="color:var(--accent);text-decoration:none">V1.1 相对 V1.0 的修订</a></div>
+  <ol>
+    <li><a href="#s1">结论摘要</a></li>
+    <li><a href="#s2">需求还原：草图尺寸链与几何本质</a></li>
+    <li><a href="#s3">现状：单 corner 硬编码点全清单</a></li>
+    <li><a href="#s4">难度分层：钱花在哪一层</a></li>
+    <li><a href="#s5">识别层实测复检（V1.1 新增）</a></li>
+    <li><a href="#s6">闸口设计（V1.1 新增）</a></li>
+    <li><a href="#s7">手动修正通路（V1.1 新增）</a></li>
+    <li><a href="#s8">关键决策：扩展现有面板 vs 单开面板</a></li>
+    <li><a href="#s9">分期实施路线</a></li>
+    <li><a href="#s10">风险清单与缓解措施</a></li>
+    <li><a href="#s11">验收证据与待拍板事项</a></li>
+  </ol>
+</div>
+
+<!-- ============ 修订说明 ============ -->
+<h2 id="s0" style="margin-top:0">V1.1 相对 V1.0 的修订</h2>
+
+<table class="delta">
+  <thead><tr><th>项目</th><th>V1.0</th><th>V1.1</th><th>依据</th></tr></thead>
+  <tbody>
+    <tr><td>识别层工作量</td><td>7–10 天（列为「硬骨头 ②」）</td><td>3–5 天</td><td>§5 实测复检</td></tr>
+    <tr><td>硬骨头数量</td><td>2 层</td><td>1 层（仅边框补全）</td><td>§5 实测复检</td></tr>
+    <tr><td>预计总工期</td><td>3–4 周</td><td>2.5–3 周</td><td>§4 + §5</td></tr>
+    <tr><td>识别层章节</td><td>无（仅文字描述）</td><td>§5 三条通道逐条实测</td><td>新增</td></tr>
+    <tr><td>闸口设计</td><td>无</td><td>§6 三级闸口 G1/G2/G3</td><td>新增</td></tr>
+    <tr><td>手动修正通路</td><td>无</td><td>§7 架构现状 + 缺口 + 修正能力矩阵</td><td>新增</td></tr>
+    <tr><td>第一期范围</td><td>完全跳过识别，全手动填数</td><td>解除三个单角收敛点，识别给出<b>角落 + 尺寸建议值</b>；仅 OCR 精确归属推后</td><td>§9 策略修正</td></tr>
+  </tbody>
+</table>
+
+<div class="note bad">
+  <b>V1.0 的核心估算错误：把「草图识别多角化」当成了需要从零发明算法的活。</b>
+  §5 的实测证明，<b>多挖角的几何数据现有代码早已算出</b>——凸包差异法算出 2 个连通域、
+  approxPolyDP 的 tier2 里躺着 7 个双凹角候选，只是被三个「单角收敛点」掐成了 1 个。
+  这不是算法问题，是优先级问题。
+</div>
+
+<!-- ============ 1 ============ -->
+<h2 id="s1">1. 结论摘要</h2>
+
+<div class="verdict">
+  <b>复杂度判定：中等，成本高度集中。几何层不难；识别层经实测复检后大幅降级；钱仍然花在「边框补全走线」一层。</b><br>
+  多角挖角在几何上就是 <code>矩形 − cut₁ − cut₂ − …</code> 的布尔差集，mask 差集天生支持复合挖角；<br>
+  识别层三条并行通道<b>均已算出多角数据</b>，改造语义收敛为一句话：把三处「单角收敛」换成「按 bbox 四角分桶」；<br>
+  真正的难点只剩 <code>core/lshape_border.py</code> —— 有 <b>6 个函数被 cut_corner 字符串贯穿</b>。
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="v o">中等</div><div class="l">实现复杂度</div><div class="n m">5 层轻活 + 1 层硬骨头</div></div>
+  <div class="kpi"><div class="v b">2.5–3 周</div><div class="l">预计总工作量</div><div class="d">↓ 原估 3–4 周</div></div>
+  <div class="kpi"><div class="v r">1 层</div><div class="l">硬骨头</div><div class="n m">边框补全走线</div></div>
+  <div class="kpi"><div class="v g">3–5 天</div><div class="l">识别层（实测复检后）</div><div class="d">↓ 原估 7–10 天</div></div>
+  <div class="kpi"><div class="v g">0 行</div><div class="l">本次代码改动</div><div class="n m">只读分析</div></div>
+</div>
+
+<div class="card">
+  <h3>一句话结论</h3>
+  <p style="margin:6px 0">
+    <b>建议在现有 L 形面板内扩展，不要单开面板。</b>
+    多角挖角与单角挖角属于<b>同一参数族</b>（1 个 cut → N 个 cut），
+    共用同一套几何、渲染、边框与历史链路；新开面板解决不了那个硬骨头，
+    只会多出一份 UI 代码、多一套历史记录源、多一处穿透读写 ——
+    正是《多洞面板拆分可行性分析 V1.0》中点名的「寄生 + 多链路穿透」结构。
+  </p>
+</div>
+
+<div class="card">
+  <h3>三条设计主线（V1.1 新增）</h3>
+  <table>
+    <thead><tr><th>主线</th><th>要点</th><th>章节</th></tr></thead>
+    <tbody>
+      <tr><td><b>解除收敛</b></td><td>识别层不需要新算法，只需把 <code>argmax</code> / <code>or 短路</code> / <code>max</code> 三处收敛换成按 bbox 四角分桶</td><td>§5</td></tr>
+      <tr><td><b>加装闸口</b></td><td>现有失效模式是「静默丢掉一个角，却报告识别成功」。需 G1 结构一致性 / G2 置信度 / G3 人工核对三级闸口</td><td>§6</td></tr>
+      <tr><td><b>兜底修正</b></td><td>手动修正通路 <b>2026-09-03 就已铺好</b>（识别只写建议值，用户可就地编辑），本期只需扩为 N 行 + 保留 geometry 提示</td><td>§7</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="note">
+  <b>过渡方案（可先顶着）：</b>若多角挖角目前只是零星定制单，按项目文档
+  <code>L形挖角已知问题与后续规划.md</code> 中 SR-3 的缓解措施 ——
+  <b>单角渲染两次 + 外部合成</b>即可交付。待频次上升再启动正式改造。
+</div>
+
+<!-- ============ 2 ============ -->
+<h2 id="s2">2. 需求还原：草图尺寸链与几何本质</h2>
+
+<div class="card">
+  <h3>2.1 草图尺寸链解析</h3>
+  <p style="margin:6px 0">
+    需求草图：<code>双面格-定制-裁剪有图-简织;62.8x143CM裁剪有图.png</code>。
+    文件名给出的板材尺寸 <b>62.8 × 143 CM</b> 与图内标注<b>完全自洽</b>：
+  </p>
+  <table>
+    <thead><tr><th>方向</th><th>图上标注</th><th>尺寸链求和</th><th>与板材尺寸比对</th></tr></thead>
+    <tbody>
+      <tr><td>上边（宽）</td><td>115 + 28</td><td class="num">= 143</td><td class="g">✓ 吻合</td></tr>
+      <tr><td>下边（宽）</td><td>113 + 30</td><td class="num">= 143</td><td class="g">✓ 吻合</td></tr>
+      <tr><td>左边（高）</td><td>50 + 12.8</td><td class="num">= 62.8</td><td class="g">✓ 吻合</td></tr>
+      <tr><td>右边（高）</td><td>8 + 54.8</td><td class="num">= 62.8</td><td class="g">✓ 吻合</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:10px 0 0">由此可唯一还原出两个挖角参数：</p>
+  <table>
+    <thead><tr><th>挖角</th><th>位置</th><th>挖角宽度 cut_w</th><th>挖角高度 cut_h</th><th>对应现有字段</th></tr></thead>
+    <tbody>
+      <tr><td>挖角 ①</td><td>右上角 <code>tr</code></td><td class="num">28 cm</td><td class="num">8 cm</td><td><code>corner='tr'</code></td></tr>
+      <tr><td>挖角 ②</td><td>左下角 <code>bl</code></td><td class="num">30 cm</td><td class="num">12.8 cm</td><td><code>corner='bl'</code></td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    两个挖角<b>方位不同（对角）、尺寸不同</b>，正是现有 <code>LShapeDesign</code>
+    （单 corner + 单 cut_w/h）无法表达的场景。
+  </div>
+</div>
+
+<div class="dsvg">
+  <svg viewBox="0 0 900 400" width="100%" style="max-width:900px" role="img" aria-label="草图几何还原：板材 143 乘 62.8，右上角挖 28 乘 8，左下角挖 30 乘 12.8">
+    <text x="450" y="26" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#1f2328">几何还原：板材 143 × 62.8 cm，两个对角挖角</text>
+
+    <rect x="624.7" y="70" width="125.3" height="35.8" fill="#fdeaea" stroke="#c0392b" stroke-width="1" stroke-dasharray="5 3"/>
+    <text x="687" y="85" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#a5271b">挖角 ① tr</text>
+    <text x="687" y="99" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#a5271b">28 × 8</text>
+
+    <rect x="110" y="293.7" width="134.3" height="57.3" fill="#fdeaea" stroke="#c0392b" stroke-width="1" stroke-dasharray="5 3"/>
+    <text x="177" y="317" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#a5271b">挖角 ② bl</text>
+    <text x="177" y="331" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#a5271b">30 × 12.8</text>
+
+    <path d="M110 70 L624.7 70 L624.7 105.8 L750 105.8 L750 351 L244.3 351 L244.3 293.7 L110 293.7 Z"
+          fill="#f7fbff" stroke="#1f2328" stroke-width="2" stroke-linejoin="miter"/>
+
+    <circle cx="110" cy="70" r="3" fill="#1f2328"/>
+    <circle cx="624.7" cy="70" r="3" fill="#1f2328"/>
+    <circle cx="624.7" cy="105.8" r="3" fill="#c0392b"/>
+    <circle cx="750" cy="105.8" r="3" fill="#1f2328"/>
+    <circle cx="750" cy="351" r="3" fill="#1f2328"/>
+    <circle cx="244.3" cy="351" r="3" fill="#1f2328"/>
+    <circle cx="244.3" cy="293.7" r="3" fill="#c0392b"/>
+    <circle cx="110" cy="293.7" r="3" fill="#1f2328"/>
+
+    <g font-family="sans-serif" font-size="13" fill="#c0392b" font-weight="600">
+      <text x="367" y="60" text-anchor="middle">115</text>
+      <text x="634" y="93" text-anchor="start">8</text>
+      <text x="687" y="124" text-anchor="middle">28</text>
+      <text x="764" y="232" text-anchor="start">54.8</text>
+      <text x="98" y="187" text-anchor="end">50</text>
+      <text x="177" y="286" text-anchor="middle">30</text>
+      <text x="252" y="326" text-anchor="start">12.8</text>
+      <text x="497" y="372" text-anchor="middle">113</text>
+    </g>
+
+    <g font-family="sans-serif" font-size="11.5" fill="#656d76">
+      <text x="110" y="386">起点 (0, 0) · 左上角为直角</text>
+      <text x="750" y="386" text-anchor="end">可见凹角 2 处 → 轮廓 8 顶点（现有单角路径只支持 6 顶点）</text>
+    </g>
+  </svg>
+  <div class="cap">图 1　草图几何还原（红色虚线框为被挖掉的角，红点为新产生的凹角）</div>
+</div>
+
+<div class="card">
+  <h3>2.2 几何本质：纯布尔差集，这层不复杂</h3>
+  <p style="margin:6px 0">
+    现有 <code>build_lshape_mask()</code> 的算法是「填充外框 → 用相反值挖掉 cut_rect → 处理圆角」。
+    多角只是在第 2 步<b>多挖几个矩形</b>：
+  </p>
+<pre><code># core/geometry.py:620 现有实现（单 cut）
+fill_rect_mask(m, outer_rect, fill_value)
+cut = _get_lshape_cut_rect_at_offset(outer_rect, corner_key, cut_w, cut_h, 0)
+if has_cut:
+    fill_rect_mask(m, cut, other)          # ← 挖掉一个角
+
+# 多角改造方向：循环即可，mask 差集天然支持复合
+for ck, cw, ch in cuts:                    # ← cuts 为挖角列表
+    cut = _get_lshape_cut_rect_at_offset(outer_rect, ck, cw, ch, 0)
+    if cut.w > 0.5 and cut.h > 0.5:
+        fill_rect_mask(m, cut, other)</code></pre>
+  <p style="margin:10px 0 0">
+    这也是为什么本报告把「几何 layer」判为<b>易</b>：
+    多边形布尔运算本身不需要新算法，只需要把单值参数换成列表。
+  </p>
+</div>
+
+<!-- ============ 3 ============ -->
+<h2 id="s3">3. 现状：单 corner 硬编码点全清单</h2>
+
+<p>以下为本次<b>逐文件通读</b>得到的单角硬编码点，共 <b>7 层 / 9 个文件 / 12 处</b>：</p>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>层</th><th>文件 : 行</th><th>硬编码形态</th><th>多角改造动作</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>数据模型</td><td><code>core/geometry.py:60-68</code></td><td><code>LShape.corner</code> 单值 + <code>cut_w/cut_h</code> 标量</td><td>改为挖角列表</td></tr>
+    <tr><td>2</td><td>数据模型</td><td><code>core/geometry.py:136-138</code></td><td><code>CropDesign.l_corner / l_cut_w_cm / l_cut_h_cm</code></td><td>新增列表字段，保留旧字段兼容</td></tr>
+    <tr><td>3</td><td>取值入口</td><td><code>core/geometry.py:303</code></td><td><code>l_shape_px()</code> 返回<b>单个</b> LShape</td><td>新增 <code>l_shapes_px()</code> 返回列表</td></tr>
+    <tr><td>4</td><td>几何 mask</td><td><code>core/geometry.py:620</code></td><td>单 cut_rect + 单 <code>opposite_map</code> 内部拐角</td><td>循环挖角 + 每个 cut 独立算内部拐角</td></tr>
+    <tr><td>5</td><td>边框带</td><td><code>core/geometry.py:689</code></td><td><code>compute_lshape_border_bands</code> 两同心 L mask 差集</td><td>mask 已支持，抽样点需扩充</td></tr>
+    <tr><td>6</td><td>渲染主链路</td><td><code>core/image_ops.py:737,783,1068</code></td><td>三处 <code>mode=='rect_lshape'</code> 单实例分支</td><td>循环化</td></tr>
+    <tr><td>7</td><td>渲染主链路</td><td><code>core/image_ops.py:810-829</code></td><td>挖角区 <code>_extra</code> 四分支 if-elif</td><td>循环化（4 分支 → N 次）</td></tr>
+    <tr><td>8</td><td>边框补全</td><td><code>core/lshape_border.py:236,265-328</code></td><td><code>compute_cut_edge_bboxes</code> 四分支</td><td><b>逐凹角处理</b></td></tr>
+    <tr><td>9</td><td>边框补全</td><td><code>core/lshape_border.py:365,413-441</code></td><td><code>draw_border_layers_on_cut_edges</code> 由 cut_corner 定边缘侧</td><td><b>逐凹角处理</b></td></tr>
+    <tr><td>10</td><td>边框补全</td><td><code>core/lshape_border.py:525,858,1115</code></td><td><code>apply_lshape_border_completion</code> / <code>_apply_v13_path</code> / <code>patch_lshape_cut</code> 全部贯穿 cut_corner，靠 <code>flipx/flipy</code> 镜像</td><td><b>逐凹角处理（最大工作量）</b></td></tr>
+    <tr><td>11</td><td>草图识别</td><td><code>services/sketch_parser/lshape_sketch_parser.py</code></td><td>单凹角检测 + 双锚点四象限投票 → 单 corner</td><td><b>解除收敛（详见 §5）</b></td></tr>
+    <tr><td>12</td><td>GUI 面板</td><td><code>gui/lshape_panel.py:233-239</code></td><td>1 个 QComboBox + 2 个 SpinBox</td><td>N 行「每角：勾选 + 宽 + 高」</td></tr>
+  </tbody>
+</table>
+
+<div class="note warn">
+  <b>注意 <code>if corner == 'tl' / elif 'tr' / elif 'bl' / else 'br'</code> 这一模式在 core 层反复出现。</b>
+  它意味着「四分支 if-elif 链」是多角改造的主要重复劳动 ——
+  每一处都要从「四选一」改成「对每个挖角各执行一次」。
+</div>
+
+<!-- ============ 4 ============ -->
+<h2 id="s4">4. 难度分层：钱花在哪一层</h2>
+
+<div class="card">
+  <h3>4.1 工作量分布（V1.1 更新）</h3>
+  <div class="bars" style="border:none;padding:4px 0;margin:0">
+    <div class="bar"><div class="bl">数据模型</div><div class="bt"><div class="bf" style="width:5%;background:#1a7f37">0.5d</div></div><div class="bz">易</div></div>
+    <div class="bar"><div class="bl">几何 mask</div><div class="bt"><div class="bf" style="width:9%;background:#1a7f37">1d</div></div><div class="bz">易</div></div>
+    <div class="bar"><div class="bl">GUI 面板</div><div class="bt"><div class="bf" style="width:9%;background:#1a7f37">1d</div></div><div class="bz">易</div></div>
+    <div class="bar"><div class="bl">渲染主链路</div><div class="bt"><div class="bf" style="width:22%;background:#bc4c00">2–3d</div></div><div class="bz">中</div></div>
+    <div class="bar"><div class="bl">边框带差集</div><div class="bt"><div class="bf" style="width:15%;background:#bc4c00">2d</div></div><div class="bz">中</div></div>
+    <div class="bar"><div class="bl">草图识别</div><div class="bt"><div class="bf" style="width:30%;background:#bc4c00">3–5d</div></div><div class="bz">中</div></div>
+    <div class="bar"><div class="bl">边框补全走线</div><div class="bt"><div class="bf" style="width:70%;background:#cf222e">7–10d</div></div><div class="bz">难</div></div>
+  </div>
+  <p style="margin:14px 0 0;font-size:13.2px">
+    7 层中 <b>5 层是轻活</b>（合计约 5 天）；<b>边框补全走线一层独占约一半工期</b>；
+    草图识别经 §5 实测复检后由「最难」降为「中」，从 7–10 天下修到 3–5 天。
+    这个分布决定了实施策略：<b>先做轻活 5 层 + 解除识别收敛，把边框补全留到第二期</b>。
+  </p>
+</div>
+
+<div class="issue p0">
+  <div class="hd"><span class="tag">硬骨头 ①</span><span class="t">core/lshape_border.py —— 素材边框补全与走线</span><span class="risk hi">7–10 天 · 唯一硬骨头</span></div>
+  <div class="bd">
+    <div class="field"><div class="k">为什么难</div>
+      <div class="val">
+        <code>cut_corner</code> 作为字符串参数<b>贯穿 6 个函数</b>：
+        <code>compute_cut_edge_bboxes</code> → <code>draw_border_layers_on_cut_edges</code>
+        → <code>apply_lshape_border_completion</code> → <code>_apply_v13_path</code>
+        → <code>patch_lshape_cut</code>，内部靠 <code>flipx/flipy</code> 按角做镜像，
+        还要从原素材图检测边框带、按外→内分层重绘。
+      </div></div>
+    <div class="field"><div class="k">多角带来的新问题</div>
+      <div class="val">
+        ① 每个凹角都要<b>独立走一遍</b>边框带检测 + 补边；<br>
+        ② 相邻挖角在外框上共享边段时，边框带会<b>重叠冲突</b>；
+        本例两个凹角分别落在左边与右边上（对角），冲突风险较低 —— 但四角同挖时必须处理。
+      </div></div>
+    <div class="field"><div class="k">建议</div>
+      <div class="val">分期支持：<b>先只做「对角两挖角」</b>（覆盖本例），相邻角推后。</div></div>
+  </div>
+</div>
+
+<div class="issue p1">
+  <div class="hd"><span class="tag">已降级</span><span class="t">lshape_sketch_parser.py —— 识别层不再算硬骨头</span><span class="risk mid">3–5 天</span></div>
+  <div class="bd">
+    <div class="field"><div class="k">V1.0 的判断</div>
+      <div class="val">
+        曾列为「硬骨头 ②」，理由是「现有算法是整图找<b>唯一</b>凹角，多角需升级为找出全部凹角
+        → 各自配对算 cut_w/cut_h → 把 OCR 尺寸标注归属到正确的角」，估 7–10 天。
+      </div></div>
+    <div class="field"><div class="k">V1.1 修正</div>
+      <div class="val">
+        <b>前半段（找全部凹角 + 各自配对）实测证明现有代码已经做完了</b> ——
+        多角数据就存在，只是被三个「单角收敛点」掐成 1 个（详见
+        <a href="#s5" style="color:var(--p2)">§5</a>）。<br>
+        真正需要动脑的只剩<b>后半段：OCR 尺寸标注逐角归属</b>（A/B/C/D/E/F 六角色
+        泛化为「每角一组」），这才是 3–5 天的主体，也才是 SR-1 风险所在。
+      </div></div>
+    <div class="field"><div class="k">结论</div>
+      <div class="val">
+        从「算法攻关」降级为「解除收敛 + 归属泛化」。第一期即可顺手解除收敛
+        （约 0.5 天），让识别先给出「有几个角、在哪个角、尺寸约多少」的建议值。
+      </div></div>
+  </div>
+</div>
+
+<!-- ============ 5 ============ -->
+<h2 id="s5">5. 识别层实测复检（V1.1 新增）</h2>
+
+<div class="note">
+  本节是 V1.1 全部修订的证据来源。<b>方法</b>：用需求草图的真实尺寸链构造合成草图
+  （板材 143 × 62.8 cm，比例 4 px/cm，轮廓 8 顶点，右上挖 28×8、左下挖 30×12.8），
+  直接调用现有识别函数 <code>_detect_lshape_geometry()</code> 与 <code>_collect_approx_candidates()</code>，
+  观察它们各自返回什么。
+</div>
+
+<div class="card">
+  <h3>5.1 实测结果 A：现有函数静默丢失第二个挖角</h3>
+  <p style="margin:6px 0">调用 <code>_detect_lshape_geometry(cv2, gray)</code>，返回：</p>
+<pre><code>corner    = 'bl'
+cut_w_px  = 118.0     cut_h_px  = 51.0
+cut_w_cm  = 29.50     cut_h_cm  = 12.75     ← 真值 30 × 12.8，吻合
+n_verts   = 6                               ← 单 L 形的顶点数</code></pre>
+  <div class="note bad">
+    <b>这是本次复检最重要的发现，也是最危险的失效模式。</b><br>
+    函数<b>只识别出左下角（bl）一个挖角</b>，右上角那个 28 × 8 <b>被完全丢弃</b>——
+    而且它<b>没有报错、没有告警、没有返回 None</b>。
+    因为尺寸落在有效区间内，<code>parse_lshape_sketch</code> 会把 <code>result.success</code> 置为 <b>True</b>，
+    状态栏显示「L 形识别成功（corner=bl, 挖角 29.5×12.75cm, 自洽=…）」。
+    <br><br>
+    也就是说：<b>用户会拿到一个看起来完全正常的成功提示，但成品少挖了一个角。</b>
+    这正是 §6 闸口设计要防的东西。
+  </div>
+</div>
+
+<div class="dsvg">
+  <svg viewBox="0 0 900 320" width="100%" style="max-width:900px" role="img" aria-label="三条识别通道均已算出多挖角数据，只在收敛点被截断为单个挖角">
+    <defs>
+      <marker id="mg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#1a7f37" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+      <marker id="mr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#cf222e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <text x="450" y="26" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#1f2328">三条通道均已算出多挖角数据，只在收敛点被截断为 1 个</text>
+
+    <rect x="40" y="60" width="260" height="62" rx="8" fill="#edf9f0" stroke="#1a7f37" stroke-width="1"/>
+    <text x="170" y="80" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#1f2328">凸包差异法</text>
+    <text x="170" y="98" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#1a7f37">gap 连通域 = 2 个（已算出）</text>
+    <text x="170" y="114" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#656d76">27.5×8.0 与 29.5×12.8 cm</text>
+
+    <rect x="40" y="140" width="260" height="62" rx="8" fill="#edf9f0" stroke="#1a7f37" stroke-width="1"/>
+    <text x="170" y="160" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#1f2328">approxPolyDP 多 ε</text>
+    <text x="170" y="178" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#1a7f37">tier2 有 7 个双凹角候选</text>
+    <text x="170" y="194" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#656d76">凹角 (115.2, 8.0) 与 (29.8, 50.0)</text>
+
+    <rect x="40" y="220" width="260" height="62" rx="8" fill="#edf9f0" stroke="#1a7f37" stroke-width="1"/>
+    <text x="170" y="240" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#1f2328">滑动窗口</text>
+    <text x="170" y="258" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#1a7f37">逐点凹凸性全部算出</text>
+    <text x="170" y="274" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#656d76">但仅保留 best_score</text>
+
+    <rect x="360" y="128" width="250" height="104" rx="8" fill="#fff5f5" stroke="#cf222e" stroke-width="1"/>
+    <text x="485" y="152" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#a5271b">单角收敛点（三处语义相同）</text>
+    <text x="485" y="176" text-anchor="middle" font-family="monospace" font-size="11" fill="#cf222e">argmax(areas)  ·  max(score)</text>
+    <text x="485" y="196" text-anchor="middle" font-family="monospace" font-size="11" fill="#cf222e">_tier1 or _tier2 or _tier3</text>
+    <text x="485" y="216" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#656d76">每个都只放行 1 个凹角</text>
+
+    <rect x="670" y="150" width="190" height="60" rx="8" fill="#fff8f0" stroke="#bc4c00" stroke-width="1"/>
+    <text x="765" y="171" text-anchor="middle" font-family="monospace" font-size="11.5" font-weight="600" fill="#bc4c00">corner = 'bl'</text>
+    <text x="765" y="191" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#656d76">静默丢掉右上 28 × 8</text>
+
+    <g stroke="#1a7f37" stroke-width="1.2" fill="none">
+      <path d="M300 91 L360 150" marker-end="url(#mg)"/>
+      <path d="M300 171 L360 180" marker-end="url(#mg)"/>
+      <path d="M300 251 L360 210" marker-end="url(#mg)"/>
+    </g>
+    <path d="M610 180 L670 180" stroke="#cf222e" stroke-width="1.2" fill="none" marker-end="url(#mr)"/>
+  </svg>
+  <div class="cap">图 2　三条识别通道的多角数据在收敛点被截断（绿=已算出的可用数据，红=收敛点，橙=实际输出）</div>
+</div>
+
+<div class="card">
+  <h3>5.2 实测结果 B：三条通道的多角数据逐条核对</h3>
+  <table>
+    <thead>
+      <tr><th>通道</th><th>代码位置</th><th>实际算出了什么（实测）</th><th>收敛点</th><th>可用性</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>凸包差异法</b></td>
+        <td><code>_detect_by_convex_hull<br>:306</code></td>
+        <td><code>gap = hull − contour</code> 的连通域<b>恰好 2 个</b>：<br>
+            区域① 27.5 × 8.0 cm，触碰【右、上】→ 对应 tr<br>
+            区域② 29.5 × 12.8 cm，触碰【左、下】→ 对应 bl<br>
+            <span class="m">（0.5cm 系统偏差来自 3px 描边宽度）</span></td>
+        <td><code>best_label =<br>1 + argmax(areas)</code><br><span class="m">:343</span></td>
+        <td class="g">数据完整<br>去掉 argmax 即可</td>
+      </tr>
+      <tr>
+        <td><b>approxPolyDP 多 ε</b></td>
+        <td><code>_collect_approx_candidates<br>:412</code></td>
+        <td><code>_tier2</code> 内 <b>7 个 <code>n_verts=8</code> / 凹角数=2 的候选</b>；<br>
+            凹角坐标 <b>(115.2, 8.0)</b> 与 <b>(29.8, 50.0)</b>，<br>
+            与真值 (115,8) / (30,50) 误差 &lt; 0.2 cm</td>
+        <td><code>chosen_list =<br>_tier1 or _tier2<br>or _tier3</code><br><span class="m">:705</span></td>
+        <td class="o">数据完整<br>但被结构性短路</td>
+      </tr>
+      <tr>
+        <td><b>滑动窗口</b></td>
+        <td><code>_detect_concave_sliding_window<br>:151</code></td>
+        <td>逐点 concavity 全部算出，但循环内 <code>if score &gt; best_score</code> 只留最优</td>
+        <td><code>if score &gt;<br>best_score</code><br><span class="m">:262</span></td>
+        <td class="o">需改为<br>按四角分桶</td>
+      </tr>
+      <tr>
+        <td><b>候选过滤</b></td>
+        <td><code>_collect_approx_candidates<br>:488-570</code></td>
+        <td><code>filtered_reflex</code> <b>保留全部候选</b>，且 <code>n_cand</code> 已统计<br>
+            <span class="m">（:576 <code>n_cand = len(filtered_reflex)</code>）</span></td>
+        <td><code>max(final_reflex,<br>key=…)</code><br><span class="m">:587</span></td>
+        <td class="g">数据完整<br>去掉 max 即可</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>5.3 实测结果 C：区分「真凹角」与「文字噪点」的判据</h3>
+  <p style="margin:6px 0">
+    现有代码之所以用 <code>argmax(areas)</code> 只取最大连通域，注释里写明了原因（
+    <code>:333-336</code>）：「数字标注若与轮廓分离但落在 bbox 内（如贴边文字），
+    会产生零散 gap 噪点，直接对全部 gap 取 bbox 会把挖角 bbox 撑满全图」。
+    这个顾虑是对的，但解法不必是「只留最大的」。
+  </p>
+  <p style="margin:10px 0 0">实测得到的区分判据：</p>
+  <table>
+    <thead><tr><th>判据</th><th>阈值</th><th>原理</th><th>实测效果</th></tr></thead>
+    <tbody>
+      <tr><td>面积门槛</td><td>≥ bbox 面积的 <b>0.5%</b></td><td>文字噪点面积远小于真实挖角</td><td class="g">本例两个真凹角分别占 1.24% / 2.11%，均通过</td></tr>
+      <tr><td><b>触碰 bbox 边数</b></td><td><b>≥ 2 条</b></td><td>角落处的真实挖角必然同时贴着该角的两条外框边；贴边文字只触 1 条</td><td class="g">本例 tr 触碰【右、上】、bl 触碰【左、下】，全部命中；文字噪点全部只触 1 条</td></tr>
+    </tbody>
+  </table>
+  <div class="note ok">
+    <b>「触碰 ≥ 2 条 bbox 边」是本次复检找到的关键判据。</b>
+    它比面积阈值更本质 —— 因为它是<b>拓扑性质</b>而非尺寸性质，
+    不受分辨率、描边宽度、挖角大小影响，而且天然把「文字粘连」和「真实凹角」分开。
+    这正好补上了现有注释里那个顾虑留下的缺口。
+  </div>
+</div>
+
+<div class="card">
+  <h3>5.4 根因：tier 优先级机制的结构性短路</h3>
+  <p style="margin:6px 0">
+    <code>_collect_approx_candidates()</code> 的分层逻辑（<code>:591-596</code>）：
+  </p>
+<pre><code>if 5 &lt;= n &lt;= 8 and n_conc == 1:        # :591
+    _tier1.append(entry)                # ← 单凹角 → 首选
+elif 5 &lt;= n &lt;= 10 and n_conc &lt;= 2:     # :593
+    _tier2.append(entry)                # ← 「1~2 凹角」→ 次选
+else:
+    _tier3.append(entry)</code></pre>
+  <p style="margin:12px 0 0">
+    而 tier 列表头部的注释（<code>:421-423</code>）写得更明白：
+  </p>
+<pre><code>_tier1 = []  # 5~8 verts + 1 凹角（首选）
+_tier2 = []  # 5~10 verts + 1~2 凹角（次选）    ← 「2 凹角」分支早已设计
+_tier3 = []  # 兜底</code></pre>
+  <div class="note bad">
+    <b>结论：<code>_tier2</code> 的「1~2 凹角」分支早就实现了，但被上游的 <code>or</code> 短路永久压制。</b><br><br>
+    原因是 <code>_detect_lshape_geometry</code> 的取用逻辑（<code>:705</code>）：
+    <code>chosen_list = _tier1 or _tier2 or _tier3</code> ——
+    只要 <code>_tier1</code> 非空就<b>永远不会看 _tier2</b>。<br><br>
+    而 <code>_tier1</code> 恰恰是被两个<b>恒返回单角</b>的方法填满的：
+    滑动窗口法（<code>:427</code>）和凸包差异法（<code>:431</code>）各自只产出一个角。
+    于是 8 顶点 / 2 凹角的正确候选被推进 <code>_tier2</code>，<b>然后永远选不中</b>。<br><br>
+    换句话说：<b>这不是«算法不支持多角»，而是«多角候选被排在了单角候选后面，且排序机制是短路而非择优»。</b>
+  </div>
+</div>
+
+<div class="card">
+  <h3>5.5 好消息：现有硬约束天然适配多角，无需改动</h3>
+  <p style="margin:6px 0">
+    <code>_collect_approx_candidates</code> 内的凹角过滤硬约束，逐条检查后确认<b>在多角场景下依然成立</b>：
+  </p>
+  <table>
+    <thead><tr><th>约束</th><th>代码位置</th><th>单角语境下的含义</th><th>多角语境下是否成立</th></tr></thead>
+    <tbody>
+      <tr><td>cut 比例合理</td><td><code>:356</code> <code>0.02 ≤ cwr, chr_ ≤ 0.75</code></td><td>剔除伪凹角</td><td class="g">✓ 逐角独立判定，天然成立</td></tr>
+      <tr><td>靠近 bbox 角</td><td><code>:538</code> <code>dist_ratio &lt; 0.40</code></td><td>剔除离群凹角</td><td class="g">✓ 每个真实凹角各自靠近<b>自己那个</b> bbox 角，判据升级为「按最近的 bbox 角分桶」即可</td></tr>
+      <tr><td>相邻顶点比例</td><td><code>:569</code> <code>adj_score = base × pf × rf × cf</code></td><td>确认拐角形态</td><td class="g">✓ 与角数无关</td></tr>
+      <tr><td>balance_factor</td><td><code>:577-582</code> 多候选才启用</td><td>惩罚一侧极长的伪凹角</td><td class="o">⚠ 需注意：多角时该因子会倾向于「选更均衡的那一个」，正是它把 tr 挤掉的助力之一</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <b>这意味着识别层的改造可以「不动判据、只动收敛」</b> ——
+    四条硬约束一行不改，只把最后的「选一个」改成「按 bbox 四角分桶，每桶留最优，最多 4 个」。
+    这是本次复检给出的最重要工程结论。
+  </div>
+</div>
+
+<!-- ============ 6 ============ -->
+<h2 id="s6">6. 闸口设计（V1.1 新增）</h2>
+
+<div class="verdict">
+  <b>为什么必须加闸口：</b>§5.1 实测证明，现有识别在双挖角场景下的失效形式不是「识别失败」，
+  而是<b>「识别不完整 + 报告成功」</b>。程序不会崩、不会报错、不会弹提示，
+  用户拿到的是一句看起来很正常的「L 形识别成功」。<br>
+  这类<b>静默失效</b>比崩溃危险得多 —— 崩溃会被发现，静默丢角会直接流到成品。
+</div>
+
+<div class="card">
+  <h3>6.1 三级闸口</h3>
+  <table>
+    <thead><tr><th>闸口</th><th>检测什么</th><th>触发条件</th><th>动作</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>G1<br>结构一致性</b><br><span class="risk hi">最关键</span></td>
+        <td>「检测到的凹角数」<br>vs<br>「实际被消费的凹角数」</td>
+        <td><code>n_detected &gt; n_consumed</code><br><span class="m">即：算出 N 个角，却只用了 1 个</span></td>
+        <td>
+          <b>禁止把 <code>success</code> 置为 True</b>（或置为「部分成功」状态），
+          状态栏明确写明：<br>
+          <code>检测到 2 个凹角，当前仅应用 1 个（corner=bl）</code><br>
+          并把未消费的凹角位置一并列出
+        </td>
+      </tr>
+      <tr>
+        <td><b>G2<br>置信度</b></td>
+        <td><code>self_consistency</code>（0~1 结构自洽度）</td>
+        <td><code>sc &lt; 阈值</code><br><span class="m">建议 0.75，需用真实草图回归标定</span></td>
+        <td>
+          状态栏黄色告警 + 该 GroupBox 边框高亮，
+          提示「识别置信度偏低，请人工核对挖角位置与尺寸」
+        </td>
+      </tr>
+      <tr>
+        <td><b>G3<br>人工核对</b></td>
+        <td>识别结果的可视化</td>
+        <td>多角场景<b>恒开</b></td>
+        <td>
+          在预览图上把每个凹角位置<b>画框 + 标角落标签</b>，
+          让用户一眼看出「程序认为哪里有角」，而不是只看到几个数字
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>6.2 现状：数据都在，只是没被用起来</h3>
+  <table>
+    <thead><tr><th>闸口所需信息</th><th>现状</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td>凹角候选总数</td><td><code>n_cand</code> 已在 <code>:576</code> 算出；<code>final_reflex</code> 保留了全部候选</td><td class="g">现成可用</td></tr>
+      <tr><td>gap 连通域数量</td><td><code>connectedComponentsWithStats</code> 已返回 <code>num_labels</code>（<code>:337</code>）</td><td class="g">现成可用</td></tr>
+      <tr><td>结构自洽度</td><td><code>result.self_consistency</code> 已算出（<code>:1277</code>），<code>method</code> 字段里也带了 <code>sc=0.86</code></td><td class="o">已算出，但只塞在状态栏文字里，未做阈值判断</td></tr>
+      <tr><td>几何还原信息</td><td><code>result.debug</code> 已含 <code>geometry</code> / <code>concave_px</code> / <code>verts</code> / <code>bbox</code>（<code>:1278-1287</code>）</td><td class="r">已算出，但 UI 侧<b>整块丢弃</b>（详见 §7.4）</td></tr>
+    </tbody>
+  </table>
+  <div class="note ok">
+    <b>三个闸口都不需要新算法，只需要把已经算出来的量拿出来做判断和展示。</b>
+    G1 用 <code>n_cand</code> / <code>num_labels</code>，G2 用 <code>self_consistency</code>，
+    G3 用 <code>debug['verts']</code> / <code>debug['geometry']</code>。
+  </div>
+</div>
+
+<div class="card">
+  <h3>6.3 落点位置</h3>
+  <table>
+    <thead><tr><th>闸口</th><th>修改落点</th><th>改动性质</th></tr></thead>
+    <tbody>
+      <tr><td>G1</td><td><code>lshape_sketch_parser.py:1261</code>（<code>result.success = True</code> 处）</td><td>新增判断：<code>n_detected &gt; n_consumed</code> 时改写 message 并降级 success</td></tr>
+      <tr><td>G2</td><td><code>gui/lshape_panel.py:522</code>（<code>_on_lshape_parsed</code>）</td><td>读取 <code>result.self_consistency</code>，低于阈值时改用告警样式</td></tr>
+      <tr><td>G3</td><td><code>gui/lshape_panel.py:575</code>（<code>_apply_lshape_params</code>）状态栏摘要</td><td>扩展摘要文本，逐角列出「位置 + 尺寸 + 置信度」</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <b>G1 有一个实现细节要注意：</b>闸口必须在<b>识别层</b>而不是 UI 层生效 ——
+    否则任何绕过 UI 的调用路径（测试、脚本、未来的批量导入）都拿不到保护。
+    建议在 <code>LSketchParseResult</code> 上新增一个明确字段（如
+    <code>notches_detected</code> / <code>notches_consumed</code>），
+    让「检测到几个 / 用了几个」成为结果对象的一等公民，UI 只是它的呈现方。
+  </div>
+</div>
+
+<div class="card">
+  <h3>6.4 将来多角识别实装后，闸口如何演进</h3>
+  <table>
+    <thead><tr><th>阶段</th><th>G1 的期望状态</th></tr></thead>
+    <tbody>
+      <tr><td>第一期（解除收敛后）</td><td><code>n_consumed == n_detected</code> 成为常态；一旦不等即报警 —— 此时 G1 是<b>主要防线</b></td></tr>
+      <tr><td>第三期（OCR 归属完成后）</td><td>G1 退回为<b>兜底断言</b>，主力防线变成 G2 置信度</td></tr>
+      <tr><td>长期</td><td>G1 应作为<b>不变量</b>（invariant）常驻：它断言的是「算出来的不能白算」，与算法能力无关</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 7 ============ -->
+<h2 id="s7">7. 手动修正通路（V1.1 新增）</h2>
+
+<div class="verdict ok">
+  <b>结论先行：识别错了手动改的能力，项目在 2026-09-03 就已经铺好了。</b>
+  那次 UI 简化的核心决策是 —— <b>去掉识别确认弹窗，让识别结果直接写进面板控件，参数改由用户就地编辑。</b>
+  这个架构恰好是「识别不可靠」的正解：<b>识别只是建议值，用户永远是最终权威。</b>
+  多角扩展只需把这个模式从 1 行复制成 N 行。
+</div>
+
+<div class="card">
+  <h3>7.1 架构现状（代码原文佐证）</h3>
+  <p style="margin:6px 0">
+    <code>gui/lshape_panel.py</code> 中 <code>_on_lshape_parsed()</code> 的文档字符串（<code>:522-530</code>）明确记载：
+  </p>
+<pre><code>[2026-09-03 UI 简化] 原流程：Worker→QDialog.exec_()→用户点确认→_apply_lshape_params
+              新流程：Worker→验证→_apply_lshape_params，参数改由面板 SpinBox 就地编辑。</code></pre>
+  <p style="margin:12px 0 0">
+    以及 <code>_apply_lshape_params()</code>（<code>:575-582</code>）：
+  </p>
+<pre><code>调用方不再是旧 QDialog 的「确认并生成」按钮，而是：
+  - Worker 成功直接 auto-apply（_on_lshape_parsed）
+  - 未来其他程序化回填路径
+因此参数来源使用统一的 `_params_source='recognize'` 标记。</code></pre>
+  <div class="note">
+    <b>这里的 <code>_params_source</code> 标记是整条通路的关键。</b>
+    它把「这个值是识别给的」和「这个值是人改的」在数据层区分开 ——
+    这正是多角化后判断「哪些角需要提示核对」的基础设施，已经现成了。
+  </div>
+</div>
+
+<div class="dsvg">
+  <svg viewBox="0 0 900 400" width="100%" style="max-width:900px" role="img" aria-label="识别结果与手动编辑汇入同一参数真值层，渲染层只读该真值">
+    <defs>
+      <marker id="mb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#0969da" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+      <marker id="mgy" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <text x="450" y="26" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#1f2328">两条入口，一个真值：识别只是「建议值」，用户是最终权威</text>
+
+    <rect x="90" y="60" width="330" height="62" rx="8" fill="#edf9f0" stroke="#1a7f37" stroke-width="1"/>
+    <text x="255" y="80" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#1f2328">识别结果（建议值）</text>
+    <text x="255" y="98" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#1a7f37">写入面板控件，可被就地覆盖</text>
+    <text x="255" y="114" text-anchor="middle" font-family="monospace" font-size="11" fill="#656d76">_params_source = 'recognize'</text>
+
+    <rect x="480" y="60" width="330" height="62" rx="8" fill="#f0f6ff" stroke="#0969da" stroke-width="1"/>
+    <text x="645" y="80" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#1f2328">面板就地编辑</text>
+    <text x="645" y="98" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#0969da">每角：勾选 + 宽 + 高（本期扩为 N 行）</text>
+    <text x="645" y="114" text-anchor="middle" font-family="monospace" font-size="11" fill="#656d76">_params_source = 'manual'</text>
+
+    <rect x="250" y="170" width="400" height="80" rx="8" fill="#fff8f0" stroke="#bc4c00" stroke-width="1"/>
+    <text x="450" y="192" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#1f2328">参数真值 _lshape_params（唯一真值层）</text>
+    <text x="450" y="212" text-anchor="middle" font-family="monospace" font-size="11" fill="#bc4c00">corner · cut_w_cm · cut_h_cm · outer_w_cm/h_cm</text>
+    <text x="450" y="232" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#656d76">两条入口写入同一个 dict，渲染层只认它</text>
+
+    <rect x="300" y="300" width="300" height="60" rx="8" fill="#f6f8fa" stroke="#d8dee4" stroke-width="1"/>
+    <text x="450" y="321" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#1f2328">渲染层 render_design</text>
+    <text x="450" y="341" text-anchor="middle" font-family="sans-serif" font-size="11.5" fill="#656d76">只读参数真值，与识别完全解耦</text>
+
+    <g stroke="#0969da" stroke-width="1.2" fill="none">
+      <path d="M255 122 L255 170" marker-end="url(#mb)"/>
+      <path d="M645 122 L645 170" marker-end="url(#mb)"/>
+    </g>
+    <path d="M450 250 L450 300" stroke="#5f5e5a" stroke-width="1.2" fill="none" marker-end="url(#mgy)"/>
+  </svg>
+  <div class="cap">图 3　手动修正通路：识别与手动编辑汇入同一参数真值层，渲染层与之解耦</div>
+</div>
+
+<div class="card">
+  <h3>7.2 已具备的手动修正能力</h3>
+  <ul class="chk">
+    <li><b>就地编辑</b>：识别成功后参数直接落在面板控件上，无需二次确认即可改动</li>
+    <li><b>来源标记</b>：<code>_params_source</code> 区分 <code>recognize</code> / <code>manual</code>（<code>:454</code>）</li>
+    <li><b>手动提示</b>：改动后状态栏显示 <code>✏️ 参数已手动修改：…</code>（<code>:458-462</code>）</li>
+    <li><b>外框可改</b>：外框宽高同样是 SpinBox，含「画布值 = 设计值 + 1cm 损耗」的语义转换（<code>:433-438</code>）</li>
+    <li><b>失败可退</b>：识别失败走 <code>lshape_recognize_finished.emit(False)</code>（<code>:541</code>），退回矩形解析，<b>程序不崩</b></li>
+    <li><b>程序化回填</b>：<code>set_lshape_params()</code>（<code>:678</code>）已用 <code>blockSignals</code> 隔离，可安全批量写入不触发预览</li>
+    <li><b>清除重置</b>：<code>clear_lshape_params()</code>（<code>:665</code>）在草图被清除时调用，状态干净</li>
+  </ul>
+  <div class="note ok">
+    也就是说，<b>即使识别完全失灵，用户依然可以在面板上把参数填对并出图</b> ——
+    这条通路今天就已经是通的。多角化要做的是「让这条路能填 N 个角」，而不是「从零建这条路」。
+  </div>
+</div>
+
+<div class="card">
+  <h3>7.3 修正能力矩阵：识别错的每种情形怎么改</h3>
+  <table>
+    <thead><tr><th>识别出错的情形</th><th>用户动作</th><th>现有支撑 / 本期需补</th></tr></thead>
+    <tbody>
+      <tr><td><b>漏识别一个挖角</b><br><span class="m">（§5.1 实测的正是这种）</span></td><td>在缺失那一行勾选，填入宽 / 高</td><td class="o">需本期把 GUI 扩为 N 行（清单 #12）</td></tr>
+      <tr><td><b>多识别一个不存在的挖角</b></td><td>取消该行勾选</td><td class="o">同上，勾选框天然支持</td></tr>
+      <tr><td><b>挖角尺寸偏差 ±3%</b></td><td>直接改数字框</td><td class="g">已有 SpinBox（<code>:238-239</code>）</td></tr>
+      <tr><td><b>角落方位判错</b><br><span class="m">（如 tr 认成 tl）</span></td><td>改下拉框</td><td class="g">已有 QComboBox（<code>:233-237</code>）</td></tr>
+      <tr><td><b>整体识别失败</b><br><span class="m">（success=False）</span></td><td>四个角全手动填</td><td class="g">已有：自动退回矩形 + 面板可填</td></tr>
+      <tr><td><b>外框尺寸识别错</b></td><td>改外框 SpinBox</td><td class="g">已有（<code>:222-223</code>）</td></tr>
+      <tr><td><b>识别自洽度低但不敢确认</b></td><td>看预览图上的角位框，人工核对</td><td class="r">需本期补 G3（§6）</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <b>矩阵读法：</b>7 种情形里 <b>4 种今天就能改</b>（尺寸 / 方位 / 整体失败 / 外框），
+    剩下 3 种都指向同一件事 —— <b>把 UI 从「1 行」扩成「N 行」</b>，以及把几何提示显示出来。
+    没有一种需要新的几何或渲染能力。
+  </div>
+</div>
+
+<div class="card">
+  <h3>7.4 两个必须补的缺口</h3>
+
+  <div class="note bad">
+    <b>缺口 ①：<code>result.debug['geometry']</code> 在 UI 侧被整块丢弃。</b><br><br>
+    识别层其实算得很足 —— <code>:1278-1287</code> 把 <code>geometry</code>、<code>concave_px</code>、
+    <code>verts</code>、<code>bbox</code>、<code>cut_w_px</code>、<code>cut_h_px</code> 全部塞进了 <code>debug</code>，
+    连失败分支（<code>:1253-1258</code>）都留了 <code>geometry</code> / <code>roles</code> / <code>partial</code>。<br><br>
+    但 <code>_on_lshape_parsed()</code> 只取了 <code>result.corner</code> / <code>cut_w_cm</code> / <code>cut_h_cm</code>
+    三个标量，<b>其余全部扔掉</b>。<br><br>
+    <b>后果：</b>用户看不到「程序认为哪里有角」。在单角场景下无所谓（只有一个角，不用指认）；
+    但多角场景下这是致命的 —— <b>用户不知道要去改哪一行</b>。<br>
+    <b>修法：</b>把 <code>verts</code> / <code>concave_px</code> 用于 G3 的可视化与状态栏摘要，
+    不改识别层，只改 UI 的取用。
+  </div>
+
+  <div class="note warn">
+    <b>缺口 ②：多角场景下 <code>debug['verts']</code> 本身也是被收敛污染过的。</b><br><br>
+    §5.1 实测显示 <code>_detect_lshape_geometry</code> 返回 <code>n_verts=6</code> ——
+    即连 <code>debug</code> 里的轮廓都是那个<b>单角版本</b>（8 顶点的正确轮廓在 tier2 里没被选中）。<br><br>
+    <b>所以缺口 ① 不能单独修</b>：必须先解除收敛（§5.4），让正确的 8 顶点轮廓进到
+    <code>chosen_list[0]</code>，<code>debug['verts']</code> 才是有意义的数据。
+    这是「先解除收敛、后暴露 debug」的依赖顺序。
+  </div>
+</div>
+
+<div class="card">
+  <h3>7.5 为什么这条通路是「零风险」的</h3>
+  <div class="flow">
+    <div class="node hi">
+      <div class="nt">识别层</div>
+      <div class="nd">只产出建议值，<br>不直接驱动渲染</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node warn">
+      <div class="nt">参数真值 dict</div>
+      <div class="nd">唯一下游输入，<br>两条入口同一路径</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node">
+      <div class="nt">渲染层</div>
+      <div class="nd">无识别依赖，<br>只看 dict</div>
+    </div>
+  </div>
+  <p style="margin:6px 0 0">
+    因为<code>识别写入</code>与<code>手动写入</code>走的是<b>同一个 <code>_lshape_params</code> dict</b>，
+    手动修正不需要任何特殊路径，也就不会引入新的失效面。
+    识别层即使判错，代价也只是「建议值不对」，用户改一下即可 —— <b>错误不外溢到渲染</b>。
+  </p>
+  <div class="note ok">
+    <b>这条性质对多角改造尤其重要：</b>它意味着第一期可以先只做「解除收敛 + GUI 扩行」，
+    即使识别在第一期还不够准，用户也能手动兜住。<b>风险被限制在识别层内部。</b>
+  </div>
+</div>
+
+<!-- ============ 8 ============ -->
+<h2 id="s8">8. 关键决策：扩展现有面板 vs 单开面板</h2>
+
+<h3>8.1 两方案对比</h3>
+<table class="q-table">
+  <thead>
+    <tr><th>维度</th><th>方案 A · 扩展现有 L 形面板 <span class="risk lo">推荐</span></th><th>方案 B · 单开新面板</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>核心难点是否解决</td><td class="g">不解决也不恶化 —— 难点在 core，与面板归属无关</td><td class="r">完全不解决，反而多一层参数转发</td></tr>
+    <tr><td>几何 / 渲染代码</td><td class="g">复用同一套，改完单角路径也有收益</td><td class="r">要么复制一份（双份维护），要么仍调同一套（那何必新面板）</td></tr>
+    <tr><td>数据落点</td><td class="g"><code>CropDesign.l_*</code> 单一写入方</td><td class="r"><code>l_*</code> 字段被两个面板写，需额外约定</td></tr>
+    <tr><td>历史记录</td><td class="g">沿用 <code>TARGET_SRC_LSHAPE</code> 第三源，零改动</td><td class="r">需新增第四源，或与第三源混写</td></tr>
+    <tr><td>现有 444 条测试</td><td class="o">需回归（涉及 core 改动）</td><td class="g">若走独立 mode 则完全不影响</td></tr>
+    <tr><td>手动修正通路（§7）</td><td class="g">直接继承 2026-09-03 那套就地编辑架构</td><td class="r">需在新面板里重建一套（含 <code>_params_source</code> 标记、状态同步、历史联动）</td></tr>
+    <tr><td>UI 表达自然度</td><td class="g">「挖角列表」是 1→N 的自然延伸</td><td class="r">两个面板功能高度重叠，用户易混淆</td></tr>
+    <tr><td>长期维护成本</td><td class="g">单条链路</td><td class="r">双链路，后续每次改边框都要改两处</td></tr>
+  </tbody>
+</table>
+
+<h3>8.2 推荐方案 A 的四条理由</h3>
+<div class="card">
+  <ol style="margin:0;padding-left:22px">
+    <li style="margin:7px 0"><b>新面板解决不了任何硬骨头。</b>
+      难点全在 <code>core/</code> 的几何与边框补全，不在 UI 层。
+      换成新面板，那 6 个被 <code>cut_corner</code> 贯穿的函数一行都不会变。</li>
+    <li style="margin:7px 0"><b>多角与单角属同一参数族。</b>
+      本质是「1 个 cut → N 个 cut」，共用同一套几何、渲染、边框、历史链路。
+      这是<b>参数扩展</b>，不是<b>新功能</b>。</li>
+    <li style="margin:7px 0"><b>识别层实测证明改造量很小（§5）。</b>
+      既然多角数据的获取成本已接近零，就更没有理由为它单开一个面板 ——
+      「为一件顺手就能做的事另起一套 UI」是纯粹的维护负担。</li>
+    <li style="margin:7px 0"><b>项目已有前车之鉴。</b>
+      《多洞面板拆分可行性分析 V1.0》把「多洞参数寄生在水池面板内、
+      被四条链路穿透读写」列为<b>最大难度来源</b>。
+      再开一个 L 形面板，等于人为制造第二个穿透点。</li>
+  </ol>
+</div>
+
+<div class="verdict ok">
+  <b>唯一应当选方案 B 的情形：</b>若多角挖角确认只是零星定制单，且你坚决不碰 <code>core/</code> ——
+  可走「新面板 + 新 mode（如 <code>poly_lshape</code>）+ 只做 mask 差集、跳过素材边框补全」的轻隔离路线。
+  不动现有 <code>rect_lshape</code> 链路，444 条测试零影响。
+  <b>代价是</b>挖角边缘的素材花纹边框会断，且长期维护双份渲染逻辑，同时<b>放弃 §7 那套现成的手动修正通路</b>。
+</div>
+
+<!-- ============ 9 ============ -->
+<h2 id="s9">9. 分期实施路线</h2>
+
+<div class="note">
+  以下步骤<b>尚未执行</b>。建议严格分期，每期完成后用同一张
+  <code>62.8x143CM</code> 草图做渲染比对，确认无回归再进下一期。
+  <b>与 V1.0 的差别：第一期不再「完全跳过识别」，而是解除三个收敛点，让识别给出建议值。</b>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">1</span>打通链路：手动多角 + 解除识别收敛 <span class="risk lo">1–2 天 · 先做</span></div>
+  <ul>
+    <li>数据结构列表化：<code>LShape</code> / <code>CropDesign</code> 增加挖角列表字段，<b>保留旧字段兼容</b></li>
+    <li><code>build_lshape_mask()</code> 单 cut → 循环挖角（清单 #4）</li>
+    <li><code>image_ops.py</code> 三处单实例分支 + <code>_extra</code> 四分支链循环化（清单 #6、#7）</li>
+    <li>GUI：1 下拉 + 2 数字框 → N 行「每角：勾选 + 宽 + 高」（清单 #12）</li>
+    <li><b>解除三个单角收敛点（§5.4）——约 0.5 天，本期性价比最高的一项</b>：
+      <br>① <code>_detect_by_convex_hull</code>：<code>argmax(areas)</code> → 返回<b>全部</b>连通域，
+      用 §5.3 判据（面积 ≥0.5% bbox 且触碰 ≥2 条边）过滤
+      <br>② <code>_collect_approx_candidates</code>：<code>_tier1 or _tier2</code> → 改为按「凹角数需求」择优，不再短路
+      <br>③ 滑动窗口 / <code>final_reflex</code>：<code>max(score)</code> → <b>按 bbox 四角分桶，每桶留最优 1 个</b>
+    </li>
+    <li><b>仍然跳过 OCR 精确归属</b>：识别只提供「有几个角 + 分别在哪个角 + 尺寸建议值」，
+      尺寸宁可给粗一点，交由用户在面板就地修正（§7）</li>
+    <li>顺手实装 <b>G1 闸口</b>（§6）：<code>notches_detected</code> / <code>notches_consumed</code>
+      写进 <code>LSketchParseResult</code>，不等即降级 success</li>
+    <li><b>产出</b>：本例双角草图能渲染出正确轮廓（挖角区纯白、无素材残留），
+      且面板自动预填 tr 28×8 与 bl 30×12.8 两个角</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">2</span>边框跟随：逐凹角走线 <span class="risk mid">1–2 周 · 唯一硬骨头</span></div>
+  <ul>
+    <li><code>lshape_border.py</code> 6 个函数逐凹角化（清单 #8、#9、#10）</li>
+    <li><b>先只支持「对角两挖角」</b>（覆盖本例），相邻角与四角推后</li>
+    <li><code>compute_lshape_border_bands</code> 抽样点扩充（清单 #5）</li>
+    <li><b>产出</b>：挖角边缘的素材花纹边框连续、无断口</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">3</span>自动识别：OCR 标注逐角归属 <span class="risk mid">3–5 天 · 原估 1–2 周</span></div>
+  <ul>
+    <li><b>范围已大幅收窄</b>：凹角检测与尺寸配对已由第一期完成（§5），本期的真正内容是
+      <b>把 OCR 尺寸标注归属到正确的角</b></li>
+    <li>现有 <code>cut_top = corner in ('tr','tl')</code>（<code>:731</code>）这类单布尔判定，
+      泛化为「每角一组」的 A/B/C/D/E/F 角色映射</li>
+    <li><code>_resolve_dimensions</code>（<code>:991</code>）从标量输出改为逐角列表</li>
+    <li>同步泛化 SR-1 的归属判定权重（角越多、标注越密，误归属概率越高）</li>
+    <li>实装 <b>G2 / G3 闸口</b>（§6），并利用 §7.4 的 <code>debug['verts']</code> 做角位可视化</li>
+    <li><b>产出</b>：上传草图 → 自动填好各角参数，用户核对后出图</li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="ph"><span class="no">+</span>贯穿三期：逐边约束守卫 + 闸口不变量 <span class="risk mid">必补</span></div>
+  <ul>
+    <li>现有 <code>_validate_lshape_geometry()</code> 守卫条件是 <code>cut &lt; outer − 2cm</code>，
+      这是<b>单角尺度</b>的约束，多角下会失效。</li>
+    <li>必须升级为<b>逐边约束</b>：同一条边上两个相邻挖角之和不得超出该边长，例如上边
+      <code>cut_tl_w + cut_tr_w &lt; outer_w − 2cm</code>，四条边各查一次。</li>
+    <li>否则相邻两 cut 相接会导致 L 形轮廓退化（凹角消失、轮廓自交）。</li>
+    <li>G1 结构一致性闸口应作为<b>不变量常驻</b>，不随识别能力提升而移除（§6.4）。</li>
+  </ul>
+</div>
+
+<!-- ============ 10 ============ -->
+<h2 id="s10">10. 风险清单与缓解措施</h2>
+
+<table>
+  <thead><tr><th>#</th><th>风险</th><th>等级</th><th>触发条件</th><th>缓解措施</th></tr></thead>
+  <tbody>
+    <tr><td>R1</td><td>边框补全在凹角处断口 / 重叠</td><td class="r">高</td><td>相邻两挖角共享外框边段</td><td>分期只支持对角；相邻角单独立项</td></tr>
+    <tr><td>R2</td><td>识别「静默丢角还报成功」<br><span class="m">（§5.1 实测的失效模式）</span></td><td class="r">高</td><td>检测到 N 个凹角但只消费 1 个</td><td><b>G1 结构一致性闸口（§6）</b>：不等即降级 success 并明示未消费角数</td></tr>
+    <tr><td>R3</td><td>草图标注误归属放大（沿用 SR-1）</td><td class="r">高</td><td>角数 ≥2 且标注密集</td><td>OCR 归属整体推至第三期；第一期只用轮廓几何，不依赖 OCR</td></tr>
+    <tr><td>R4</td><td>几何退化（轮廓自交）</td><td class="o">中</td><td>相邻 cut 之和 ≥ 边长</td><td>逐边约束守卫（见 9 节 +）</td></tr>
+    <tr><td>R5</td><td><code>CropDesign</code> 字段兼容性破坏</td><td class="o">中</td><td>旧历史记录 / 旧快照回放</td><td>新增列表字段，旧标量字段保留并单向映射</td></tr>
+    <tr><td>R6</td><td>单角路径回归<br><span class="m">（解除收敛时改动公共函数）</span></td><td class="o">中</td><td>收敛点改动触及 <code>_finalize_lshape_geometry</code> 等公共出口</td><td>保持「单元素列表 ≡ 单角」等价性；跑满 444 条测试；本报告 §5 的合成草图作为新增回归用例</td></tr>
+    <tr><td>R7</td><td>闸口误报<br><span class="m">（把正确的单角判定为多角）</span></td><td class="g">低</td><td>文字噪点恰好触碰 2 条 bbox 边</td><td>§5.3 的面积门槛 + 触碰边数双重判据；G2 置信度作为第二道校验</td></tr>
+    <tr><td>R8</td><td>四角同挖时的圆角处理</td><td class="g">低</td><td>多角 + 圆角叠加</td><td>本期不承诺，圆角逐角独立算</td></tr>
+  </tbody>
+</table>
+
+<div class="note warn">
+  <b>关于 R6：</b>本次改造会触及 <code>core/</code>，与「不能改变程序功能逻辑」的约束存在张力。
+  缓解思路是 <b>「单元素列表 ≡ 原单角行为」</b>——
+  挖角列表长度为 1 时，代码路径与现有实现完全等价，
+  这样 444 条测试全部保持通过，可作为无回归的硬证据。
+</div>
+
+<div class="note">
+  <b>关于 R2 与 R3 的关系：</b>这两个风险作用方向相反，构成一对约束 ——
+  R3 说「标注归属容易错」，R2 说「错了不能静默」。合起来的结论是：
+  <b>第一期不要试图让识别自己把尺寸认准，而是让它把「有几个角、在哪个角」说准，
+  尺寸交给用户修。</b>这就是 §9 第一期范围调整的依据。
+</div>
+
+<!-- ============ 11 ============ -->
+<h2 id="s11">11. 验收证据与待拍板事项</h2>
+
+<div class="card">
+  <h3>11.1 本次分析的性质（零改动证据）</h3>
+  <ul class="chk">
+    <li>本次为<b>只读代码通读 + 合成草图实测 + 可行性分析</b>，未修改任何源码、配置或测试</li>
+    <li><code>git status --short</code> 结果：工作区<b>仅 2 个未追踪文件</b> ——
+      <code>.workbuddy/memory/2026-09-14.md</code>（本次分析的工作记忆）与
+      本报告的 V1.0 版本，<b>受版本控制的源码与配置零改动</b></li>
+    <li><code>git diff --stat</code> 输出为空</li>
+    <li>基线 commit：<code>44c4fd1</code>（2026-09-14，v2.2.1-更新版本V2.2.1）</li>
+    <li>§5 全部实测数据均通过<b>临时脚本调用现有函数</b>获得，脚本经 <code>-c</code> 内联执行，
+      <b>未向工作区写入任何文件</b></li>
+    <li>本报告本身为新产出文档，存放于 <code>ProductSummary/SmartShapeCrop分析报告/</code></li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>11.2 §5 实测的可复现性</h3>
+  <p style="margin:6px 0">为了让结论可被独立复核，实测的构造条件记录如下：</p>
+  <table>
+    <thead><tr><th>项</th><th>值</th></tr></thead>
+    <tbody>
+      <tr><td>合成草图轮廓顶点（cm）</td><td><code>(0,0) (115,0) (115,8) (143,8) (143,62.8) (30,62.8) (30,50) (0,50)</code></td></tr>
+      <tr><td>比例 / 边距</td><td>4 px/cm；四周各留 20 px</td></tr>
+      <tr><td>二值化方向</td><td>前景 = 多边形（黑底白形，注意与 <code>_extract_largest_contour</code> 的 Otsu 反相口径一致）</td></tr>
+      <tr><td>调用的函数</td><td><code>_detect_lshape_geometry(cv2, gray)</code> / <code>_collect_approx_candidates(...)</code></td></tr>
+      <tr><td>运行环境</td><td><code>.venv</code>（Python 3.13.14，含 opencv-python-headless）</td></tr>
+      <tr><td>预期正确输出</td><td><code>corner='tr'</code> 28×8 与 <code>corner='bl'</code> 30×12.8 <b>两个角</b></td></tr>
+      <tr><td>实际输出</td><td class="r"><code>corner='bl'</code> 29.50×12.75，<code>n_verts=6</code>，<b>仅 1 个角</b></td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    建议把这张合成草图作为<b>新增回归用例</b>纳入测试集（对应 §10 的 R6 缓解措施）——
+    它同时覆盖「双角识别」与「G1 闸口」两条待验证行为。
+  </div>
+</div>
+
+<div class="card">
+  <h3>11.3 开工前需拍板的四个问题</h3>
+  <table>
+    <thead><tr><th>#</th><th>待确认问题</th><th>影响</th></tr></thead>
+    <tbody>
+      <tr><td>Q1</td><td>最多需要支持几个挖角？2 个 / 3 个 / 4 个全支持？</td><td>决定 GUI 是「四行固定」还是「可增删列表」；决定边框补全的复杂度</td></tr>
+      <tr><td>Q2</td><td>是否需要支持<b>相邻角</b>同时挖角（如 tl + tr）？</td><td>相邻角是边框重叠冲突的唯一来源，是二期工期的最大变量</td></tr>
+      <tr><td>Q3</td><td>每个挖角是否需要<b>各自独立的圆角</b>？</td><td>影响 mask 圆角处理与边框带走向</td></tr>
+      <tr><td>Q4</td><td>这类订单的实际频次？（周/月几单）</td><td>决定是先走「两次渲染外合」过渡，还是直接启动正式改造</td></tr>
+    </tbody>
+  </table>
+  <div class="note ok">
+    <b>V1.1 补充：Q1 的答案现在更便宜了。</b>由于识别层的多角数据已经存在（§5），
+    支持 4 个角的<b>识别侧</b>成本与支持 2 个角几乎相同 ——
+    真正的成本差异仍然全在<b>边框补全</b>（Q2 的相邻角冲突）。
+    所以可以考虑：<b>识别与 GUI 直接按 4 角设计，边框补全按 2 角分期交付。</b>
+  </div>
+</div>
+
+<div class="card">
+  <h3>11.4 与项目既有规划的关系</h3>
+  <p style="margin:6px 0">
+    本报告的结论与 <code>ProductSummary/L形挖角设计器/L形挖角已知问题与后续规划.md</code> 中
+    <b>规划 F-1（多 L 形挖角 + 中间洞复合支持，P2，3–4 周）</b>一致，本次（含 V1.0）为 F-1 提供了：
+  </p>
+  <ul style="margin:6px 0;padding-left:22px">
+    <li>逐文件、逐行号的<b>硬编码点清单</b>（F-1 原文只给了数据结构层面的描述）</li>
+    <li>识别层三个<b>单角收敛点的精确行号</b>（<code>:343</code> / <code>:705</code> / <code>:587</code>），
+      以及「多角数据其实已算出」的实测证据</li>
+    <li><b>「先解除收敛、后做 OCR 归属」</b>的分期策略 —— 把 F-1 的 3–4 周重构为
+      「1–2 天可用」+ 一个 1–2 周 + 一个 3–5 天</li>
+    <li>真正需求（对角双挖角）与 F-1 原始设想（多 L + 中间洞）的<b>范围收窄建议</b></li>
+    <li><b>闸口设计（§6）与手动修正通路（§7）</b> —— 这两项 F-1 与 V1.0 均未涉及，
+      但它们决定了「识别不准时能否安全交付」</li>
+  </ul>
+</div>
+
+<div class="verdict ok">
+  <b>下一步建议（按性价比排序）：</b>
+  <ol style="margin:6px 0 0;padding-left:22px">
+    <li style="margin:5px 0"><b>先把 G1 闸口做掉</b>（§6）—— 它独立于多角改造，改动小，
+      且立刻消除「静默丢角」这个当前就在发生的风险</li>
+    <li style="margin:5px 0">再做第一期的<b>三个收敛点解除</b>（约 0.5 天），
+      用 §11.2 的合成草图验证能否同时返回两个角</li>
+    <li style="margin:5px 0">然后进数据模型 / 几何 / GUI 的列表化，打通手动多角闭环</li>
+    <li style="margin:5px 0">边框补全（第二期）放在链路稳定之后，它是唯一的大块工作</li>
+  </ol>
+</div>
+
+<footer>
+  <div>SmartShapeCrop 多角 L 形挖角可行性分析 · 报告版本 V1.1 · 2026-09-14</div>
+  <div>基线 commit 44c4fd1 · 项目版本 V2.2.1 · 只读分析，源码零改动</div>
+</footer>
+
+</div>
+</body>
+</html>
