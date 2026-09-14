@@ -24,6 +24,7 @@ from core.lshape_border import (
     apply_lshape_border_completion,
     compute_cut_edge_bboxes,
     detect_pool_material_borders,
+    detect_border_v13,
 )
 
 
@@ -60,6 +61,20 @@ def _make_bordered_material(size=(400, 300), border=20,
 def _make_plain_material(size=(400, 300), fill=(255, 255, 255)) -> Image.Image:
     """合成无边框的纯色素材图。"""
     return Image.new('RGB', size, fill)
+
+
+def _make_marble_material(size=(600, 400), border=4) -> Image.Image:
+    """黑色外描边 + 多方向纹理的大理石面，不含独立色带。"""
+    w, h = size
+    arr = np.empty((h, w, 3), dtype=np.uint8)
+    for y in range(h):
+        for x in range(w):
+            value = 95 + ((x * 17 + y * 11 + (x * y) % 29) % 45)
+            arr[y, x] = (value, max(0, value - 8), max(0, value - 14))
+    img = Image.fromarray(arr, mode='RGB')
+    ImageDraw.Draw(img).rectangle(
+        [0, 0, w - 1, h - 1], outline=(12, 10, 9), width=border)
+    return img
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +200,12 @@ class TestDetectPoolMaterialBorders:
         img = _make_bordered_material(size=(400, 300), border=120)
         assert detect_pool_material_borders(img, (255, 255, 255)) == []
 
+    def test_marble_texture_does_not_become_gray_band(self):
+        """大理石仅有黑外描边时，纹理不能被 V13 误判成灰色带。"""
+        result = detect_border_v13(_make_marble_material())
+        assert result is not None
+        assert result[1] == 0
+
 
 # ---------------------------------------------------------------------------
 # 3. _filter_content_layers —— 内容匹配层过滤
@@ -275,6 +296,27 @@ class TestApplyLshapeBorderCompletion:
 
 # 远离边缘的区域（保留区中心）必须保持未涂色
         np.testing.assert_array_equal(canvas[300, 400], [255, 255, 255])
+
+    def test_marble_material_paints_only_outer_black_stroke(self):
+        """大理石 L 形切边只补最外黑描边，不生成灰色纹理带。"""
+        canvas = np.full((600, 800, 3), 255, dtype=np.uint8)
+        src = _make_marble_material()
+
+        ok = apply_lshape_border_completion(
+            canvas,
+            src.resize((800, 600)),
+            RectShape(x=0, y=0, w=800, h=600),
+            'tr', 200.0, 100.0,
+            src_material_img=src,
+            scale_x=800 / src.width,
+            scale_y=600 / src.height,
+        )
+
+        assert ok is True
+        assert canvas[50, 597].max() < 40
+        np.testing.assert_array_equal(canvas[50, 590], [255, 255, 255])
+        assert canvas[105, 700].max() < 40
+        np.testing.assert_array_equal(canvas[112, 700], [255, 255, 255])
 
     def test_none_material_returns_false(self):
         """素材为 None（且未传原始素材）→ 返回 False，不抛异常。"""

@@ -239,6 +239,8 @@ def compute_cut_edge_bboxes(
     cut_w: float,
     cut_h: float,
     total_border_thickness_px: float,
+    inset_top: float = 0.0,
+    inset_right: float = 0.0,
 ) -> list[tuple[float, float, float, float]]:
     """
     返回需要绘制边框层的矩形 bbox 列表 [(x0,y0,x1,y1), ...]。
@@ -250,6 +252,10 @@ def compute_cut_edge_bboxes(
         draw_border_layers_on_cut_edges 会根据 cut_corner 自行判断。
 
     返回 bbox 的坐标系与 outer_rect 一致（画布像素坐标）。
+
+    inset_top / inset_right: [Fix 2026-09-14] 缺口被扩展到画布边缘时的
+    内缩量（= 缺口尺寸 − 真实挖角尺寸，即产品内容之外的画布留白）。
+    补边 bbox 会被裁剪到产品内容边界内，避免画进留白区。默认 0 = 旧行为。
     """
     if total_border_thickness_px <= 0.5:
         return []
@@ -345,6 +351,27 @@ def compute_cut_edge_bboxes(
             inner_x,             # x1 = 向内延伸端
             obottom + 0.5,
         ))
+
+    # [Fix 2026-09-14] 产品内容内缩：缺口沿画布边缘扩展的那一段属于留白，
+    # 补边 bbox 必须裁回产品内容边界内（默认 inset=0 时整段跳过，零行为变化）。
+    # edges[0] = 水平切边带（约束 x 两端）；edges[1] = 垂直切边带（约束 y 两端）。
+    _it = max(0.0, float(inset_top))
+    _ir = max(0.0, float(inset_right))
+    if _it > 0.0 or _ir > 0.0:
+        edges_inset: list[tuple[float, float, float, float]] = []
+        for i, (x0, y0, x1, y1) in enumerate(edges):
+            if i == 0:  # 水平切边带
+                if cut_corner in ('tl', 'bl'):
+                    x0 = max(x0, ox + _ir)      # 留白在左
+                else:
+                    x1 = min(x1, oright - _ir)  # 留白在右
+            else:       # 垂直切边带
+                if cut_corner in ('tl', 'tr'):
+                    y0 = max(y0, oy + _it)          # 留白在上
+                else:
+                    y1 = min(y1, obottom - _it)     # 留白在下
+            edges_inset.append((x0, y0, x1, y1))
+        edges = edges_inset
 
     # 裁剪到画布内
     edges_clipped: list[tuple[float, float, float, float]] = []
@@ -476,12 +503,15 @@ def _try_apply_v13(
     band_px: int | None,
     band_color: tuple[int, int, int] | None,
     edge_color: tuple[int, int, int] | None = None,
+    inset_top: int = 0,
+    inset_right: int = 0,
 ) -> bool:
     """[H-04] V13 路径统一绘制尝试（manual 覆盖 / 自动路由公共出口）。
 
     edge_color: [Fix 2026-09-14] 黑描边真实颜色（detect_border_v13 四元组
     的第 3 项），透传给 patch_lshape_cut 的 black 参数，修复重绘色差。
     None → _apply_v13_path 自动检测补齐，仍无则纯黑兜底（旧行为）。
+    inset_top/inset_right: [Fix 2026-09-14] 缺口内缩量，透传给 _apply_v13_path。
     """
     return _apply_v13_path(
         canvas_arr=canvas_arr,
@@ -497,6 +527,8 @@ def _try_apply_v13(
         manual_band_px=band_px,
         manual_band_color=band_color,
         manual_edge_color=edge_color,
+        inset_top=inset_top,
+        inset_right=inset_right,
     )
 
 
@@ -539,6 +571,9 @@ def apply_lshape_border_completion(
     manual_edge_px: int | None = None,
     manual_band_px: int | None = None,
     manual_band_color: tuple[int, int, int] | None = None,
+    # [Fix 2026-09-14] 越界修补：缺口相对产品内容的内缩量（画布像素）
+    inset_top: int = 0,
+    inset_right: int = 0,
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
@@ -557,6 +592,12 @@ def apply_lshape_border_completion(
                        None=自动；与 manual_band_*/color 任一非 None 即走 V13 路径。
         manual_band_px: [V13] 手动指定主色带宽（0=无主带，None=自动）。
         manual_band_color: [V13] 手动指定主色带 RGB（band>0 时必须）。
+        inset_top: [Fix 2026-09-14] 缺口在 y 方向相对产品内容的上/下内缩量。
+                  当 cut 被扩展到画布边缘（cut_h_px = lshape.cut_h + 边距）时，
+                   该边距属于产品内容之外的画布留白，补边不得覆盖。
+                   调用侧取值 = cut_h_px - lshape.cut_h。默认 0 = 旧行为。
+        inset_right: [Fix 2026-09-14] 缺口在 x 方向的对称内缩量，
+                   调用侧取值 = cut_w_px - lshape.cut_w。默认 0 = 旧行为。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
@@ -601,6 +642,8 @@ def apply_lshape_border_completion(
             edge_px=manual_edge_px,
             band_px=manual_band_px,
             band_color=manual_band_color,
+            inset_top=inset_top,
+            inset_right=inset_right,
         )
 
     # Step 1: 边框检测
@@ -644,6 +687,8 @@ def apply_lshape_border_completion(
             band_px=_v13[1],
             band_color=_v13[3],
             edge_color=_v13[2],
+            inset_top=inset_top,
+            inset_right=inset_right,
         )
         if _v13_ok:
             return True
@@ -662,6 +707,8 @@ def apply_lshape_border_completion(
             scale_x=scale_x,
             scale_y=scale_y,
             bg_color=bg_color,
+            inset_top=inset_top,
+            inset_right=inset_right,
         ):
             return True
         logger.info("[LShapeBorder] Profile 路径绘制失败，回退 V13/旧路径")
@@ -697,6 +744,8 @@ def apply_lshape_border_completion(
             band_px=v13[1],
             band_color=v13[3],
             edge_color=v13[2],
+            inset_top=inset_top,
+            inset_right=inset_right,
         )
         if _v13_ok2:
             return True
@@ -730,6 +779,7 @@ def apply_lshape_border_completion(
     # Step 3: 计算 cut 边缘的绘制 bbox
     edge_bboxes = compute_cut_edge_bboxes(
         outer_rect, cut_corner, cut_w_px, cut_h_px, total_t,
+        inset_top=inset_top, inset_right=inset_right,   # [Fix 2026-09-14] 越界修补
     )
     if not edge_bboxes:
         return False
@@ -760,6 +810,8 @@ def _apply_v13_path(
     manual_band_px: int | None,
     manual_band_color: tuple[int, int, int] | None,
     manual_edge_color: tuple[int, int, int] | None = None,
+    inset_top: int = 0,
+    inset_right: int = 0,
 ) -> bool:
     """V13 路径：手动覆盖或原检测兜底时使用。
 
@@ -772,6 +824,9 @@ def _apply_v13_path(
 
     manual_edge_color: [Fix 2026-09-14] 黑描边真实颜色。None → 从
     detect_border_v13 自动补齐（四元组第 3 项）；检测失败则纯黑兜底。
+    inset_top/inset_right: [Fix 2026-09-14] 缺口相对画布边缘的内缩量（画布
+    像素），透传给 patch_lshape_cut，阻止补边画进产品内容之外的画布边距。
+    默认 0 = 旧行为。
     """
     detect_img = src_material_img if src_material_img is not None else material_img
     if detect_img is None:
@@ -872,6 +927,8 @@ def _apply_v13_path(
             max(0, int(round(band_canvas))),
             color_src,
             black=edge_color_src,  # [Fix 2026-09-14] 真实描边色，替换硬编码纯黑
+            inset_top=inset_top,       # [Fix 2026-09-14] 越界修补
+            inset_right=inset_right,
         )
     except ValueError as e:
         logger.info("[LShapeBorder/V13] patch 跳过: %s", e)
@@ -991,6 +1048,31 @@ def _v13_pick(segs, window_size: int | None = None):
     return (bw, 0, edge_color, (0, 0, 0))
 
 
+def _v13_band_consistent(arr: np.ndarray, band: int,
+                         band_color: tuple[int, int, int]) -> bool:
+    """确认候选主色带在四边多条剖线上是同一层结构。"""
+    H, W = arr.shape[:2]
+    if band <= 0:
+        return True
+    samples = []
+    for frac in (0.30, 0.50, 0.70):
+        x = min(W - 1, max(0, int(round(frac * W))))
+        y = min(H - 1, max(0, int(round(frac * H))))
+        samples.append(_v13_pick(_v13_segv(arr[:min(H // 3, 400), x])))
+        samples.append(_v13_pick(_v13_segv(arr[y, :min(W // 3, 400)])))
+
+    valid = [item for item in samples if item is not None and item[1] > 0]
+    if len(valid) < 4:
+        return False
+    return all(
+        abs(item[1] - band) / max(band, item[1], 1) <= 0.35
+        and float(np.linalg.norm(
+            np.asarray(item[3], dtype=np.float64)
+            - np.asarray(band_color, dtype=np.float64))) <= 35.0
+        for item in valid
+    )
+
+
 def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, int], tuple[int, int, int]] | None:
     """V13 自动边框检测：返回 (黑描边宽px, 主带宽px, 黑描边色RGB, 主带色RGB) 或 None。
 
@@ -1061,6 +1143,11 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
         )
         return None
 
+    # 单条剖线命中的宽色段可能是大理石纹理，不应被补画成灰色 L 带。
+    if pt[1] > 0 and not _v13_band_consistent(arr, pt[1], pt[3]):
+        logger.info("[V13] 主色带未通过四边一致性校验，按仅黑描边处理")
+        pt = (pt[0], 0, pt[2], (0, 0, 0))
+
     # 返回四元组：edge/band 宽度 + 真实描边色（取自顶边剖面） + 主带色
     return (edge, pt[1], pt[2], pt[3])
 
@@ -1086,22 +1173,32 @@ def detect_border(img: Image.Image) -> tuple[int, int, tuple[int, int, int]]:
 # 来源：E:\ima-测试L型挖角输出\确认V13\lshape_border_module.py（原样移植）
 # ---------------------------------------------------------------------------
 
-def _fill_vertical_horizontal(b, xc, yc, edge, band, color, black):
+def _fill_vertical_horizontal(b, xc, yc, edge, band, color, black,
+                              inset_top=0, inset_right=0):
     """
     在"缺口贴右上角"的画布 b 上补齐切边边框。
     xc = 垂直切边 x(缺口左边界); yc = 水平切边 y(缺口下边界);
     产品位于 x<xc 与 y>yc。缺口区(x>=xc 且 y<yc)保持原样(已是背景)。
+
+    inset_top   : [Fix 2026-09-14] 垂直切边在 y 方向的内缩量。当缺口被沿
+                  画布上/下边缘方向扩展过（cut 扩到 canvas 边缘）时，
+                  [0, inset_top) 属于「产品内容之外」的画布边距，
+                  补边不得覆盖（默认 0 = 旧行为，完全向后兼容）。
+    inset_right : [Fix 2026-09-14] 水平切边在 x 方向的内缩量，含义对称。
     """
     H, W = b.shape[:2]
     T = edge + band
+    # 内缩量按画布尺寸夹紧，避免负值/越界（inset_top >= yc → 垂直切边整条跳过）
+    y0 = max(0, min(int(inset_top), yc))
+    xr = max(0, min(W, W - max(0, int(inset_right))))
     # 垂直切边: 黑带全高(与素材顶边黑描边衔接), 主带从 y=edge 起(不压顶边黑)
-    b[0:yc, xc-edge:xc] = black
+    b[y0:yc, xc-edge:xc] = black
     if band > 0:
-        b[edge:yc, xc-T:xc-edge] = color
+        b[max(edge, y0):yc, xc-T:xc-edge] = color
     # 水平切边: 黑带全宽(覆盖右缘, 防白缝), 主带避右缘
-    b[yc:yc+edge, xc:W] = black
+    b[yc:yc+edge, xc:xr] = black
     if band > 0:
-        b[yc+edge:yc+T, xc:W-edge] = color
+        b[yc+edge:yc+T, xc:max(xc, xr-edge)] = color
     # 内凹角 (xc, yc): 距角点几何 L 分层, 黑带/主带沿角直角连续
     for yy in range(yc, min(H, yc+T)):
         for xx in range(xc-T, xc):
@@ -1113,7 +1210,8 @@ def _fill_vertical_horizontal(b, xc, yc, edge, band, color, black):
 
 
 def patch_lshape_cut(canvas, corner, x0, y0, cw, ch,
-                     edge, band, color, black=(0, 0, 0)):
+                     edge, band, color, black=(0, 0, 0),
+                     inset_top=0, inset_right=0):
     """
     在已裁切的最终画布上补齐缺口切边边框。
 
@@ -1121,6 +1219,10 @@ def patch_lshape_cut(canvas, corner, x0, y0, cw, ch,
     corner : 'tl'|'tr'|'bl'|'br'
     x0,y0,cw,ch : 缺口矩形(画布像素), 与渲染 mask 同源!
     edge/band/color : detect_border 结果或手动指定
+    inset_top/inset_right : [Fix 2026-09-14] 缺口被扩到画布边缘时的内缩量
+                  （= 缺口尺寸 − 真实挖角尺寸，即产品内容之外的画布边距）。
+                  翻转后的归一化坐标系中：inset_top 约束垂直切边的 y 起点，
+                  inset_right 约束水平切边的 x 终点。默认 0 = 旧行为。
     返回补边后的数组(不修改入参)。
     """
     a = np.asarray(canvas).copy()
@@ -1144,7 +1246,8 @@ def patch_lshape_cut(canvas, corner, x0, y0, cw, ch,
     # 垂直切边 = 缺口左边界 nx0; 水平切边 = 缺口下边界 ny1
     if not (nx1 == b.shape[1] and ny0 == 0):
         raise ValueError('缺口矩形不在画布角落, 请检查 x0/y0/cw/ch 与翻转角的一致性')
-    _fill_vertical_horizontal(b, nx0, ny1, edge, band, color, black)
+    _fill_vertical_horizontal(b, nx0, ny1, edge, band, color, black,
+                              inset_top=inset_top, inset_right=inset_right)
     # 翻回
     if flipy:
         b = np.flipud(b)
