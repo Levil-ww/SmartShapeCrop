@@ -624,18 +624,16 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
         raw_layers.append((color_tuple, thickness, s))
 
     # [Fix P0-4 抗锯齿带合并]
-    # 将 < MIN_LAYER_THICKNESS 的薄层（抗锯齿过渡带）合并到相邻的厚层中。
-    # 关键修复：合并时**不改变主层颜色**，只累加厚度。
-    # 原因：抗锯齿像素是前景色和背景色的混合，其颜色不应污染任何一侧的纯色。
-    # 正确做法是将过渡带的像素数量加到相邻的纯色层上，保持纯色不变。
-    #
-    # 这修复了因抗锯齿带被丢弃而导致的边框结构断裂问题：
-    #   外层黑(120px) → 抗锯齿(1px) → 背景(30px) → 抗锯齿(1px) → 内层黑(100px)
-    # 之前：抗锯齿被丢弃，变成 黑(120) + 背景(30) + 黑(100)  → 背景合并两段黑
-    # 现在：抗锯齿合并到邻层，黑(121) + 背景(30) + 黑(101) → 结构正确
+    # 将 < ANTIALIASING_MERGE_PX 的薄层（抗锯齿过渡带）合并到相邻的厚层中。
+    # 抗锯齿过渡带通常是 1-2px 的颜色混合像素，其颜色不应作为独立层保留。
+    # 合并时**不改变主层颜色**，只累加厚度。
+    # 注意：ANTIALIASING_MERGE_PX 与 MIN_LAYER_THICKNESS 解耦——前者控制抗锯齿合并
+    # （固定 2px，因为抗锯齿带宽不会随配置变化），后者控制残差层过滤（可配为 1
+    # 以保留 1px 真实细边框）。
+    ANTIALIASING_MERGE_PX = 2
     merged_layers = []
     for col, t, sd in raw_layers:
-        if t < MIN_LAYER_THICKNESS and merged_layers:
+        if t < ANTIALIASING_MERGE_PX and merged_layers:
             # 薄层合并到前一个层：只增加厚度，不改变颜色和起始深度
             prev_col, prev_t, prev_sd = merged_layers[-1]
             merged_layers[-1] = (prev_col, prev_t + t, prev_sd)
@@ -643,7 +641,7 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
             merged_layers.append((col, t, sd))
 
     # 再次检查：如果第一个层就是薄层，向后合并
-    if merged_layers and merged_layers[0][1] < MIN_LAYER_THICKNESS and len(merged_layers) > 1:
+    if merged_layers and merged_layers[0][1] < ANTIALIASING_MERGE_PX and len(merged_layers) > 1:
         first_col, first_t, first_sd = merged_layers[0]
         second_col, second_t, second_sd = merged_layers[1]
         merged_layers[0] = (second_col, first_t + second_t, first_sd)

@@ -458,6 +458,51 @@ def draw_border_layers_on_cut_edges(
                 remaining -= actual_t
 
 
+def _draw_lshape_layers_on_retained_side(
+    canvas_arr: np.ndarray,
+    outer_rect: RectShape,
+    cut_corner: str,
+    cut_w_px: float,
+    cut_h_px: float,
+    border_layers: list[tuple[tuple[int, int, int], float]],
+) -> bool:
+    """按 L 形轮廓距离补边，避免两个矩形色带在内凹角处漏线。"""
+    if not border_layers:
+        return False
+
+    from .lshape_border_route import patch_lshape_cut_layers
+
+    H, W = canvas_arr.shape[:2]
+    ox = max(0, int(round(outer_rect.x)))
+    oy = max(0, int(round(outer_rect.y)))
+    right = min(W, int(round(outer_rect.right)))
+    bottom = min(H, int(round(outer_rect.bottom)))
+    ow, oh = right - ox, bottom - oy
+    if ow < 2 or oh < 2:
+        return False
+
+    cw = max(1, min(ow, int(round(cut_w_px))))
+    ch = max(1, min(oh, int(round(cut_h_px))))
+    x0 = 0 if cut_corner in ('tl', 'bl') else ow - cw
+    y0 = 0 if cut_corner in ('tl', 'tr') else oh - ch
+    layers = [
+        (color, max(1, int(round(thickness))))
+        for color, thickness in border_layers
+        if thickness > 0.5
+    ]
+    if not layers:
+        return False
+
+    sub = canvas_arr[oy:bottom, ox:right, :]
+    try:
+        patched = patch_lshape_cut_layers(sub, cut_corner, x0, y0, cw, ch, layers)
+    except ValueError as exc:
+        logger.info("[LShapeBorder] 几何分层补边跳过: %s", exc)
+        return False
+    canvas_arr[oy:bottom, ox:right, :] = patched
+    return True
+
+
 # ---------------------------------------------------------------------------
 # 4. 对外统一入口：补全 L 形挖角处的素材边框
 # ---------------------------------------------------------------------------
@@ -760,18 +805,12 @@ def apply_lshape_border_completion(
         len(border_layers_canvas), scale_avg, total_t, border_layers_canvas,
     )
 
-    # Step 3: 计算 cut 边缘的绘制 bbox
-    edge_bboxes = compute_cut_edge_bboxes(
-        outer_rect, cut_corner, cut_w_px, cut_h_px, total_t,
+    # Step 3: 使用统一的 L 形距离分层绘制。旧的两矩形 bbox 画法在内凹角
+    # 需要靠端点重叠拼接，取整后会留下细缝/短线，且可能画入缺口。
+    return _draw_lshape_layers_on_retained_side(
+        canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px,
+        border_layers_canvas,
     )
-    if not edge_bboxes:
-        return False
-
-    # Step 4: 绘制
-    draw_border_layers_on_cut_edges(
-        canvas_arr, edge_bboxes, border_layers_canvas, cut_corner=cut_corner,
-    )
-    return True
 
 
 # ===========================================================================
