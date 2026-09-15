@@ -291,6 +291,35 @@ class CropDesign:
                 if float(cut.get('cut_w_cm', 0)) <= 0 or float(cut.get('cut_h_cm', 0)) <= 0:
                     raise ValueError("l_cuts_cm 的宽高必须为正数")
 
+            cuts = self.l_cuts_cm or [{
+                'corner': self.l_corner,
+                'cut_w_cm': self.l_cut_w_cm,
+                'cut_h_cm': self.l_cut_h_cm,
+            }]
+            cut_by_corner = {cut['corner']: cut for cut in cuts}
+            inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
+                - self.inner_margin_left_cm - self.inner_margin_right_cm
+            inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
+                - self.inner_margin_top_cm - self.inner_margin_bottom_cm
+            edge_clearance_cm = 2.0
+            edge_limits = (
+                ('上边', ('tl', 'tr'), 'cut_w_cm', inner_w_cm),
+                ('下边', ('bl', 'br'), 'cut_w_cm', inner_w_cm),
+                ('左边', ('tl', 'bl'), 'cut_h_cm', inner_h_cm),
+                ('右边', ('tr', 'br'), 'cut_h_cm', inner_h_cm),
+            )
+            for edge_name, corners, size_key, edge_length_cm in edge_limits:
+                edge_sum_cm = sum(
+                    float(cut_by_corner[corner][size_key])
+                    for corner in corners
+                    if corner in cut_by_corner
+                )
+                if edge_sum_cm >= edge_length_cm - edge_clearance_cm:
+                    raise ValueError(
+                        f"L 形挖角在{edge_name}上的尺寸和 {edge_sum_cm:g}cm "
+                        f"必须小于外边长度 {edge_length_cm:g}cm 减 {edge_clearance_cm:g}cm 余量"
+                    )
+
     @property
     def canvas_w_px(self) -> int:
         return int(round(self.cm2px(self.canvas_w_cm)))

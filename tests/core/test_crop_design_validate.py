@@ -169,3 +169,38 @@ class TestCropDesignValidateLShape:
     def test_negative_l_cut_h_raises(self):
         with pytest.raises(ValueError, match='l_cut_h_cm'):
             CropDesign(mode='rect_lshape', l_cut_h_cm=-3.0).validate()
+
+    def test_diagonal_multi_cuts_pass_edge_constraints(self):
+        CropDesign(
+            mode='rect_lshape',
+            canvas_w_cm=143.0,
+            canvas_h_cm=62.8,
+            inner_margin_top_cm=0.0,
+            inner_margin_bottom_cm=0.0,
+            inner_margin_left_cm=0.0,
+            inner_margin_right_cm=0.0,
+            l_cuts_cm=[
+                {'corner': 'tr', 'cut_w_cm': 28.0, 'cut_h_cm': 8.0},
+                {'corner': 'bl', 'cut_w_cm': 30.0, 'cut_h_cm': 12.8},
+            ],
+        ).validate()
+
+    def test_adjacent_cuts_must_leave_edge_clearance(self):
+        with pytest.raises(ValueError, match='上边'):
+            CropDesign(
+                mode='rect_lshape',
+                l_cuts_cm=[
+                    {'corner': 'tl', 'cut_w_cm': 20.0, 'cut_h_cm': 10.0},
+                    {'corner': 'tr', 'cut_w_cm': 20.0, 'cut_h_cm': 10.0},
+                ],
+            ).validate()
+
+    def test_vertical_adjacent_cuts_must_leave_edge_clearance(self):
+        with pytest.raises(ValueError, match='左边'):
+            CropDesign(
+                mode='rect_lshape',
+                l_cuts_cm=[
+                    {'corner': 'tl', 'cut_w_cm': 10.0, 'cut_h_cm': 30.0},
+                    {'corner': 'bl', 'cut_w_cm': 10.0, 'cut_h_cm': 30.0},
+                ],
+            ).validate()
