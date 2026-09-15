@@ -324,6 +324,75 @@ class TestApplyLshapeBorderCompletion:
         assert canvas[470, 100].max() <= 60
         np.testing.assert_array_equal(canvas[500, 100], [255, 255, 255])
 
+    @pytest.mark.parametrize(
+        'cuts',
+        [
+            [('tl', 180.0, 100.0), ('tr', 180.0, 100.0)],
+            [('bl', 180.0, 100.0), ('br', 180.0, 100.0)],
+            [('tl', 180.0, 140.0), ('bl', 180.0, 140.0)],
+            [('tr', 180.0, 140.0), ('br', 180.0, 140.0)],
+        ],
+        ids=['tl+tr', 'bl+br', 'tl+bl', 'tr+br'],
+    )
+    def test_adjacent_cuts_equal_union_of_single_cut_results(self, cuts):
+        """相邻角重叠时按先到先得合并，结果等于两个单角结果的并集。"""
+        src = _make_bordered_material(size=(400, 300), border=20)
+        kwargs = dict(
+            material_img=src.resize((800, 600)),
+            outer_rect=RectShape(x=0, y=0, w=800, h=600),
+            src_material_img=src,
+            scale_x=2.0,
+            scale_y=2.0,
+            manual_edge_px=20,
+            manual_band_px=0,
+        )
+
+        combined = self._canvas()
+        assert apply_lshape_border_completion(
+            canvas_arr=combined,
+            cut_corner=cuts[0][0],
+            cut_w_px=cuts[0][1],
+            cut_h_px=cuts[0][2],
+            cuts=cuts,
+            **kwargs,
+        ) is True
+
+        expected = self._canvas()
+        for corner, cut_w, cut_h in cuts:
+            single = self._canvas()
+            assert apply_lshape_border_completion(
+                canvas_arr=single,
+                cut_corner=corner,
+                cut_w_px=cut_w,
+                cut_h_px=cut_h,
+                **kwargs,
+            ) is True
+            changed = np.any(single != self._canvas(), axis=2)
+            expected[changed] = single[changed]
+
+        np.testing.assert_array_equal(
+            combined, expected,
+            err_msg=f'{cuts} 的相邻补边不应重复加厚或覆盖已有走线',
+        )
+
+        # 缺口内部必须保持底色，避免第二个角的过渡区污染缺口。
+        for corner, cut_w, cut_h in cuts:
+            if corner == 'tl':
+                point = (int(cut_h // 2), int(cut_w // 2))
+            elif corner == 'tr':
+                point = (int(cut_h // 2), 800 - int(cut_w // 2) - 1)
+            elif corner == 'bl':
+                point = (600 - int(cut_h // 2) - 1, int(cut_w // 2))
+            else:
+                point = (
+                    600 - int(cut_h // 2) - 1,
+                    800 - int(cut_w // 2) - 1,
+                )
+            np.testing.assert_array_equal(
+                combined[point], [255, 255, 255],
+                err_msg=f'{corner} 缺口内部被边框污染',
+            )
+
     def test_marble_material_paints_only_outer_black_stroke(self):
         """大理石 L 形切边只补最外黑描边，不生成灰色纹理带。"""
         canvas = np.full((600, 800, 3), 255, dtype=np.uint8)

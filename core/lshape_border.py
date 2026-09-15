@@ -584,10 +584,15 @@ def apply_lshape_border_completion(
     _try_apply_v13（V13 绘制尝试），主函数保持原三级回退顺序不变。
     """
     if cuts:
+        # 相邻挖角的补边可能在凹角过渡区相交。每个角先独立绘制到临时
+        # 画布，再按输入顺序提交尚未被占用的像素，保证重叠区幂等且不
+        # 会被后一个角的回退路径覆盖。
         completion_ok = False
+        claimed = np.zeros(canvas_arr.shape[:2], dtype=bool)
         for corner, cut_w, cut_h in cuts:
-            completion_ok = apply_lshape_border_completion(
-                canvas_arr=canvas_arr,
+            trial = canvas_arr.copy()
+            cut_ok = apply_lshape_border_completion(
+                canvas_arr=trial,
                 material_img=material_img,
                 outer_rect=outer_rect,
                 cut_corner=corner,
@@ -601,7 +606,12 @@ def apply_lshape_border_completion(
                 manual_edge_px=manual_edge_px,
                 manual_band_px=manual_band_px,
                 manual_band_color=manual_band_color,
-            ) or completion_ok
+            )
+            changed = np.any(trial != canvas_arr, axis=2)
+            write_mask = changed & ~claimed
+            canvas_arr[write_mask] = trial[write_mask]
+            claimed |= write_mask
+            completion_ok = cut_ok or completion_ok
         return completion_ok
 
     # ===== [V13 集成] 手动覆盖路径：任一 manual_* 非 None → 走 V13 路径 =====
