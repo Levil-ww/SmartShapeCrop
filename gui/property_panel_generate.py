@@ -31,6 +31,15 @@ from .property_panel_widgets import ColorButton, _SketchDropLabel
 from workers.property_panel_workers import PoolRenderWorker, _SketchParseWorker, _InnerMatchWorker
 from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
 
+
+def format_design_validation_error(error: ValueError) -> str:
+    """将设计参数校验错误转换为面向 GUI 的逐边提示。"""
+    message = str(error).strip()
+    if message.startswith("L 形挖角在") and "上的尺寸和" in message:
+        return f"参数校验失败：{message}。请减小该边相邻挖角尺寸，或增大画布尺寸。"
+    return f"参数校验失败：{message}"
+
+
 class _GenerateMixin:
     def _pool_run_generate(self, source: str = 'pool', target_name_override: str | None = None):
         """水池模式一键生成预览。
@@ -438,7 +447,14 @@ class _GenerateMixin:
         # 4) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
         self._set_pool_status("正在生成预览图…", is_error=False)
         QApplication.processEvents()
-        self._apply_quiet()
+        try:
+            self._apply_quiet()
+        except ValueError as e:
+            message = format_design_validation_error(e)
+            self._set_pool_status(message, is_error=True)
+            QMessageBox.warning(self, "参数校验失败", message)
+            logger.warning(f"[PropertyPanel] 设计参数校验失败：{e}")
+            return
         logger.info("[PropertyPanel] 预览已生成")
 
         # ===== [2026-09-03 状态隔离] 历史记录仅写入来源面板（Safety 2 不变式）=====

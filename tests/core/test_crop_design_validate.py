@@ -204,3 +204,61 @@ class TestCropDesignValidateLShape:
                     {'corner': 'bl', 'cut_w_cm': 10.0, 'cut_h_cm': 30.0},
                 ],
             ).validate()
+
+    @pytest.mark.parametrize(
+        ('edge_name', 'cuts'),
+        [
+            ('上边', [
+                {'corner': 'tl', 'cut_w_cm': 24.0, 'cut_h_cm': 5.0},
+                {'corner': 'tr', 'cut_w_cm': 24.0, 'cut_h_cm': 5.0},
+            ]),
+            ('下边', [
+                {'corner': 'bl', 'cut_w_cm': 24.0, 'cut_h_cm': 5.0},
+                {'corner': 'br', 'cut_w_cm': 24.0, 'cut_h_cm': 5.0},
+            ]),
+            ('左边', [
+                {'corner': 'tl', 'cut_w_cm': 5.0, 'cut_h_cm': 27.0},
+                {'corner': 'bl', 'cut_w_cm': 5.0, 'cut_h_cm': 27.0},
+            ]),
+            ('右边', [
+                {'corner': 'tr', 'cut_w_cm': 5.0, 'cut_h_cm': 27.0},
+                {'corner': 'br', 'cut_w_cm': 5.0, 'cut_h_cm': 27.0},
+            ]),
+        ],
+    )
+    def test_each_edge_rejects_boundary_sum(self, edge_name, cuts):
+        with pytest.raises(ValueError, match=edge_name):
+            CropDesign(mode='rect_lshape', l_cuts_cm=cuts).validate()
+
+    @pytest.mark.parametrize(
+        'cuts',
+        [
+            [{'corner': 'tl', 'cut_w_cm': 31.9, 'cut_h_cm': 10.0}],
+            [{'corner': 'tr', 'cut_w_cm': 31.9, 'cut_h_cm': 10.0}],
+            [{'corner': 'bl', 'cut_w_cm': 10.0, 'cut_h_cm': 51.9}],
+            [{'corner': 'br', 'cut_w_cm': 10.0, 'cut_h_cm': 51.9}],
+        ],
+    )
+    def test_single_cut_below_edge_limit_passes(self, cuts):
+        CropDesign(mode='rect_lshape', l_cuts_cm=cuts).validate()
+
+    def test_exact_clearance_boundary_is_rejected(self):
+        with pytest.raises(ValueError, match='上边'):
+            CropDesign(
+                mode='rect_lshape',
+                l_cuts_cm=[
+                    {'corner': 'tl', 'cut_w_cm': 23.0, 'cut_h_cm': 8.0},
+                    {'corner': 'tr', 'cut_w_cm': 25.0, 'cut_h_cm': 8.0},
+                ],
+            ).validate()
+
+    def test_four_corner_combination_passes_all_edges(self):
+        CropDesign(
+            mode='rect_lshape',
+            l_cuts_cm=[
+                {'corner': 'tl', 'cut_w_cm': 12.0, 'cut_h_cm': 12.0},
+                {'corner': 'tr', 'cut_w_cm': 12.0, 'cut_h_cm': 12.0},
+                {'corner': 'bl', 'cut_w_cm': 12.0, 'cut_h_cm': 12.0},
+                {'corner': 'br', 'cut_w_cm': 12.0, 'cut_h_cm': 12.0},
+            ],
+        ).validate()
