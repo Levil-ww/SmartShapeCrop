@@ -239,3 +239,44 @@ def test_worker_without_lshape_keeps_rect_hole(tmp_path, material_path):
     # 无草图结果 → 默认 10% 短边边距
     default_m = min(33.0, 450.0) * 0.10
     assert design.inner_margin_top_cm == pytest.approx(default_m)
+
+
+def test_four_corner_lshape_render_with_workspace_material():
+    """真实工作区素材从 CropDesign 到最终图像的四角同挖验收。"""
+    material = os.path.abspath(
+        '.workbuddy/tmp_samples/e2e/中古雨林100x140.png')
+    if not os.path.isfile(material):
+        pytest.skip('工作区真实素材不存在')
+
+    design = CropDesign(
+        canvas_w_cm=10.0, canvas_h_cm=14.0, dpi=30,
+        mode='rect_lshape',
+        outer_margin_cm=0.0,
+        inner_margin_top_cm=0.0, inner_margin_bottom_cm=0.0,
+        inner_margin_left_cm=0.0, inner_margin_right_cm=0.0,
+        l_corner='br', l_cut_w_cm=2.0, l_cut_h_cm=2.0,
+        l_cuts_cm=[
+            {'corner': corner, 'cut_w_cm': 2.0, 'cut_h_cm': 2.0}
+            for corner in ('tl', 'tr', 'bl', 'br')
+        ],
+        pool_outer_material_image=material,
+        outer_bg_image=material,
+        pool_inner_material_image=material,
+        pool_hole_transparent=True,
+    )
+    design.validate()
+    output = np.array(render_design(design, quality='preview'))
+    assert tuple(output.shape[:2]) == (design.canvas_h_px, design.canvas_w_px)
+    inner = design.inner_rect_px()
+    cut_w = design.cm2px(2.0)
+    cut_h = design.cm2px(2.0)
+    centers = {
+        'tl': (int(inner.y + cut_h / 2), int(inner.x + cut_w / 2)),
+        'tr': (int(inner.y + cut_h / 2), int(inner.right - cut_w / 2)),
+        'bl': (int(inner.bottom - cut_h / 2), int(inner.x + cut_w / 2)),
+        'br': (int(inner.bottom - cut_h / 2), int(inner.right - cut_w / 2)),
+    }
+    for corner, (y, x) in centers.items():
+        assert tuple(output[y, x]) == (255, 255, 255), f'{corner}: 缺口未挖空'
+    body = output[int(inner.y + inner.h / 2), int(inner.x + inner.w / 2)]
+    assert tuple(body) != (255, 255, 255), '中央真实素材区域不应被清空'

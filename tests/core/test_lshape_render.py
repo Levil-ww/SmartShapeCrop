@@ -150,6 +150,28 @@ def test_build_lshape_mask():
     print('  PASSED')
 
 
+def test_build_lshape_mask_all_four_corners():
+    """四角同挖：四个缺口均为空，中心保留区不被误挖。"""
+    outer = RectShape(100, 100, 800, 500)
+    cuts = [(corner, 140.0, 90.0) for corner in ('tl', 'tr', 'bl', 'br')]
+    mask = build_lshape_mask(
+        (1000, 700), outer, 'br', 140.0, 90.0,
+        {'tl': 0, 'tr': 0, 'bl': 0, 'br': 0},
+        fill_value=255, cuts=cuts)
+    arr = np.array(mask)
+    for corner, _, _ in cuts:
+        if corner == 'tl':
+            point = (130, 130)
+        elif corner == 'tr':
+            point = (130, 870)
+        elif corner == 'bl':
+            point = (570, 130)
+        else:
+            point = (570, 870)
+        assert arr[point] == 0, f'{corner}: 四角缺口中心应为空'
+    assert arr[350, 500] == 255, '中央保留区不应被四角同挖误伤'
+
+
 def test_compute_border_bands_dispatch():
     """Test 6: compute_border_bands dispatch to L-shape"""
     print('=== Test 6: border bands dispatch ===')

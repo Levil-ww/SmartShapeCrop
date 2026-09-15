@@ -68,6 +68,7 @@ class LSketchParseResult:
     self_consistency: float = 0.0          # 0~1 结构自洽度
     notches_detected: int = 0              # G1: 检测到的凹角数
     notches_consumed: int = 0             # G1: 实际应用的凹角数
+    cuts_cm: list[dict] = field(default_factory=list)  # 全部挖角建议值
     debug: dict = field(default_factory=dict)
 
 
@@ -1314,8 +1315,21 @@ def parse_lshape_sketch(
         })
         return result
 
+    # —— 多角参数：用外框比例把每个几何候选转换成厘米 ——
+    cuts_cm = []
+    for candidate in geo.get('all_corners', []):
+        cut_w_px = float(candidate.get('cut_w_px', 0.0) or 0.0)
+        cut_h_px = float(candidate.get('cut_h_px', 0.0) or 0.0)
+        if cut_w_px <= 0 or cut_h_px <= 0:
+            continue
+        cuts_cm.append({
+            'corner': candidate['corner'],
+            'cut_w_cm': round(dims['outer_w_cm'] * cut_w_px / geo['outer_w_px'], 2),
+            'cut_h_cm': round(dims['outer_h_cm'] * cut_h_px / geo['outer_h_px'], 2),
+        })
+
     # —— G1 闸口：检测到的凹角数 vs 实际消费数 ——
-    n_consumed = 1  # 第一期：下游管线仍为单角，只消费 1 个
+    n_consumed = len(cuts_cm)
     result.notches_consumed = n_consumed
     g1_blocked = n_detected != n_consumed
     result.success = not g1_blocked
@@ -1326,10 +1340,12 @@ def parse_lshape_sketch(
     )
     if g1_blocked:
         all_corners = geo.get('all_corners', [])
-        unused = [c['corner'] for c in all_corners[n_consumed:]]
+        consumed_corners = {cut['corner'] for cut in cuts_cm}
+        unused = [c['corner'] for c in all_corners
+                  if c['corner'] not in consumed_corners]
         msg += (
             f" ⚠️ G1 闸口：检测到 {n_detected} 个凹角，当前仅应用 {n_consumed} 个"
-            f"（{geo['corner']}），其余角位 {unused} 需手动补充"
+            f"（{[cut['corner'] for cut in cuts_cm]}），其余角位 {unused} 需手动补充"
         )
     result.message = msg
     result.method = f"lshape_v{_ALGO_VERSION}(sc={sc:.2f})"
@@ -1342,6 +1358,7 @@ def parse_lshape_sketch(
     result.right_h_cm = round(dims['right_h_cm'], 2)
     result.notch_w_cm = round(dims['notch_w_cm'], 2)
     result.notch_h_cm = round(dims['notch_h_cm'], 2)
+    result.cuts_cm = cuts_cm
     result.self_consistency = round(sc, 3)
     result.debug.update({
         'geometry': geo,
@@ -1353,6 +1370,7 @@ def parse_lshape_sketch(
         'cut_h_px': geo['cut_h_px'],
         'verts': geo['verts'],
         'all_corners': geo.get('all_corners', []),
+        'cuts_cm': cuts_cm,
         'n_detected': n_detected,
         'n_consumed': n_consumed,
         'g1_blocked': g1_blocked,

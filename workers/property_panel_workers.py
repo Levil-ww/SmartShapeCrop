@@ -302,7 +302,8 @@ class PoolRenderWorker(QThread):
         单洞/多洞数据不足 2 洞 → 静默忽略。
 
         lshape_params: 可选 dict，L 形挖角模式参数。
-            键: 'corner' (tl/tr/bl/br), 'cut_w_cm', 'cut_h_cm', 'outer_w_cm', 'outer_h_cm'
+            键: 'corner' (tl/tr/bl/br), 'cut_w_cm', 'cut_h_cm', 'cuts_cm',
+                'outer_w_cm', 'outer_h_cm'
             提供时进入 L 形挖角模式：mode='rect_lshape'，margins 全 0，
             L 形区域保留外框素材、挖掉的角显示洞色（裁剪有图语义）。
         """
@@ -515,6 +516,20 @@ class PoolRenderWorker(QThread):
         # 挖角值直接用草图识别的成品真值，不做额外损耗补偿
         design.l_cut_w_cm = max(0.0, float(lp.get('cut_w_cm', 0)))
         design.l_cut_h_cm = max(0.0, float(lp.get('cut_h_cm', 0)))
+        cuts_cm = lp.get('cuts_cm') or []
+        if cuts_cm:
+            design.l_cuts_cm = [
+                {
+                    'corner': str(cut['corner']),
+                    'cut_w_cm': max(0.0, float(cut['cut_w_cm'])),
+                    'cut_h_cm': max(0.0, float(cut['cut_h_cm'])),
+                }
+                for cut in cuts_cm
+                if isinstance(cut, dict)
+                and cut.get('corner') in {'tl', 'tr', 'bl', 'br'}
+                and float(cut.get('cut_w_cm', 0) or 0) > 0
+                and float(cut.get('cut_h_cm', 0) or 0) > 0
+            ][:4]
         design.inner_margin_top_cm = 0.0
         design.inner_margin_bottom_cm = 0.0
         design.inner_margin_left_cm = 0.0

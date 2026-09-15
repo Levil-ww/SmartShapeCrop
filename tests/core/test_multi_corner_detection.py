@@ -109,25 +109,24 @@ class TestDualCornerDetection:
                     assert abs(r_w - 30.0 / 143.0) < 0.05, f"bl cut_w 比例偏差: {r_w}"
                     assert abs(r_h - 12.8 / 62.8) < 0.05, f"bl cut_h 比例偏差: {r_h}"
 
-    def test_g1_gate_fires_on_multi_corner(self):
-        """G1 闸口在多角场景应报告 n_detected > n_consumed。"""
+    def test_multi_corner_result_consumes_all_detected_corners(self):
+        """多角识别结果应把全部候选转换成可消费的厘米参数。"""
         with tempfile.TemporaryDirectory() as td:
             p = os.path.join(td, 'dual_corner.png')
             _make_dual_corner_sketch(p)
             res = parse_lshape_sketch(
                 p, target_outer_w_cm=143.0, target_outer_h_cm=62.8
             )
-            assert not res.success, f"G1 应阻止不完整结果报告成功: {res.message}"
+            assert res.success, f"双角识别应成功: {res.message}"
             assert res.notches_detected >= 2, (
                 f"G1 应检测到 ≥2 个角，实际 {res.notches_detected}"
             )
-            assert res.notches_consumed == 1, (
-                f"第一期应只消费 1 个角，实际 {res.notches_consumed}"
+            assert res.notches_consumed == 2, (
+                f"双角应消费 2 个角，实际 {res.notches_consumed}"
             )
-            assert res.notches_detected > res.notches_consumed, "G1 闸口应触发"
-            assert res.debug.get('g1_blocked') is True
-            assert '⚠️' in res.message, f"消息应含告警，实际: {res.message}"
-            assert 'G1 闸口' in res.message
+            assert res.notches_detected == res.notches_consumed
+            assert {cut['corner'] for cut in res.cuts_cm} == {'tr', 'bl'}
+            assert res.debug.get('g1_blocked') is False
 
 
 class TestSingleCornerBackwardCompat:
