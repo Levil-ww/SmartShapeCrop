@@ -172,6 +172,68 @@ def test_build_lshape_mask_all_four_corners():
     assert arr[350, 500] == 255, '中央保留区不应被四角同挖误伤'
 
 
+def test_compute_lshape_border_bands_four_corners_are_idempotent():
+    """四角同挖：边框带抽样点完整覆盖，重复计算结果必须一致。"""
+    design = CropDesign(
+        canvas_w_cm=30.0, canvas_h_cm=20.0, dpi=30,
+        mode='rect_lshape',
+        outer_margin_cm=0.0,
+        inner_margin_top_cm=2.0, inner_margin_bottom_cm=2.0,
+        inner_margin_left_cm=2.0, inner_margin_right_cm=2.0,
+        l_corner='br', l_cut_w_cm=5.0, l_cut_h_cm=4.0,
+        l_cuts_cm=[
+            {'corner': corner, 'cut_w_cm': 5.0, 'cut_h_cm': 4.0}
+            for corner in ('tl', 'tr', 'bl', 'br')
+        ],
+        borders=[
+            BorderLayer(offset_cm=0.5, color=(0, 0, 0)),
+            BorderLayer(offset_cm=0.5, color=(255, 255, 255)),
+        ],
+    )
+
+    first = compute_lshape_border_bands(design)
+    second = compute_lshape_border_bands(design)
+    assert len(first) == len(second)
+    assert all(np.array_equal(left[0], right[0])
+               for left, right in zip(first, second))
+
+    masks = [mask for mask, _ in first]
+    union = np.zeros_like(masks[0], dtype=bool)
+    for mask in masks:
+        assert not np.any(union & mask), '边框带之间不应重复占用像素'
+        union |= mask
+
+    outer = design.outer_rect_px()
+    cut_w = design.cm2px(5.0)
+    cut_h = design.cm2px(4.0)
+    sample_points = {
+        'tl': (
+            (outer.x + cut_w * 0.25, outer.y + cut_h * 0.25),
+            (outer.x + cut_w * 0.50, outer.y + cut_h * 0.50),
+            (outer.x + cut_w * 0.75, outer.y + cut_h * 0.75),
+        ),
+        'tr': (
+            (outer.right - cut_w * 0.75, outer.y + cut_h * 0.25),
+            (outer.right - cut_w * 0.50, outer.y + cut_h * 0.50),
+            (outer.right - cut_w * 0.25, outer.y + cut_h * 0.75),
+        ),
+        'bl': (
+            (outer.x + cut_w * 0.25, outer.bottom - cut_h * 0.75),
+            (outer.x + cut_w * 0.50, outer.bottom - cut_h * 0.50),
+            (outer.x + cut_w * 0.75, outer.bottom - cut_h * 0.25),
+        ),
+        'br': (
+            (outer.right - cut_w * 0.75, outer.bottom - cut_h * 0.75),
+            (outer.right - cut_w * 0.50, outer.bottom - cut_h * 0.50),
+            (outer.right - cut_w * 0.25, outer.bottom - cut_h * 0.25),
+        ),
+    }
+    for corner, points in sample_points.items():
+        for x, y in points:
+            assert not union[int(round(y)), int(round(x))], \
+                f'{corner}: 缺口抽样点不应落入边框带'
+
+
 def test_compute_border_bands_dispatch():
     """Test 6: compute_border_bands dispatch to L-shape"""
     print('=== Test 6: border bands dispatch ===')
