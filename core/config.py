@@ -99,7 +99,7 @@ BORDER_COLOR_DISTANCE_THRESHOLD: int = 15
 BORDER_LUMINANCE_DIFF_THRESHOLD: int = 25
 
 # 边框扫描步长（像素）：步长越大越快但越不精确
-BORDER_SCAN_STEP_PX: int = 2
+BORDER_SCAN_STEP_PX: int = 1
 
 # 相邻两个边界之间的最小间距（像素）：小于此值视为同一条边界
 BORDER_MIN_GAP_PX: int = 5
@@ -110,8 +110,8 @@ BORDER_MAX_LAYERS: int = 10
 # 忽略最边缘几个像素（避免最外白边/黑边干扰）
 BORDER_EDGE_IGNORE_PX: int = 2
 
-# 最小层厚度（像素）：小于此值的层合并到上一层
-BORDER_MIN_LAYER_THICKNESS_PX: int = 2
+# 最小层厚度（像素）：小于此值的层视为残差并过滤
+BORDER_MIN_LAYER_THICKNESS_PX: int = 1
 
 # 背景色相似度阈值：与 bg_color 的距离 <= 此值视为背景（用于 _get_border_layers_robust 的 fallback）
 BORDER_BG_SIMILARITY_THRESHOLD: int = 30

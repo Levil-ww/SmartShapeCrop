@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw
 from core.geometry import RectShape
 from core.lshape_border import (
     _filter_content_layers,
+    _draw_lshape_layers_on_retained_side,
     apply_lshape_border_completion,
     compute_cut_edge_bboxes,
     detect_pool_material_borders,
@@ -235,6 +236,44 @@ class TestApplyLshapeBorderCompletion:
 
     def _canvas(self, w=800, h=600):
         return np.full((h, w, 3), 255, dtype=np.uint8)
+
+    @pytest.mark.parametrize('corner', ['tl', 'tr', 'bl', 'br'])
+    def test_fallback_corner_is_continuous_and_stays_out_of_cut(self, corner):
+        """旧检测回退路径的 L 形内凹角应闭合，且不污染挖角区域。"""
+        canvas = self._canvas(300, 220)
+        outer = RectShape(0, 0, 300, 220)
+        layers = [((20, 20, 20), 3), ((230, 210, 180), 3)]
+
+        assert _draw_lshape_layers_on_retained_side(
+            canvas, outer, corner, 100, 80, layers,
+        )
+
+        if corner == 'tl':
+            cx, cy = 100, 80
+            cut = canvas[:80, :100]
+            corner_area = canvas[80:82, 100:102]
+        elif corner == 'tr':
+            cx, cy = 200, 80
+            cut = canvas[:80, 200:]
+            corner_area = canvas[80:82, 198:200]
+        elif corner == 'bl':
+            cx, cy = 100, 140
+            cut = canvas[140:, :100]
+            corner_area = canvas[138:140, 100:102]
+        else:
+            cx, cy = 200, 140
+            cut = canvas[140:, 200:]
+            corner_area = canvas[138:140, 198:200]
+
+        assert np.all(corner_area == [20, 20, 20])
+        assert np.all(cut == 255)
+        cut_probe = {
+            'tl': (cy - 10, cx - 10),
+            'tr': (cy - 10, cx + 10),
+            'bl': (cy + 10, cx - 10),
+            'br': (cy + 10, cx + 10),
+        }[corner]
+        assert canvas[cut_probe].tolist() == [255, 255, 255]
 
     def test_no_border_material_returns_false_and_leaves_canvas_untouched(self):
         """素材无边框 → 返回 False 且画布**不允许**被修改（关键防御契约）。"""
