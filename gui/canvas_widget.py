@@ -43,6 +43,7 @@ class PreviewCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._design = None
+        self._notch_overlay: list[dict] = []
         self._full_image: Image.Image | None = None  # 预览渲染图（LOD 或全分辨率）
         self._preview_pixmap: QPixmap | None = None  # 缩放后的预览图
         self._use_lod: bool = False  # 当前是否使用 LOD 渲染
@@ -58,7 +59,42 @@ class PreviewCanvas(QWidget):
     def set_design(self, design) -> None:
         """设置设计并触发重渲染（异步分级渲染）"""
         self._design = design
+        self._update_notch_overlay(design)
         self._render_async()
+
+    def clear_notch_overlay(self) -> None:
+        """清除识别/设计产生的凹角标注。"""
+        self._notch_overlay = []
+        self.update()
+
+    def _update_notch_overlay(self, design) -> None:
+        """从当前 L 形设计生成预览图上的凹角框与角位标签。"""
+        self._notch_overlay = []
+        if design is None or getattr(design, 'mode', None) != 'rect_lshape':
+            return
+        try:
+            shape = design.l_shapes_px()
+            outer = shape.outer
+            for corner, cut_w, cut_h in shape.cut_specs():
+                if corner == 'tl':
+                    x, y = outer.x, outer.y
+                    marker = (x + cut_w, y + cut_h)
+                elif corner == 'tr':
+                    x, y = outer.x + outer.w - cut_w, outer.y
+                    marker = (x, y + cut_h)
+                elif corner == 'bl':
+                    x, y = outer.x, outer.y + outer.h - cut_h
+                    marker = (x + cut_w, y)
+                else:
+                    x, y = outer.x + outer.w - cut_w, outer.y + outer.h - cut_h
+                    marker = (x, y)
+                self._notch_overlay.append({
+                    'corner': corner,
+                    'rect': (x, y, cut_w, cut_h),
+                    'marker': marker,
+                })
+        except (AttributeError, TypeError, ValueError):
+            logger.debug("无法生成 L 形凹角预览标注", exc_info=True)
 
     def full_image(self) -> Image.Image | None:
         """返回全尺寸渲染图（保存时使用这个，不要用预览图）"""
@@ -285,6 +321,7 @@ class PreviewCanvas(QWidget):
         # 画一个浅色边框
         p.setPen(QColor(120, 120, 120))
         p.drawRect(x, y, pm_w - 1, pm_h - 1)
+        self._paint_notch_overlay(p, x, y, pm_w, pm_h)
         # LOD 模式提示
         if self._use_lod:
             p.setPen(QColor(255, 200, 50))
@@ -301,3 +338,33 @@ class PreviewCanvas(QWidget):
                 Qt.AlignTop | Qt.AlignRight,
                 tip
             )
+
+    def _paint_notch_overlay(self, painter: QPainter, x: int, y: int,
+                             width: int, height: int) -> None:
+        """在已绘制的预览图上叠加凹角框与角位标签。"""
+        if not self._notch_overlay or self._design is None:
+            return
+        canvas_w = max(1, self._design.canvas_w_px)
+        canvas_h = max(1, self._design.canvas_h_px)
+        painter.save()
+        painter.setPen(QColor(220, 38, 38, 230))
+        pen = painter.pen()
+        pen.setStyle(Qt.DashLine)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(max(9, min(14, int(min(width, height) / 55))))
+        painter.setFont(font)
+        for item in self._notch_overlay:
+            rx, ry, rw, rh = item['rect']
+            px = x + int(round(rx * width / canvas_w))
+            py = y + int(round(ry * height / canvas_h))
+            pw = max(1, int(round(rw * width / canvas_w)))
+            ph = max(1, int(round(rh * height / canvas_h)))
+            painter.drawRect(px, py, pw, ph)
+            mx, my = item['marker']
+            tx = x + int(round(mx * width / canvas_w)) + 5
+            ty = y + int(round(my * height / canvas_h)) - 5
+            painter.drawText(tx, ty, item['corner'].upper())
+        painter.restore()

@@ -18,6 +18,7 @@ from gui.canvas_widget import PreviewCanvas
 from gui.property_panel import PropertyPanel
 from gui.cropper_panel import CropperPanel
 from gui.lshape_panel import LShapePanel
+from core.geometry import CropDesign
 
 EXPECTED_TABS = ['圆角裁剪工具', '水池设计器', 'L形挖角设计']
 
@@ -67,6 +68,26 @@ class TestMainWindowAssembly:
         """[Fix 2026-09-02 B] 导出防重复点击依赖 _is_saving 初值。"""
         assert main_window._is_saving is False, '_is_saving 初值应为 False'
         assert main_window._save_worker is None, '_save_worker 初值应为 None'
+
+    def test_lshape_preview_overlay_marks_each_notch(self, preview_canvas):
+        design = CropDesign(
+            mode='rect_lshape',
+            canvas_w_cm=80.0,
+            canvas_h_cm=60.0,
+            l_cuts_cm=[
+                {'corner': 'tr', 'cut_w_cm': 20.0, 'cut_h_cm': 8.0},
+                {'corner': 'bl', 'cut_w_cm': 18.0, 'cut_h_cm': 10.0},
+            ],
+        )
+
+        preview_canvas._update_notch_overlay(design)
+
+        assert [item['corner'] for item in preview_canvas._notch_overlay] == ['tr', 'bl']
+        assert all(item['rect'][2] > 0 and item['rect'][3] > 0
+                   for item in preview_canvas._notch_overlay)
+
+        preview_canvas._update_notch_overlay(CropDesign(mode='rect_hole'))
+        assert preview_canvas._notch_overlay == []
 
 
     def test_lshape_panel_auto_fills_multi_corner_rows(self, lshape_panel):

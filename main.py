@@ -288,6 +288,7 @@ class MainWindow(QMainWindow):
 
     def _on_cropped_image(self, pil_img):
         """裁剪面板生成的图片：在画布上显示预览"""
+        self.canvas.clear_notch_overlay()
         self.canvas._full_image = pil_img
         self.canvas._update_preview_pixmap()
         self.canvas.update()
@@ -300,11 +301,13 @@ class MainWindow(QMainWindow):
             if self.panel.design is not None:
                 self.canvas.set_design(self.panel.design)
             else:
+                self.canvas.clear_notch_overlay()
                 self.canvas._full_image = None
                 self.canvas._preview_pixmap = None
                 self.canvas.update()
             return
         # 直接在主画布显示草图（不悬浮在侧栏小缩略图里）
+        self.canvas.clear_notch_overlay()
         self.canvas._full_image = pil_img
         self.canvas._update_preview_pixmap()
         self.canvas.update()
