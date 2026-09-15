@@ -1313,6 +1313,53 @@ def _attribute_cut_ocr_per_corner(all_corners, ocr_numbers, geo,
 
 
 # ---------------------------------------------------------------------------
+# G1 结构一致性不变量（永久常驻，不随识别能力提升而移除）
+#
+# 不变量定义：parse_lshape_sketch 的所有退出路径必须经过 G1 检查，
+# 确保 notches_detected == notches_consumed 或在 message 中明确告警。
+# 即使未来识别层能完美检测全部凹角，G1 仍须运行——它是结构正确性的
+# 最终守卫，不是临时补丁。
+# ---------------------------------------------------------------------------
+
+def _apply_g1_invariant(result, n_detected, n_consumed, all_corners_geo,
+                        cuts_cm, *, base_msg=''):
+    """在结果对象上执行 G1 不变量检查。
+
+    所有 parse_lshape_sketch 退出路径必须调用此函数，确保：
+    1. notches_detected / notches_consumed 被正确设置
+    2. 检测到的凹角数 != 消费数时在 message 中告警
+    3. success 字段反映 G1 状态
+
+    Args:
+        result: LSketchParseResult 对象
+        n_detected: 几何检测到的凹角数
+        n_consumed: 实际转换为 cuts_cm 的角数
+        all_corners_geo: geo['all_corners'] 列表
+        cuts_cm: 已消费的挖角参数列表
+        base_msg: 基础消息（已有的识别摘要）
+    """
+    result.notches_detected = n_detected
+    result.notches_consumed = n_consumed
+    g1_blocked = n_detected != n_consumed
+
+    msg = base_msg
+    if g1_blocked:
+        consumed_corners = {c['corner'] for c in cuts_cm}
+        unused = [c['corner'] for c in all_corners_geo
+                  if c['corner'] not in consumed_corners]
+        warning = (
+            f" ⚠️ G1 闸口：检测到 {n_detected} 个凹角，当前仅应用 {n_consumed} 个"
+            f"（{[c['corner'] for c in cuts_cm]}），其余角位 {unused} 需手动补充"
+        )
+        msg += warning
+
+    result.message = msg
+    result.debug['g1_blocked'] = g1_blocked
+    result.debug['g1_invariant_applied'] = True
+    return not g1_blocked
+
+
+# ---------------------------------------------------------------------------
 # 公共入口
 # ---------------------------------------------------------------------------
 
@@ -1437,19 +1484,21 @@ def parse_lshape_sketch(
     have_ch = dims['cut_h_cm'] > 0
 
     if not (have_w and have_h and have_cw and have_ch):
-        result.message = (
+        partial_msg = (
             "识别到 L 形轮廓，但尺寸数值不完整"
             f"（宽{'' if have_w else '缺失'} 高{'' if have_h else '缺失'} "
             f"挖宽{'' if have_cw else '缺失'} 挖高{'' if have_ch else '缺失'}）。\n"
             "请在草图上清晰标注 6 个尺寸（A/B/C/D/E/F）后重试，或手动填写。"
         )
-        # 仍把部分结果放入 debug，便于 UI 提示 / 手动修正
         result.debug.update({
             'geometry': geo,
             'roles': roles,
             'ocr_count': len(ocr_numbers),
             'partial': dims,
         })
+        _apply_g1_invariant(
+            result, n_detected, 0, geo.get('all_corners', []),
+            [], base_msg=partial_msg)
         return result
 
     # —— 多角参数：OCR 逐角归属 + 像素比例兜底 ——
@@ -1472,26 +1521,18 @@ def parse_lshape_sketch(
                 'source': 'pixel_ratio',
             })
 
-    # —— G1 闸口：检测到的凹角数 vs 实际消费数 ——
+    # —— G1 闸口：检测到的凹角数 vs 实际消费数（不变量常驻） ——
     n_consumed = len(cuts_cm)
-    result.notches_consumed = n_consumed
-    g1_blocked = n_detected != n_consumed
-    result.success = not g1_blocked
     msg = (
-        f"L 形识别{'成功' if not g1_blocked else '部分完成'}（corner={geo['corner']}, "
+        f"L 形识别{'成功' if n_detected == n_consumed else '部分完成'}"
+        f"（corner={geo['corner']}, "
         f"外框 {dims['outer_w_cm']:.1f}×{dims['outer_h_cm']:.1f}cm, "
         f"挖角 {dims['cut_w_cm']:.1f}×{dims['cut_h_cm']:.1f}cm, 自洽={sc:.2f}）"
     )
-    if g1_blocked:
-        all_corners = geo.get('all_corners', [])
-        consumed_corners = {cut['corner'] for cut in cuts_cm}
-        unused = [c['corner'] for c in all_corners
-                  if c['corner'] not in consumed_corners]
-        msg += (
-            f" ⚠️ G1 闸口：检测到 {n_detected} 个凹角，当前仅应用 {n_consumed} 个"
-            f"（{[cut['corner'] for cut in cuts_cm]}），其余角位 {unused} 需手动补充"
-        )
-    result.message = msg
+    g1_passed = _apply_g1_invariant(
+        result, n_detected, n_consumed, geo.get('all_corners', []),
+        cuts_cm, base_msg=msg)
+    result.success = g1_passed
     result.method = f"lshape_v{_ALGO_VERSION}(sc={sc:.2f})"
     result.corner = geo['corner']
     result.outer_w_cm = round(dims['outer_w_cm'], 2)
@@ -1517,7 +1558,6 @@ def parse_lshape_sketch(
         'cuts_cm': cuts_cm,
         'n_detected': n_detected,
         'n_consumed': n_consumed,
-        'g1_blocked': g1_blocked,
         'n_detected_hull': geo.get('n_detected_hull', 0),
         'n_detected_sliding': geo.get('n_detected_sliding', 0),
     })
