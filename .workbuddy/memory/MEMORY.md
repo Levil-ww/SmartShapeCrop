@@ -92,3 +92,36 @@ git ls-files | grep -c "ProductSummary/2026-"   # 期望 0
 `ProductSummary/项目审查报告/` → `ProductSummary/SmartShapeCrop分析报告/` 这类
 **同层级（同为 ProductSummary/<dir>/）** 的搬移，文档内 `../` 与 `../../` 的解析结果
 **完全不变**，因此无需改任何链接。判断搬移是否安全，先比深度，再比文件名。
+
+## ⚠️ 改 `CropDesign.mode` 判断必须同时搜 `==` 与 `!=`（2026-09-15）
+
+`mode == / != 'rect_lshape'` 全工程共 **19 处**（image_ops 9 / property_panel_generate 6 /
+geometry 2 / design_model 2），**其中 3 处是 `!=`**：
+`models/design_model.py:114`、`gui/property_panel_generate.py:220`、`:327`。
+只搜 `== 'rect_lshape'` 会漏掉这 3 处 —— 本项目"改了这个坏那个"的典型成因。
+
+**新增几何模式时必须四类分治，禁止字符串级批量替换：**
+1. **渲染语义**（8 处，image_ops 733/759/779/1050/1068/1144/1204/1223）→ 改成
+   `mode in LSHAPE_LAYOUT_MODES`（收敛 helper）
+2. **分派点**（2 处：`image_ops.py:1502 _get_inner_pixel_mask`、`geometry.py:584 compute_border_bands`）
+   → **必须新增独立分支**。误改成 membership 会得到"并集"而非"差集"（洞被填满）**且不报错**
+3. **展示/同步**（4 处，property_panel_generate 204/270/479/522）→ 扩展（易被误判为参数守卫而漏改）
+4. **参数守卫**（5 处）→ 重写逻辑
+
+**两处隐藏耦合（新开面板/mode 必查）**
+- `gui/property_panel.py:926` 硬编码索引映射 `{'rect_hole':0,'rect_lshape':1,'ellipse_hole':2}` →
+  不同步则模板加载**静默回落 `rect_hole`**，形状错误却不报错。应改为 `_cb_mode.findData(mode)`
+- `core/app_settings.py:317` `if src not in (CROPPER, POOL, LSHAPE): src = CROPPER` →
+  新增第 4 个历史源**必须同步白名单**，否则历史记录静默写进圆角裁剪工具
+
+## 几何验证的零改动 POC 套路（2026-09-15 验证有效）
+
+新形状可行性验证不需改源码：写 `scripts/diagnose/_diag_*.py`，只读调用 `core.geometry` 公开原语
+（`build_lshape_mask(cuts=...)` / `fill_rect_mask` / `CropDesign` 的 `*_px()`），
+用**集合代数恒等式**（而非面积数值）做断言，避免被 PIL 1px 栅格化误差干扰。
+实例：`_diag_composite_shape_poc.py`（综合形状 = L形 − 洞），4 项断言全 PASS。
+注意 PIL `ImageDraw.rectangle` 边界是**包含式**，面积会偏大约 0.03%，属正常。
+
+**10px 黑框的绘制规则**：当两个移除区域**不相交且不相邻**时，必须**分形状各自绘制环带后 OR 合并**，
+不能用"整体 union 再内缩"（联合内缩会在边界产生错误缺口）。判断方法：`m_a & m_b` 为 0 且
+1px 膨胀后仍为 0 → 可 OR 合并。
