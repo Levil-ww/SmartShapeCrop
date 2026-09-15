@@ -561,7 +561,14 @@ class PoolRenderWorker(QThread):
         )
     def _apply_rect_hole_params(self, design, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape, TRIM_CM):
         """矩形/水池模式：边距（草图 + 用户覆盖）→ 多洞 Add-On → 外框素材。"""
-        design.mode = 'rect_hole'
+        # 目标名中的“椭圆”是当前水池流程识别椭圆内洞的稳定业务标记。
+        # 外框素材仍按整张矩形画布铺设，只有内挖 mask 使用椭圆。
+        target_lower = str(self._target or '').lower()
+        design.mode = (
+            'ellipse_hole'
+            if '椭圆' in target_lower or 'ellipse' in target_lower
+            else 'rect_hole'
+        )
         # 边距优先用草图，否则用默认等比例值（10% 短边）
         # [契约变更 2026-08-27] 画布已 +TRIM_CM(1cm) 作为裁剪损耗，
         # 草图识别到的 4 个边距视为设计真值，不再追加 +TRIM_CM 偏移。

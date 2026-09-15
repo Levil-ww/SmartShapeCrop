@@ -155,9 +155,10 @@ class CropDesign:
     corner_bl_cm: float = 0.0
     corner_br_cm: float = 0.0
 
-    # —— mode == ellipse_hole 额外参数（相对中心的比例） ——
-    ellipse_rx_ratio: float = 0.35   # 占画布宽度的比例
-    ellipse_ry_ratio: float = 0.30   # 占画布高度的比例
+    # —— mode == ellipse_hole 兼容字段 ——
+    # 椭圆实际尺寸由画布四边距计算；保留旧字段以兼容旧设计文件。
+    ellipse_rx_ratio: float = 0.35
+    ellipse_ry_ratio: float = 0.30
 
     # 多层边框（从外向内，offset 为该层的厚度）
     borders: list[BorderLayer] = field(default_factory=lambda: [
@@ -266,11 +267,6 @@ class CropDesign:
             half = min(self.canvas_w_cm, self.canvas_h_cm) / 2.0
             if v > half:
                 raise ValueError(f"{name}={v}cm 超过画布尺寸的一半 ({half:.1f}cm)")
-        if self.mode == 'ellipse_hole':
-            if not (0.0 < self.ellipse_rx_ratio <= 1.0):
-                raise ValueError(f"ellipse_rx_ratio 必须在 (0, 1] 范围内，当前值: {self.ellipse_rx_ratio}")
-            if not (0.0 < self.ellipse_ry_ratio <= 1.0):
-                raise ValueError(f"ellipse_ry_ratio 必须在 (0, 1] 范围内，当前值: {self.ellipse_ry_ratio}")
         if self.mode == 'rect_lshape':
             if self.l_corner not in self._VALID_CORNERS:
                 raise ValueError(f"l_corner 无效: {self.l_corner!r}，有效值: {sorted(self._VALID_CORNERS)}")
@@ -348,10 +344,35 @@ class CropDesign:
                          max(0.0, outer.h - mt - mb))
 
     def ellipse_px(self) -> EllipseShape:
-        cw, ch = self.canvas_w_px, self.canvas_h_px
-        return EllipseShape(cx=cw / 2, cy=ch / 2,
-                            rx=cw * self.ellipse_rx_ratio,
-                            ry=ch * self.ellipse_ry_ratio)
+        outer_x_cm = self.outer_margin_cm
+        outer_y_cm = self.outer_margin_cm
+        inner_x_cm = outer_x_cm + self.inner_margin_left_cm
+        inner_y_cm = outer_y_cm + self.inner_margin_top_cm
+        # 画布比草图外框多出的 1cm 损耗只向右/向下延展椭圆，
+        # 不改变草图定义的左、上、右、下边距。这样直径增加 1cm，
+        # 半径增加 0.5cm，但输出画布四边到椭圆的边距保持原值。
+        inner_w_cm = max(
+            0.0,
+            self.canvas_w_cm - 2 * self.outer_margin_cm
+            - self.inner_margin_left_cm - self.inner_margin_right_cm,
+        )
+        inner_h_cm = max(
+            0.0,
+            self.canvas_h_cm - 2 * self.outer_margin_cm
+            - self.inner_margin_top_cm - self.inner_margin_bottom_cm,
+        )
+        inner_x = self.cm2px(inner_x_cm)
+        inner_y = self.cm2px(inner_y_cm)
+        inner_w = self.cm2px(inner_w_cm)
+        inner_h = self.cm2px(inner_h_cm)
+        diameter_w = max(0.0, inner_w)
+        diameter_h = max(0.0, inner_h)
+        return EllipseShape(
+            cx=inner_x + diameter_w / 2,
+            cy=inner_y + diameter_h / 2,
+            rx=diameter_w / 2,
+            ry=diameter_h / 2,
+        )
 
     def l_shape_px(self) -> LShape:
         return LShape(

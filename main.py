@@ -92,7 +92,6 @@ def _preset_ellipse() -> CropDesign:
         mode='ellipse_hole',
         canvas_w_cm=60, canvas_h_cm=80, dpi=150,
         outer_margin_cm=1.0,
-        ellipse_rx_ratio=0.30, ellipse_ry_ratio=0.28,
         borders=[
             BorderLayer(offset_cm=0.4, fill_type='solid', color=(0, 0, 0)),
             BorderLayer(offset_cm=0.3, fill_type='solid', color=(255, 255, 255)),

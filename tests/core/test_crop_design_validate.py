@@ -120,27 +120,27 @@ class TestCropDesignValidateCorners:
                    corner_bl_cm=0, corner_br_cm=0).validate()
 
 
-class TestCropDesignValidateEllipse:
-    """ellipse_hole 模式 ratio 校验"""
+class TestCropDesignEllipseGeometry:
+    """椭圆直径由四边距计算，并补偿 1cm 画布损耗。"""
 
-    def test_zero_rx_raises(self):
-        with pytest.raises(ValueError, match='ellipse_rx_ratio'):
-            CropDesign(mode='ellipse_hole', ellipse_rx_ratio=0).validate()
+    def test_ellipse_uses_inner_rect_diameter_plus_one_cm(self):
+        design = CropDesign(
+            mode='ellipse_hole', canvas_w_cm=78.0, canvas_h_cm=59.0, dpi=150,
+            inner_margin_top_cm=16.0, inner_margin_bottom_cm=12.0,
+            inner_margin_left_cm=18.0, inner_margin_right_cm=12.0,
+        )
 
-    def test_negative_rx_raises(self):
-        with pytest.raises(ValueError, match='ellipse_rx_ratio'):
-            CropDesign(mode='ellipse_hole', ellipse_rx_ratio=-0.1).validate()
+        ellipse = design.ellipse_px()
+        px_per_cm = design.dpi / 2.54
 
-    def test_rx_over_1_raises(self):
-        with pytest.raises(ValueError, match='ellipse_rx_ratio'):
-            CropDesign(mode='ellipse_hole', ellipse_rx_ratio=1.5).validate()
-
-    def test_ry_boundary_1_passes(self):
-        CropDesign(mode='ellipse_hole', ellipse_ry_ratio=1.0).validate()
-
-    def test_ry_zero_raises(self):
-        with pytest.raises(ValueError, match='ellipse_ry_ratio'):
-            CropDesign(mode='ellipse_hole', ellipse_ry_ratio=0).validate()
+        assert ellipse.rx * 2 == pytest.approx(48.0 * px_per_cm)
+        assert ellipse.ry * 2 == pytest.approx(31.0 * px_per_cm)
+        assert ellipse.cx == pytest.approx((18.0 + 48.0 / 2) * px_per_cm)
+        assert ellipse.cy == pytest.approx((16.0 + 31.0 / 2) * px_per_cm)
+        assert ellipse.cx - ellipse.rx == pytest.approx(18.0 * px_per_cm)
+        assert ellipse.cx + ellipse.rx == pytest.approx((78.0 - 12.0) * px_per_cm)
+        assert ellipse.cy - ellipse.ry == pytest.approx(16.0 * px_per_cm)
+        assert ellipse.cy + ellipse.ry == pytest.approx((59.0 - 12.0) * px_per_cm)
 
 
 class TestCropDesignValidateLShape:

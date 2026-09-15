@@ -87,7 +87,6 @@ class DesignModel:
           inner: {'top','bottom','left','right'}
           lshape: {'corner','cut_w_cm','cut_h_cm'} 或 None（None=无 LShapePanel → 默认值）
           corners: {'tl','tr','bl','br'}
-          ellipse: {'rx','ry'}
           colors: {'outer','hole'}
           images: {'outer','hole'}（str 或 None）
           text: {'enabled','text','font_size_px','color','mirror_bottom'}
@@ -141,8 +140,6 @@ class DesignModel:
         d.corner_tr_cm = snap['corners']['tr']
         d.corner_bl_cm = snap['corners']['bl']
         d.corner_br_cm = snap['corners']['br']
-        d.ellipse_rx_ratio = snap['ellipse']['rx']
-        d.ellipse_ry_ratio = snap['ellipse']['ry']
         d.outer_bg_color = snap['colors']['outer']
         d.hole_bg_color = snap['colors']['hole']
         d.outer_bg_image = snap['images']['outer'] or None

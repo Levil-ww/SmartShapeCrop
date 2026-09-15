@@ -538,10 +538,6 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
         lod_design.l_cut_w_cm = design.l_cut_w_cm * sx
         lod_design.l_cut_h_cm = design.l_cut_h_cm * sy
     
-    # 椭圆参数缩放
-    if hasattr(lod_design, 'ellipse_rx_ratio') and hasattr(lod_design, 'ellipse_ry_ratio'):
-        pass  # 比率值无需缩放
-    
     return lod_design
 
 

@@ -118,7 +118,6 @@ class _LayersMixin:
                 'bl': self._sp_design_corners['bl'].value(),
                 'br': self._sp_design_corners['br'].value(),
             },
-            'ellipse': {'rx': self._sp_erx.value(), 'ry': self._sp_ery.value()},
             'colors': {
                 'outer': self._btn_outer_color.color(),
                 'hole': self._btn_hole_color.color(),

@@ -277,16 +277,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         # PropertyPanel 通过 self._lshape_panel 间接访问（_collect / _sync_panel_from_design）。
         # _on_mode_change 不再需要切换 _gb_l 可见性（LShapePanel 作为独立 tab 始终可见）。
 
-        # 5) 椭圆参数
-        self._gb_e = QGroupBox("椭圆参数")
-        fe = QVBoxLayout(self._gb_e)
-        self._sp_erx = self._dspin(0.05, 0.49, self.design.ellipse_rx_ratio, decimals=2)
-        self._sp_ery = self._dspin(0.05, 0.49, self.design.ellipse_ry_ratio, decimals=2)
-        fe.addLayout(self._row("X半径/画布宽", self._sp_erx))
-        fe.addLayout(self._row("Y半径/画布高", self._sp_ery))
-        self._inner_layout.addWidget(self._gb_e)
-
-        # 6) 边框层
+        # 5) 边框层
         gb_b = QGroupBox("多层边框", self)  # 设parent防止GC删除子控件
         fb = QVBoxLayout(gb_b)
         self._layers_label = QLabel()
@@ -908,7 +899,6 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def _on_mode_change(self):
         mode = self._cb_mode.currentData()
         # L 形参数已迁移到独立 LShapePanel（始终作为 tab 可见，无需此处切换）
-        self._gb_e.setVisible(mode == 'ellipse_hole')
 
     # ---- 把设计对象数值写回面板控件 ----
     def sync_from_design(self, d: CropDesign):
@@ -926,7 +916,6 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         if self._lshape_panel is not None:
             self._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
             self._lshape_panel.set_lshape_cuts(getattr(d, 'l_cuts_cm', None))
-        self._sp_erx.setValue(d.ellipse_rx_ratio); self._sp_ery.setValue(d.ellipse_ry_ratio)
         self._btn_outer_color.set_color(d.outer_bg_color); self._btn_hole_color.set_color(d.hole_bg_color)
         self._ed_outer_img.setText(d.outer_bg_image or ""); self._ed_hole_img.setText(d.hole_bg_image or "")
         if d.border_text is not None:
