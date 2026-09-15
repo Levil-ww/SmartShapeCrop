@@ -560,7 +560,23 @@ class LShapePanel(QWidget):
                 logger.info("[LShapePanel] 忽略已过期的 L 形解析结果")
                 return
             # S1 invariant 分支 1：解析层报告 success=False
+            # 但识别层已产出 all_corners / notches_detected 时，仍可把候选角位回填到
+            # 4 行 GUI 供用户人工修正，不再丢弃已发现的角信息。
             if not result.success:
+                suggestions = self._extract_multicorner_suggestions(result)
+                if suggestions:
+                    primary = suggestions[0]
+                    self._apply_lshape_params(
+                        primary['corner'],
+                        primary['cut_w_cm'],
+                        primary['cut_h_cm'],
+                        result,
+                    )
+                    self._set_status(
+                        "⚠️ 识别到多个挖角候选，已回填到 4 行参数表（尺寸为建议值，可人工修正后再生成预览）。"
+                    )
+                    self.lshape_recognize_finished.emit(True)
+                    return
                 self._set_status(
                     f"ℹ️ L 形识别未成功（已按矩形解析处理）：{result.message}", is_error=False)
                 self.lshape_recognize_finished.emit(False)
@@ -597,6 +613,53 @@ class LShapePanel(QWidget):
         self._set_status(f"L 形识别异常（已忽略，保留矩形结果）：{err_msg}")
         self.lshape_recognize_finished.emit(False)
 
+    def _extract_multicorner_suggestions(self, result) -> list[dict]:
+        """从识别结果中提取候选角位，按角位映射到四行 GUI 作为建议值。
+
+        规则：
+        - 优先取 result.debug['all_corners']；fallback 到 geometry['all_corners']。
+        - 只保留 tl/tr/bl/br 四个合法角位；尺寸优先用 cm，若仅有 px 则按外框比例换算。
+        - 不做 OCR 细粒度归属，允许用户手动修正。
+        """
+        if result is None:
+            return []
+        debug = getattr(result, 'debug', {}) or {}
+        geo = debug.get('geometry', {}) if isinstance(debug, dict) else {}
+        candidates = debug.get('all_corners', []) if isinstance(debug, dict) else []
+        if not candidates and isinstance(geo, dict):
+            candidates = geo.get('all_corners', [])
+        if not isinstance(candidates, list):
+            return []
+
+        outer_w_cm = max(0.0, float(getattr(result, 'outer_w_cm', 0.0) or 0.0))
+        outer_h_cm = max(0.0, float(getattr(result, 'outer_h_cm', 0.0) or 0.0))
+        px_outer_w = float(geo.get('outer_w_px', 0) or 0)
+        px_outer_h = float(geo.get('outer_h_px', 0) or 0)
+
+        unique = []
+        seen = set()
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            corner = str(item.get('corner', '')).lower()
+            if corner not in {'tl', 'tr', 'bl', 'br'} or corner in seen:
+                continue
+            seen.add(corner)
+
+            cut_w = float(item.get('cut_w_cm', item.get('cut_w_px', 0.0)) or 0.0)
+            cut_h = float(item.get('cut_h_cm', item.get('cut_h_px', 0.0)) or 0.0)
+            if cut_w <= 0 and px_outer_w > 0 and outer_w_cm > 0 and float(item.get('cut_w_px', 0.0) or 0.0) > 0:
+                cut_w = outer_w_cm * (float(item.get('cut_w_px', 0.0)) / px_outer_w)
+            if cut_h <= 0 and px_outer_h > 0 and outer_h_cm > 0 and float(item.get('cut_h_px', 0.0) or 0.0) > 0:
+                cut_h = outer_h_cm * (float(item.get('cut_h_px', 0.0)) / px_outer_h)
+
+            unique.append({
+                'corner': corner,
+                'cut_w_cm': max(0.0, float(cut_w)),
+                'cut_h_cm': max(0.0, float(cut_h)),
+            })
+        return unique[:4]
+
     def _apply_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float, result):
         """L 形挖角参数应用：保存参数 → 回填 UI（含外框 SpinBox）→ 状态栏内联摘要
         → 发出 lshape_applied 信号给 PropertyPanel（切换到 rect_lshape 模式 + 同步画布 + 预览）。
@@ -612,7 +675,15 @@ class LShapePanel(QWidget):
             'cut_h_cm': max(0.0, cut_h_cm),
             'outer_w_cm': max(0.0, float(result.outer_w_cm or 0)),
             'outer_h_cm': max(0.0, float(result.outer_h_cm or 0)),
+            'cuts_cm': [],
         }
+        # 优先回填识别层已产出的多角候选，以建议值占位，便于用户人工修正。
+        suggestions = self._extract_multicorner_suggestions(result)
+        if suggestions:
+            self.set_lshape_cuts(suggestions)
+            self._lshape_params['cuts_cm'] = self.get_cuts_cm()
+        else:
+            self._lshape_params['cuts_cm'] = self.get_cuts_cm()
         # corner code → 中文显示名（与 _cb_lcorner addItem 顺序一致，defensive 兜底未知）
         _corner_label = {
             'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角',

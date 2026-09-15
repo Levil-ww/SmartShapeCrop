@@ -6,6 +6,8 @@ tests/gui/test_main_window.py
 界面不会报错、也不会崩溃，只会"点了没反应"——这类静默失效最难靠手点发现。
 本文件用 disconnect 探测法逐条验证接线，任何一条断了都会立刻红。
 """
+from types import SimpleNamespace
+
 import pytest
 
 from PyQt5.QtWidgets import (
@@ -65,6 +67,33 @@ class TestMainWindowAssembly:
         """[Fix 2026-09-02 B] 导出防重复点击依赖 _is_saving 初值。"""
         assert main_window._is_saving is False, '_is_saving 初值应为 False'
         assert main_window._save_worker is None, '_save_worker 初值应为 None'
+
+
+    def test_lshape_panel_auto_fills_multi_corner_rows(self, lshape_panel):
+        result = SimpleNamespace(
+            success=False,
+            corner='tr',
+            cut_w_cm=18.0,
+            cut_h_cm=12.0,
+            outer_w_cm=100.0,
+            outer_h_cm=60.0,
+            notches_detected=2,
+            debug={
+                'all_corners': [
+                    {'corner': 'tr', 'cut_w_px': 30.0, 'cut_h_px': 20.0},
+                    {'corner': 'bl', 'cut_w_px': 24.0, 'cut_h_px': 18.0},
+                ],
+                'geometry': {'outer_w_px': 100.0, 'outer_h_px': 60.0},
+            },
+        )
+
+        lshape_panel._apply_lshape_params('tr', 18.0, 12.0, result)
+        cuts = lshape_panel.get_cuts_cm()
+
+        assert {cut['corner'] for cut in cuts} == {'tr', 'bl'}
+        assert any(cut['corner'] == 'tr' and abs(cut['cut_w_cm'] - 18.0) < 1e-6 for cut in cuts)
+        assert any(cut['corner'] == 'bl' and abs(cut['cut_w_cm'] - 24.0) < 1e-6 for cut in cuts)
+        assert any(cut['corner'] == 'bl' and abs(cut['cut_h_cm'] - 18.0) < 1e-6 for cut in cuts)
 
 
 class TestMainWindowSignalWiring:
