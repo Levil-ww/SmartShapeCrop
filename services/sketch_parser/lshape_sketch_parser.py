@@ -835,8 +835,48 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
     # 不再依赖凹角 cx/cy 做 near/far 分割——凹角来自 approxPolyDP，
     # 顶点位置有抖动，会导致 E↔F 互换、E=B−F 算出错值（如把 E 标误当 F）。
     # 几何比例 cut_w_px/outer_w_px 稳定，能唯一确定哪个值是挖角尺寸。
-    cut_h_items = buckets[cut_h_edge]
-    cut_v_items = buckets[cut_v_edge]
+    # L 形的 E/D 标注通常贴在凹口的两条内边，而不是外接矩形边：
+    # 例如左下挖角时，E 在 y=cy 的内水平边，D 在 x=cx 的内垂直边。
+    # 仅按外接矩形四边分桶会把它们误归到左/上外边，随后 B-F / A-C
+    # 推导出错误的挖角尺寸。把对应内边上的 OCR 候选补入切边桶，
+    # 后续仍由像素比例区分挖角段与剩余段。
+    edge_tol = max(15.0, min(W_bbox, H_bbox) * 0.08)
+    inner_segments = {
+        'h': (cy, cx, maxx) if cut_right else (cy, minx, cx),
+        'v': (cx, cy, maxy) if not cut_top else (cx, miny, cy),
+    }
+
+    def _inner_edge_items(axis):
+        line, seg_start, seg_end = inner_segments[axis]
+        matched = []
+        for val, conf, bbox in ocr_numbers:
+            bx, by, bw, bh = bbox
+            if bw * bh > bbox_area * 0.15 or val <= 0 or val > 5000:
+                continue
+            nx, ny = bx + bw / 2.0, by + bh / 2.0
+            line_dist = abs(ny - line) if axis == 'h' else abs(nx - line)
+            along = nx if axis == 'h' else ny
+            if line_dist > edge_tol or not (seg_start - edge_tol <= along <= seg_end + edge_tol):
+                continue
+            if not any(abs(nx - old[1]) < 20 and abs(ny - old[2]) < 20
+                       for old in matched):
+                matched.append((val, nx, ny, line_dist, conf, bw * bh))
+        return matched
+
+    inner_h_items = _inner_edge_items('h')
+    inner_v_items = _inner_edge_items('v')
+    inner_items = inner_h_items + inner_v_items
+
+    def _same_position(left, right):
+        return abs(left[1] - right[1]) < 20 and abs(left[2] - right[2]) < 20
+
+    # 内边优先：同一个 OCR 项若也因距离更近落入外框桶，先移除，
+    # 否则 E/D 会互相竞争并被错误地解释为同一条外边上的两个分段。
+    for bucket in buckets.values():
+        bucket[:] = [item for item in bucket
+                     if not any(_same_position(item, inner) for inner in inner_items)]
+    cut_h_items = buckets[cut_h_edge] + inner_h_items
+    cut_v_items = buckets[cut_v_edge] + inner_v_items
 
     # 几何挖角比例（用于在切边多个数值中识别 E/D）
     px_outer_w = geo.get('outer_w_px', W_bbox)

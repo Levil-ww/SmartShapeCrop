@@ -659,47 +659,83 @@ class LShapePanel(QWidget):
     def _extract_multicorner_suggestions(self, result) -> list[dict]:
         """从识别结果中提取候选角位，按角位映射到四行 GUI 作为建议值。
 
-        规则：
-        - 优先取 result.debug['all_corners']；fallback 到 geometry['all_corners']。
-        - 只保留 tl/tr/bl/br 四个合法角位；尺寸优先用 cm，若仅有 px 则按外框比例换算。
-        - 不做 OCR 细粒度归属，允许用户手动修正。
+        规则（按优先级）：
+        1. 优先取 result.debug['cuts_cm']（OCR 归属后的真值，含 cut_w_cm/cut_h_cm）。
+           —— [Bug Fix 2026-09-15] 这是修复的核心：此前只从 debug['all_corners']
+           （仅含 px 值）读取，OCR 真值被像素比例反推值覆盖，导致 45.8→50.5 等
+           数值漂移。cuts_cm 由 _attribute_cut_ocr_per_corner 产出，含 OCR 识别的
+           真实 cm 值，是最高优先级数据源。
+        2. fallback 到 debug['all_corners'] / geometry['all_corners'] 的像素比例换算。
+        3. 只保留 tl/tr/bl/br 四个合法角位；允许用户手动修正。
         """
         if result is None:
             return []
         debug = getattr(result, 'debug', {}) or {}
         geo = debug.get('geometry', {}) if isinstance(debug, dict) else {}
-        candidates = debug.get('all_corners', []) if isinstance(debug, dict) else []
-        if not candidates and isinstance(geo, dict):
-            candidates = geo.get('all_corners', [])
-        if not isinstance(candidates, list):
-            return []
 
         outer_w_cm = max(0.0, float(getattr(result, 'outer_w_cm', 0.0) or 0.0))
         outer_h_cm = max(0.0, float(getattr(result, 'outer_h_cm', 0.0) or 0.0))
         px_outer_w = float(geo.get('outer_w_px', 0) or 0)
         px_outer_h = float(geo.get('outer_h_px', 0) or 0)
 
-        unique = []
-        seen = set()
-        for item in candidates:
+        # —— Step 1: 用 debug['cuts_cm'] 建立 corner → cm 值的查找表（最高优先级） ——
+        cm_by_corner = {}
+        cuts_cm_list = debug.get('cuts_cm', []) if isinstance(debug, dict) else []
+        if not isinstance(cuts_cm_list, list):
+            cuts_cm_list = []
+        for item in cuts_cm_list:
             if not isinstance(item, dict):
                 continue
             corner = str(item.get('corner', '')).lower()
-            if corner not in {'tl', 'tr', 'bl', 'br'} or corner in seen:
+            if corner in {'tl', 'tr', 'bl', 'br'}:
+                w = float(item.get('cut_w_cm', 0.0) or 0.0)
+                h = float(item.get('cut_h_cm', 0.0) or 0.0)
+                if w > 0 or h > 0:
+                    cm_by_corner[corner] = (w, h)
+
+        # —— Step 2: 用 all_corners 建立 corner → px 值的查找表（用于 fallback） ——
+        px_by_corner = {}
+        candidates = debug.get('all_corners', []) if isinstance(debug, dict) else []
+        if not candidates and isinstance(geo, dict):
+            candidates = geo.get('all_corners', [])
+        if isinstance(candidates, list):
+            for item in candidates:
+                if not isinstance(item, dict):
+                    continue
+                corner = str(item.get('corner', '')).lower()
+                if corner in {'tl', 'tr', 'bl', 'br'}:
+                    px_by_corner[corner] = (
+                        float(item.get('cut_w_px', 0.0) or 0.0),
+                        float(item.get('cut_h_px', 0.0) or 0.0),
+                    )
+
+        # —— Step 3: 合并出最终候选，优先 cm，fallback 像素比例 ——
+        unique = []
+        seen = set()
+        # cuts_cm 优先（按 OCR 归属顺序），all_corners 补充
+        for corner in list(cm_by_corner.keys()) + list(px_by_corner.keys()):
+            if corner in seen:
                 continue
             seen.add(corner)
 
-            cut_w = float(item.get('cut_w_cm', item.get('cut_w_px', 0.0)) or 0.0)
-            cut_h = float(item.get('cut_h_cm', item.get('cut_h_px', 0.0)) or 0.0)
-            if cut_w <= 0 and px_outer_w > 0 and outer_w_cm > 0 and float(item.get('cut_w_px', 0.0) or 0.0) > 0:
-                cut_w = outer_w_cm * (float(item.get('cut_w_px', 0.0)) / px_outer_w)
-            if cut_h <= 0 and px_outer_h > 0 and outer_h_cm > 0 and float(item.get('cut_h_px', 0.0) or 0.0) > 0:
-                cut_h = outer_h_cm * (float(item.get('cut_h_px', 0.0)) / px_outer_h)
+            cut_w_cm, cut_h_cm = 0.0, 0.0
+
+            # 优先用 OCR 真值
+            if corner in cm_by_corner:
+                cut_w_cm, cut_h_cm = cm_by_corner[corner]
+            else:
+                # fallback: 像素比例反推
+                if corner in px_by_corner:
+                    cw_px, ch_px = px_by_corner[corner]
+                    if cw_px > 0 and px_outer_w > 0 and outer_w_cm > 0:
+                        cut_w_cm = outer_w_cm * (cw_px / px_outer_w)
+                    if ch_px > 0 and px_outer_h > 0 and outer_h_cm > 0:
+                        cut_h_cm = outer_h_cm * (ch_px / px_outer_h)
 
             unique.append({
                 'corner': corner,
-                'cut_w_cm': max(0.0, float(cut_w)),
-                'cut_h_cm': max(0.0, float(cut_h)),
+                'cut_w_cm': max(0.0, float(cut_w_cm)),
+                'cut_h_cm': max(0.0, float(cut_h_cm)),
             })
         return unique[:4]
 
@@ -843,7 +879,11 @@ class LShapePanel(QWidget):
             self._sp_outer_h.blockSignals(False)
 
     def set_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
-        """外部回填 L 形参数（blockSignals 避免触发预览）。"""
+        """外部回填 L 形参数（blockSignals 避免触发预览）。
+
+        同时同步 `_lshape_params` dict，确保 Worker 下次读取时拿到回填后的值，
+        而非回填前用户手动编辑的旧值。
+        """
         self._cb_lcorner.blockSignals(True)
         self._sp_lw.blockSignals(True)
         self._sp_lh.blockSignals(True)
@@ -860,6 +900,10 @@ class LShapePanel(QWidget):
             self._cb_lcorner.blockSignals(False)
             self._sp_lw.blockSignals(False)
             self._sp_lh.blockSignals(False)
+        self._lshape_params['corner'] = corner
+        self._lshape_params['cut_w_cm'] = max(0.0, float(cut_w_cm))
+        self._lshape_params['cut_h_cm'] = max(0.0, float(cut_h_cm))
+        self._lshape_params['cuts_cm'] = self.get_cuts_cm()
 
     def set_lshape_cuts(self, cuts: list[dict] | None):
         """回填多角参数；空列表回退到旧单角控件。"""
@@ -879,6 +923,7 @@ class LShapePanel(QWidget):
             finally:
                 enabled.blockSignals(False); combo.blockSignals(False)
                 width.blockSignals(False); height.blockSignals(False)
+        self._lshape_params['cuts_cm'] = self.get_cuts_cm()
 
     def set_outer_dims(self, outer_w_cm: float, outer_h_cm: float):
         """外部回填外框设计真值到 SpinBox（设计值 + 1cm = 画布值）。

@@ -17,7 +17,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from services.sketch_parser.lshape_sketch_parser import parse_lshape_sketch, _detect_lshape_geometry
+from services.sketch_parser.lshape_sketch_parser import (
+    parse_lshape_sketch,
+    _assign_labels_by_geometry,
+    _detect_lshape_geometry,
+    _resolve_dimensions,
+)
 
 
 def _load_font(size):
@@ -176,6 +181,33 @@ def test_parse_lshape_tr_full():
         assert abs(res.cut_w_cm - 100) < 6, f"挖宽偏差: {res.cut_w_cm}"
         assert abs(res.cut_h_cm - 2) < 2, f"挖高偏差: {res.cut_h_cm}"
         assert res.self_consistency >= 0.5
+
+
+def test_inner_notch_labels_are_not_missed_by_nearest_outer_edge():
+    """凹口内边标注应参与求解，不能只按外接矩形边归属。"""
+    geo = {
+        'corner': 'bl',
+        'bbox': (60.0, 130.0, 772.0, 463.0),
+        'concave': (350.0, 344.0),
+        'outer_w_px': 712.0,
+        'outer_h_px': 333.0,
+        'cut_w_px': 290.0,
+        'cut_h_px': 119.0,
+    }
+    # (value, confidence, (x, y, width, height)); 45.8/22.5 位于凹口内边。
+    ocr_numbers = [
+        (124.8, 95.0, (410.0, 130.0, 12.0, 10.0)),  # B
+        (66.7, 95.0, (745.0, 270.0, 12.0, 10.0)),   # A
+        (79.0, 95.0, (555.0, 445.0, 12.0, 10.0)),   # F
+        (44.2, 95.0, (55.0, 200.0, 12.0, 10.0)),    # C
+        (45.8, 95.0, (195.0, 338.0, 12.0, 10.0)),   # E, inner horizontal edge
+        (22.5, 95.0, (344.0, 398.0, 12.0, 10.0)),   # D, inner vertical edge
+    ]
+
+    roles = _assign_labels_by_geometry(geo, ocr_numbers)
+    dims = _resolve_dimensions(geo, roles)
+    assert dims['cut_w_cm'] == pytest.approx(45.8)
+    assert dims['cut_h_cm'] == pytest.approx(22.5)
 
 
 @pytest.mark.parametrize("corner", ['tr', 'tl', 'br', 'bl'])
