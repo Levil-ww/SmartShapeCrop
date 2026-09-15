@@ -514,5 +514,5 @@
 
 - `../../.dumate/review/core_findings.md` — core 图像处理链路 15 条发现 + 8 项正面确认
 - `../../.dumate/review/gui_pool_findings.md` — 草图识别 + GUI 线程层 12 条发现 + 已确认无问题范围
-- `../SmartShapeCrop分析报告/SmartShapeCrop-项目审查报告-20260910.md` — 上轮主报告（P0×9/P1×10/P2×15）
-- `../SmartShapeCrop分析报告/SmartShapeCrop-项目审查报告-20260910-复检更新.md` — 上轮复检（N0-01 回归实证）
+- `SmartShapeCrop-项目审查报告-20260910.md` — 上轮主报告（P0×9/P1×10/P2×15）
+- `SmartShapeCrop-项目审查报告-20260910-复检更新.md` — 上轮复检（N0-01 回归实证）
