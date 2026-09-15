@@ -155,8 +155,11 @@ class CropDesign:
     corner_bl_cm: float = 0.0
     corner_br_cm: float = 0.0
 
-    # —— mode == ellipse_hole 兼容字段 ——
-    # 椭圆实际尺寸由画布四边距计算；保留旧字段以兼容旧设计文件。
+    # —— mode == ellipse_hole 椭圆直径（厘米） ——
+    # 0 表示自动按四边距计算；大于 0 时作为用户手动输入的直径。
+    ellipse_diameter_w_cm: float = 0.0
+    ellipse_diameter_h_cm: float = 0.0
+    # 旧比例字段保留以兼容旧设计文件，但不再参与几何计算。
     ellipse_rx_ratio: float = 0.35
     ellipse_ry_ratio: float = 0.30
 
@@ -260,6 +263,10 @@ class CropDesign:
             raise ValueError(f"inner_margin_left_cm 不能为负数，当前值: {self.inner_margin_left_cm}")
         if self.inner_margin_right_cm < 0:
             raise ValueError(f"inner_margin_right_cm 不能为负数，当前值: {self.inner_margin_right_cm}")
+        if self.ellipse_diameter_w_cm < 0:
+            raise ValueError(f"ellipse_diameter_w_cm 不能为负数，当前值: {self.ellipse_diameter_w_cm}")
+        if self.ellipse_diameter_h_cm < 0:
+            raise ValueError(f"ellipse_diameter_h_cm 不能为负数，当前值: {self.ellipse_diameter_h_cm}")
         for name in ('corner_tl_cm', 'corner_tr_cm', 'corner_bl_cm', 'corner_br_cm'):
             v = getattr(self, name)
             if v < 0:
@@ -365,8 +372,10 @@ class CropDesign:
         inner_y = self.cm2px(inner_y_cm)
         inner_w = self.cm2px(inner_w_cm)
         inner_h = self.cm2px(inner_h_cm)
-        diameter_w = max(0.0, inner_w)
-        diameter_h = max(0.0, inner_h)
+        diameter_w_cm = self.ellipse_diameter_w_cm or inner_w_cm
+        diameter_h_cm = self.ellipse_diameter_h_cm or inner_h_cm
+        diameter_w = self.cm2px(max(0.0, diameter_w_cm))
+        diameter_h = self.cm2px(max(0.0, diameter_h_cm))
         return EllipseShape(
             cx=inner_x + diameter_w / 2,
             cy=inner_y + diameter_h / 2,

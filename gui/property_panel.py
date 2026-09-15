@@ -277,7 +277,21 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         # PropertyPanel 通过 self._lshape_panel 间接访问（_collect / _sync_panel_from_design）。
         # _on_mode_change 不再需要切换 _gb_l 可见性（LShapePanel 作为独立 tab 始终可见）。
 
-        # 5) 边框层
+        # 5) 椭圆参数
+        self._gb_e = QGroupBox("椭圆参数（直径，厘米）")
+        fe = QVBoxLayout(self._gb_e)
+        inner_default = self.design.inner_rect_px()
+        self._sp_edw = self._dspin(0.0, 1000.0,
+                       inner_default.w / self.design.cm2px(1.0), decimals=2)
+        self._sp_edh = self._dspin(0.0, 1000.0,
+                       inner_default.h / self.design.cm2px(1.0), decimals=2)
+        self._sp_edw.setSpecialValueText("自动")
+        self._sp_edh.setSpecialValueText("自动")
+        fe.addLayout(self._row("长径（直径）", self._sp_edw))
+        fe.addLayout(self._row("短径（直径）", self._sp_edh))
+        self._inner_layout.addWidget(self._gb_e)
+
+        # 6) 边框层
         gb_b = QGroupBox("多层边框", self)  # 设parent防止GC删除子控件
         fb = QVBoxLayout(gb_b)
         self._layers_label = QLabel()
@@ -899,6 +913,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def _on_mode_change(self):
         mode = self._cb_mode.currentData()
         # L 形参数已迁移到独立 LShapePanel（始终作为 tab 可见，无需此处切换）
+        self._gb_e.setVisible(mode == 'ellipse_hole')
 
     # ---- 把设计对象数值写回面板控件 ----
     def sync_from_design(self, d: CropDesign):
@@ -916,6 +931,10 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         if self._lshape_panel is not None:
             self._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
             self._lshape_panel.set_lshape_cuts(getattr(d, 'l_cuts_cm', None))
+            self._sp_edw.setValue(d.ellipse_diameter_w_cm or
+                          d.inner_rect_px().w / d.cm2px(1.0))
+            self._sp_edh.setValue(d.ellipse_diameter_h_cm or
+                          d.inner_rect_px().h / d.cm2px(1.0))
         self._btn_outer_color.set_color(d.outer_bg_color); self._btn_hole_color.set_color(d.hole_bg_color)
         self._ed_outer_img.setText(d.outer_bg_image or ""); self._ed_hole_img.setText(d.hole_bg_image or "")
         if d.border_text is not None:

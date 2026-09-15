@@ -142,6 +142,19 @@ class TestCropDesignEllipseGeometry:
         assert ellipse.cy - ellipse.ry == pytest.approx(16.0 * px_per_cm)
         assert ellipse.cy + ellipse.ry == pytest.approx((59.0 - 12.0) * px_per_cm)
 
+    def test_manual_equal_diameters_make_circle(self):
+        design = CropDesign(
+            mode='ellipse_hole', canvas_w_cm=78.0, canvas_h_cm=59.0, dpi=150,
+            inner_margin_top_cm=16.0, inner_margin_bottom_cm=12.0,
+            inner_margin_left_cm=18.0, inner_margin_right_cm=12.0,
+            ellipse_diameter_w_cm=40.0,
+            ellipse_diameter_h_cm=40.0,
+        )
+
+        ellipse = design.ellipse_px()
+        assert ellipse.rx == pytest.approx(ellipse.ry)
+        assert ellipse.rx * 2 == pytest.approx(40.0 * design.dpi / 2.54)
+
 
 class TestCropDesignValidateLShape:
     """rect_lshape 模式参数校验"""
