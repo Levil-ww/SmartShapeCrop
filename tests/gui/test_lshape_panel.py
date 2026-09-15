@@ -42,6 +42,28 @@ class TestLShapePanelInitialState:
 
 class TestLShapePanelInteraction:
 
+    def test_margin_hint_updates_for_adjacent_corners(self, qapp, lshape_panel):
+        lshape_panel._sp_outer_w.setValue(101.0)
+        lshape_panel._sp_outer_h.setValue(81.0)
+        first = lshape_panel._corner_rows[0]
+        first[0].setChecked(True)
+        first[1].setCurrentIndex(first[1].findData('br'))
+        first[2].setValue(20.0)
+        first[3].setValue(10.0)
+        second = lshape_panel._corner_rows[1]
+        second[0].setChecked(True)
+        second[1].setCurrentIndex(second[1].findData('tl'))
+        second[2].setValue(30.0)
+        second[3].setValue(15.0)
+        qapp.processEvents()
+
+        hint = lshape_panel.findChild(type(lshape_panel._margin_hint), 'margin_hint')
+        assert hint is not None
+        assert '上70.0 cm' in hint.text()
+        assert '下80.0 cm' in hint.text()
+        assert '左65.0 cm' in hint.text()
+        assert '右70.0 cm' in hint.text()
+
     def test_switching_corner_does_not_crash(self, qapp, lshape_panel, gui_helpers):
         combo = gui_helpers.find_combo_containing(lshape_panel, EXPECTED_CORNERS[0])
         assert combo is not None

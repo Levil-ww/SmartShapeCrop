@@ -177,6 +177,8 @@ class LShapePanel(QWidget):
             "QGroupBox { font-weight: bold; border: 2px solid #E6A23C; "
             "border-radius: 6px; margin-top: 14px; padding-top: 12px; "
             "background: #FFFFFF; }"
+            "QGroupBox[lowConfidence=\"true\"] { border-color: #D97706; "
+            "background: #FFFBEB; }"
             "QGroupBox::title { subcontrol-origin: border; subcontrol-position: top left; "
             "left: 12px; top: -2px; padding: 0 6px; color: #B26A00; }")
         fr = QVBoxLayout(self._gb_lshape_recog)
@@ -256,6 +258,11 @@ class LShapePanel(QWidget):
             row.addWidget(height, 1)
             fl.addLayout(row)
             self._corner_rows.append((enabled, combo, width, height))
+        self._margin_hint = QLabel("边余量：上— · 下— · 左— · 右—")
+        self._margin_hint.setObjectName("margin_hint")
+        self._margin_hint.setWordWrap(True)
+        self._margin_hint.setStyleSheet("color:#667085; padding: 2px 4px;")
+        fl.addWidget(self._margin_hint)
         # 旧单角 API 继续指向第一行，避免外部调用方行为变化。
         self._cb_lcorner = self._corner_rows[0][1]
         self._sp_lw = self._corner_rows[0][2]
@@ -296,6 +303,10 @@ class LShapePanel(QWidget):
         # 外框尺寸变化也触发即时预览（与水池设计器画布尺寸联动）
         self._sp_outer_w.valueChanged.connect(self._on_param_changed)
         self._sp_outer_h.valueChanged.connect(self._on_param_changed)
+        self._update_margin_hint(
+            max(0.0, self._sp_outer_w.value() - CUT_LOSS_CM),
+            max(0.0, self._sp_outer_h.value() - CUT_LOSS_CM),
+            self.get_cuts_cm())
     def _dspin(self, mn, mx, val, decimals=2):
         s = QDoubleSpinBox()
         s.setRange(mn, mx)
@@ -454,6 +465,7 @@ class LShapePanel(QWidget):
         design_outer_w = max(0.0, canvas_outer_w - _TRIM)
         design_outer_h = max(0.0, canvas_outer_h - _TRIM)
         cuts = self.get_cuts_cm()
+        self._update_margin_hint(design_outer_w, design_outer_h, cuts)
         primary = cuts[0] if cuts else {
             'corner': self._cb_lcorner.currentData(),
             'cut_w_cm': max(0.0, self._sp_lw.value()),
@@ -488,6 +500,37 @@ class LShapePanel(QWidget):
         # [2026-09-05 交互范式切换] 不再 emit lshape_params_changed 触发实时渲染
         # SpinBox 修改 → 只更新 _lshape_params dict（参数真值），渲染由显式生成按钮驱动
         # self.lshape_params_changed.emit()
+
+    def _update_margin_hint(self, outer_w_cm: float, outer_h_cm: float,
+                            cuts: list[dict]):
+        """显示当前挖角输入对应的四边剩余余量。"""
+        side_used = {'top': 0.0, 'bottom': 0.0, 'left': 0.0, 'right': 0.0}
+        for cut in cuts:
+            corner = cut.get('corner')
+            if corner in ('tl', 'tr'):
+                side_used['top'] += cut.get('cut_w_cm', 0.0)
+            if corner in ('bl', 'br'):
+                side_used['bottom'] += cut.get('cut_w_cm', 0.0)
+            if corner in ('tl', 'bl'):
+                side_used['left'] += cut.get('cut_h_cm', 0.0)
+            if corner in ('tr', 'br'):
+                side_used['right'] += cut.get('cut_h_cm', 0.0)
+
+        remaining = {
+            'top': outer_w_cm - side_used['top'],
+            'bottom': outer_w_cm - side_used['bottom'],
+            'left': outer_h_cm - side_used['left'],
+            'right': outer_h_cm - side_used['right'],
+        }
+        invalid = any(value < 0 for value in remaining.values())
+        color = '#C0392B' if invalid else '#667085'
+        self._margin_hint.setStyleSheet(f"color:{color}; padding: 2px 4px;")
+        values = ' · '.join(
+            f"{label}{remaining[key]:.1f} cm"
+            for key, label in (
+                ('top', '上'), ('bottom', '下'), ('left', '左'), ('right', '右')))
+        suffix = "（输入超出外框）" if invalid else ""
+        self._margin_hint.setText(f"边余量：{values}{suffix}")
 
     # ====================================================================
     # L 形挖角识别（Worker 调度 + 确认框，逻辑与原实现一致）
@@ -726,6 +769,21 @@ class LShapePanel(QWidget):
                 f"（画布含 1cm 裁剪损耗）",
                 f"L形草图识别：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm",
             ]
+            consistency = float(getattr(result, 'self_consistency', 0.0) or 0.0)
+            suggestions = self._extract_multicorner_suggestions(result)
+            low_confidence = consistency < 0.75
+            self._gb_lshape_recog.setProperty('lowConfidence', low_confidence)
+            self._gb_lshape_recog.style().unpolish(self._gb_lshape_recog)
+            self._gb_lshape_recog.style().polish(self._gb_lshape_recog)
+            if low_confidence:
+                lines.append(
+                    f"⚠️ G2 置信度偏低：结构自洽度 {consistency * 100:.0f}%（阈值 75%），"
+                    "请人工核对挖角位置与尺寸")
+            if len(suggestions) > 1:
+                summary = '、'.join(
+                    f"{item['corner']} {item['cut_w_cm']:.1f}×{item['cut_h_cm']:.1f}cm"
+                    for item in suggestions)
+                lines.append(f"🔎 G3 角位核对：{summary}")
             self._set_status("\n".join(lines))
             # 切换模式 + 同步画布尺寸（单一入口：PropertyPanel._on_lshape_applied）
             self.lshape_applied.emit(self._lshape_params)
