@@ -261,6 +261,7 @@ class _GenerateMixin:
             if design.mode == 'rect_lshape' and self._lshape_panel is not None:
                 self._lshape_panel.set_lshape_params(
                     design.l_corner, design.l_cut_w_cm, design.l_cut_h_cm)
+                self._lshape_panel.set_lshape_cuts(getattr(design, 'l_cuts_cm', None))
                 # 外框 SpinBox 也需要回填（画布 = 外框 + 1cm 损耗 → 外框 = 画布 - 1cm）
                 self._lshape_panel.set_outer_dims(
                     max(0.0, design.canvas_w_cm - 1.0),

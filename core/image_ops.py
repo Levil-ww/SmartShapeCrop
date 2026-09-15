@@ -740,14 +740,14 @@ def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, ha
         from .geometry import build_lshape_mask
         has_outer_img = design.outer_bg_image and os.path.isfile(design.outer_bg_image)
         if has_outer_img:
-            lshape = design.l_shape_px()
+            lshape = design.l_shapes_px()
             outer = design.outer_rect_px()
             corners = design.corners_px
             # 构建outer_rect的L形mask（不包括cut区域）
             lshape_mask_img = build_lshape_mask(
                 (W, H), outer, lshape.corner,
                 lshape.cut_w, lshape.cut_h,
-                corners, fill_value=255)
+                corners, fill_value=255, cuts=lshape.cut_specs())
             lshape_mask = np.array(lshape_mask_img, dtype=bool)
             # 非L形区域填充为outer_bg_color
             outer_bg_arr = np.full((H, W, 3), design.outer_bg_color, dtype=np.uint8)
@@ -784,7 +784,7 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
         if _dbg:
             logger.info("[DEBUG-RD] STEP3 命中 rect_lshape + 池素材 → L形挖角处理路径")
         from .geometry import build_lshape_mask, compute_inner_corner_radii
-        lshape = design.l_shape_px()
+        lshape = design.l_shapes_px()
         inner_rect = design.inner_rect_px()
         outer = design.outer_rect_px()
         corners = design.corners_px
@@ -805,28 +805,17 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
         #   canvas 边缘，视觉上出现"挖角没切到底"的效果。
         _ir_x, _ir_y = int(round(inner_rect.x)), int(round(inner_rect.y))
         _ir_r, _ir_b = int(round(inner_rect.right)), int(round(inner_rect.bottom))
-        _cw, _ch = int(round(lshape.cut_w)), int(round(lshape.cut_h))
         _extra = np.zeros((H, W), dtype=bool)
-        if lshape.corner == 'bl':
-            # 水平切边 y=_ir_b - _ch, 垂直切边 x=_ir_x + _cw
-            _top = _ir_b - _ch
-            _right = _ir_x + _cw
-            _extra[_top:H, 0:_right] = True
-        elif lshape.corner == 'br':
-            # 水平切边 y=_ir_b - _ch, 垂直切边 x=_ir_r - _cw
-            _top = _ir_b - _ch
-            _left = _ir_r - _cw
-            _extra[_top:H, _left:W] = True
-        elif lshape.corner == 'tl':
-            # 水平切边 y=_ir_y + _ch, 垂直切边 x=_ir_x + _cw
-            _bottom = _ir_y + _ch
-            _right = _ir_x + _cw
-            _extra[0:_bottom, 0:_right] = True
-        elif lshape.corner == 'tr':
-            # 水平切边 y=_ir_y + _ch, 垂直切边 x=_ir_r - _cw
-            _bottom = _ir_y + _ch
-            _left = _ir_r - _cw
-            _extra[0:_bottom, _left:W] = True
+        for cut_corner, cut_w_px, cut_h_px in lshape.cut_specs():
+            _cw, _ch = int(round(cut_w_px)), int(round(cut_h_px))
+            if cut_corner == 'bl':
+                _extra[_ir_b - _ch:H, 0:_ir_x + _cw] = True
+            elif cut_corner == 'br':
+                _extra[_ir_b - _ch:H, _ir_r - _cw:W] = True
+            elif cut_corner == 'tl':
+                _extra[0:_ir_y + _ch, 0:_ir_x + _cw] = True
+            elif cut_corner == 'tr':
+                _extra[0:_ir_y + _ch, _ir_r - _cw:W] = True
         # ===== DEBUG: 打印 L 形 cut 关键坐标 =====
         print(f'\n========== [LSHAPE CUT DEBUG] ==========', flush=True)
         print(f'corner={lshape.corner} canvas={W}x{H}', flush=True)
@@ -835,11 +824,8 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
         print(f'canvas_w_cm={design.canvas_w_cm} canvas_h_cm={design.canvas_h_cm}', flush=True)
         print(f'outer_margin={design.outer_margin_cm} inner_margins_tblr=({design.inner_margin_top_cm},{design.inner_margin_bottom_cm},{design.inner_margin_left_cm},{design.inner_margin_right_cm})', flush=True)
         print(f'lshape.cut_w={lshape.cut_w} (px) lshape.cut_h={lshape.cut_h} (px)', flush=True)
-        if lshape.corner == 'tr':
-            print(f'tr: _bottom={_ir_y}+{_ch}={_bottom} _left={_ir_r}-{_cw}={_left}', flush=True)
-            print(f'cut area in canvas px: x=[{_left},{W}] y=[0,{_bottom}]', flush=True)
-            print(f'cut area W px={W-_left} H px={_bottom}', flush=True)
-            print(f'cut cm: {px_to_cm(W-_left, design.dpi):.2f} x {px_to_cm(_bottom, design.dpi):.2f}', flush=True)
+        if _dbg:
+            print(f'cut specs: {lshape.cut_specs()}', flush=True)
         cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
         if cut_area_mask.any():
             # 预先采样素材底色——给 Step 3.6 border completion 当 bg_color 用
@@ -1067,7 +1053,7 @@ def _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, 
     # inner_mask 是 L 形（不含 cut 区域），需要将 cut 区域也填充
     if design.mode == 'rect_lshape' and not lshape_cut_done:
         from .geometry import build_lshape_mask, compute_inner_corner_radii
-        lshape = design.l_shape_px()
+        lshape = design.l_shapes_px()
         inner_rect = design.inner_rect_px()
         outer = design.outer_rect_px()
         corners = design.corners_px
@@ -1160,7 +1146,7 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
 
         if has_shrunk:
             if design.mode == 'rect_lshape':
-                lshape = design.l_shape_px()
+                lshape = design.l_shapes_px()
                 shrunk_rect = RectShape(
                     x=inner_rect.x + border_width_px,
                     y=inner_rect.y + border_width_px,
@@ -1174,7 +1160,10 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
                 mask_b_img = build_lshape_mask(
                     (W, H), shrunk_rect, lshape.corner,
                     shrunk_cut_w, shrunk_cut_h,
-                    shrunk_corners, fill_value=255)
+                    shrunk_corners, fill_value=255,
+                    cuts=[(ck, max(0.0, cw - border_width_px),
+                            max(0.0, ch - border_width_px))
+                           for ck, cw, ch in lshape.cut_specs()])
             else:
                 shrunk = RectShape(
                     x=inner_rect.x + border_width_px,
@@ -1516,11 +1505,11 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
         return np.array(m, dtype=bool)
 
     elif design.mode == 'rect_lshape':
-        lshape = design.l_shape_px()
+        lshape = design.l_shapes_px()
         m = build_lshape_mask(
             (W, H), inner_rect, lshape.corner,
             lshape.cut_w, lshape.cut_h,
-            inner_corners, fill_value=255)
+            inner_corners, fill_value=255, cuts=lshape.cut_specs())
         return np.array(m, dtype=bool)
 
     else:  # ellipse_hole

@@ -925,6 +925,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._sp_ml.setValue(d.inner_margin_left_cm); self._sp_mr.setValue(d.inner_margin_right_cm)
         if self._lshape_panel is not None:
             self._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
+            self._lshape_panel.set_lshape_cuts(getattr(d, 'l_cuts_cm', None))
         self._sp_erx.setValue(d.ellipse_rx_ratio); self._sp_ery.setValue(d.ellipse_ry_ratio)
         self._btn_outer_color.set_color(d.outer_bg_color); self._btn_hole_color.set_color(d.hole_bg_color)
         self._ed_outer_img.setText(d.outer_bg_image or ""); self._ed_hole_img.setText(d.hole_bg_image or "")

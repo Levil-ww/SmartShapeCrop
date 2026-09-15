@@ -66,6 +66,15 @@ class LShape:
     corner: Literal['tl', 'tr', 'bl', 'br'] = 'br'  # 哪个角被挖掉
     cut_w: float = 300.0   # 挖掉的宽度
     cut_h: float = 200.0   # 挖掉的高度
+    # 多角扩展：单位仍为像素；为空时完全等价于旧单角字段。
+    cuts: list[dict] = field(default_factory=list)
+
+    def cut_specs(self) -> list[tuple[str, float, float]]:
+        """返回本 L 形实际使用的挖角列表，兼容旧单角对象。"""
+        if self.cuts:
+            return [(str(c['corner']), float(c['cut_w']), float(c['cut_h']))
+                    for c in self.cuts]
+        return [(self.corner, self.cut_w, self.cut_h)]
 
     def cut_rect(self) -> RectShape:
         """返回被挖掉的小矩形"""
@@ -136,6 +145,9 @@ class CropDesign:
     l_corner: Literal['tl', 'tr', 'bl', 'br'] = 'br'
     l_cut_w_cm: float = 15.0
     l_cut_h_cm: float = 10.0
+    # 多角 L 形：[{"corner": "tr", "cut_w_cm": 28, "cut_h_cm": 8}, ...]
+    # 空列表表示沿用旧的 l_corner/l_cut_w_cm/l_cut_h_cm。
+    l_cuts_cm: list[dict] = field(default_factory=list)
 
     # —— 四个角的圆角半径（厘米），0 表示无圆角 ——
     corner_tl_cm: float = 0.0
@@ -266,6 +278,18 @@ class CropDesign:
                 raise ValueError(f"l_cut_w_cm 必须为正数，当前值: {self.l_cut_w_cm}")
             if self.l_cut_h_cm <= 0:
                 raise ValueError(f"l_cut_h_cm 必须为正数，当前值: {self.l_cut_h_cm}")
+            if len(self.l_cuts_cm) > 4:
+                raise ValueError("l_cuts_cm 最多支持 4 个挖角")
+            seen = set()
+            for cut in self.l_cuts_cm:
+                corner = cut.get('corner')
+                if corner not in self._VALID_CORNERS:
+                    raise ValueError(f"l_cuts_cm corner 无效: {corner!r}")
+                if corner in seen:
+                    raise ValueError(f"l_cuts_cm 不允许重复角位: {corner!r}")
+                seen.add(corner)
+                if float(cut.get('cut_w_cm', 0)) <= 0 or float(cut.get('cut_h_cm', 0)) <= 0:
+                    raise ValueError("l_cuts_cm 的宽高必须为正数")
 
     @property
     def canvas_w_px(self) -> int:
@@ -307,6 +331,20 @@ class CropDesign:
             cut_w=self.cm2px(self.l_cut_w_cm),
             cut_h=self.cm2px(self.l_cut_h_cm),
         )
+
+    def l_shapes_px(self) -> LShape:
+        """返回含多角 cut 列表的 LShape；旧字段仍作为兼容主 cut 保留。"""
+        shape = self.l_shape_px()
+        if self.l_cuts_cm:
+            shape.cuts = [
+                {
+                    'corner': cut['corner'],
+                    'cut_w': self.cm2px(float(cut['cut_w_cm'])),
+                    'cut_h': self.cm2px(float(cut['cut_h_cm'])),
+                }
+                for cut in self.l_cuts_cm[:4]
+            ]
+        return shape
 
     @property
     def corners_px(self) -> dict[str, float]:
@@ -621,7 +659,8 @@ def build_lshape_mask(size: tuple[int, int],
                        outer_rect: RectShape, corner_key: str,
                        cut_w: float, cut_h: float,
                        radii: dict[str, float],
-                       fill_value: int = 255) -> Image.Image:
+                       fill_value: int = 255,
+                       cuts: list[tuple[str, float, float]] | None = None) -> Image.Image:
     """
     构建带圆角的 L 形 mask。
 
@@ -654,16 +693,23 @@ def build_lshape_mask(size: tuple[int, int],
     # Step 1: 填充外轮廓
     fill_rect_mask(m, outer_rect, fill_value)
 
-    cut = _get_lshape_cut_rect_at_offset(outer_rect, corner_key, cut_w, cut_h, 0)
-    has_cut = cut.w > 0.5 and cut.h > 0.5
+    cut_specs = cuts or [(corner_key, cut_w, cut_h)]
+    valid_cuts = [
+        (ck, cw, ch, _get_lshape_cut_rect_at_offset(outer_rect, ck, cw, ch, 0))
+        for ck, cw, ch in cut_specs
+    ]
+    valid_cuts = [(ck, cw, ch, cut) for ck, cw, ch, cut in valid_cuts
+                  if cut.w > 0.5 and cut.h > 0.5]
+    has_cut = bool(valid_cuts)
 
     if has_cut:
         # Step 2: 挖掉 cut 区域
-        fill_rect_mask(m, cut, other)
+        for _, _, _, cut in valid_cuts:
+            fill_rect_mask(m, cut, other)
 
         # Step 3: 圆角处理 outer_rect 的 3 个非 cut 角
         for ck in ('tl', 'tr', 'bl', 'br'):
-            if ck == corner_key:
+            if any(ck == cut_corner for cut_corner, _, _, _ in valid_cuts):
                 continue
             r = radii.get(ck, 0.0)
             if r > 0.5:
@@ -672,12 +718,13 @@ def build_lshape_mask(size: tuple[int, int],
 
         # Step 4: 圆角处理内部 L 形拐角（cut_rect 的对角）
         opposite_map = {'br': 'tl', 'tr': 'bl', 'bl': 'tr', 'tl': 'br'}
-        internal_key = opposite_map[corner_key]
-        internal_r = radii.get(corner_key, 0.0)
-
-        if internal_r > 0.5:
-            corner_radii = {k: (internal_r if k == internal_key else 0.0) for k in ('tl', 'tr', 'bl', 'br')}
-            apply_rounded_corners_to_mask(m, cut, corner_radii, fill_value=fill_value)
+        for cut_corner, _, _, cut in valid_cuts:
+            internal_key = opposite_map[cut_corner]
+            internal_r = radii.get(cut_corner, 0.0)
+            if internal_r > 0.5:
+                corner_radii = {k: (internal_r if k == internal_key else 0.0)
+                                for k in ('tl', 'tr', 'bl', 'br')}
+                apply_rounded_corners_to_mask(m, cut, corner_radii, fill_value=fill_value)
     else:
         # 退化为纯矩形：对所有 4 个角应用圆角
         if any(v > 0.5 for v in radii.values()):
@@ -696,7 +743,8 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
     w, h = design.canvas_w_px, design.canvas_h_px
     outer = design.outer_rect_px()
     inner = design.inner_rect_px()
-    lshape = design.l_shape_px()
+    lshape = design.l_shapes_px()
+    cut_specs = lshape.cut_specs()
     cut_corner = lshape.corner
     cut_w = lshape.cut_w
     cut_h = lshape.cut_h
@@ -704,11 +752,13 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
 
     # 1. 计算 frame_mask（总边框带）
     frame_outer_img = build_lshape_mask(
-        (w, h), outer, cut_corner, cut_w, cut_h, corners, fill_value=255)
+        (w, h), outer, cut_corner, cut_w, cut_h, corners,
+        fill_value=255, cuts=cut_specs)
 
     inner_corners = compute_inner_corner_radii(outer, inner, corners)
     frame_inner_img = build_lshape_mask(
-        (w, h), inner, cut_corner, cut_w, cut_h, inner_corners, fill_value=255)
+        (w, h), inner, cut_corner, cut_w, cut_h, inner_corners,
+        fill_value=255, cuts=cut_specs)
 
     frame_mask = np.array(frame_outer_img, dtype=bool) & ~np.array(frame_inner_img, dtype=bool)
 
@@ -742,7 +792,9 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
         band_inner_img = build_lshape_mask(
             (w, h), inner_at, cut_corner,
             inner_cut_w, inner_cut_h,
-            inner_radii_i, fill_value=255)
+            inner_radii_i, fill_value=255,
+            cuts=[(ck, max(0.0, cw - t_inner), max(0.0, ch - t_inner))
+                   for ck, cw, ch in cut_specs])
         band_inner_bool = np.array(band_inner_img, dtype=bool)
 
         # band = 本层外边界(复用前层内边界) - 本层内边界

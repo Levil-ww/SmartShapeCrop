@@ -25,6 +25,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
     QDoubleSpinBox, QComboBox, QPushButton,
+    QCheckBox,
     QScrollArea, QMessageBox,
     QLineEdit, QToolButton, QMenu, QAction, QFileDialog,
 )
@@ -230,16 +231,35 @@ class LShapePanel(QWidget):
         self._gb_l.setStyleSheet(self._param_group_style("#5B6CFF"))
         fl = QVBoxLayout(self._gb_l)
         fl.setSpacing(6)
-        self._cb_lcorner = QComboBox()
-        self._cb_lcorner.addItem("左上角", "tl")
-        self._cb_lcorner.addItem("右上角", "tr")
-        self._cb_lcorner.addItem("左下角", "bl")
-        self._cb_lcorner.addItem("右下角", "br")
-        self._sp_lw = self._dspin(0, 450, 0.0)
-        self._sp_lh = self._dspin(0, 450, 0.0)
-        fl.addLayout(self._row("挖角位置", self._cb_lcorner))
-        fl.addLayout(self._row("挖角宽度(cm)", self._sp_lw))
-        fl.addLayout(self._row("挖角高度(cm)", self._sp_lh))
+        self._corner_rows = []
+        for row_index in range(4):
+            enabled = QCheckBox(f"挖角 {row_index + 1}")
+            enabled.setChecked(row_index == 0)
+            combo = QComboBox()
+            combo.addItem("左上角", "tl")
+            combo.addItem("右上角", "tr")
+            combo.addItem("左下角", "bl")
+            combo.addItem("右下角", "br")
+            combo.setCurrentIndex(3 if row_index == 0 else row_index)
+            width = self._dspin(0, 450, 0.0)
+            height = self._dspin(0, 450, 0.0)
+            enabled.toggled.connect(self._on_param_changed)
+            combo.currentIndexChanged.connect(self._on_param_changed)
+            width.valueChanged.connect(self._on_param_changed)
+            height.valueChanged.connect(self._on_param_changed)
+            row = QHBoxLayout()
+            row.addWidget(enabled, 0)
+            row.addWidget(combo, 1)
+            row.addWidget(QLabel("宽"), 0)
+            row.addWidget(width, 1)
+            row.addWidget(QLabel("高"), 0)
+            row.addWidget(height, 1)
+            fl.addLayout(row)
+            self._corner_rows.append((enabled, combo, width, height))
+        # 旧单角 API 继续指向第一行，避免外部调用方行为变化。
+        self._cb_lcorner = self._corner_rows[0][1]
+        self._sp_lw = self._corner_rows[0][2]
+        self._sp_lh = self._corner_rows[0][3]
         params_row.addWidget(self._gb_l, 1)  # L 形挖角参数 → 右
 
         self._inner_layout.addLayout(params_row)
@@ -273,9 +293,6 @@ class LShapePanel(QWidget):
         self._inner_layout.addStretch(1)
 
         # 连接参数变化信号（即时预览）
-        self._cb_lcorner.currentIndexChanged.connect(self._on_param_changed)
-        self._sp_lw.valueChanged.connect(self._on_param_changed)
-        self._sp_lh.valueChanged.connect(self._on_param_changed)
         # 外框尺寸变化也触发即时预览（与水池设计器画布尺寸联动）
         self._sp_outer_w.valueChanged.connect(self._on_param_changed)
         self._sp_outer_h.valueChanged.connect(self._on_param_changed)
@@ -436,18 +453,26 @@ class LShapePanel(QWidget):
         canvas_outer_h = max(0.0, self._sp_outer_h.value())
         design_outer_w = max(0.0, canvas_outer_w - _TRIM)
         design_outer_h = max(0.0, canvas_outer_h - _TRIM)
+        cuts = self.get_cuts_cm()
+        primary = cuts[0] if cuts else {
+            'corner': self._cb_lcorner.currentData(),
+            'cut_w_cm': max(0.0, self._sp_lw.value()),
+            'cut_h_cm': max(0.0, self._sp_lh.value()),
+        }
         if self._lshape_params is None:
             self._lshape_params = {
-                'corner': self._cb_lcorner.currentData(),
-                'cut_w_cm': max(0.0, self._sp_lw.value()),
-                'cut_h_cm': max(0.0, self._sp_lh.value()),
+                'corner': primary['corner'],
+                'cut_w_cm': primary['cut_w_cm'],
+                'cut_h_cm': primary['cut_h_cm'],
+                'cuts_cm': cuts,
                 'outer_w_cm': design_outer_w,
                 'outer_h_cm': design_outer_h,
             }
         else:
-            self._lshape_params['corner'] = self._cb_lcorner.currentData()
-            self._lshape_params['cut_w_cm'] = max(0.0, self._sp_lw.value())
-            self._lshape_params['cut_h_cm'] = max(0.0, self._sp_lh.value())
+            self._lshape_params['corner'] = primary['corner']
+            self._lshape_params['cut_w_cm'] = primary['cut_w_cm']
+            self._lshape_params['cut_h_cm'] = primary['cut_h_cm']
+            self._lshape_params['cuts_cm'] = cuts
             self._lshape_params['outer_w_cm'] = design_outer_w
             self._lshape_params['outer_h_cm'] = design_outer_h
         # 标记为用户手动修改（回填识别值时 blockSignals 已保护不会触发这里）
@@ -658,6 +683,19 @@ class LShapePanel(QWidget):
         """读取挖角高度"""
         return self._sp_lh.value()
 
+    def get_cuts_cm(self) -> list[dict]:
+        """返回启用的挖角列表，最多四个；未填写尺寸的行不写入设计。"""
+        cuts = []
+        for enabled, combo, width, height in self._corner_rows:
+            if not enabled.isChecked() or width.value() <= 0 or height.value() <= 0:
+                continue
+            cuts.append({
+                'corner': combo.currentData(),
+                'cut_w_cm': width.value(),
+                'cut_h_cm': height.value(),
+            })
+        return cuts[:4]
+
     def get_lshape_params(self):
         """读取 _lshape_params"""
         return self._lshape_params
@@ -686,10 +724,32 @@ class LShapePanel(QWidget):
                 self._cb_lcorner.setCurrentIndex(ci)
             self._sp_lw.setValue(max(0.0, float(cut_w_cm)))
             self._sp_lh.setValue(max(0.0, float(cut_h_cm)))
+            self._corner_rows[0][0].setChecked(True)
+            for row in self._corner_rows[1:]:
+                row[0].setChecked(False)
         finally:
             self._cb_lcorner.blockSignals(False)
             self._sp_lw.blockSignals(False)
             self._sp_lh.blockSignals(False)
+
+    def set_lshape_cuts(self, cuts: list[dict] | None):
+        """回填多角参数；空列表回退到旧单角控件。"""
+        cuts = list(cuts or [])[:4]
+        for index, (enabled, combo, width, height) in enumerate(self._corner_rows):
+            enabled.blockSignals(True); combo.blockSignals(True)
+            width.blockSignals(True); height.blockSignals(True)
+            try:
+                if index < len(cuts):
+                    cut = cuts[index]
+                    enabled.setChecked(True)
+                    combo.setCurrentIndex(max(0, combo.findData(cut.get('corner', 'br'))))
+                    width.setValue(max(0.0, float(cut.get('cut_w_cm', 0))))
+                    height.setValue(max(0.0, float(cut.get('cut_h_cm', 0))))
+                else:
+                    enabled.setChecked(False)
+            finally:
+                enabled.blockSignals(False); combo.blockSignals(False)
+                width.blockSignals(False); height.blockSignals(False)
 
     def set_outer_dims(self, outer_w_cm: float, outer_h_cm: float):
         """外部回填外框设计真值到 SpinBox（设计值 + 1cm = 画布值）。
