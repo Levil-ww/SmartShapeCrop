@@ -1176,6 +1176,143 @@ def _score_consistency(geo, dims):
 
 
 # ---------------------------------------------------------------------------
+# 多角 OCR 逐角归属（三期）
+# ---------------------------------------------------------------------------
+
+def _resolve_cut_pair_per_corner(items, outer, geo_ratio):
+    """从切边数值中分辨 (挖角尺寸, 剩余段)。
+
+    与 _assign_labels_by_geometry 内的 _resolve_cut_pair 逻辑等价，
+    但作为模块级函数供多角逐角调用。
+
+    策略：挖角尺寸 v 应满足 v/outer ≈ geo_ratio（几何像素比例）。
+    - 单值：比较 v 作为挖角 vs 作为剩余段（outer−v 作为挖角），
+      取离 geo_ratio*outer 更近的解释。
+    - 多值：选 v/outer 最接近 geo_ratio 的作为挖角；若存在互补值
+      (v + v2 ≈ outer) 则加权确认。
+    返回 (cut_val, remaining_val)。
+    """
+    if not items or outer is None or outer <= 0:
+        return None, None
+    geo_cut = outer * geo_ratio
+    vals = [it[0] for it in items]
+    if len(vals) == 1:
+        v = vals[0]
+        err_as_cut = abs(v - geo_cut)
+        err_as_rem = abs((outer - v) - geo_cut)
+        if err_as_cut <= err_as_rem:
+            return v, outer - v
+        else:
+            return outer - v, v
+    best_cut, best_rem, best_score = None, None, float('inf')
+    for v in vals:
+        score = abs(v - geo_cut)
+        has_complement = any(abs((outer - v) - v2) < outer * 0.05
+                             for v2 in vals if v2 != v)
+        if has_complement:
+            score *= 0.3
+        if score < best_score:
+            best_score = score
+            best_cut = v
+            best_rem = outer - v
+    return best_cut, best_rem
+
+
+def _attribute_cut_ocr_per_corner(all_corners, ocr_numbers, geo,
+                                   outer_w_cm, outer_h_cm):
+    """对每个角，从 OCR 数值中归属该角的挖角尺寸 (E, D)。
+
+    策略：
+    1. 对每个角，确定其切边方向（水平切边 + 垂直切边）
+    2. 在该角的切边上收集 OCR 数值，只取属于该角切段的那一侧
+       （相邻角共享边时，按凹角点位置分段，每个角只认自己那一侧）
+    3. 用几何比例匹配分辨挖角尺寸(E/D)与剩余段(F/C)
+    4. OCR 归属成功用 OCR 值，否则回退到像素比例反推
+
+    返回 list[dict]: 每项 {corner, cut_w_cm, cut_h_cm, source, ocr_cut_w, ocr_cut_h}
+    """
+    minx, miny, maxx, maxy = geo['bbox']
+    W_bbox = maxx - minx
+    H_bbox = maxy - miny
+    bbox_area = W_bbox * H_bbox
+    px_outer_w = geo.get('outer_w_px', W_bbox)
+    px_outer_h = geo.get('outer_h_px', H_bbox)
+
+    edge_tol = max(15.0, min(W_bbox, H_bbox) * 0.08)
+
+    results = []
+    for cand in all_corners:
+        corner = cand['corner']
+        cut_w_px = float(cand.get('cut_w_px', 0.0) or 0.0)
+        cut_h_px = float(cand.get('cut_h_px', 0.0) or 0.0)
+        cx, cy = cand.get('concave', (0, 0))
+
+        cut_right = corner in ('tr', 'br')
+        cut_top = corner in ('tr', 'tl')
+
+        geo_ratio_w = (cut_w_px / px_outer_w) if px_outer_w > 0 else 0.0
+        geo_ratio_h = (cut_h_px / px_outer_h) if px_outer_h > 0 else 0.0
+
+        cut_h_edge_y = miny if cut_top else maxy
+        cut_v_edge_x = maxx if cut_right else minx
+
+        cut_h_items = []
+        cut_v_items = []
+        for val, conf, bbox in ocr_numbers:
+            bx, by, bw, bh = bbox
+            if bw * bh > bbox_area * 0.15:
+                continue
+            if val <= 0 or val > 5000:
+                continue
+            nx, ny = bx + bw / 2.0, by + bh / 2.0
+
+            if abs(ny - cut_h_edge_y) < edge_tol:
+                if cut_right and nx >= cx:
+                    cut_h_items.append((val, nx, ny, conf))
+                elif not cut_right and nx <= cx:
+                    cut_h_items.append((val, nx, ny, conf))
+
+            if abs(nx - cut_v_edge_x) < edge_tol:
+                if cut_top and ny <= cy:
+                    cut_v_items.append((val, nx, ny, conf))
+                elif not cut_top and ny >= cy:
+                    cut_v_items.append((val, nx, ny, conf))
+
+        ocr_cut_w, _ = _resolve_cut_pair_per_corner(
+            cut_h_items, outer_w_cm, geo_ratio_w)
+        ocr_cut_h, _ = _resolve_cut_pair_per_corner(
+            cut_v_items, outer_h_cm, geo_ratio_h)
+
+        # 几何一致性校验：OCR 值与像素比例偏差>40% 时不信任 OCR
+        if ocr_cut_w is not None and outer_w_cm > 0 and geo_ratio_w > 0:
+            if abs(ocr_cut_w / outer_w_cm - geo_ratio_w) > 0.40:
+                ocr_cut_w = None
+        if ocr_cut_h is not None and outer_h_cm > 0 and geo_ratio_h > 0:
+            if abs(ocr_cut_h / outer_h_cm - geo_ratio_h) > 0.40:
+                ocr_cut_h = None
+
+        cut_w_cm = ocr_cut_w
+        cut_h_cm = ocr_cut_h
+        source = 'ocr' if (ocr_cut_w is not None or ocr_cut_h is not None) else 'pixel_ratio'
+
+        if cut_w_cm is None and outer_w_cm > 0 and geo_ratio_w > 0:
+            cut_w_cm = round(outer_w_cm * geo_ratio_w, 2)
+        if cut_h_cm is None and outer_h_cm > 0 and geo_ratio_h > 0:
+            cut_h_cm = round(outer_h_cm * geo_ratio_h, 2)
+
+        results.append({
+            'corner': corner,
+            'cut_w_cm': round(float(cut_w_cm), 2) if cut_w_cm else 0.0,
+            'cut_h_cm': round(float(cut_h_cm), 2) if cut_h_cm else 0.0,
+            'source': source,
+            'ocr_cut_w': round(float(ocr_cut_w), 2) if ocr_cut_w else None,
+            'ocr_cut_h': round(float(ocr_cut_h), 2) if ocr_cut_h else None,
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # 公共入口
 # ---------------------------------------------------------------------------
 
@@ -1315,18 +1452,25 @@ def parse_lshape_sketch(
         })
         return result
 
-    # —— 多角参数：用外框比例把每个几何候选转换成厘米 ——
-    cuts_cm = []
-    for candidate in geo.get('all_corners', []):
-        cut_w_px = float(candidate.get('cut_w_px', 0.0) or 0.0)
-        cut_h_px = float(candidate.get('cut_h_px', 0.0) or 0.0)
-        if cut_w_px <= 0 or cut_h_px <= 0:
-            continue
-        cuts_cm.append({
-            'corner': candidate['corner'],
-            'cut_w_cm': round(dims['outer_w_cm'] * cut_w_px / geo['outer_w_px'], 2),
-            'cut_h_cm': round(dims['outer_h_cm'] * cut_h_px / geo['outer_h_px'], 2),
-        })
+    # —— 多角参数：OCR 逐角归属 + 像素比例兜底 ——
+    all_corners_geo = geo.get('all_corners', [])
+    if all_corners_geo and ocr_numbers:
+        cuts_cm = _attribute_cut_ocr_per_corner(
+            all_corners_geo, ocr_numbers, geo,
+            dims['outer_w_cm'], dims['outer_h_cm'])
+    else:
+        cuts_cm = []
+        for candidate in all_corners_geo:
+            cut_w_px = float(candidate.get('cut_w_px', 0.0) or 0.0)
+            cut_h_px = float(candidate.get('cut_h_px', 0.0) or 0.0)
+            if cut_w_px <= 0 or cut_h_px <= 0:
+                continue
+            cuts_cm.append({
+                'corner': candidate['corner'],
+                'cut_w_cm': round(dims['outer_w_cm'] * cut_w_px / geo['outer_w_px'], 2),
+                'cut_h_cm': round(dims['outer_h_cm'] * cut_h_px / geo['outer_h_px'], 2),
+                'source': 'pixel_ratio',
+            })
 
     # —— G1 闸口：检测到的凹角数 vs 实际消费数 ——
     n_consumed = len(cuts_cm)
