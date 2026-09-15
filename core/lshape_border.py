@@ -539,6 +539,7 @@ def apply_lshape_border_completion(
     manual_edge_px: int | None = None,
     manual_band_px: int | None = None,
     manual_band_color: tuple[int, int, int] | None = None,
+    cuts: list[tuple[str, float, float]] | None = None,
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
@@ -557,6 +558,7 @@ def apply_lshape_border_completion(
                        None=自动；与 manual_band_*/color 任一非 None 即走 V13 路径。
         manual_band_px: [V13] 手动指定主色带宽（0=无主带，None=自动）。
         manual_band_color: [V13] 手动指定主色带 RGB（band>0 时必须）。
+        cuts: 多角挖角列表 [(corner, cut_w_px, cut_h_px)]；为空时使用旧单角参数。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
@@ -581,6 +583,27 @@ def apply_lshape_border_completion(
     [H-04] 路由策略已拆分为 _detect_lshape_border_auto（检测选路）与
     _try_apply_v13（V13 绘制尝试），主函数保持原三级回退顺序不变。
     """
+    if cuts:
+        completion_ok = False
+        for corner, cut_w, cut_h in cuts:
+            completion_ok = apply_lshape_border_completion(
+                canvas_arr=canvas_arr,
+                material_img=material_img,
+                outer_rect=outer_rect,
+                cut_corner=corner,
+                cut_w_px=cut_w,
+                cut_h_px=cut_h,
+                dpi=dpi,
+                bg_color=bg_color,
+                src_material_img=src_material_img,
+                scale_x=scale_x,
+                scale_y=scale_y,
+                manual_edge_px=manual_edge_px,
+                manual_band_px=manual_band_px,
+                manual_band_color=manual_band_color,
+            ) or completion_ok
+        return completion_ok
+
     # ===== [V13 集成] 手动覆盖路径：任一 manual_* 非 None → 走 V13 路径 =====
     manual_active = (
         manual_edge_px is not None

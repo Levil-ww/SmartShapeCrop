@@ -1235,24 +1235,22 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
             from .lshape_border import apply_lshape_border_completion
 
             inner_rect = design.inner_rect_px()
-            lshape = design.l_shape_px()
-            cut_corner = lshape.corner
+            lshape = design.l_shapes_px()
             # cut 扩展到 canvas 边缘后的绝对尺寸（border completion 需要这个
             # 来正确在 outer_margin 区域补边）
             _ir_x, _ir_y = inner_rect.x, inner_rect.y
             _ir_r, _ir_b = inner_rect.right, inner_rect.bottom
-            if cut_corner == 'bl':
-                cut_w_px = lshape.cut_w + _ir_x
-                cut_h_px = lshape.cut_h + (H - _ir_b)
-            elif cut_corner == 'br':
-                cut_w_px = lshape.cut_w + (W - _ir_r)
-                cut_h_px = lshape.cut_h + (H - _ir_b)
-            elif cut_corner == 'tl':
-                cut_w_px = lshape.cut_w + _ir_x
-                cut_h_px = lshape.cut_h + _ir_y
-            else:  # tr
-                cut_w_px = lshape.cut_w + (W - _ir_r)
-                cut_h_px = lshape.cut_h + _ir_y
+            border_cuts = []
+            for cut_corner, cut_w, cut_h in lshape.cut_specs():
+                if cut_corner in ('bl', 'tl'):
+                    cut_w_px = cut_w + _ir_x
+                else:
+                    cut_w_px = cut_w + (W - _ir_r)
+                if cut_corner in ('bl', 'br'):
+                    cut_h_px = cut_h + (H - _ir_b)
+                else:
+                    cut_h_px = cut_h + _ir_y
+                border_cuts.append((cut_corner, cut_w_px, cut_h_px))
 
             # 使用原始素材图（cached_img）做边框检测，避免 adapt_pool_material
             # 的简单拉伸可能造成的边框像素畸变影响检测精度。
@@ -1281,9 +1279,10 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 scale_x=_scale_x,
                 scale_y=_scale_y,
                 outer_rect=_canvas_rect,             # 整个 canvas（cut 已扩展到边缘）
-                cut_corner=cut_corner,
-                cut_w_px=cut_w_px,
-                cut_h_px=cut_h_px,
+                cut_corner=border_cuts[0][0],
+                cut_w_px=border_cuts[0][1],
+                cut_h_px=border_cuts[0][2],
+                cuts=border_cuts,
                 dpi=design.dpi,
                 # [Fix 2026-09-08 v3] bg_color 从硬编码白色改为实际素材底色：
                 # 白色导致 detect_pool_material_borders 把米色等底色误判为边框层，

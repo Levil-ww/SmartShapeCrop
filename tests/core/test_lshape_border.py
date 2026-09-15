@@ -297,6 +297,33 @@ class TestApplyLshapeBorderCompletion:
 # 远离边缘的区域（保留区中心）必须保持未涂色
         np.testing.assert_array_equal(canvas[300, 400], [255, 255, 255])
 
+    def test_multiple_cuts_paint_each_cut_edges(self):
+        """多角入口应逐角补边，且不把边框画回任一缺口内部。"""
+        canvas = self._canvas()
+        src = _make_bordered_material(size=(400, 300), border=20)
+
+        ok = apply_lshape_border_completion(
+            canvas,
+            src.resize((800, 600)),
+            RectShape(x=0, y=0, w=800, h=600),
+            'tr', 200.0, 100.0,
+            src_material_img=src,
+            scale_x=2.0,
+            scale_y=2.0,
+            cuts=[('tr', 200.0, 100.0), ('bl', 180.0, 120.0)],
+        )
+        assert ok is True
+
+        # tr: 保留区在缺口左侧/下侧
+        assert canvas[50, 580].max() <= 60
+        assert canvas[115, 700].max() <= 60
+        np.testing.assert_array_equal(canvas[50, 700], [255, 255, 255])
+
+        # bl: 保留区在缺口右侧/上侧
+        assert canvas[500, 195].max() <= 60
+        assert canvas[470, 100].max() <= 60
+        np.testing.assert_array_equal(canvas[500, 100], [255, 255, 255])
+
     def test_marble_material_paints_only_outer_black_stroke(self):
         """大理石 L 形切边只补最外黑描边，不生成灰色纹理带。"""
         canvas = np.full((600, 800, 3), 255, dtype=np.uint8)
