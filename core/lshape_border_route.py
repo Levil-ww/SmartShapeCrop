@@ -442,6 +442,31 @@ def detect_border_profile(src_img: Image.Image) -> list[tuple[tuple[int, int, in
 # 4. N 层切边补画（patch_lshape_cut 的推广）
 # ---------------------------------------------------------------------------
 
+def _detect_top_border_y_offset(src_img: Image.Image, scale_avg: float) -> int:
+    """扫描素材顶部边缘，返回第一个边框带层的实际 y 偏移（画布坐标）。
+
+    当前垂直切边从 y=0 起铺，但素材顶部可能有留白区（inner_rect.y > 0），
+    导致补边越界到产品内容区域之外。此函数返回素材顶部边框带的起始 y 位置，
+    让垂直切边从正确位置起铺。素材顶部无留白时返回 0（no-op）。
+    """
+    if src_img is None:
+        return 0
+    try:
+        arr = np.asarray(src_img.convert('RGB') if src_img.mode != 'RGB' else src_img)
+    except Exception:
+        return 0
+    H, W = arr.shape[:2]
+    if H == 0 or W == 0:
+        return 0
+    scan_rows = min(50, H)
+    top_strip = arr[:scan_rows].reshape(-1, 3)
+    mean_per_row = arr[:scan_rows].reshape(scan_rows, -1, 3).mean(axis=1)
+    for r in range(scan_rows):
+        if mean_per_row[r].mean() < 245:
+            return max(0, int(r * scale_avg))
+    return 0
+
+
 def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
                                      layers: list[tuple[tuple[int, int, int], int]],
                                      offs: list[int]) -> None:
@@ -458,7 +483,7 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     # 垂直切边（保留区在左）：y 从画布顶端向交汇点 yc 递减。
     # 层 k 的 dx 范围 = xc - x，其中 x ∈ [xc-offs[k+1], xc-offs[k]) → dx ∈ [offs[k], offs[k+1])
     # 垂直边框紧贴 cut 区左边界 xc 的左侧（保留区侧），y 覆盖 [0, yc] 整个切边高度。
-    # 关键：y_hi = yc+1（包含交汇点行），这样垂直边框能精确到达交汇点 (xc, yc-1) 的正左方。
+    # 关键：y_hi = yc+1（包含交汇点行），垂直边框覆盖 [0, yc] 整个切边高度。
     for k, (color, _t) in enumerate(layers):
         x_lo, x_hi = max(0, xc - offs[k + 1]), min(W, xc - offs[k])
         y_lo = offs[k] if offs[k] < yc else 0
@@ -468,10 +493,10 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
 
     # 水平切边（保留区在下）：层 k 从交汇点 yc 向下延伸，x 严格从 xc 开始向右。
     # 水平边框紧贴 cut 区下边界 yc 的下侧（保留区侧），不能画到 y<=yc 的 cut 区里。
-    # 关键：y 从 yc+1 起算，offest 基于 yc+1 而非 yc。
+    # 关键：y 从 yc 起算，与 V13 路径口径一致（消除 1px 亮缝）。
     for k, (color, _t) in enumerate(layers):
-        y_lo = max(0, yc + 1 + offs[k])
-        y_hi = min(H, yc + 1 + offs[k + 1])
+        y_lo = max(0, yc + offs[k])
+        y_hi = min(H, yc + offs[k + 1])
         x_lo, x_hi = max(0, xc), max(0, min(W - offs[k], W))
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color

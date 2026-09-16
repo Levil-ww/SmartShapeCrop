@@ -469,7 +469,7 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
             cfg = f'--oem 3 --psm {psm}'
             try:
                 data = tesseract.image_to_data(pil, config=cfg, output_type=tesseract.Output.DICT,
-                                               timeout=_PARSE_TIMEOUT_SEC)
+                                               timeout=min(_PARSE_TIMEOUT_SEC, 8))
             except Exception:
                 # [N-P2-12] 失败计数（不改变原有"忽略异常继续"的行为）
                 ocr_fail_count += 1
@@ -515,7 +515,9 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
     psm_core = [6, 8, 11]
     scales = [1.0, 2.5, 4.0] if not fast_mode else [1.0, 2.5]
     seen_bbox = {}
+    _scale_budget = 8.0
     for scale in scales:
+        _scale_start = time.monotonic()
         try:
             if scale == 1.0:
                 scaled = region_img
@@ -534,6 +536,9 @@ def _multi_scale_ocr_scan(cv2, tesseract, region_img, fast_mode=False, enhanced_
             logger.debug("[_multi_scale_ocr_scan] 忽略异常", exc_info=True)
             continue
         for vname, vimg in _make_preprocess_variants(cv2, scaled, scaled_enhanced):
+            if time.monotonic() - _scale_start > _scale_budget:
+                logger.info(f"[_multi_scale_ocr_scan] 尺度 {scale} 超出 {_scale_budget}s 子预算，跳过剩余预处理")
+                break
             for val, conf, bbox in _run_one(vimg, scale, psm_core):
                 bx, by, bw, bh = bbox
                 key = (round(val, 1), bx//5, by//5)

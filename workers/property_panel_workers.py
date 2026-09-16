@@ -341,6 +341,9 @@ class PoolRenderWorker(QThread):
             # 3) 解析草图（如果提供了）：L 形模式参数已由 UI 层传入，此处跳过
             is_lshape, sketch_result, canvas_w_cm, canvas_h_cm = \
                 self._step_resolve_sketch(file_w, file_h)
+            if self.isInterruptionRequested():
+                logger.info("[PoolWorker] 用户取消，终止流程（草图解析后）")
+                return
 
             # [Fix 2026-08-28 / 09-02] 用户手动修改的边距：仅记录日志，
             # 实际覆盖在 _build_design 内应用（不修改 sketch_result 对象本身）。
@@ -349,12 +352,18 @@ class PoolRenderWorker(QThread):
             # 4) 构建 CropDesign
             design = self._build_design(best, sketch_result, canvas_w_cm,
                                         canvas_h_cm, is_lshape)
+            if self.isInterruptionRequested():
+                logger.info("[PoolWorker] 用户取消，终止流程（设计构建后）")
+                return
 
             # [Fix 2026-08-26] 素材设计方向尺寸（文件名原始方向，供渲染旋转判断）
             self._step_write_material_design_size(best, design)
 
             # 预加载模板图到内存缓存（渲染时直接使用，避免主线程阻塞）
             self._step_preload_material(best, design)
+            if self.isInterruptionRequested():
+                logger.info("[PoolWorker] 用户取消，终止流程（素材预加载后）")
+                return
 
             # 多层边框：水池模式下保留默认边框层（黑-白-黑），用户可在【多层边框】区修改或删除
             # 若素材图本身已有边框，用户可手动清空 borders 列表
@@ -974,6 +983,7 @@ class _LShapeParseWorker(QThread):
                 self._sketch_path,
                 target_outer_w_cm=self._target_w,
                 target_outer_h_cm=self._target_h,
+                external_cancel_check=self.isInterruptionRequested,
             )
             # 若已被新解析取代（requestInterruption），不再发射旧结果，避免覆盖新结果
             if self.isInterruptionRequested():

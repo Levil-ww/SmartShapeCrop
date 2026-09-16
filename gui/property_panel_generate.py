@@ -65,10 +65,12 @@ class _GenerateMixin:
 
         # ===== [2026-09-03 状态隔离] 统一 target 名：优先 override，回退 pool 面板 =====
         # 本函数后续所有 self._pool_target.text().strip() 读取都替换为该变量。
-        if target_name_override is not None:
+        if target_name_override is not None and target_name_override.strip():
             effective_target_name = target_name_override.strip()
         else:
             effective_target_name = self._pool_target.text().strip()
+            if not effective_target_name:
+                logger.warning("[PropertyPanel] target_name_override 为空且 pool 面板目标名也为空")
         target_name = effective_target_name
 
         # [Perf-Opt] 如果后台预热扫描仍在进行，**不阻塞主线程**等待。
@@ -187,6 +189,8 @@ class _GenerateMixin:
 
     def _on_pool_finished_err(self, msg: str):
         self._set_pool_status(msg, is_error=True)
+        if self.design is not None:
+            self.design_changed.emit(self.design)
         QMessageBox.critical(self, "智能水池：失败", msg)
 
 
@@ -491,7 +495,9 @@ class _GenerateMixin:
             message = format_design_validation_error(e)
             self._set_pool_status(message, is_error=True)
             QMessageBox.warning(self, "参数校验失败", message)
-            logger.warning(f"[PropertyPanel] 设计参数校验失败：{e}")
+            logger.warning(f"[PropertyPanel] _apply_quiet 校验失败，design_changed 未 emit：{e}")
+            if self.design is not None:
+                self.design_changed.emit(self.design)
             return
         logger.info("[PropertyPanel] 预览已生成")
 

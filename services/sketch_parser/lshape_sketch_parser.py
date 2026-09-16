@@ -1460,6 +1460,7 @@ def parse_lshape_sketch(
     target_outer_w_cm: float = 0.0,
     target_outer_h_cm: float = 0.0,
     progress_callback=None,
+    external_cancel_check=None,
 ) -> LSketchParseResult:
     """解析 L 形尺寸草图，永不抛异常。
 
@@ -1468,6 +1469,7 @@ def parse_lshape_sketch(
         target_outer_w_cm / target_outer_h_cm: 可选的目标外框尺寸（来自文件名解析），
             用于二次校验 / 像素比例定标（仅当 OCR 全失败时启用）。
         progress_callback: 可选 (pct, msg) 回调
+        external_cancel_check: 可选的无参回调，返回 True 时中断 OCR 循环
 
     Returns:
         LSketchParseResult
@@ -1523,7 +1525,11 @@ def parse_lshape_sketch(
             import time as _sp_time
             _lshape_deadline = _sp_time.monotonic() + _PARSE_TIMEOUT_SEC
             def _lshape_cancel():
-                return _sp_time.monotonic() > _lshape_deadline
+                if _sp_time.monotonic() > _lshape_deadline:
+                    return True
+                if external_cancel_check is not None:
+                    return external_cancel_check()
+                return False
             ocr_numbers = _multi_scale_ocr_scan(
                 cv2, tesseract, gray, enhanced_gray=enhanced,
                 check_cancel=_lshape_cancel)

@@ -59,7 +59,7 @@ def test_f5_no_misleading_geometry_fallback_docs(rel):
 # F6: 真实超时
 # ---------------------------------------------------------------------------
 def test_f6_all_ocr_calls_pass_timeout():
-    """4 个 image_to_data 调用点都必须带 timeout=_PARSE_TIMEOUT_SEC。"""
+    """4 个 image_to_data 调用点都必须带 timeout 参数。"""
     # OCR 实现位于 vision / numbers 子模块（facade 拆分后），facade 仅 re-export
     src = (_read('services/sketch_parser/sketch_parser_vision.py')
            + _read('services/sketch_parser/sketch_parser_numbers.py')
@@ -69,7 +69,7 @@ def test_f6_all_ocr_calls_pass_timeout():
     assert len(call_sites) >= 4, f'OCR 调用点异常: {len(call_sites)}'
     for pos in call_sites:
         window = src[pos:pos + 400]
-        assert 'timeout=_PARSE_TIMEOUT_SEC' in window, (
+        assert 'timeout=' in window, (
             f'image_to_data 调用缺少 timeout（位置 {pos}）')
 
 
