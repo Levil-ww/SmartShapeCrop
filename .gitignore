@@ -32,6 +32,17 @@ scripts/logs/
 /crash.log
 /simple_corner_test.png
 /test_corner_result.png
+# 根目录临时诊断脚本和产物（应归档到 _archive/ 或 scripts/diagnose/）
+/diag_*.py
+/diag_*.png
+/_diag_*.py
+/_test_*.py
+/_verify_*.py
+/debug*.log
+/debug*.txt
+/pytest_results*.xml
+# 根目录 .spec 副本（正式 spec 在 packaging/specs/）
+/智能裁剪设计器V*.spec
 
 # 本地归档（2026-09-02 整理：调试图片与 .bak 备份，仅本地保留）
 _archive/
