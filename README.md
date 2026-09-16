@@ -186,14 +186,13 @@ SmartShapeCrop/
 │   └── split_*.py                  #   模块拆分辅助脚本（sketch_parser / property_panel）
 │
 ├── packaging/                      # PyInstaller 打包
-│   ├── packageV2.2.py             #   【当前】V2.2 打包脚本（单文件默认，内嵌 Tesseract）
-│   ├── legacy/                     #   历史打包脚本归档
-│   ├── build_exe.bat              #   历史打包批处理
-│   └── specs/                     #   .spec 归档（V2.1 / V2.1.2 / V2.2）
+│   ├── packageV2.2.2.py           #   【当前】V2.2.2 打包脚本（单文件默认，内嵌 Tesseract）
+│   ├── legacy/                     #   历史打包脚本归档（含 V2.2 / V2.2.1 / V2.1.2 等）
+│   └── specs/                     #   .spec 归档（V2.1 / V2.1.2 / V2.2 / V2.2.2）
 │
 ├── _archive/                       # 归档备份（备份快照 / 调试输出 / 临时脚本，不进 Git）
 │
-├── dist/                           # 打包产物（智能裁剪设计器V2.2.exe）
+├── dist/                           # 打包产物（智能裁剪设计器V2.2.2.exe）
 ├── build/                          # PyInstaller 中间构建产物
 ├── images/                         # 应用图标（SmartShapeCrop.ico / logo.png）
 ├── logs/                           # 运行日志 + OCR 诊断截图（自动生成）
@@ -300,27 +299,27 @@ python -m pytest tests/integration/ -v
 ### 打包发布
 
 ```bash
-# 使用当前 V2.2 打包入口，生成单文件 exe（默认）
-python packaging/packageV2.2.py
+# 使用当前 V2.2.2 打包入口，生成单文件 exe（默认）
+python packaging/packageV2.2.2.py
 
 # 目录模式（更稳定）
-python packaging/packageV2.2.py --onedir
+python packaging/packageV2.2.2.py --onedir
 
 # 调试模式（带控制台窗口）
-python packaging/packageV2.2.py --debug
+python packaging/packageV2.2.2.py --debug
 
 # 清理旧构建后打包
-python packaging/packageV2.2.py --clean
+python packaging/packageV2.2.2.py --clean
 
 # 不内嵌 Tesseract（默认已内嵌，用户免安装 OCR）
-python packaging/packageV2.2.py --no-tesseract
+python packaging/packageV2.2.2.py --no-tesseract
 ```
 
-打包要点（V2.2）：
+打包要点（V2.2.2）：
 
-- 产物：`dist/智能裁剪设计器V2.2.exe`（单文件，双击运行）
+- 产物：`dist/智能裁剪设计器V2.2.2.exe`（单文件，双击运行）
 - 自动内嵌本机 Tesseract-OCR 到 exe 内部，用户机器免安装即可使用草图 OCR
-- 已在 hidden imports 中显式声明 V2.2 全部模块（含 `core.lshape_border` / `core.lshape_border_route` / `gui.lshape_panel` / `services.*` / `workers.*`），脚本与 `packaging/specs/智能裁剪设计器V2.2.spec` 配置同源
+- 已在 hidden imports 中显式声明 V2.2.2 全部模块（含 `core.lshape_border` / `core.lshape_border_route` / `gui.lshape_panel` / `services.*` / `workers.*` / `models.*`），脚本与 `packaging/specs/智能裁剪设计器V2.2.2.spec` 配置同源
 - 打包失败时 onefile 自动回退 onedir；崩溃时在 exe 同目录生成 `crash.log` 便于排障
 
 ---
@@ -368,7 +367,7 @@ python packaging/packageV2.2.py --no-tesseract
 - LOD 智能降采样（scale=0.5 + BILINEAR）：消除高细节素材马赛克伪影
 - JPG 导出异步化（QThread 后台 + 可取消）：消除大图导出 UI 冻结
 
-**打包**：`packaging/packageV2.2.py` + `packaging/specs/智能裁剪设计器V2.2.spec`，补全 V2.2 新模块 hidden imports，默认内嵌 Tesseract。
+**打包**：`packaging/packageV2.2.2.py` + `packaging/specs/智能裁剪设计器V2.2.2.spec`，补全 V2.2.2 新模块 hidden imports，默认内嵌 Tesseract。
 
 ### V2.1.2
 
@@ -911,8 +910,8 @@ python -m pytest tests/integration/ -v
 ## 已知问题与后续规划
 
 - **worker 生命周期回归**：当前仅验证"线程可被停止"，未验证"取消后不回写 UI"。需补充 `CropWorker` / `PoolRenderWorker` / `_WarmupScanWorker` 的退役协议回归测试。
-- **L 形挖角端到端冒烟**：`dist/智能裁剪设计器V2.2.exe` 已构建，建议对 L 形挖角在发布版 exe 上做一次端到端冒烟验证。
-- **历史脚本归档**：`packaging/legacy/` 下旧版本脚本仅保留参考，当前入口为 `packaging/packageV2.2.py`，勿混用。
+- **L 形挖角端到端冒烟**：`dist/智能裁剪设计器V2.2.2.exe` 已构建，建议对 L 形挖角在发布版 exe 上做一次端到端冒烟验证。
+- **历史脚本归档**：`packaging/legacy/` 下旧版本脚本（含 `packageV2.2.py` / `packageV2.2.1.py`）仅保留参考，当前入口为 `packaging/packageV2.2.2.py`，勿混用。
 - **兼容 shim 清理**：当所有调用方迁移到新路径后，可删除 `core/compat/`、`core/parser/`、`core/pool_designer/`、`core/psd/` shim 及 `gui/property_panel_workers.py` shim，无需改动业务代码。
 
 ---
