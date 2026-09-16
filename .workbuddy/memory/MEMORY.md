@@ -13,11 +13,13 @@
 水池设计器/    # YYYYMMDD/README.md（每日多份，保留日期子目录）
 圆角裁剪工具/  # 平铺 YYYYMMDD-主题.md（每日 1 份，扁平更优）
 L形挖角设计器/ # 平铺 YYYYMMDD-主题.md + README 索引
-项目审查报告/  # 审查类文档主线（4 md，未登记进 README）
+项目审查报告/  # 审查类文档主线（6 md，未登记进 README）
 SmartShapeCrop分析报告/  # assets/ 配图 + patches/ 补丁（html 报告）
+2026-08/ 2026-09/  # 早期按日期归档，与「月度总结/」内容重复（2026-09-16 核实仍被 git 跟踪）
 ```
 1. 文件名含 `YYYYMMDD-` 即可提平；**每天仅 1 份绝不建日期子目录**（碎片化）。
-2. **动手前先查 `ProductSummary/README.md` 索引，以它为准。**
+2. **`ProductSummary/README.md` 索引并不存在**（2026-09-16 核实，`月度总结/README.md` 亦无）
+   —— 早前「先查该索引」的约定已失效，改为按各级目录实际文件名判断归类。
 3. 跨模块/架构改动 → `SmartShapeCrop分析报告/`，必须单列。
 4. 「细分到子目录」＝ `月度总结/` 总览（统计表+模块总览）+ 各模块专项（完整叙述，不重复统计表），双向指路。
 5. 同层级目录（`ProductSummary/<dir>/`）搬移不破坏 `../` 链接。区分「导航引用」（改路径）与「历史叙事」（保留原文）。
@@ -28,7 +30,8 @@ SmartShapeCrop分析报告/  # assets/ 配图 + patches/ 补丁（html 报告）
 - **`git gc`/`repack` 本机有风险**：曾在 D 档执行后 `.git` 被清空、历史全失。此类操作前**先 `cp -r .git .git.bak`**。
 - **`.gitignore` 只对未追踪文件生效**，已追踪的须先 `git rm --cached`。
 - **目录「已删除」不是终态**：`ProductSummary/2026-08|09/` 治理后因 restore 提交整批复活并与 `月度总结/` 重复。
-  清理必须配套 `git rm --cached` + 提交。复核：`git ls-files "ProductSummary/2026-0*"` 期望 0 行。
+  清理必须配套 `git rm --cached` + 提交。复核：`git ls-files "ProductSummary/2026-0*"`
+  —— **2026-09-16 实测为 11 行（仍未清理）**，非 0。
 
 ## 四、环境与工具链（2026-09-16 复核）
 | 项 | 事实 |
@@ -36,8 +39,12 @@ SmartShapeCrop分析报告/  # assets/ 配图 + patches/ 补丁（html 报告）
 | Python | `F:\SmartShapeCrop\.venv\Scripts\python.exe`（3.13.14，含 PyQt5/PIL/numpy/cv2/psd_tools） |
 | PyInstaller | `.venv` 内 **6.22.2**，可随时出包 |
 | Tesseract | `D:\Programs\Tesseract-OCR`（**非** C 盘），`core.config.PathResolver` 探测 |
-| 测试基线 | 444 passed（2026-09-12 实测 74.1s）—— 需重测 |
+| 测试基线 | **501 项：500 passed / 1 failed / 0 skipped，162.7s**（2026-09-16 实跑）。
+|  | 失败项为**存量**：`tests/integration/test_f1_inner_rect_crash.py::test_render_design_lshape_degenerate_no_crash`
+|  | —— `validate()` 新增逐边约束后主动抛 `ValueError`，属测试意图与新规则冲突，非渲染缺陷。 |
+| 依赖实测版本 | Pillow 12.3.0 / numpy 2.5.3 / opencv-headless 5.0.0 / Qt 5.15.2 / psd_tools 1.19.0 / pytesseract 0.3.13 |
 | Bash 工具 | PATH 无 Unix 工具（`ls`/`cd`/`head`/`dirname` not found）。**绝对路径调 exe 可行**；首选 Bash + Python 绝对路径，需管道就写进 Python 内部 |
+| 长命令输出 | `>` 重定向 + 系统 `tail` 均不可靠（截断）。**取测试基线用 `--junitxml` 再解析 XML**，别指望 stdout 尾部。 |
 
 - **误追踪**：`.gitignore` 未覆盖 `.workbuddy/`、`.dumate/`、`.trae-html-share-packages/`，曾误跟踪 54 文件 / 76.86 MB。
 - **交付物时效铁律**：出包后必须确认 `dist/*.exe` 时间戳 ≥ 最新源码时间戳（曾出现 exe 落后于 `main.py`）。
@@ -70,6 +77,10 @@ SmartShapeCrop分析报告/  # assets/ 配图 + patches/ 补丁（html 报告）
 **10px 黑框**：两移除区不相交不相邻时须**各自绘环带再 OR**，不可「整体 union 再内缩」。
 
 ## 七、同面板多形状：用分组推导，不加「形状类型」
+> **状态（2026-09-16 核实）**：**多边 L 形已落地**（`CropDesign.l_cuts_cm` 列表 + `LShape.cuts` +
+> `build_lshape_mask(cuts=...)`）；**阶梯 L 形尚未落地**（仅 `scripts/diagnose/_diag_stair_*.py` POC）。
+> 本节 `group_by_anchor()` 是**方案，不是既有函数** —— 源码中不存在，勿当成现状引用。
+
 判据：**按锚定角分组** —— 每组各 1 个 → 多边 L 形；某组 ≥2 个 → 该角是阶梯；共存 → 混合。
 1. **不让用户选形状类型**（形状是参数的几何后果）。
 2. **形状是推导结果不是存储状态** —— 用 `group_by_anchor()`，**绝不新增 `shape_type` 字段**
@@ -81,15 +92,24 @@ SmartShapeCrop分析报告/  # assets/ 配图 + patches/ 补丁（html 报告）
 UI：父行（角位）+ 可折叠子行（同角追加级）。
 
 ## 八、⚠️ 改 `CropDesign.mode` 判断要同时搜 `==` 与 `!=`
-全工程 **19 处**，**3 处是 `!=`**：`models/design_model.py:114`、
-`gui/property_panel_generate.py:220`、`:327`。只搜 `==` 必漏。
+全工程 **27 处** `CropDesign.mode` 判断（**24 处 `==` / 3 处 `!=`**，2026-09-16 实测）：
+
+| 文件 | 处数 | 行号（**加粗 = `!=`**） |
+|---|---|---|
+| `core/image_ops.py` | 14 | 752 / 778 / 798 / 923 / 1069 / 1087 / 1110 / 1163 / 1223 / 1242 / 1364 / 1486 / 1515 / 1521 |
+| `gui/property_panel_generate.py` | 7 | 226 / 238 / **242** / 292 / **369** / 523 / 566 |
+| `core/geometry.py` | 3 | 277 / 581 / 584 |
+| `models/design_model.py` | 3 | 110 / **114** / 166 |
+
+只搜 `==` 必漏。另有 9 处 PIL/PSD 图像域 `.mode`（`img.mode != 'RGB'`）**不属此列**，勿误改。
 
 **四类分治，禁止字符串级批量替换：**
-1. **渲染语义**（8 处，image_ops 733/759/779/1050/1068/1144/1204/1223）→ `mode in LSHAPE_LAYOUT_MODES`
-2. **分派点**（2 处：`image_ops.py:1502`、`geometry.py:584`）→ **必须新增独立分支**；
+1. **渲染语义**（`image_ops.py` 14 处）→ 走 mode 白名单判断
+   （⚠️ 早前设想抽 `LSHAPE_LAYOUT_MODES` 常量 —— **源码中不存在，仍是建议**）
+2. **分派点**（`core/image_ops.py:1515/1521`、`core/geometry.py:584`）→ **必须新增独立分支**；
    误改成 membership 会得「并集」而非「差集」（洞被填满）**且不报错**
-3. **展示/同步**（4 处，property_panel_generate 204/270/479/522）
-4. **参数守卫**（5 处）
+3. **展示/同步**（`property_panel_generate.py` 7 处 / `design_model.py` 3 处）
+4. **参数守卫**（`geometry.py:277`，在 `validate()` 内）
 
 **两处隐藏耦合（新开面板/mode 必查）**
 - `gui/property_panel.py:926` 硬编码索引 `{'rect_hole':0,'rect_lshape':1,'ellipse_hole':2}`
