@@ -1315,10 +1315,20 @@ def _attribute_cut_ocr_per_corner(all_corners, ocr_numbers, geo,
 
     策略：
     1. 对每个角，确定其切边方向（水平切边 + 垂直切边）
-    2. 在该角的切边上收集 OCR 数值，只取属于该角切段的那一侧
-       （相邻角共享边时，按凹角点位置分段，每个角只认自己那一侧）
+    2. 同时收集**外边**和**内边**的 OCR 数值
+       - 外边：L 形外框的对应边（top/bottom/left/right），用于识别 F/C 剩余段
+       - 内边：凹角点位置的内切边（y=cy 的水平内边、x=cx 的垂直内边），用于识别 E/D 挖角尺寸
+       - 相邻角共享外边时，按各角凹角点位置分段，每个角只认自己那一侧
     3. 用几何比例匹配分辨挖角尺寸(E/D)与剩余段(F/C)
     4. OCR 归属成功用 OCR 值，否则回退到像素比例反推
+
+    [Bug Fix 2026-09-16] 修复相邻角挖角时只有一个方位识别准确的问题：
+    根因是本函数只收集外边标注，漏掉了内边标注。
+    当 E（挖角宽）/ D（挖角高）标注在内侧切边上时，完全收集不到 →
+    全部回退像素比例 → 像素比例不准导致数值漂移。
+
+    对比同文件 _assign_labels_by_geometry (L843-867) 已正确实现内边收集，
+    本函数作为多角独立归属版同步移植了内边逻辑。
 
     返回 list[dict]: 每项 {corner, cut_w_cm, cut_h_cm, source, ocr_cut_w, ocr_cut_h}
     """
@@ -1330,6 +1340,16 @@ def _attribute_cut_ocr_per_corner(all_corners, ocr_numbers, geo,
     px_outer_h = geo.get('outer_h_px', H_bbox)
 
     edge_tol = max(15.0, min(W_bbox, H_bbox) * 0.08)
+
+    def _is_valid(item):
+        """OCR 项有效性过滤（与 _assign_labels_by_geometry 保持一致）。"""
+        val, conf, bbox = item
+        bx, by, bw, bh = bbox
+        if bw * bh > bbox_area * 0.15:
+            return False
+        if val <= 0 or val > 5000:
+            return False
+        return True
 
     results = []
     for cand in all_corners:
@@ -1344,30 +1364,123 @@ def _attribute_cut_ocr_per_corner(all_corners, ocr_numbers, geo,
         geo_ratio_w = (cut_w_px / px_outer_w) if px_outer_w > 0 else 0.0
         geo_ratio_h = (cut_h_px / px_outer_h) if px_outer_h > 0 else 0.0
 
+        # ========== 外边切边（原有逻辑） ==========
         cut_h_edge_y = miny if cut_top else maxy
         cut_v_edge_x = maxx if cut_right else minx
 
-        cut_h_items = []
-        cut_v_items = []
+        # ========== 内边切边（新增修复） ==========
+        # 内水平边：y=cy，从外框对应边延伸到凹角点
+        #   cut_right=False (左角): x ∈ [minx, cx]
+        #   cut_right=True  (右角): x ∈ [cx, maxx]
+        if not cut_right:
+            inner_h_y, inner_h_x1, inner_h_x2 = cy, minx, cx
+        else:
+            inner_h_y, inner_h_x1, inner_h_x2 = cy, cx, maxx
+
+        # 内垂直边：x=cx，从外框对应边延伸到凹角点
+        #   cut_top=True  (上角): y ∈ [miny, cy]
+        #   cut_top=False (下角): y ∈ [cy, maxy]
+        if cut_top:
+            inner_v_x, inner_v_y1, inner_v_y2 = cx, miny, cy
+        else:
+            inner_v_x, inner_v_y1, inner_v_y2 = cx, cy, maxy
+
+        cut_h_items = []  # 水平方向候选（含 E 挖角宽 + 可能的 F 剩余段）
+        cut_v_items = []  # 垂直方向候选（含 D 挖角高 + 可能的 C 剩余段）
         for val, conf, bbox in ocr_numbers:
+            if not _is_valid((val, conf, bbox)):
+                continue
             bx, by, bw, bh = bbox
-            if bw * bh > bbox_area * 0.15:
-                continue
-            if val <= 0 or val > 5000:
-                continue
             nx, ny = bx + bw / 2.0, by + bh / 2.0
 
-            if abs(ny - cut_h_edge_y) < edge_tol:
+            # ---- 水平方向收集 ----
+            h_match = False
+            # 外边：y ≈ cut_h_edge_y 且在正确的水平侧（相邻角共享外边时按 cx 分段）
+            on_outer_h = abs(ny - cut_h_edge_y) < edge_tol
+            if on_outer_h:
                 if cut_right and nx >= cx:
-                    cut_h_items.append((val, nx, ny, conf))
+                    h_match = True
                 elif not cut_right and nx <= cx:
-                    cut_h_items.append((val, nx, ny, conf))
+                    h_match = True
+            # 内边：y ≈ inner_h_y 且 x 落在本角的内水平段范围内
+            # 内边上的数值（E 挖角宽）肯定属于本角，无需再分段
+            on_inner_h = (abs(ny - inner_h_y) < edge_tol
+                          and inner_h_x1 - edge_tol <= nx <= inner_h_x2 + edge_tol)
+            if on_inner_h:
+                h_match = True
 
-            if abs(nx - cut_v_edge_x) < edge_tol:
+            if h_match:
+                cut_h_items.append((val, nx, ny, conf))
+
+            # ---- 垂直方向收集 ----
+            v_match = False
+            # 外边：x ≈ cut_v_edge_x 且在正确的垂直侧
+            on_outer_v = abs(nx - cut_v_edge_x) < edge_tol
+            if on_outer_v:
                 if cut_top and ny <= cy:
-                    cut_v_items.append((val, nx, ny, conf))
+                    v_match = True
                 elif not cut_top and ny >= cy:
-                    cut_v_items.append((val, nx, ny, conf))
+                    v_match = True
+            # 内边：x ≈ inner_v_x 且 y 落在本角的内垂直段范围内
+            # 内边上的数值（D 挖角高）肯定属于本角
+            on_inner_v = (abs(nx - inner_v_x) < edge_tol
+                          and inner_v_y1 - edge_tol <= ny <= inner_v_y2 + edge_tol)
+            if on_inner_v:
+                v_match = True
+
+            if v_match:
+                cut_v_items.append((val, nx, ny, conf))
+
+        # 去重：同一个 OCR 项可能同时匹配外边和内边（edge_tol 重叠）
+        def _dedup(items):
+            seen = set()
+            out = []
+            for it in items:
+                key = (round(it[1], 1), round(it[2], 1))  # 按 (nx, ny) 去重
+                if key not in seen:
+                    seen.add(key)
+                    out.append(it)
+            return out
+
+        cut_h_items = _dedup(cut_h_items)
+        cut_v_items = _dedup(cut_v_items)
+
+        # 方向冲突解决：同一个 OCR 可能同时被水平内边和垂直外边/内边抓到
+        # （eg. 一个标在角顶点附近的数值，ny 接近 cy 同时 nx 接近 maxx），
+        # 按"到对应方向切边的最近距离"决定归属。
+        # 水平方向的度量是到 cut_h_edge_y 或 inner_h_y 的垂直距离；
+        # 垂直方向的度量是到 cut_v_edge_x 或 inner_v_x 的水平距离。
+        h_centers = {(round(it[1], 1), round(it[2], 1)) for it in cut_h_items}
+        v_centers = {(round(it[1], 1), round(it[2], 1)) for it in cut_v_items}
+        conflict = h_centers & v_centers  # 两个列表都有的 OCR
+
+        if conflict:
+            new_h, new_v = [], []
+            for it in cut_h_items:
+                key = (round(it[1], 1), round(it[2], 1))
+                if key not in conflict:
+                    new_h.append(it)
+                    continue
+                nx, ny = it[1], it[2]
+                # 水平方向：到水平切边（外边或内边）的垂直距离
+                d_h = min(abs(ny - cut_h_edge_y), abs(ny - inner_h_y))
+                # 垂直方向：到垂直切边（外边或内边）的水平距离
+                d_v = min(abs(nx - cut_v_edge_x), abs(nx - inner_v_x))
+                if d_h <= d_v:
+                    new_h.append(it)  # 更近水平，保留在水平
+                # 否则留给垂直方向
+            for it in cut_v_items:
+                key = (round(it[1], 1), round(it[2], 1))
+                if key not in conflict:
+                    new_v.append(it)
+                    continue
+                nx, ny = it[1], it[2]
+                d_h = min(abs(ny - cut_h_edge_y), abs(ny - inner_h_y))
+                d_v = min(abs(nx - cut_v_edge_x), abs(nx - inner_v_x))
+                if d_v < d_h:  # 严格小于：冲突项只能在一个列表中
+                    new_v.append(it)
+                # 否则已在水平方向
+            cut_h_items, cut_v_items = new_h, new_v
 
         ocr_cut_w, _ = _resolve_cut_pair_per_corner(
             cut_h_items, outer_w_cm, geo_ratio_w)
