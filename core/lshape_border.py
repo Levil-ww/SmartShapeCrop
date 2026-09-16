@@ -1205,13 +1205,36 @@ def _fill_vertical_horizontal(b, xc, yc, edge, band, color, black):
     if band > 0:
         b[yc+edge:yc+T, xc:W-edge] = color
     # 内凹角 (xc, yc): 距角点几何 L 分层, 黑带/主带沿角直角连续
+    # [Fix 2026-09-16 溢出修复]
+    # gap 循环: xx ∈ [xc-T, xc) → dx ∈ [1, T]；yy ∈ [yc, yc+T) → dy ∈ [0, T)。
+    #
+    # dx ∈ [1, edge] 翻回后正好是原始图垂直切边黑描边的 x 范围（edge 像素宽）。
+    # 这些位置**用 dy 决定层**（和水平切边层结构一致），忽略 dx。
+    # 原始代码对所有 dx 统一用 max(dx, dy) 分层，导致 dx<=edge 范围内**同一行内**
+    # 颜色跳变（dx 小 → 黑描边，dx 大 → band），翻回后每行从黑渐变到 band，
+    # 就是用户看到的"多出一截线段"。
+    #
+    # dx ∈ [edge+1, T] 远离垂直切边，用 max(dx, dy) L 形分层填充。
     for yy in range(yc, min(H, yc+T)):
+        dy = yy - yc
+        dy_d = dy  # dx<=edge 时用 dy 作为层深（和水平切边一致）
+        dy_is_black = dy_d < edge
+        dy_is_band = band > 0 and edge <= dy_d < T
         for xx in range(xc-T, xc):
-            d = max(xc-xx, yy-yc)
-            if d <= edge:
-                b[yy, xx] = black
-            elif band > 0 and d <= T:
-                b[yy, xx] = color
+            dx = xc - xx
+            if dx <= edge:
+                # dx<=edge: 用 dy 决定层，和水平切边一致
+                if dy_is_black:
+                    b[yy, xx] = black
+                elif dy_is_band:
+                    b[yy, xx] = color
+            else:
+                # dx>edge: max(dx, dy) L 形分层
+                d = max(dx, dy)
+                if d <= edge:
+                    b[yy, xx] = black
+                elif band > 0 and d <= T:
+                    b[yy, xx] = color
 
 
 def patch_lshape_cut(canvas, corner, x0, y0, cw, ch,

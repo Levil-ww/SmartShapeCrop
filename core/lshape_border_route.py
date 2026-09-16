@@ -503,19 +503,42 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
 
     # 内凹角 (xc, yc)：距角点 max(dx, dy) 几何 L 分层，保证与水平/垂直切边各层在
     # offs 边界精确对齐。searchsorted(offs, d, 'right')-1 让 d=offs[k] 归层 k（左闭）。
-    # 关键：xs 不含 xc（避免覆盖 cut 区边界），yy 从 yc+1 起（保留区侧），
-    # 仅在保留区角落 [xc-T, xc) × [yc+1, yc+1+T) 填充，绝对不溢出 cut 区。
+    #
+    # [Fix 2026-09-16 溢出修复]
+    # gap 覆盖 xx ∈ [xc-T, xc), yy ∈ [yc, yc+T) → dx ∈ [1, T], dy ∈ [0, T)。
+    #
+    # dx ∈ [1, edge] 翻回后正好是原始图垂直切边黑描边的 x 范围（edge 像素宽）。
+    # 这些位置**用 dy 决定层**（searchsorted(offs, dy)），和水平切边层结构一致，
+    # 忽略 dx。原始代码对所有 dx 统一用 max(dx, dy) 分层，导致 dx<=edge 范围内
+    # **同一行内**颜色跳变（dx 小 → 黑描边，dx 大 → band），翻回后每行从黑渐变
+    # 到 band，就是用户看到的"多出一截线段"。
+    #
+    # dx ∈ [edge+1, T] 远离垂直切边，用 max(dx, dy) L 形分层填充。
     xs = np.arange(max(0, xc - T), xc)
     if xs.size == 0:
         return
     offs_arr = np.array(offs, dtype=np.int64)
     colors_arr = np.array([c for c, _t in layers], dtype=np.uint8)
-    y_end = min(H, yc + 1 + T)
-    for yy in range(max(0, yc + 1), y_end):
-        d = np.maximum(xc - xs, yy - yc)
-        k = np.searchsorted(offs_arr, d, side='right') - 1
-        k = np.clip(k, 0, len(layers) - 1)
-        b[yy, xs] = colors_arr[k]
+    edge_t = offs[1] if len(offs) > 1 else 0
+    y_start = max(0, yc)  # 包含 yc（与 V13 路径一致）
+    y_end = min(H, yc + T)
+    dx_arr = xc - xs  # 预计算水平距离，dx ∈ [1, T]
+    mask_edge = dx_arr <= edge_t   # dx ∈ [1, edge]: 用 dy 分层（和水平切边一致）
+    mask_layers = dx_arr > edge_t  # dx ∈ [edge+1, T]: max(dx, dy) L 形分层
+    for yy in range(y_start, y_end):
+        dy = yy - yc
+        # dx<=edge 组: 用 dy 决定层（和水平切边一致，忽略 dx）
+        if mask_edge.any():
+            k_edge = np.searchsorted(offs_arr, dy, side='right') - 1
+            k_edge = np.clip(k_edge, 0, len(layers) - 1)
+            b[yy, xs[mask_edge]] = colors_arr[k_edge]
+        # dx>edge 组: max(dx, dy) L 形分层
+        if mask_layers.any():
+            dx_lay = dx_arr[mask_layers]
+            d = np.maximum(dx_lay, dy)
+            k = np.searchsorted(offs_arr, d, side='right') - 1
+            k = np.clip(k, 0, len(layers) - 1)
+            b[yy, xs[mask_layers]] = colors_arr[k]
 
 
 def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
