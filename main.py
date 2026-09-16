@@ -272,6 +272,10 @@ class MainWindow(QMainWindow):
         self.panel.apply()
 
     def _on_design_changed(self, design):
+        if design is None:
+            logging.getLogger(__name__).info("[MainWindow._on_design_changed] received design=None")
+        else:
+            logging.getLogger(__name__).info(f"[MainWindow._on_design_changed] received design mode={getattr(design, 'mode', '?')} canvas_w_cm={getattr(design, 'canvas_w_cm', '?')}")
         self.canvas.set_design(design)
 
     def _on_rendered(self, img):

@@ -185,6 +185,12 @@ class _LayersMixin:
         """属性变动时：静默触发预览，按钮统一 apply 也会调用"""
         self._collect()
         self._update_layers_label()
+        import threading
+        _n = self.receivers(self.design_changed)
+        if self.design is None:
+            logger.info(f"[PropertyPanel._apply_quiet] emit design_changed design=None receivers={_n} thread={threading.current_thread().name}")
+        else:
+            logger.info(f"[PropertyPanel._apply_quiet] emit design_changed mode={getattr(self.design, 'mode', '?')} canvas_w_cm={getattr(self.design, 'canvas_w_cm', '?')} receivers={_n} thread={threading.current_thread().name}")
         self.design_changed.emit(self.design)
 
 

@@ -60,7 +60,7 @@ class _GenerateMixin:
             source = 'pool'
 
         if self._pool_worker is not None and self._pool_worker.isRunning():
-            QMessageBox.information(self, "提示", "正在处理中，请稍候…")
+            self._set_pool_status("⏳ 正在处理中，请稍候…", is_error=True)
             return
 
         # ===== [2026-09-03 状态隔离] 统一 target 名：优先 override，回退 pool 面板 =====
@@ -143,6 +143,23 @@ class _GenerateMixin:
         self._pool_btn_generate.setText("处理中…请稍候")
         if self._lshape_panel is not None:
             self._lshape_panel.set_generate_enabled(False, "处理中…请稍候")
+        # [Fix Bug1] 清理上一个已完成的 PoolRenderWorker，避免旧信号连接残留 + 引用泄漏
+        old = self._pool_worker
+        if old is not None:
+            if old.isRunning():
+                old.requestInterruption()
+                try:
+                    old.finished.disconnect()
+                except Exception:
+                    pass
+                old.finished.connect(old.deleteLater)
+            else:
+                try:
+                    old.finished.disconnect()
+                except Exception:
+                    pass
+                old.deleteLater()
+            self._pool_worker = None
         worker = PoolRenderWorker(
             self._matcher, tpl_dir, target_name, self._sketch_path,
             pre_parsed_result=self._sketch_parse_result,
@@ -157,6 +174,7 @@ class _GenerateMixin:
             self._pool_btn_generate.setEnabled(True),
             self._pool_btn_generate.setText("🔍 匹配模板 → 解析草图 → 生成预览"),
             self._lshape_panel.set_generate_enabled(True, "🔍 生成预览") if self._lshape_panel is not None else None,
+            setattr(self, '_pool_worker', None),
         ))
         self._pool_worker = worker
         worker.start()
@@ -268,9 +286,29 @@ class _GenerateMixin:
             # 原 self._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
             # 通过 self._lshape_panel.set_lshape_params() 回填，语义与原直设控件一致。
             if design.mode == 'rect_lshape' and self._lshape_panel is not None:
+                # [Fix Bug2] 确保 l_cuts_cm 中主角的值 = l_cut_w_cm / l_cut_h_cm（OCR 真值），
+                # 防止 set_lshape_cuts 用像素比例反推值覆盖 set_lshape_params 已写入的正确值。
+                _cuts = getattr(design, 'l_cuts_cm', None) or []
+                _primary_corner = design.l_corner
+                _primary_w = float(design.l_cut_w_cm or 0)
+                _primary_h = float(design.l_cut_h_cm or 0)
+                if _primary_w > 0 and _primary_h > 0:
+                    _found = False
+                    for _c in _cuts:
+                        if _c.get('corner') == _primary_corner:
+                            _c['cut_w_cm'] = _primary_w
+                            _c['cut_h_cm'] = _primary_h
+                            _found = True
+                            break
+                    if not _found:
+                        _cuts.insert(0, {
+                            'corner': _primary_corner,
+                            'cut_w_cm': _primary_w,
+                            'cut_h_cm': _primary_h,
+                        })
                 self._lshape_panel.set_lshape_params(
                     design.l_corner, design.l_cut_w_cm, design.l_cut_h_cm)
-                self._lshape_panel.set_lshape_cuts(getattr(design, 'l_cuts_cm', None))
+                self._lshape_panel.set_lshape_cuts(_cuts)
                 # 外框 SpinBox 也需要回填（画布 = 外框 + 1cm 损耗 → 外框 = 画布 - 1cm）
                 self._lshape_panel.set_outer_dims(
                     max(0.0, design.canvas_w_cm - 1.0),

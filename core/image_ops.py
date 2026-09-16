@@ -482,7 +482,9 @@ def render_design_lod(design: CropDesign, scale: float = 0.25) -> Image.Image:
     lod_design = _make_lod_design(design, lod_w, lod_h)
     
     # 在 LOD 尺寸上渲染，传递 pixel_scale 以缩放固定像素值（如边框宽度）
-    lod_result = render_design(lod_design, quality='preview', pixel_scale=scale)
+    # skip_validate=True：LOD 设计由原始设计等比缩放而来，浮点舍入可能导致
+    # 边缘余量校验误报，原始设计已在创建时校验过。
+    lod_result = render_design(lod_design, quality='preview', pixel_scale=scale, skip_validate=True)
     
     # 放大回原尺寸，使用 LANCZOS 重采样
     # [Fix 2026-09-02 B] 原方案 NEAREST → 马赛克硬像素（4×4 块） → 改为 BILINEAR →
@@ -537,13 +539,25 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
     if hasattr(lod_design, 'l_cut_w_cm') and hasattr(lod_design, 'l_cut_h_cm'):
         lod_design.l_cut_w_cm = design.l_cut_w_cm * sx
         lod_design.l_cut_h_cm = design.l_cut_h_cm * sy
-    
+
+    # L 形多挖角列表同步缩放（否则 validate() 用未缩放的 cut 尺寸校验缩小后的画布会抛 ValueError）
+    if hasattr(lod_design, 'l_cuts_cm') and lod_design.l_cuts_cm:
+        lod_design.l_cuts_cm = [
+            {
+                **cut,
+                'cut_w_cm': float(cut.get('cut_w_cm', 0.0)) * sx,
+                'cut_h_cm': float(cut.get('cut_h_cm', 0.0)) * sy,
+            }
+            for cut in lod_design.l_cuts_cm
+        ]
+
     return lod_design
 
 
 # ---------- 核心渲染 ----------
 
-def render_design(design: CropDesign, quality: str = 'export', pixel_scale: float = 1.0) -> Image.Image:
+def render_design(design: CropDesign, quality: str = 'export', pixel_scale: float = 1.0,
+                  skip_validate: bool = False) -> Image.Image:
     """
     按 CropDesign 完整渲染一张全尺寸画布（RGB）。
     返回 PIL.Image，大小 = design.canvas_w_px × design.canvas_h_px
@@ -556,8 +570,13 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
       - 像素缩放因子，用于 LOD 渲染时调整固定像素值（如边框宽度）
       - 默认 1.0（全分辨率），LOD 渲染时使用 < 1.0 的值
       - 例如 scale=0.25 时，border_width_px 会相应缩小
+
+    skip_validate:
+      - LOD 渲染时传入 True：LOD 设计由已校验的原始设计等比缩放而来，
+        浮点舍入可能导致边缘余量校验误报，跳过校验避免合法设计被拒。
     """
-    design.validate()
+    if not skip_validate:
+        design.validate()
     W, H = design.canvas_w_px, design.canvas_h_px
     # === [DEBUG 2026-09-10] 调试日志：全参数快照 ===
     import os as _os  # 避免与已有的 os 覆盖

@@ -901,15 +901,20 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
     def _resolve_cut_pair(items, outer, geo_ratio):
         """从切边数值中分辨 (挖角尺寸, 剩余段)。
 
-        策略：挖角尺寸 v 应满足 v/outer ≈ geo_ratio（几何像素比例）。
-        - 单值：比较 v 作为挖角 vs 作为剩余段（outer−v 作为挖角），
-          取离 geo_ratio*outer 更近的解释。
-        - 多值：选 v/outer 最接近 geo_ratio 的作为挖角；若存在互补值
-          (v + v2 ≈ outer) 则加权确认。
+        [Bug Fix 2026-09-15] 修复 geo_ratio 不准时 cut↔remaining 互换的根因：
+        原逻辑纯依赖 geo_ratio 选最优 cut，互补性检查阈值仅 outer*0.05（93+26=119
+        vs 112 差 7 时刚好卡在阈值外，导致两个值互相竞争被错配）。新逻辑：
+        1. **互补性优先**：先找互补对 v1+v2 ≈ outer（阈值放宽到 15%，容忍 OCR 误差
+           和草图几何不精确）。有互补对时，结合 geo_ratio + 大小启发式分辨
+           哪个是 cut。
+        2. **单值**：保持原 geo_ratio 判断不变。
+        3. **无互补对多值**：退回纯 geo_ratio，但 complement 阈值也放宽到 15%。
+
         返回 (cut_val, remaining_val)。
         """
         if not items or outer is None or outer <= 0:
             return None, None
+        COMPLEMENT_TOL = outer * 0.15   # 放宽到 15%：OCR 误差 + 草图不精确
         geo_cut = outer * geo_ratio
         vals = [it[0] for it in items]
         if len(vals) == 1:
@@ -917,14 +922,41 @@ def _assign_labels_by_geometry(geo, ocr_numbers):
             err_as_cut = abs(v - geo_cut)
             err_as_rem = abs((outer - v) - geo_cut)
             if err_as_cut <= err_as_rem:
-                return v, outer - v       # v 是挖角尺寸
+                return v, outer - v
             else:
-                return outer - v, v       # v 是剩余段，挖角 = outer − v
-        # 多值：逐个尝试作为挖角，评分 = |v − geo_cut|，有互补值则降权
+                return outer - v, v
+        # —— Step 1: 找互补对（cut + remaining ≈ outer）——
+        # 枚举所有不重复对，挑加和最接近 outer 的那个
+        best_pair = None
+        best_pair_delta = float('inf')
+        for i in range(len(vals)):
+            for j in range(i + 1, len(vals)):
+                pair_sum = vals[i] + vals[j]
+                delta = abs(pair_sum - outer)
+                if delta < best_pair_delta:
+                    best_pair_delta = delta
+                    best_pair = (vals[i], vals[j])
+        # —— Step 2: 有互补对（在 15% 容差内）→ geo_ratio + 大小启发式 ——
+        if best_pair is not None and best_pair_delta <= COMPLEMENT_TOL:
+            v1, v2 = best_pair
+            err1 = abs(v1 - geo_cut)
+            err2 = abs(v2 - geo_cut)
+            # 启发式：挖角通常比外框小（cut < outer*0.6）
+            # 结合 geo_ratio 误差和大小约束：geo_ratio 误差差距不大时选小的
+            if abs(err1 - err2) < geo_cut * 0.3:  # geo_ratio 信号不明显
+                # 大小启发式：较小的值更可能是挖角（除非挖角特别大）
+                if min(v1, v2) < outer * 0.6:
+                    return (v1, v2) if v1 < v2 else (v2, v1)
+            # geo_ratio 信号明确或大小启发式不适用时，用 geo_ratio
+            if err1 <= err2:
+                return v1, v2
+            else:
+                return v2, v1
+        # —— Step 3: 无合适互补对 → 退回 geo_ratio 逐个评分，complement 阈值也放宽 ——
         best_cut, best_rem, best_score = None, None, float('inf')
         for v in vals:
             score = abs(v - geo_cut)
-            has_complement = any(abs((outer - v) - v2) < outer * 0.05
+            has_complement = any(abs((outer - v) - v2) < COMPLEMENT_TOL
                                  for v2 in vals if v2 != v)
             if has_complement:
                 score *= 0.3
@@ -1222,18 +1254,13 @@ def _score_consistency(geo, dims):
 def _resolve_cut_pair_per_corner(items, outer, geo_ratio):
     """从切边数值中分辨 (挖角尺寸, 剩余段)。
 
-    与 _assign_labels_by_geometry 内的 _resolve_cut_pair 逻辑等价，
-    但作为模块级函数供多角逐角调用。
-
-    策略：挖角尺寸 v 应满足 v/outer ≈ geo_ratio（几何像素比例）。
-    - 单值：比较 v 作为挖角 vs 作为剩余段（outer−v 作为挖角），
-      取离 geo_ratio*outer 更近的解释。
-    - 多值：选 v/outer 最接近 geo_ratio 的作为挖角；若存在互补值
-      (v + v2 ≈ outer) 则加权确认。
+    [Bug Fix 2026-09-15] 与 _assign_labels_by_geometry 内的 _resolve_cut_pair 同步修复：
+    互补性优先找 pair（阈值 15%）+ geo_ratio + 大小启发式联合分辨。
     返回 (cut_val, remaining_val)。
     """
     if not items or outer is None or outer <= 0:
         return None, None
+    COMPLEMENT_TOL = outer * 0.15
     geo_cut = outer * geo_ratio
     vals = [it[0] for it in items]
     if len(vals) == 1:
@@ -1244,10 +1271,34 @@ def _resolve_cut_pair_per_corner(items, outer, geo_ratio):
             return v, outer - v
         else:
             return outer - v, v
+    # —— Step 1: 找互补对 ——
+    best_pair = None
+    best_pair_delta = float('inf')
+    for i in range(len(vals)):
+        for j in range(i + 1, len(vals)):
+            pair_sum = vals[i] + vals[j]
+            delta = abs(pair_sum - outer)
+            if delta < best_pair_delta:
+                best_pair_delta = delta
+                best_pair = (vals[i], vals[j])
+    # —— Step 2: 有互补对 → geo_ratio + 大小启发式 ——
+    if best_pair is not None and best_pair_delta <= COMPLEMENT_TOL:
+        v1, v2 = best_pair
+        err1 = abs(v1 - geo_cut)
+        err2 = abs(v2 - geo_cut)
+        # geo_ratio 信号不明显（误差差 < geo_cut*0.3）时，用大小启发式
+        if abs(err1 - err2) < geo_cut * 0.3 if geo_cut > 0 else True:
+            if min(v1, v2) < outer * 0.6:
+                return (v1, v2) if v1 < v2 else (v2, v1)
+        if err1 <= err2:
+            return v1, v2
+        else:
+            return v2, v1
+    # —— Step 3: 无合适互补对 → 退回 geo_ratio 逐个评分 ——
     best_cut, best_rem, best_score = None, None, float('inf')
     for v in vals:
         score = abs(v - geo_cut)
-        has_complement = any(abs((outer - v) - v2) < outer * 0.05
+        has_complement = any(abs((outer - v) - v2) < COMPLEMENT_TOL
                              for v2 in vals if v2 != v)
         if has_complement:
             score *= 0.3

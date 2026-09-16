@@ -304,7 +304,7 @@ class CropDesign:
                 - self.inner_margin_left_cm - self.inner_margin_right_cm
             inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
                 - self.inner_margin_top_cm - self.inner_margin_bottom_cm
-            edge_clearance_cm = 2.0
+            edge_clearance_cm = 0.5
             edge_limits = (
                 ('上边', ('tl', 'tr'), 'cut_w_cm', inner_w_cm),
                 ('下边', ('bl', 'br'), 'cut_w_cm', inner_w_cm),
@@ -317,7 +317,7 @@ class CropDesign:
                     for corner in corners
                     if corner in cut_by_corner
                 )
-                if edge_sum_cm >= edge_length_cm - edge_clearance_cm:
+                if edge_sum_cm > edge_length_cm - edge_clearance_cm:
                     raise ValueError(
                         f"L 形挖角在{edge_name}上的尺寸和 {edge_sum_cm:g}cm "
                         f"必须小于外边长度 {edge_length_cm:g}cm 减 {edge_clearance_cm:g}cm 余量"

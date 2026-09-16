@@ -760,9 +760,6 @@ class LShapePanel(QWidget):
         suggestions = self._extract_multicorner_suggestions(result)
         if suggestions:
             self.set_lshape_cuts(suggestions)
-            self._lshape_params['cuts_cm'] = self.get_cuts_cm()
-        else:
-            self._lshape_params['cuts_cm'] = self.get_cuts_cm()
         # corner code → 中文显示名（与 _cb_lcorner addItem 顺序一致，defensive 兜底未知）
         _corner_label = {
             'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角',
@@ -792,6 +789,9 @@ class LShapePanel(QWidget):
                 self._sp_lh.blockSignals(False)
                 self._sp_outer_w.blockSignals(False)
                 self._sp_outer_h.blockSignals(False)
+            # [Fix Bug2] 主角 SpinBox 已用 OCR 真值（cut_w_cm/cut_h_cm）覆盖 set_lshape_cuts 的建议值，
+            # 此时再从 SpinBox 读取 cuts_cm，确保主角值 = 识别真值而非像素比例反推值。
+            self._lshape_params['cuts_cm'] = self.get_cuts_cm()
             # 3) 标记为识别值 + 状态栏内联摘要（格式对齐池面板图1风格）
             self._params_source = 'recognize'
             # 画布尺寸 = 外框设计值 + 1cm 损耗

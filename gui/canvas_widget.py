@@ -58,6 +58,10 @@ class PreviewCanvas(QWidget):
     # ---- 外部接口 ----
     def set_design(self, design) -> None:
         """设置设计并触发重渲染（异步分级渲染）"""
+        if design is None:
+            logger.info("[PreviewCanvas.set_design] called with design=None")
+        else:
+            logger.info(f"[PreviewCanvas.set_design] called mode={getattr(design, 'mode', '?')} canvas_w_cm={getattr(design, 'canvas_w_cm', '?')} canvas_h_cm={getattr(design, 'canvas_h_cm', '?')}")
         self._design = design
         self._update_notch_overlay(design)
         self._render_async()
@@ -117,6 +121,7 @@ class PreviewCanvas(QWidget):
         3. 完成后无缝替换预览图
         """
         if self._design is None:
+            logger.info("[PreviewCanvas._render_async] design is None, clearing")
             self._full_image = None
             self._preview_pixmap = None
             self._use_lod = False
@@ -124,6 +129,7 @@ class PreviewCanvas(QWidget):
             return
 
         total_pixels = self._design.canvas_w_px * self._design.canvas_h_px
+        logger.info(f"[PreviewCanvas._render_async] total_pixels={total_pixels}, canvas_w_px={self._design.canvas_w_px}, canvas_h_px={self._design.canvas_h_px}")
 
         # 取消并清理之前未完成的后台渲染
         # [F16 修复] 不再只 requestInterruption() 就丢弃引用——旧 worker 注册
