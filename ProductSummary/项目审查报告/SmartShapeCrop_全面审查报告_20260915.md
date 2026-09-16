@@ -160,7 +160,7 @@
 
 #### P2-7: 依赖版本未锁定
 
-- **位置**: `requirements.txt`
+- **位置**: `../../requirements.txt`
 - **现状**: 所有依赖使用 `>=` 约束，未锁定精确版本
 - **影响**: 不同环境安装的版本可能不一致，引入兼容性风险
 - **建议**: 生成 `requirements.lock` 或使用 `pyproject.toml` + 锁定文件
@@ -183,19 +183,19 @@
 
 | 模块 | 严重度 | 说明 |
 |------|--------|------|
-| `core/image_cropper_mask.py` | P1 | 核心裁剪掩码逻辑，仅间接覆盖 |
-| `core/image_cropper_border.py` | P1 | 边框裁剪逻辑，仅间接覆盖 |
-| `core/app_settings.py` | P1 | 应用设置持久化，无测试 |
-| `workers/` | P1 | 所有 Worker 线程无测试 |
-| `models/design_model.py` | P1 | 数据模型无测试 |
-| `core/compat/` | P2 | 兼容层 |
-| `core/psd/` | P2 | PSD 加载 |
-| `core/log_setup.py` | P2 | 日志配置 |
+| `../../core/image_cropper_mask.py` | P1 | 核心裁剪掩码逻辑，仅间接覆盖 |
+| `../../core/image_cropper_border.py` | P1 | 边框裁剪逻辑，仅间接覆盖 |
+| `../../core/app_settings.py` | P1 | 应用设置持久化，无测试 |
+| `../../workers` | P1 | 所有 Worker 线程无测试 |
+| `../../models/design_model.py` | P1 | 数据模型无测试 |
+| `../../core/compat` | P2 | 兼容层 |
+| `../../core/psd` | P2 | PSD 加载 |
+| `../../core/log_setup.py` | P2 | 日志配置 |
 
 ### 4.3 测试基础设施
 
-- `conftest.py` + `pytest.ini` 已配置忽略 `scripts/_archive` 等目录（正面）
-- `.workbuddy/` 下存在 3 个诊断脚本，非正式测试（P2）
+- `../../conftest.py` + `../../pytest.ini` 已配置忽略 `scripts/_archive` 等目录（正面）
+- `../../.workbuddy` 下存在 3 个诊断脚本，非正式测试（P2）
 - 最近测试运行: 433 passed, 0 failed（2026-09-12 memory 记录）
 
 ---
@@ -207,19 +207,19 @@
 - `scripts/diagnose/_archive/` 约 73 个 .py 文件（verification_scripts/、debug_scripts/、ocr_scripts/）
 - `scripts/_archive/` 另有历史脚本
 - `scripts/verify/_archive/` 同类堆积
-- **风险**: 维护成本高，可能误导开发；`conftest.py` 已屏蔽收集，但代码本身仍占空间
+- **风险**: 维护成本高，可能误导开发；`../../conftest.py` 已屏蔽收集，但代码本身仍占空间
 - **建议**: 定期归档到 git history 或独立分支
 
 ### 5.2 打包配置
 
-- `packaging/README.md` 明确唯一打包入口为 `packageV2.2.py`（正面）
-- 但 `packaging/legacy/` 仍存 4 个历史版本（package.py/packageV2.0.py/packageV2.1.py/packageV2.1.2.py）
+- `../../packaging/README.md` 明确唯一打包入口为 `packageV2.2.py`（正面）
+- 但 `../../packaging/legacy` 仍存 4 个历史版本（package.py/packageV2.0.py/packageV2.1.py/packageV2.1.2.py）
 - 根目录存在 `.spec` 文件（`智能裁剪设计器V2.2.1.spec`、`智能裁剪设计器V2.2.spec`）
-- **建议**: 清理 legacy 和根目录 .spec，统一到 `packaging/specs/`
+- **建议**: 清理 legacy 和根目录 .spec，统一到 `../../packaging/specs`
 
 ### 5.3 无 pyproject.toml
 
-- 项目使用 `requirements.txt` 管理 Python 依赖
+- 项目使用 `../../requirements.txt` 管理 Python 依赖
 - 缺少 `pyproject.toml`，无法利用现代 Python 打包生态（PEP 517/518）
 - **建议**: 添加 `pyproject.toml`，迁移配置
 
@@ -229,12 +229,12 @@
 
 ### 6.1 路径遍历
 
-- **风险**: 低。`services/sketch_parser/` 的 `image_path` 参数有 `os.path.isfile` 检查（`sketch_parser_vision.py:135-140`）
+- **风险**: 低。`../../services/sketch_parser` 的 `image_path` 参数有 `os.path.isfile` 检查（`sketch_parser_vision.py:135-140`）
 - **建议**: 增加 `os.path.realpath` + 白名单前缀检查
 
 ### 6.2 subprocess 调用
 
-- **风险**: 低。`packaging/packageV2.2.py` 使用 `subprocess.run()` 调用 PyInstaller，参数为固定值，非用户输入
+- **风险**: 低。`../../packaging/packageV2.2.py` 使用 `subprocess.run()` 调用 PyInstaller，参数为固定值，非用户输入
 - **正面**: 服务层通过 `pytesseract` 间接调用 Tesseract，未直接使用 `subprocess` 或 `os.popen()`
 
 ### 6.3 日志信息

@@ -113,12 +113,12 @@ KEEP = Rect(185×88) − Cut(tr, 35×10) − Hole(80×60)
 | 洞 mask | `core/image_ops.py:1496` + `fill_rect_mask` | 单洞 / 多洞 UNION 两套逻辑都在 |
 | 洞的逐洞 10px 黑框 | `core/image_ops.py:1089-1127` | **"full & ~shrunk" 环带算法现成**，可直接复用到洞 |
 | L 形切边 10px 黑框 | `core/image_ops.py:1144-1162` | 逐 cut 的"L 形 & ~收缩 L 形"算法现成 |
-| L 形素材边框补全（逐角调度） | `core/lshape_border.py` + `lshape_border_route.py` | **V1.1 第二期已完成"逐角调度 + 相邻角冲突策略"**，这是 F-1 最大的前置债务，已还清 |
-| L 形草图几何识别 | `services/sketch_parser/lshape_sketch_parser.py` | 用 `RETR_EXTERNAL` 取**最大外轮廓**做凹角检测 → **中间多一个洞不影响外轮廓提取** |
+| L 形素材边框补全（逐角调度） | `../../core/lshape_border.py` + `lshape_border_route.py` | **V1.1 第二期已完成"逐角调度 + 相邻角冲突策略"**，这是 F-1 最大的前置债务，已还清 |
+| L 形草图几何识别 | `../../services/sketch_parser/lshape_sketch_parser.py` | 用 `RETR_EXTERNAL` 取**最大外轮廓**做凹角检测 → **中间多一个洞不影响外轮廓提取** |
 | 4 行挖角 UI + 实时边余量提示 | `gui/lshape_panel.py:236-259` | 现成 |
-| G1/G2/G3 闸口 | 识别层 + `gui/lshape_panel.py` + `canvas_widget.py` | 现成的"识别不完整必须报警"防线，复合模式可直接继承 |
+| G1/G2/G3 闸口 | 识别层 + `../../gui/lshape_panel.py` + `canvas_widget.py` | 现成的"识别不完整必须报警"防线，复合模式可直接继承 |
 | 手动修正通路 | `_params_source` + 就地编辑 | 现成（V1.1 §7 判定为零风险通路） |
-| 后台线程 / 打包内嵌 Tesseract | `workers/`、`packaging/packageV2.2.py` | 零改动 |
+| 后台线程 / 打包内嵌 Tesseract | `../../workers`、`../../packaging/packageV2.2.py` | 零改动 |
 
 **结论：约 85% 的管线可复用。真正要新写的只有"把两块 mask 组合起来 + 让草图多认几个数"。**
 
@@ -139,10 +139,10 @@ core/image_ops.py:1510   else:  # ellipse_hole               ... return
 
 | 文件 | 处数 | 行号 |
 |---|---|---|
-| `core/image_ops.py` | 9 | 733, 759, 779, 1050, 1068, 1144, 1204, 1223, 1502 |
-| `gui/property_panel_generate.py` | 6 | 204, 220, 270, 327, 479, 522 |
-| `core/geometry.py` | 2 | 277, 584 |
-| `models/design_model.py` | 2 | 114, 166 |
+| `../../core/image_ops.py` | 9 | 733, 759, 779, 1050, 1068, 1144, 1204, 1223, 1502 |
+| `../../gui/property_panel_generate.py` | 6 | 204, 220, 270, 327, 479, 522 |
+| `../../core/geometry.py` | 2 | 277, 584 |
+| `../../models/design_model.py` | 2 | 114, 166 |
 
 字面量总量：`'rect_lshape'` 28 次、`'rect_hole'` 14 次、`'ellipse_hole'` 9 次。
 
@@ -238,7 +238,7 @@ core/image_ops.py:1510   else:  # ellipse_hole               ... return
 
 ### 3.1 为什么不选 A（新建项目）
 
-1. **图形引擎 100% 重复**：`core/geometry.py`(873) + `core/image_ops.py`(1785) + `core/corner/` + `core/lshape_border.py`(1255) + `core/lshape_border_route.py`(648) 全是纯函数，没有哪个"新项目"能绕开。
+1. **图形引擎 100% 重复**：`../../core/geometry.py`(873) + `../../core/image_ops.py`(1785) + `../../core/corner` + `../../core/lshape_border.py`(1255) + `../../core/lshape_border_route.py`(648) 全是纯函数，没有哪个"新项目"能绕开。
 2. **OCR 与打包是重资产**：Tesseract 内嵌、`PathResolver` 跨平台探测、五层架构、PyInstaller hidden imports 清单，重做一遍纯浪费。
 3. **双份维护的代价已经付过一次**：L 形边框补全的三级路由（Profile / V13 / 旧路径）是被真实案例反复打磨出来的，任何副本都会立刻开始漂移。
 4. **业务上这不是新产品**：客户要的还是"裁剪有图的成品图"，只是形状更复杂。新的 exe 会让使用者操作路径分裂。
@@ -267,14 +267,14 @@ core/image_ops.py:1510   else:  # ellipse_hole               ... return
 
 > **贯穿全程的硬约束**：每一阶段结束时，现有 3 个模式行为必须 100% 不变（回归基线见 §9.2）。
 
-### 阶段 1 —— 几何层（`core/geometry.py`）· 0.5–1 天
+### 阶段 1 —— 几何层（`../../core/geometry.py`）· 0.5–1 天
 - 新增 `'rect_lshape_hole'` 到 `Literal` 与 `_VALID_MODES`
 - 新增 `build_composite_mask(...)`：`L 形(outer_rect, cuts) − 洞(inner_rect, 带圆角)`
 - `validate()` 新增复合分支（挖角约束按 **`outer_rect`** 计算；洞边距沿用现有逻辑）
 - `compute_border_bands()` 新增复合路由
 - **验收**：§7 的 4 项集合代数恒等式全 PASS + `validate()` 正/反例
 
-### 阶段 2 —— 渲染管线（`core/image_ops.py`）· 3–5 天
+### 阶段 2 —— 渲染管线（`../../core/image_ops.py`）· 3–5 天
 - `_get_inner_pixel_mask()` 新增复合分支：`inner_mask = hole_mask | cut_mask`
 - 类 ① 的 **8 处**渲染语义硬判断改为 `design.mode in LSHAPE_LAYOUT_MODES`
 - 类 ② 的 **2 处分派点**（`:1502`、`geometry.py:584`）新增独立复合分支
@@ -283,7 +283,7 @@ core/image_ops.py:1510   else:  # ellipse_hole               ... return
 - `_lshape_border_completion()` 触发条件纳入复合模式
 - **验收**：渲染 POC 与 §7 一致；3 个旧模式黄金样本**像素级**比对无差异
 
-### 阶段 3 —— 草图识别（`services/sketch_parser/`）· 3–5 天
+### 阶段 3 —— 草图识别（`../../services/sketch_parser`）· 3–5 天
 - 新增 `composite_sketch_parser.py`
   - **可复用**：`_extract_largest_contour`（`RETR_EXTERNAL` → 中间有洞不影响）、`_detect_concave_sliding_window`、`_detect_by_convex_hull`、`_finalize_lshape_geometry`
   - **需新增**：洞的内轮廓提取（`RETR_CCOMP` / `RETR_TREE`）
@@ -292,22 +292,22 @@ core/image_ops.py:1510   else:  # ellipse_hole               ... return
 - 外框真值始终信任目标文件名（沿用 `parse_lshape_sketch` 既有不变量）
 - **验收**：对 `测试草图文件-综合中间+L形` 与 `测试草图文件-L形+中间挖洞` 两个真实案例，10 个数值误差 ≤ 0.5 cm；OCR 不可用时几何降级不崩溃
 
-### 阶段 4 —— 外壳（`gui/`）· 1–2 天
-- **C 路线**：`gui/lshape_panel.py` 追加「同时中间挖洞」GroupBox（勾选 + 洞宽高 + 四边距 + 挖空方式），`get_lshape_params()` 附加 hole 字段
-- **B 路线**：`gui/composite_panel.py` **继承 `LShapePanel()`**，覆写 `get_lshape_params()`；`main.py` 三处装配 + `closeEvent`/`aboutToQuit` 两处线程退役
-- `gui/property_panel.py`：`_cb_mode` 追加第 4 项；**`:926` 硬编码映射改为 `_cb_mode.findData(mode)`**
-- `models/design_model.py`：新增复合分支（**关键**：inner_margin 必须允许写入，不能被 `mode != 'rect_lshape'` 的值守挡住）
+### 阶段 4 —— 外壳（`../../gui`）· 1–2 天
+- **C 路线**：`../../gui/lshape_panel.py` 追加「同时中间挖洞」GroupBox（勾选 + 洞宽高 + 四边距 + 挖空方式），`get_lshape_params()` 附加 hole 字段
+- **B 路线**：`gui/composite_panel.py` **继承 `LShapePanel()`**，覆写 `get_lshape_params()`；`../../main.py` 三处装配 + `closeEvent`/`aboutToQuit` 两处线程退役
+- `../../gui/property_panel.py`：`_cb_mode` 追加第 4 项；**`:926` 硬编码映射改为 `_cb_mode.findData(mode)`**
+- `../../models/design_model.py`：新增复合分支（**关键**：inner_margin 必须允许写入，不能被 `mode != 'rect_lshape'` 的值守挡住）
 - **验收**：离屏 `QT_QPA_PLATFORM=offscreen` 面板构造冒烟 + 信号契约测试
 
 ### 阶段 5 —— 回归与打包 · 1–2 天
 - 新增 `tests/core/test_composite_shape.py`（几何 + 校验）、`tests/integration/test_composite_flow.py`（端到端）
 - 全量测试回归 + 旧 3 模式像素级比对
-- `packaging/packageV2.2.py` 与 spec 补 hidden import；**核对 `dist/*.exe` 时间戳 ≥ 最新源码时间戳**
+- `../../packaging/packageV2.2.py` 与 spec 补 hidden import；**核对 `dist/*.exe` 时间戳 ≥ 最新源码时间戳**
 
 ### 阶段 6 —— 文档同步 · 0.5 天
-- `README.md`：架构概览 / 目录结构 / 核心模块说明 / 快速开始（测试数量）
+- `../../README.md`：架构概览 / 目录结构 / 核心模块说明 / 快速开始（测试数量）
 - `L形挖角已知问题与后续规划.md`：F-1 标记进度、SR-3 标记化解
-- `ProductSummary/` 归档（分类约定见附录 C）
+- `` 归档（分类约定见附录 C）
 
 ---
 
@@ -464,8 +464,8 @@ PASS  洞 ∩ 挖角 == 空（两区域不相交）
 1. **集合代数 4 项恒等式全部精确成立** —— 复合形状在现有几何原语上可以**纯组合**实现，无需新写几何算法。**这直接印证了 F-1 原定的"布尔 `Σ CutRect` 差集"方向是对的。**
 2. **面积误差 0.031%** 完全来自 `PIL.ImageDraw.rectangle` 的 1px 边界包含行为，与几何无关（已用像素级集合断言排除）。
 3. **洞与挖角不相交、不相邻** —— 证实 §1.3 判断，10px 黑框可**分形状绘制后 OR 合并**。
-4. 该脚本**未导入、未修改任何 `gui/` / `workers/` / `services/` 模块**，只读调用 `core.geometry` 的公开函数；本次分析对生产源码（`core/` `gui/` `models/` `services/` `workers/` `main.py`）**零改动**。
-   > 说明：执行时工作区存在**此前遗留的未提交改动**（`tests/core/test_lshape_render.py` +62 行"四角幂等回归"、`ProductSummary` 一份 md），与本次分析无关。
+4. 该脚本**未导入、未修改任何 `../../gui` / `../../workers` / `../../services` 模块**，只读调用 `core.geometry` 的公开函数；本次分析对生产源码（`../../core` `../../gui` `../../models` `../../services` `../../workers` `../../main.py`）**零改动**。
+   > 说明：执行时工作区存在**此前遗留的未提交改动**（`../../tests/core/test_lshape_render.py` +62 行"四角幂等回归"、`ProductSummary` 一份 md），与本次分析无关。
 
 > **这份 POC 可直接作为阶段 1 的回归基线**：实现 `build_composite_mask()` 后把脚本切换过去，4 项断言必须仍然全 PASS。
 
@@ -477,7 +477,7 @@ V1.1 §8 的推荐是「扩展现有 L 面板」，并有四条理由。逐条�
 
 | V1.1 §8 的理由 | 在"多角 vs 单角"上是否成立 | 在"L + 洞"上是否成立 | 说明 |
 |---|---|---|---|
-| ① **新面板解决不了任何硬骨头** | ✅ 成立（难点在 `core/lshape_border.py`） | ✅ **同样成立** | 所以本报告把面板定性为"外壳"，并推荐**先走改造量最小的 C 路线** |
+| ① **新面板解决不了任何硬骨头** | ✅ 成立（难点在 `../../core/lshape_border.py`） | ✅ **同样成立** | 所以本报告把面板定性为"外壳"，并推荐**先走改造量最小的 C 路线** |
 | ② **属同一参数族（1 个 cut → N 个 cut），是参数扩展非新功能** | ✅ 成立 | ❌ **不成立** | 洞不是 cut 的扩展：它有独立的 6 个参数、独立渲染语义（白底/素材 + 10px 黑框）、独立 OCR 标注体系（10 值 vs 6 值） |
 | ③ **识别层改造成本接近零，没理由为它单独开 UI** | ✅ 成立（多角数据早已算出） | ❌ **不成立** | 识别层成本不接近零：需新增**内轮廓提取**与**10 标注角色映射**，工作量对齐 V1.1 §5 的 3–5 天 |
 | ④ **项目有前车之鉴（寄生 + 多链路穿透）** | ✅ 成立 | ✅ **成立，且指向同一结论** | "洞参数寄生在水池面板"就是要避开的反模式 → 所以**否决方案 D**；**继承 `LShapePanel`** 而非复制脚手架，正是对这条教训的回应 |
@@ -493,12 +493,12 @@ V1.1 §8 的推荐是「扩展现有 L 面板」，并有四条理由。逐条�
 
 | 阶段 | 主要文件 | 预估 | 验证方式 |
 |---|---|---|---|
-| 1 几何层 | `core/geometry.py` | 0.5–1 天（~120 行） | 单元测试 + §7 POC 4 项断言 |
-| 2 渲染管线 | `core/image_ops.py` | 3–5 天（~150 行 + 8 处语义扩展） | POC 图 + 旧模式像素比对 |
+| 1 几何层 | `../../core/geometry.py` | 0.5–1 天（~120 行） | 单元测试 + §7 POC 4 项断言 |
+| 2 渲染管线 | `../../core/image_ops.py` | 3–5 天（~150 行 + 8 处语义扩展） | POC 图 + 旧模式像素比对 |
 | 3 草图识别 | `services/sketch_parser/composite_*.py` | 3–5 天（~350 行） | 2 个真实草图案例精度 |
-| 4 外壳 | `gui/lshape_panel.py`（C）或 `gui/composite_panel.py` + `main.py`（B） | 1–2 天（~150–250 行） | 离屏 GUI 冒烟 + 信号契约 |
-| 5 回归 + 打包 | `tests/`、`packaging/` | 1–2 天 | 全量测试 + exe 端到端 |
-| 6 文档 | `README.md` 等 | 0.5 天 | — |
+| 4 外壳 | `../../gui/lshape_panel.py`（C）或 `gui/composite_panel.py` + `../../main.py`（B） | 1–2 天（~150–250 行） | 离屏 GUI 冒烟 + 信号契约 |
+| 5 回归 + 打包 | `../../tests`、`../../packaging` | 1–2 天 | 全量测试 + exe 端到端 |
+| 6 文档 | `../../README.md` 等 | 0.5 天 | — |
 | **合计** | | **8–14 个工作日** | |
 
 > **与 F-1 原估（3–4 周）的差异说明**：F-1 立项时，"边框补全逐角调度 + 相邻角冲突策略"尚未完成（那正是 V1.1 判定为 7–10 天的唯一硬骨头）。该前置债务已由 `7524f30` / `300c3dc` 还清，因此总工期可下修。但**不能下修到"3 天"量级** —— 洞与 L 形边框补全的共存交互（C2/C3）是新工作，没有现成实现可抄。
@@ -508,8 +508,8 @@ V1.1 §8 的推荐是「扩展现有 L 面板」，并有四条理由。逐条�
 - **全量测试必须持平**：最近实测基线 **444 passed / 0 skipped / 0 failed**（2026-09-12，`.venv` 下运行）。
   README 中「380 passed / 7 skipped」的记载已过期，实现完成后需一并修正。
 - **旧 3 模式零退化**：`rect_hole` / `rect_lshape` / `ellipse_hole` 黄金样本输出**像素级**一致。
-- **V1.1 已验证的多角能力不退化**：`tests/core/test_multi_corner_detection.py`（6 项）、`tests/core/test_lshape_render.py` 四角幂等用例、`tests/integration/test_pool_lshape_flow.py`（7 项）必须全绿。
-- **改动面证据**：阶段 1–3 期间对 `gui/`、`workers/` 的 `git diff --stat` 应为空。
+- **V1.1 已验证的多角能力不退化**：`../../tests/core/test_multi_corner_detection.py`（6 项）、`../../tests/core/test_lshape_render.py` 四角幂等用例、`../../tests/integration/test_pool_lshape_flow.py`（7 项）必须全绿。
+- **改动面证据**：阶段 1–3 期间对 `../../gui`、`../../workers` 的 `git diff --stat` 应为空。
 
 ### 9.3 端到端验收清单
 
@@ -550,15 +550,15 @@ V1.1 §8 的推荐是「扩展现有 L 面板」，并有四条理由。逐条�
 ## 附录 B · 本项目已踩过的坑（本次改造须避免重蹈）
 
 1. **`git gc` / `repack` 在本机不零风险** —— 曾导致 `.git` 被清空、全部历史丢失。任何改动 `.git` 文件系统的操作前先 `cp -r .git .git.bak`。
-2. **`.gitignore` 对已追踪文件无效** —— `_archive/`、`.workbuddy/`、`.dumate/` 等规则只对未追踪文件生效；清理必须配套 `git rm --cached`，否则下次 checkout 会"复活"。
+2. **`../../.gitignore` 对已追踪文件无效** —— `_archive/`、`../../.workbuddy`、`../../.dumate` 等规则只对未追踪文件生效；清理必须配套 `git rm --cached`，否则下次 checkout 会"复活"。
 3. **"已删除"不是终态** —— `ProductSummary/2026-*` 日期目录曾整批重现。目录治理必须落到索引层。
 4. **缓存失效要校验来源** —— `_cached_outer_image` 曾因不校验 `_cached_outer_src` 导致"换素材后画面仍是旧素材"反复复发 5 次以上。
 5. **静默失效比崩溃危险** —— V1.1 §5.1 实测：识别漏掉一个挖角却报告"识别成功"。复合模式必须扩展 G1 闸口（§6.2 C1）。
-6. **交付物时间戳必须核验** —— 曾出现 `dist/*.exe`(14:22) 落后于 `main.py`(15:11)。
+6. **交付物时间戳必须核验** —— 曾出现 `dist/*.exe`(14:22) 落后于 `../../main.py`(15:11)。
 
 ## 附录 C · 文档归档建议
 
-按项目 `ProductSummary/` 文档分类约定（单一维度：模块为主 + 月度总结单列），本分析归属**分析报告**类：
+按项目 `` 文档分类约定（单一维度：模块为主 + 月度总结单列），本分析归属**分析报告**类：
 
 ```
 ProductSummary/SmartShapeCrop分析报告/
@@ -568,7 +568,7 @@ ProductSummary/SmartShapeCrop分析报告/
 与既有同族文档并列（`多角L形挖角可行性分析 V1.0/V1.1`、`多洞面板拆分可行性分析 V1.0`），便于按"F-1 演进线"追溯。
 
 实现完成后同步更新：
-- `README.md`：架构概览 / 目录结构 / 核心模块说明 / 快速开始（测试数量）
+- `../../README.md`：架构概览 / 目录结构 / 核心模块说明 / 快速开始（测试数量）
 - `L形挖角已知问题与后续规划.md`：F-1 标记进度、SR-3 标记化解
 
 ---
