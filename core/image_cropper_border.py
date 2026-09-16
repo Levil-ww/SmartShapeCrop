@@ -246,6 +246,93 @@ def _redraw_outer_border_on_corners(
 
 
 
+def _find_first_color_change_from_edge(
+    img: Image.Image,
+    outer_color: tuple[int, int, int],
+    max_scan: int = 30,
+    delta_e: float = 25.0,
+    min_run: int = 3,
+) -> int | None:
+    """
+    从图像边缘向内窄窗口扫描，找到第一个显著颜色变化的距离。
+
+    用于修正无白色外背景素材的边框厚度检测。
+    当素材没有白色外背景（如黑色大理石）时，标准边框检测算法会把
+    "从边缘到第一个颜色变化点的距离"当作最外层厚度，但若内部颜色与边缘接近
+    （全黑/全深色），检测距离会被严重高估（75px+）。本函数做窄窗口高精度扫描，
+    找到边缘描边的真实厚度。
+
+    扫描策略：从 4 条边的中点向内各取一条扫描线，对每条线独立查找第一个满足
+    ΔE > delta_e 且连续 ≥ min_run 像素的位置，取所有边上的最小值。
+
+    Args:
+        img: 输入图片（RGB）
+        outer_color: 已检测到的最外层颜色
+        max_scan: 最大扫描深度（像素），默认 30px
+        delta_e: 颜色变化阈值（欧氏距离），默认 25
+        min_run: 连续变化最小长度（像素），默认 3
+
+    Returns:
+        第一个显著颜色变化点的距离（像素），若所有扫描线在 max_scan 内都没找到
+        变化则返回 None。
+    """
+    w, h = img.size
+    arr = np.array(img, dtype=np.float64)
+    outer = np.array(outer_color, dtype=np.float64)
+
+    scan_configs = [
+        ('bottom', w // 2, None),
+        ('top', w // 2, None),
+        ('left', h // 2, None),
+        ('right', h // 2, None),
+    ]
+
+    all_changes: list[int] = []
+    MAX_SCAN_LIMIT = min(max_scan, 200)  # 防止过度扫描
+
+    for edge, pos, _ in scan_configs:
+        if edge in ('bottom', 'top'):
+            depth = min(MAX_SCAN_LIMIT, h // 6)  # 窄窗口
+            if depth < 5:
+                continue
+            if edge == 'bottom':
+                y_indices = np.arange(h - 1, h - 1 - depth, -1)
+            else:
+                y_indices = np.arange(depth)
+            seq = arr[y_indices, pos, :]
+        else:
+            depth = min(MAX_SCAN_LIMIT, w // 6)
+            if depth < 5:
+                continue
+            if edge == 'left':
+                x_indices = np.arange(depth)
+            else:
+                x_indices = np.arange(w - 1, w - 1 - depth, -1)
+            seq = arr[pos, x_indices, :]
+
+        # 计算与 outer_color 的 ΔE
+        diff = np.sqrt(np.sum((seq - outer) ** 2, axis=1))
+
+        # 找第一个 diff > delta_e 且连续 min_run 个
+        found_at = None
+        run = 0
+        for i in range(len(diff)):
+            if diff[i] > delta_e:
+                run += 1
+                if run >= min_run:
+                    found_at = i - min_run + 1  # 变化起点
+                    break
+            else:
+                run = 0
+
+        if found_at is not None:
+            all_changes.append(found_at)
+
+    if all_changes:
+        return min(all_changes)
+    return None
+
+
 def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
                                dpi: int = 150, bg_color: tuple = (255, 255, 255),
                                border_width_cm: float = _DEFAULT_BORDER_WIDTH_CM,
@@ -367,7 +454,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # apply_border_only_corners 语义：仅对外层边框带应用圆角，内部永远保持直角。
     # 因此所有角统一启用内容区保护模式，不再依赖 _corner_sector_has_content 的
     # 自动判断（旧自动判断在大半径、纯色背景扇形时会关闭保护，导致内层矩形框、
-    # 装饰带也被圆角化，与“仅边框圆角”语义冲突）。
+    # 装饰带也被圆角化，与"仅边框圆角"语义冲突）。
     #
     # [Fix 2026-09-07] 只使用最外层边框构建 mask / validity_mask / 重绘：
     #   若传入完整 border_layers，raw_depth 会把内层文字带/装饰带也算进
@@ -375,6 +462,56 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     #   border_only 模式下只需处理最外层边框，内层图案一律保持直角。
     outermost_layers = [border_layers[0]] if border_layers else []
     raw_depth = outermost_layers[0][1] if outermost_layers else 0
+
+    # [Fix 2026-09-16 黑色大理石阴影弧角 + 颜色不一致]
+    #
+    # 问题 1 - 阴影弧角：
+    #   无白色外背景素材（如黑色大理石）的边框检测会把"到第一个颜色变化点的距离"
+    #   当作最外层厚度。当内部颜色与边缘颜色接近时，这个距离可能很大（75px+），
+    #   但实际描边只有几像素。过大的 raw_depth 导致 border_zone / ring_region /
+    #   validity_mask 过宽，圆角边界形成多余的阴影弧形过渡带。
+    #
+    # 问题 2 - 重绘颜色不一致：
+    #   border detection 的颜色是平滑序列段的均值，抗锯齿过渡像素 + 内部深色会把
+    #   检测颜色从真实描边色拉偏（如 8→10、20→25）。圆角重绘用这个偏色后，与
+    #   原素材直线段的描边颜色产生肉眼可见的色差。
+    #
+    # 修复：对无白色外背景素材，从图像真实边缘采样中位色，独立修正：
+    #   1) 颜色修正：替换 border_layers 中的检测均值色为真实边缘色
+    #   2) 厚度修正：窄窗口扫描找到真实描边厚度（ΔE > 25，持续 ≥ 3px）
+    #
+    # 注意：必须用图像真实边缘颜色，而不是 border_layers 合并后的颜色——
+    # border_layers 会把窄描边与内部相似颜色合并，导致扫描完全失效。
+    if outermost_layers:
+        outer_bg_for_this = _estimate_outer_background(img)
+        outer_bg_mean = float(np.mean(outer_bg_for_this))
+        if outer_bg_mean <= 200:  # 无白色外背景
+            # 从图像真实边缘采样中位色（避免 border_layers 均值拉偏颜色）
+            img_arr_for_scan = np.array(img)
+            edge_top = img_arr_for_scan[0, w // 2, :]
+            edge_bottom = img_arr_for_scan[h - 1, w // 2, :]
+            edge_left = img_arr_for_scan[h // 2, 0, :]
+            edge_right = img_arr_for_scan[h // 2, w - 1, :]
+            edge_color_arr = np.median([edge_top, edge_bottom, edge_left, edge_right], axis=0)
+            edge_color = tuple(int(c) for c in edge_color_arr)
+
+            # === 颜色修正：始终替换检测均值色为真实边缘色 ===
+            detected_color, old_depth = outermost_layers[0]
+            outermost_layers = [(edge_color, old_depth)]
+
+            # === 厚度修正：独立判断是否需要调小 ===
+            actual_outer = _find_first_color_change_from_edge(img, edge_color)
+            if actual_outer is not None and actual_outer < raw_depth:
+                raw_depth = actual_outer
+                outermost_layers = [(edge_color, actual_outer)]
+
+            if detected_color != edge_color or (actual_outer is not None and actual_outer != old_depth):
+                logger.info(
+                    f"[BORDER] no-white-bg correction: "
+                    f"color {detected_color}->{edge_color}, "
+                    f"thickness {old_depth}px->{raw_depth}px"
+                )
+
     corner_protect_map: dict[str, bool] = {
         ck: (r_px > 0) for ck, r_px in corners_px.items()
     }
