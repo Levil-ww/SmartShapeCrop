@@ -557,10 +557,13 @@ def _redraw_border_on_corner(
         valid_region = valid_region & validity_arr
 
     # === [Fix 圆角断触/白色空隙/粗细不一致 2026-09-05] 三区域渐进内容保护 ===
-    content_protect_mask = _build_content_protection_mask(
-        src_arr, border_layers, bg_color, corner_key, roi_w, roi_h,
-        depth, xx, yy, total_border_depth,
-    )
+    # [PERF 2026-09-17] 提前裁剪：无源图时跳过内容保护掩码计算（需要 src_arr）
+    content_protect_mask = None
+    if src_arr is not None:
+        content_protect_mask = _build_content_protection_mask(
+            src_arr, border_layers, bg_color, corner_key, roi_w, roi_h,
+            depth, xx, yy, total_border_depth,
+        )
 
     # === [Fix INV-1/INV-3/INV-5 + 玛利亚玫瑰] 处理弧线外侧区域（第一次清理） ===
     _clear_beyond_arc_pixels(result_arr, valid_angle, dist, R_total, validity_arr, bg_color)

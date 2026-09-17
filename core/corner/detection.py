@@ -695,16 +695,19 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     # 判据：真实边框系统中，相邻边框层（含间隙层）之间的间距不会太大。
     #       若两个非背景层之间的原始深度差 > MAX_BORDER_GAP_PX，
     #       说明内层其实是内容元素，截断丢弃。
+    # [PERF 2026-09-17] 使用 np.diff() 向量化间隙计算，替代 Python 循环
     if len(layers) >= 2:
-        valid_layers = [layers[0]]
-        for i in range(1, len(layers)):
-            prev_end = layers[i - 1][2] + layers[i - 1][1]
-            cur_start = layers[i][2]
-            gap = cur_start - prev_end
-            if gap > BORDER_MAX_GAP_PX:
-                break
-            valid_layers.append(layers[i])
-        layers = valid_layers
+        # 计算每层的结束位置 = start_depth + thickness
+        ends = np.array([layers[i][2] + layers[i][1] for i in range(len(layers))])
+        # 计算每层的开始位置
+        starts_arr = np.array([layers[i][2] for i in range(len(layers))])
+        # 计算相邻层之间的间隙：gap[i] = starts[i+1] - ends[i]
+        gaps = starts_arr[1:] - ends[:-1]
+        # 找到第一个超过阈值的间隙
+        large_gap_indices = np.where(gaps > BORDER_MAX_GAP_PX)[0]
+        if len(large_gap_indices) > 0:
+            cut_at = large_gap_indices[0] + 1  # 保留到第一个大间隙之前
+            layers = layers[:cut_at]
 
     # 起始深度仅用于上述间隙校验，之后恢复为 (color, thickness) 二元组
     layers = [(c, t) for c, t, _sd in layers]
