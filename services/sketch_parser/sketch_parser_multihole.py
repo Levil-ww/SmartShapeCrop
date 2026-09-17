@@ -32,11 +32,8 @@ from typing import Optional
 
 import numpy as np
 
-try:
-    from PIL import Image
-    Image.MAX_IMAGE_PIXELS = 200_000_000
-except Exception:
-    Image = None  # type: ignore
+# [Q-06] PIL 解压炸弹防护统一收敛到共享初始化模块（各子模块不再重复设置）
+from ._sketch_init import Image  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

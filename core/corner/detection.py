@@ -32,6 +32,14 @@ from ..config import (
     BORDER_SCAN_MAX_DEPTH_PX,
     BORDER_MAX_SINGLE_LAYER_CM,
     BORDER_MAX_TOTAL_CM,
+    BORDER_MAX_GAP_PX,
+    BORDER_ALT_COLOR_DIST,
+    BORDER_ALT_THICK_RATIO,
+    BORDER_CONTENT_REF_DIST,
+    BORDER_FAKE_THICK_RATIO,
+    BORDER_FAKE_JUMP_RATIO,
+    BORDER_THIN_LAYER_CM,
+    BORDER_HARD_MAX_LAYERS,
     CM_PER_INCH,
 )
 
@@ -102,14 +110,18 @@ def _enforce_border_thickness_caps(
             cur_is_fake = False
             
             # 规则 A：原逻辑（保留）
-            if cur_t >= MAX_SINGLE_PX * 0.85 and prev_t > 0 and cur_t >= prev_t * 3:
+            if cur_t >= MAX_SINGLE_PX * BORDER_FAKE_THICK_RATIO and prev_t > 0 \
+                    and cur_t >= prev_t * BORDER_FAKE_JUMP_RATIO:
                 cur_is_fake = True
-            
+
             # 规则 B：新增 - 薄边框后的3倍跃变
             # 前一层是薄边框(<=1cm)，当前层突然3倍以上 → 内容区伪装
-            THIN_BORDER_PX = int(round(1.0 * px_per_cm))  # 1cm in pixels
+            #   - 薄边框(如黑边框5-10px)之后出现一个3倍厚的层(内容区48px)
+            #   - 这几乎可以确定是内容区被误判，因为真正的多层边框厚度是渐进的
+            THIN_BORDER_PX = int(round(BORDER_THIN_LAYER_CM * px_per_cm))
             if not cur_is_fake and prev_t >= 2 and prev_t <= THIN_BORDER_PX:
-                if cur_t >= prev_t * 3 and cur_t >= 3 * BORDER_MIN_LAYER_THICKNESS_PX:
+                if cur_t >= prev_t * BORDER_FAKE_JUMP_RATIO \
+                        and cur_t >= BORDER_FAKE_JUMP_RATIO * BORDER_MIN_LAYER_THICKNESS_PX:
                     cur_is_fake = True
             
             # 规则 C：新增 - 累计深度检查
@@ -161,9 +173,8 @@ def _enforce_border_thickness_caps(
     # Step 4: [Fix Moshang] 最大层数限制
     # 真实边框通常不超过 4 层（如 塞纳时光 = 3 层），超过则极可能是内容花纹被误判
     # 保留最外层的层（它们最可能是真实边框）
-    MAX_LAYERS_HARD = 4
-    if len(layers) > MAX_LAYERS_HARD:
-        layers = layers[:MAX_LAYERS_HARD]
+    if len(layers) > BORDER_HARD_MAX_LAYERS:
+        layers = layers[:BORDER_HARD_MAX_LAYERS]
 
     return layers
 
@@ -369,7 +380,7 @@ def get_solid_border_colors(
 def _filter_layers_by_content_ref(
     layers: list[tuple[tuple[int, int, int], int]],
     content_ref: np.ndarray,
-    dist_threshold: float = 35.0,
+    dist_threshold: float = BORDER_CONTENT_REF_DIST,
 ) -> list[tuple[tuple[int, int, int], int]]:
     """
     [Fix P0-3 新增] 用内容参考色过滤伪边框层。
@@ -685,13 +696,12 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     #       若两个非背景层之间的原始深度差 > MAX_BORDER_GAP_PX，
     #       说明内层其实是内容元素，截断丢弃。
     if len(layers) >= 2:
-        MAX_BORDER_GAP_PX = 20.0
         valid_layers = [layers[0]]
         for i in range(1, len(layers)):
             prev_end = layers[i - 1][2] + layers[i - 1][1]
             cur_start = layers[i][2]
             gap = cur_start - prev_end
-            if gap > MAX_BORDER_GAP_PX:
+            if gap > BORDER_MAX_GAP_PX:
                 break
             valid_layers.append(layers[i])
         layers = valid_layers
@@ -712,15 +722,15 @@ def _detect_border_layers(img: Image.Image, max_scan_depth_px: int = BORDER_SCAN
     #         并回退到最近的"与内容色距离大"的边界，避免在花纹中间截断。
     # 判据 3: 最小边框系统 — 至少保留前 2 层（外层+间隙），以防误截。
     if len(layers) > 2:
-        ALT_COLOR_DIST = 20.0  # 判定"同色回归"的距离阈值
-        ALT_THICK_RATIO = 0.5  # 相邻厚度比例 > 此值判定为周期厚度相似
         cut_idx = len(layers)
         for i in range(4, len(layers)):
             ci = np.array(layers[i][0], dtype=np.float64)
             ci2 = np.array(layers[i - 2][0], dtype=np.float64)
             d_alt = float(np.sqrt(np.sum((ci - ci2) ** 2)))
             t_ratio = min(layers[i][1], layers[i - 2][1]) / max(1, max(layers[i][1], layers[i - 2][1]))
-            if d_alt <= ALT_COLOR_DIST and t_ratio >= ALT_THICK_RATIO:
+            # BORDER_ALT_COLOR_DIST：判定"同色回归"的距离阈值
+            # BORDER_ALT_THICK_RATIO：相邻厚度比例 >= 此值判定为周期厚度相似
+            if d_alt <= BORDER_ALT_COLOR_DIST and t_ratio >= BORDER_ALT_THICK_RATIO:
                 # 已进入 A↔B 交替模式，在此之前截断（但至少保留 2 层）
                 cut_idx = max(2, i - 1)
                 break

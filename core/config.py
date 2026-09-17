@@ -127,6 +127,33 @@ BORDER_MAX_SINGLE_LAYER_CM: float = 2.0
 # [硬约束] 总边框厚度 ≤ 3cm，防止多层边框误判
 BORDER_MAX_TOTAL_CM: float = 3.0
 
+# [Q-05] 伪层过滤与截断阈值（原 detection.py 函数体内硬编码，迁移至此统一调参，数值不变）
+
+# 相邻边框层最大间隙（像素）：两个非背景层的原始深度差超过此值，
+# 内层判定为内容元素并截断丢弃（Fix 塞纳时光米色弧形缺口）
+BORDER_MAX_GAP_PX: float = 20.0
+
+# 花纹周期截断（Fix P0-7）：判定 A↔B 连续交替模式的两个条件
+# 同色回归距离：color[i] 与 color[i-2] 欧氏距离 <= 此值视为同色回归
+BORDER_ALT_COLOR_DIST: float = 20.0
+# 厚度相似比例：min/max 相邻厚度比 >= 此值视为周期厚度相似
+BORDER_ALT_THICK_RATIO: float = 0.5
+
+# 内容参考色过滤距离（Fix P0-3）：层颜色与内容参考色欧氏距离 <= 此值
+# 视为内容/背景伪装层（有有效边框邻居时保留为间隙层）
+BORDER_CONTENT_REF_DIST: float = 35.0
+
+# 伪边框层判定（Fix Moshang 墨上花开/花幔）：
+# 厚度达单层上限的比例：cur_t >= MAX_SINGLE_PX * 此值 且为前一层跳变倍数以上 → 伪边框
+BORDER_FAKE_THICK_RATIO: float = 0.85
+# 跳变倍数：cur_t >= prev_t * 此倍数 → 疑似内容区伪装（规则 A/B 共用）
+BORDER_FAKE_JUMP_RATIO: float = 3.0
+# 薄边框厚度上限（cm）：前一层 <= 此值视为薄边框（规则 B 前提）
+BORDER_THIN_LAYER_CM: float = 1.0
+
+# 层数硬上限（Fix 墨上花开 Step 4）：真实边框极少超过此层数，超出部分丢弃
+BORDER_HARD_MAX_LAYERS: int = 4
+
 
 # ============================================================================
 # 统一间隙层判定阈值（classify_gap_layers，与 image_cropper.py/sector_render.py 一致）
