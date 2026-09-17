@@ -423,6 +423,16 @@ def _dir_size_mb(path: Path) -> float:
 
 def _find_tesseract_install() -> Path | None:
     """查找本机已安装的 Tesseract-OCR 目录（包含 tesseract.exe + tessdata 子文件夹）。"""
+    # [Q-04] 优先读取 TESSERACT_PATH 环境变量（可指向 tesseract.exe 或安装目录）
+    env_path = os.environ.get('TESSERACT_PATH', '').strip().strip('"')
+    if env_path:
+        p = Path(env_path)
+        if p.is_file():
+            p = p.parent
+        if ((p / "tesseract.exe").is_file() or (p / "tesseract").is_file()) \
+                and (p / "tessdata").is_dir():
+            return p
+
     # 使用 PathResolver 跨平台查找
     try:
         from core.config import PathResolver
@@ -455,10 +465,6 @@ def _find_tesseract_install() -> Path | None:
             return p
         if (p / "tesseract").is_file() and (p / "tessdata").is_dir():
             return p
-    # 环境变量覆盖
-    env_path = os.environ.get('TESSERACT_PATH', '')
-    if env_path and os.path.isfile(env_path):
-        return Path(os.path.dirname(env_path))
     return None
 
 

@@ -33,9 +33,17 @@ class CropWorker(QThread):
 
     def run(self):
         try:
+            # [Q-02] 取消检查：被中断时静默返回，不回传过期结果（QThread.finished 仍会发出，
+            #   GUI 层 finished→deleteLater 清理不受影响）
+            if self.isInterruptionRequested():
+                return
             result = crop_image(self._config)
+            if self.isInterruptionRequested():
+                return
             self.finished_ok.emit(result)
         except Exception as e:
+            if self.isInterruptionRequested():
+                return
             self.finished_err.emit(str(e))
 
 

@@ -8,25 +8,13 @@ _SketchDecodeWorker / _WarmupScanWorker / _LShapeParseWorker。
 from __future__ import annotations
 import logging
 import os
-from datetime import date, datetime, timedelta
-from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize
-from PyQt5.QtGui import QColor, QPixmap
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QDoubleSpinBox,
-    QSpinBox, QComboBox, QPushButton, QCheckBox, QFileDialog, QLineEdit,
-    QColorDialog, QFrame, QScrollArea, QMessageBox, QProgressDialog,
-    QToolButton, QMenu, QAction, QDialog, QApplication,
-)
-from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
+from PyQt5.QtCore import pyqtSignal, QThread
 from PIL import Image
 
-from core.geometry import CropDesign, BorderLayer, BorderText
+from core.geometry import CropDesign
 from core.config import CUT_LOSS_CM
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
-from core.app_settings import get_app_settings
-from services.sketch_parser import validate_sketch_file
-from services.sketch_parser.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
 
 logger = logging.getLogger(__name__)
 

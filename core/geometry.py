@@ -312,6 +312,10 @@ class CropDesign:
                 ('右边', ('tr', 'br'), 'cut_h_cm', inner_h_cm),
             )
             for edge_name, corners, size_key, edge_length_cm in edge_limits:
+                # F1 守卫：内矩形退化（边距之和超过画布）时边长为负，
+                # 边长校验对任何挖角都会误报超限，交给渲染层退化守卫处理
+                if edge_length_cm <= 0:
+                    continue
                 edge_sum_cm = sum(
                     float(cut_by_corner[corner][size_key])
                     for corner in corners

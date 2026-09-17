@@ -160,8 +160,9 @@ class AppSettings:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self._fallback_path)
-        except OSError:
-            pass
+        except OSError as e:
+            # [Q-03] 写入失败不再静默：记录 warning，便于排查用户设置丢失问题
+            logger.warning(f"应用设置 JSON 后备文件写入失败 path={self._fallback_path}: {e}")
 
     # ------------------------------------------------------------
     # 历史记录
