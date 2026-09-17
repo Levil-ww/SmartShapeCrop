@@ -4,27 +4,66 @@
 |---|---|
 | 文档类型 | ADR(架构决策记录) |
 | 主题 | 单边阶梯 L 形挖角识别 + 与多边 L 形区分判定 |
-| 状态 | Proposed(待评审) |
+| 状态 | Revised(评审后修订 — 原核心结论不可行,方案重构为 CutRect 路线) |
+| 报告版本 | V2.1(2026-09-17 同日代码级评审补充) |
 | 日期 | 2026-09-17 |
 | 涉及模块 | `services/sketch_parser/`、`core/lshape_border*.py`、`workers/property_panel_workers.py` |
 | 决策范围 | 识别层改造、schema 扩展、G1 闸口扩展 |
-| 不影响 | 渲染层(`apply_lshape_border_completion` 已天然支持) |
+| 不影响 | ~~渲染层已天然支持~~ → 评审证伪:数据模型/几何/渲染均需改造(见「〇、评审结论」) |
 
 ---
 
 ## 摘要
 
-**结论:可行,推荐方案 B(最小改造,~250 行,渲染零改动)。**
+**结论(V2.1 修订):原「方案 B 最小改造、~250 行、渲染零改动」经代码级评审证伪,不可行。** 诊断部分(桶合并阻塞、G1 软肋、OCR 后置)正确并保留;改造重心修正为 **CutRect(anchor, offset_x, offset_y, w, h) 数据模型路线**,详见「〇、评审结论」与文末「重新规划」。
 
-核心阻塞点位于滑动窗口 corner 桶逻辑([lshape_sketch_parser.py:205-266](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L205-266))— 同 corner 多凹点会被合并为单挖角。改造方案:
+核心阻塞点位于滑动窗口 corner 桶逻辑([lshape_sketch_parser.py:205-266](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L205-266))— 同 corner 多凹点会被合并为单挖角。原方案要点:
 
 1. 解除桶合并,保留同桶全部候选(去重后 ≤4)
-2. `cuts_cm` schema 追加 `concave_px` + `pattern` 字段(向后兼容)
+2. `cuts_cm` schema 追加 `concave_px` + `pattern` 字段(向后兼容)→ 评审后升级为 CutRect 字段
 3. 新增同边分类器 `_classify_pattern`(纯几何判定)
 4. G1 闸口扩展反拼轮廓 IoU 校验(单边阶梯专属)
 5. OCR 同角分段归属(二期)
 
 与多边 L 形的区分**无需文件级判定**,同一 parser 在 cuts 列表上即可输出 `pattern` 字段,worker/UI 按 `pattern` 路由。
+
+---
+
+## 〇、评审结论(2026-09-17 代码级验证补充)
+
+> 同日对本报告全部关键论断做了逐条代码验证,并结合《20260916-单边阶梯L形挖角可行性分析与实现建议.md》的真实草图实测
+> (`吸水皮革-定制-裁剪有图-安妮森林;55x93.5CM裁剪有图.png`,tr 角两级台阶 10×6.5 + 8.5×3.5)。
+> **原核心结论「~250 行、渲染零改动、下游无感知」不成立。**
+
+### 评审通过的部分
+
+| 原论断 | 验证结果 |
+|---|---|
+| 滑动窗口桶合并只保留每角最高分 | ✅ `lshape_sketch_parser.py:205-269` `detected[corner]` 覆盖式赋值 |
+| 凸包差检测返回全部合格连通域 | ✅ `lshape_sketch_parser.py:309-428` |
+| G1 只查数量一致性,对阶梯形同虚设 | ✅ `_apply_g1_invariant` 仅 `n_detected != n_consumed`(2==2 天然通过) |
+| B4 反拼 IoU 校验方向正确 | ✅ 直击静默失效(实测:渲染 IoU 0.9791、第二级丢失、无任何警告) |
+| B5 OCR 分段后置 | ✅ 判断合理,一期 pixel_ratio 兜底 |
+
+### 被证伪的部分(核心,按严重度)
+
+1. **管道直接崩溃** — `core/geometry.py:292` `CropDesign.validate()` 硬拒绝同角位重复 cut
+   (`raise ValueError("l_cuts_cm 不允许重复角位")`)。B2 的输出(两个 `corner='tr'` 的 cut)
+   在「识别 → 设计」一步即抛异常,原报告未评估这条校验。
+2. **角点锚定模型表达能力不足(根本问题)** — `(corner, w, h)` 只能表达「贴 bbox 角」的矩形;
+   第二级台阶锚在**内角**,不在任何 bbox 角。真实草图实测:同角位双 cut 渲染为嵌套矩形,
+   **第二级完全丢失,IoU 0.9791,无警告**。`lshape_border.py:570-660` 的 claimed mask
+   只防补边重叠,不改 mask 几何。
+3. **尺寸公式系统性算错** — `cut_w_px = maxx - cx`(到 bbox 边距离)在阶梯下把凹角1 推成
+   310px,真实仅 125px(20260916 报告 R3,已实测)。
+4. **同边约束拦截阶梯** — `geometry.py:308-328` 的「尺寸和 < 边长」对同边阶梯是语义错误,
+   tr+br 拼装实测直接报错。
+5. **边框补全缺口** — 非 bbox 角凹角的补边几何在 `lshape_border.py` 缺失
+   (20260916 报告定级「高」,唯一硬骨头),并非零改动。
+
+### 工期修正
+
+原估 ~250 行 → 实际需**数据模型、几何、校验、识别、渲染出口、边框补全、GUI 七处改造,合计 8–13 天**(与 20260916 实测版一致)。
 
 ---
 
@@ -75,7 +114,7 @@
 
 4. **输出 schema 缺绝对坐标** — [lshape_sketch_parser.py:1727-1732](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L1727-1732) `cuts_cm` 仅含 `{corner, cut_w_cm, cut_h_cm, source}`,无 `concave_px(x,y)`,**无法判定同边不同 y-range**。
 
-5. **渲染层已天然支持** — [lshape_border.py:631-639](file:///F:/SmartShapeCrop/core/lshape_border.py#L631-639) `cuts` 列表递归调用,并有 `claimed` mask(L636)防凹角过渡区重叠 → 渲染无需改动。
+5. **~~渲染层已天然支持~~(评审证伪)** — [lshape_border.py:570-660](file:///F:/SmartShapeCrop/core/lshape_border.py#L570-660) `cuts` 列表递归调用 + claimed mask(L636)只防补边重叠,**不改 mask 几何**;且 `core/geometry.py:292` validate() 拒绝同角位重复 cut,同角位双 cut 根本到不了渲染层。真实草图实测:双 cut 渲染为嵌套矩形,第二级丢失,IoU 0.9791 → 渲染层、几何校验、数据模型均需改造。
 
 6. **G1 闸口软肋** — [lshape_sketch_parser.py:1534](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L1534) 只校验"检测数 vs 消费数",不校验形状组装正确性。单边阶梯 `2==2` 天然通过,但形状可能错配。
 
@@ -86,10 +125,10 @@
 | Driver | Priority | Evidence | Tradeoff |
 |---|---|---|---|
 | 几何区分可行性 | 高 | 同边多挖角 = 同 corner 桶多凹点 | 需新增"同边聚类"判定 |
-| 最小改造成本 | 高 | 渲染层零改动,只改识别+schema | 改动应控制在 ~250 行 |
+| 改造成本可控 | 高 | (评审修订)需数据模型+几何+识别+渲染+GUI 七处改造 | 分期推进,先通端到端 |
 | 识别准确性 | 高 | 滑动窗口漏检同桶候选 | 需保留同桶全部候选 |
 | OCR 归属正确性 | 中 | 同角多挖角 OCR 需按 y 分段 | 增加复杂度但可后置 |
-| 向后兼容 | 高 | 现有多边 L 形不能回归 | 新分类步骤必须纯增量 |
+| 向后兼容 | 高 | 现有多边 L 形不能回归 | CutRect 旧模型为严格子集(offset 恒 0) |
 | 形状自洽校验 | 中 | G1 闸口不验形状组装 | 单边阶梯需补反拼轮廓校验 |
 
 ---
@@ -99,14 +138,17 @@
 | Option | Benefits | Costs | Risks | Selected Because |
 |---|---|---|---|---|
 | **A. 不支持(降级方案)** | 零开发,零回归 | 用户场景受限 | 单边阶梯草图被误判为单挖角 | ❌ 拒绝 — 用户明确要求 |
-| **B. 最小改造(推荐)** | ~250 行,渲染不动,向后兼容,降级路径清晰 | 新增分类步骤 + schema 扩字段 | OCR 归属需按 y 分段(可后置) | ✅ 选定 — 改动集中、可验证 |
-| C. 全套 schema 重构 | 几何信息完整 | ~600 行,涉及 worker/UI/border 多处接口 | 回归风险高 | ❌ 拒绝 — 收益/成本比差 |
+| B. 最小改造 | 改动集中 | **评审证伪**:`(corner,w,h)` 模型表达不了内角锚定的第二级台阶;validate() 拒绝同角位重复 cut | 形状仍错(IoU 0.9791) | ❌ 评审后否决 |
+| **B'. CutRect 数据模型(评审后选定)** | 旧模型为严格子集(offset 恒 0);识别层用已有 concave 坐标补算 offset,无需新算法 | 数据模型+几何+校验+识别+渲染+GUI 七处改造,8–13 天 | 边框补全是唯一硬骨头 | ✅ 选定 — 与 20260916 实测版一致 |
+| C. 全套 schema 重构 | 几何信息完整 | ~600 行,涉及 worker/UI/border 多处接口 | 回归风险高 | ❌ 拒绝 — B' 已覆盖所需表达力,无需全套重构 |
 
 ---
 
-## Decision — 方案 B:最小改造
+## Decision — ~~方案 B:最小改造~~(V2.1 评审后重构为 CutRect 路线,见文末「重新规划」)
 
-### B1. 解除滑动窗口桶合并(核心改动)
+> B1 / B3 / B4 / B5 保留;B2 的 schema 扩展升级为 CutRect 字段 — 仅加 `concave_px` + `pattern` 不够,模型本身表达不了内角锚定的台阶。
+
+### B1. 解除滑动窗口桶合并(核心改动,保留)
 
 [lshape_sketch_parser.py:205-266](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L205-266) 改为 `detected[corner].append((score, pt))`,**同桶保留全部候选**,在返回前按凹点绝对坐标去重(欧氏距离 < 阈值合并)。桶上限仍保留 4 个(防误判爆炸)。
 
@@ -122,9 +164,11 @@ for corner, lst in detected.items():
     results.extend(_build_polygon(c, s, pt) for s, pt in lst[:4])
 ```
 
-### B2. schema 扩字段(向后兼容)
+### B2. schema 扩字段(向后兼容)→ 评审后升级为 CutRect
 
 [lshape_sketch_parser.py:1727-1732](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L1727-1732) 在 `cuts_cm` 每项**追加** `concave_px: (x, y)` 与 `pattern` 标识。旧字段不变,下游消费者无感知。
+
+> 评审注:仅加字段不够 — `core/geometry.py:292` validate() 拒绝同角位重复 cut,且 `(corner, w, h)` 表达不了内角锚定。须升级为 CutRect(anchor, offset_x, offset_y, w, h) 字段,见文末「重新规划」。
 
 ```python
 cuts_cm.append({
@@ -169,6 +213,7 @@ cuts_cm.append({
 | 滑动窗口桶去重 | 凹点距离判定 | 同点重复 | 距离阈值 0.05×diag | 单测:同桶 2 候选去重 = 1 | 新素材出现密集凹点 |
 | 同边分类器 | 同竖/横边判定 | ε 阈值不适配 | 降级 multi_edge | 单测:tl×2 同 x = stepped | 边框素材边距变化 |
 | G1 反拼校验 | IoU 阈值 | 误降级 | 警告+保留 cuts | IoU < 0.92 降级 | 识别轮廓噪声 |
+| CutRect 几何拼装 | anchor+offset → 矩形 | offset 越界/级间重叠 | validate() 拒绝 + 渲染退化守卫 | 单测:两级台阶 mask 与手绘轮廓 IoU > 0.99 | 支持外扩/混合变体 |
 
 ---
 
@@ -176,19 +221,21 @@ cuts_cm.append({
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
+| **静默出错(当前已存在)** — 识别报成功但形状错,G1 不告警 | 已发生 | 高 | B4 反拼 IoU≥0.92 校验,不过则降级 success |
 | 同桶多候选爆炸(噪声点) | 中 | 中 | 每桶硬上限 4 + 距离去重 |
 | 单边阶梯误判为多边 L | 低 | 高 | G1 反拼 IoU 校验降级路径 |
-| 渲染层 claimed mask 漏判凹角过渡区 | 中 | 中 | 已有 L636 防重叠,回归测试覆盖 |
+| 边框补全在非 bbox 角凹角漏线/越界 | 中 | 高 | 先 60×60 受控实验再上素材(复用 9.14 inset 机制) |
 | OCR 同角多挖角归属错误 | 高 | 中 | 一期 source='pixel_ratio' 兜底,后置 OCR 分段 |
+| 现有 ~501 测试中 L 形相关用例依赖 `l_cuts_cm` 语义 | 中 | 中 | 兼容层保证旧字段映射无损;每期跑全量回归作准入门槛 |
 | SpinBox 显示多挖角时 UI 拥塞 | 低 | 低 | 已有 200ms debounce 机制,沿用即可 |
 
 ---
 
 ## Consequences
 
-- ✅ 单边阶梯 L 形挖角**可行**,最小改造 ~250 行,渲染零改动。
+- ❌ ~~单边阶梯 L 形挖角可行,最小改造 ~250 行,渲染零改动~~ — **评审证伪**:需 CutRect 数据模型 + 七处改造,合计 8–13 天(见「〇、评审结论」与「重新规划」)。
 - ✅ 与多边 L 形的区分通过**同 corner 桶内多凹点 + 同边几何判定**自然实现,不需要新文件类型判定。
-- ⚠️ "同一面板内如何区分两个文件进行判断" — **无需区分文件**,同一 parser 在 cuts 列表上即可输出 `pattern` 字段,worker/UI 按 `pattern` 路由即可。若用户坚持文件级区分,可在 `target_name_override` 加 `pattern` 后缀(可选)。
+- ✅ CutRect 路线不新增 mode/历史源,可绕过 `property_panel.py:926` 与 `app_settings.py:317` 两个静默失效硬编码坑(集成进现有 L 形面板的隐性收益)。
 - ⚠️ OCR 归属精度在一期降级,需在二期补 `y 坐标分段归属`。
 
 ---
@@ -202,6 +249,9 @@ cuts_cm.append({
 | cuts_cm schema 缺坐标 | [lshape_sketch_parser.py:1727-1732](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L1727-1732) | 仅 `{corner, cut_w_cm, cut_h_cm, source}` |
 | 渲染递归 + claimed mask | [lshape_border.py:631-639](file:///F:/SmartShapeCrop/core/lshape_border.py#L631-639) | `cuts` 列表逐角递归,L636 防凹角重叠 |
 | G1 闸口只校验数量 | [lshape_sketch_parser.py:1534](file:///F:/SmartShapeCrop/services/sketch_parser/lshape_sketch_parser.py#L1534) | `g1_blocked = n_detected != n_consumed` |
+| **validate() 拒绝同角位重复 cut(评审补充)** | [geometry.py:292](file:///F:/SmartShapeCrop/core/geometry.py#L292) | `raise ValueError("l_cuts_cm 不允许重复角位")` |
+| **同边尺寸和约束(评审补充)** | [geometry.py:308-328](file:///F:/SmartShapeCrop/core/geometry.py#L308-328) | 尺寸和 < 边长 − 0.5cm 校验,拦截同边阶梯拼装 |
+| **静默失效实测(评审补充)** | `scripts/diagnose/_diag_stair_*.py` | 真实草图双 cut 渲染 IoU 0.9791,第二级丢失,无警告 |
 
 ---
 
@@ -211,18 +261,51 @@ cuts_cm.append({
 - 用户要求文件级区分(需新增 `pattern` 后缀命名约定)
 - 二期 OCR 同角分段归属实现
 - 滑动窗口桶上限 4 不足(出现 5+ 凹角场景)
+- 需支持「逐级外扩」「阶梯 + 多角混合」变体 → CutRect offset 独立取值
 
 ---
 
-## 附录:实施步骤建议(一期)
+## 附录:重新规划 — CutRect 数据模型路线(V2.1 评审后)
 
-按依赖顺序执行,每步可独立验证:
+### 核心方案
 
-1. **识别层 B1**:修改 `_detect_concave_sliding_window` 桶逻辑,加去重 + 桶上限 4
-2. **识别层 B3**:新增 `_classify_pattern(all_corners_geo)` 纯几何分类器
-3. **schema B2**:`cuts_cm` 追加 `concave_px` + `pattern` 字段
-4. **G1 扩展 B4**:`single_edge_stepped` 路径触发反拼 IoU 校验
-5. **回归测试**:沿用现有 500 测试集 + 新增 4 个单边阶梯 fixture(tl×2 / tr×2 / bl×2 / br×2)
-6. **二期 B5(可后置)**:`_attribute_cut_ocr_per_corner` 同角 y 分段
+引入 `CutRect(anchor, offset_x_cm, offset_y_cm, w_cm, h_cm)` — 旧 `(corner, w, h)` 是其**严格子集**(offset 恒 0),向后兼容:
 
-预期改动量:识别层 ~180 行,测试 ~70 行,渲染层 0 行,UI 层 0 行。
+```python
+# 两级台阶(本例真实草图:tr 角 10×6.5 + 8.5×3.5)
+[CutRect('tr', 0, 0, 10, 6.5), CutRect('tr', 10, 6.5, 8.5, 3.5)]
+```
+
+识别层无需新算法:`all_corners[]` 一直持有 `concave` 坐标,只需用它补算 anchor + offset(「换公式」而非「新算法」),并把 `cut_w/h_px = 到 bbox 边距离` 改为「相邻顶点差值」。
+
+原 B1–B5 保留情况:
+
+- B1 解除桶合并 ✅(并入二期)
+- B2 schema 扩字段 → 升级为 CutRect 字段
+- B3 同边分类器 ✅(输出需含 offset)
+- B4 G1 反拼 IoU≥0.92 校验 ✅(并入二期,消灭静默失效)
+- B5 OCR y 分段后置 ✅(一期 pixel_ratio 兜底)
+
+### 分期路线(合计 8–13 天)
+
+| 期 | 内容 | 工期 | 关键验收 |
+|---|---|---|---|
+| **一 数据模型+几何** | `core/geometry.py`:新增 CutRect dataclass;`CropDesign` 增 `l_cut_rects`(保留 `l_cuts_cm` 兼容入口);`build_lshape_mask` 改遍历 CutRect + 新增 `_rect_from_anchor_offset()`;**重写 validate()(L284-295,允许同 anchor 多笔)与同边约束(L308-328,改「各级不重叠 + 不越界」)** | 2–3 天 | 手写 CutRect 列表 → 渲染出正确两级台阶(复用 `scripts/diagnose/_diag_stair_*.py`) |
+| **二 识别层** | B1 解除滑动窗口桶合并(每桶保留全部候选,去重,cap 4);用 concave 坐标补 anchor+offset;`cut_w/h_px` 改「相邻顶点差值」;B4 G1 反拼 IoU≥0.92 校验 | 1–2 天 | 本例真实草图 cuts_cm 正确表达两级台阶 |
+| **三 渲染出口+边框** | `core/image_ops.py` 8 处 `mode=='rect_lshape'` 分支(733/759/779/1050/1068/1144/1204/1223)收敛为 helper;`core/lshape_border.py` 非 bbox 角凹角补边(唯一硬骨头,先 60×60 受控实验) | 3–5 天 | 多素材 × 多级台阶,边框连续无漏线、无越界 |
+| **四 GUI+回归** | `gui/lshape_panel.py` 同角位子行交互(缩进 + 「追加一级」);每期跑全量回归(~501 测试)作准入门槛 | 2–3 天 | 参数回填/预览/导出全通 |
+
+建议先做一 + 二期(3–5 天)即可端到端看到正确的阶梯渲染;三、四期为体验与打磨。
+
+### 待确认(同 20260916 实测版报告)
+
+1. **级数上限**:2 级 / 3 级 / 不限?→ 决定 GUI 子行数量与交互设计
+2. **变体支持**(V2.2 修订 — 基于 2026-09-17 真实样本几何验证):
+   - **「逐级内缩」与「逐级外扩」两种连续阶梯方向** → CutRect 模型天然统一覆盖,无需独立分支
+     - 两者都用「外包挖空 + 内嵌凸回」表达,凸回矩形的 offset = 前 N 级尺寸之和,**可自动推导,不需独立取值**
+     - 内缩样本(吸水皮革-安妮森林,55×93.5CM):外包挖空 18.5×10 + 凸回 8.5×3.5 @ offset(10, 6.5)
+     - 外扩样本(用户上传图):外包挖空 20×14 + 凸回 15×7 @ offset(5, 7)
+     - 两者 CutRect 数据结构完全同构,差别仅在凸回矩形的相对大小(内缩凸回占比 ~46%×35%;外扩凸回占比 ~75%×50%)
+   - **真正需要 offset 独立取值的变体** = 「阶梯 + 多角混合」(如 tr 阶梯 + bl 单挖角,bl 的 offset 与 tr 阶梯无关,必须独立)
+   - **建议**:一期只支持连续阶梯(内缩 + 外扩同模型,不需 offset 独立);二期再考虑多角混合(需 offset 独立)
+   - **识别层启示**:外扩形态第 1 级挖角尺寸小(5×7 vs 内缩 10×6.5),在滑动窗口桶内 score 较低,**更易被合并漏检** → 印证 B1「解除桶合并」的必要性
