@@ -800,23 +800,23 @@ def _scan_edge_boundaries(img_arr: np.ndarray,
 
     # 构造扫描索引序列
     if edge == 'top':
-        indices = list(range(_EDGE_IGNORE_PX, min(axis_len - _EDGE_IGNORE_PX, _EDGE_IGNORE_PX + max_depth), _BORDER_SCAN_STEP))
+        indices = np.arange(_EDGE_IGNORE_PX, min(axis_len - _EDGE_IGNORE_PX, _EDGE_IGNORE_PX + max_depth), _BORDER_SCAN_STEP, dtype=np.intp)
     elif edge == 'bottom':
-        indices = list(range(axis_len - 1 - _EDGE_IGNORE_PX,
+        indices = np.arange(axis_len - 1 - _EDGE_IGNORE_PX,
                              max(_EDGE_IGNORE_PX, axis_len - 1 - _EDGE_IGNORE_PX - max_depth),
-                             -_BORDER_SCAN_STEP))
+                             -_BORDER_SCAN_STEP, dtype=np.intp)
     elif edge == 'left':
-        indices = list(range(_EDGE_IGNORE_PX, min(axis_len - _EDGE_IGNORE_PX, _EDGE_IGNORE_PX + max_depth), _BORDER_SCAN_STEP))
+        indices = np.arange(_EDGE_IGNORE_PX, min(axis_len - _EDGE_IGNORE_PX, _EDGE_IGNORE_PX + max_depth), _BORDER_SCAN_STEP, dtype=np.intp)
     else:  # right
-        indices = list(range(axis_len - 1 - _EDGE_IGNORE_PX,
+        indices = np.arange(axis_len - 1 - _EDGE_IGNORE_PX,
                              max(_EDGE_IGNORE_PX, axis_len - 1 - _EDGE_IGNORE_PX - max_depth),
-                             -_BORDER_SCAN_STEP))
+                             -_BORDER_SCAN_STEP, dtype=np.intp)
 
     if len(indices) < 3:
         return []
 
     # --- 向量化：对所有采样线一次提取所有像素 ---
-    idx_arr = np.array(indices)
+    idx_arr = indices
     n_lines = len(sample_lines)
     n_indices = len(idx_arr)
     all_diff = np.zeros(n_indices, dtype=np.float64)

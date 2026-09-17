@@ -215,21 +215,24 @@ def _detect_concave_sliding_window(pts, outer_w, outer_h, diag, corners,
         if dist_ratio >= 0.45:
             continue
 
-        # 用小窗口判定方向（避免跨越拐点导致方向错误）
+        # 用凹点相对于 bbox 中心的位置判定 corner（比邻居方向更鲁棒）
+        # 凹点靠近哪个角，缺口就在那个角
+        cx_bbox = (minx + maxx) / 2.0
+        cy_bbox = (miny + maxy) / 2.0
+        if pt[0] < cx_bbox and pt[1] < cy_bbox:
+            corner = 'tl'
+        elif pt[0] >= cx_bbox and pt[1] < cy_bbox:
+            corner = 'tr'
+        elif pt[0] < cx_bbox and pt[1] >= cy_bbox:
+            corner = 'bl'
+        else:
+            corner = 'br'
+
+        # 计算邻接向量（用于 adj_cut 尺寸）
         p_prev = pts[(i - k_dir) % n].astype(float)
         p_next = pts[(i + k_dir) % n].astype(float)
         dx1, dy1 = float(p_prev[0] - pt[0]), float(p_prev[1] - pt[1])
         dx2, dy2 = float(p_next[0] - pt[0]), float(p_next[1] - pt[1])
-        if abs(dx1) >= abs(dy1):
-            h_nbr, v_nbr = (dx1, dy1), (dx2, dy2)
-        else:
-            h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
-        sx = 1 if h_nbr[0] > 0 else -1
-        sy = 1 if v_nbr[1] > 0 else -1
-        corner = {(1, -1): 'tr', (1, 1): 'br',
-                  (-1, -1): 'tl', (-1, 1): 'bl'}.get((sx, sy))
-        if corner is None:
-            continue
 
         # 邻接 cut 尺寸（小窗口）
         adj_cut_w = max(abs(dx1), abs(dx2))
@@ -512,19 +515,17 @@ def _collect_approx_candidates(cv2, cnt, cnt_pts, global_minx, global_miny,
             adj_cut_w = max(abs(pv[0] - pt[0]), abs(nv[0] - pt[0]))
             adj_cut_h = max(abs(pv[1] - pt[1]), abs(nv[1] - pt[1]))
 
-            # 由邻接顶点方向判定 corner
-            dx1, dy1 = float(pv[0] - pt[0]), float(pv[1] - pt[1])
-            dx2, dy2 = float(nv[0] - pt[0]), float(nv[1] - pt[1])
-            if abs(dx1) >= abs(dy1):
-                h_nbr, v_nbr = (dx1, dy1), (dx2, dy2)
+            # 用凹点相对于 bbox 中心的位置判定 corner（比邻居方向更鲁棒）
+            cx_bbox = (global_minx + global_maxx) / 2.0
+            cy_bbox = (global_miny + global_maxy) / 2.0
+            if pt[0] < cx_bbox and pt[1] < cy_bbox:
+                corner_guess = 'tl'
+            elif pt[0] >= cx_bbox and pt[1] < cy_bbox:
+                corner_guess = 'tr'
+            elif pt[0] < cx_bbox and pt[1] >= cy_bbox:
+                corner_guess = 'bl'
             else:
-                h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
-            sx = 1 if h_nbr[0] > 0 else -1
-            sy = 1 if v_nbr[1] > 0 else -1
-            corner_guess = {(1, -1): 'tr', (1, 1): 'br',
-                            (-1, -1): 'tl', (-1, 1): 'bl'}.get((sx, sy))
-            if corner_guess is None:
-                continue
+                corner_guess = 'br'
 
             # bbox 边界距离 cut 尺寸（稳定、不受数字干扰）
             if corner_guess == 'tr':
@@ -645,20 +646,19 @@ def _finalize_lshape_geometry(chosen_list):
         p_prev = verts[(concave_idx - 1) % n]
         p_next = verts[(concave_idx + 1) % n]
 
-        dx1, dy1 = float(p_prev[0] - conc[0]), float(p_prev[1] - conc[1])
-        dx2, dy2 = float(p_next[0] - conc[0]), float(p_next[1] - conc[1])
-        if abs(dx1) >= abs(dy1):
-            h_nbr, v_nbr = (dx1, dy1), (dx2, dy2)
-        else:
-            h_nbr, v_nbr = (dx2, dy2), (dx1, dy1)
-
-        sx = 1 if h_nbr[0] > 0 else -1
-        sy = 1 if v_nbr[1] > 0 else -1
-        corner = _CORNER_MAP.get((sx, sy))
-        if corner is None:
-            continue
-
+        # 用凹点相对于 bbox 中心的位置判定 corner（比邻居方向更鲁棒）
+        cx_bbox = (minx + maxx) / 2.0
+        cy_bbox = (miny + maxy) / 2.0
         cx, cy = float(conc[0]), float(conc[1])
+        if cx < cx_bbox and cy < cy_bbox:
+            corner = 'tl'
+        elif cx >= cx_bbox and cy < cy_bbox:
+            corner = 'tr'
+        elif cx < cx_bbox and cy >= cy_bbox:
+            corner = 'bl'
+        else:
+            corner = 'br'
+
         if corner == 'tr':
             cut_w_px = maxx - cx
             cut_h_px = cy - miny

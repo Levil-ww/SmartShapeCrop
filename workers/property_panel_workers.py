@@ -476,8 +476,7 @@ class PoolRenderWorker(QThread):
     def _build_design(self, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape):
         """步骤4：构建 CropDesign（L 形挖角 / 矩形+多洞 两条路径）。"""
         # 4) 构建 CropDesign
-        TRIM_CM = CUT_LOSS_CM
-        TRIM_CM = 1.0
+        TRIM_CM = CUT_LOSS_CM  # config.py 中 CUT_LOSS_CM=1.0，裁剪损耗补偿
         self.progress.emit(85, "构建设计参数…")
         design = CropDesign()
         design.canvas_w_cm = canvas_w_cm + TRIM_CM
