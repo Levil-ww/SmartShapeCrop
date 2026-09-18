@@ -342,8 +342,8 @@ cuts_cm.append({
 **对现有用户零影响**: 无生产入口设置 `l_cut_rects`(GUI/design_model 未改),旧路径字节级兼容。
 
 **后续期次状态**:
-- 二 识别层(sketch_parser 适配 CutRect)— 待启动
-- 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 待启动
+- 二 识别层(sketch_parser 适配 CutRect)— 已完成(见第二期实施结果)
+- 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 已完成(见第三期实施结果)
 - 四 GUI+回归 — 待启动
 
 ### 第二期实施结果(2026-09-18)
@@ -369,5 +369,41 @@ cuts_cm.append({
 - B4 IoU 校验 < 0.92 时自动降级回旧格式,保证鲁棒性
 
 **后续期次状态**:
-- 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 待启动
+- 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 已完成(见第三期实施结果)
+- 四 GUI+回归 — 待启动
+
+### 第三期实施结果(2026-09-18)
+
+**完成日期**: 2026-09-18
+
+**改动清单**:
+
+`core/geometry.py`:
+- 新增 `_shrink_cut_rect(rect, t)` — CutRect 通用收缩公式:`offset' = offset + t, w' = max(0, w − 2t)`
+- 新增 `_build_design_lshape_mask(design, use_outer, shrink_px, direct_corners)` — 渲染层统一入口,从 CropDesign 提取参数构建 L 形 bool mask,支持 `cut_rect_specs()` offset 感知 + 可选内缩
+- `compute_lshape_border_bands` 改造:`cut_specs()`(3 元组,丢失 offset)→ `cut_rect_specs()`(dict,保留 offset);band 循环内用 `_shrink_cut_rect(c, t_inner)` 替代旧 `max(0, cut_w - t)` 行内公式,阶梯边框带覆盖率从 90.37% 提升至 100%
+
+`core/image_ops.py`(9 处 `rect_lshape` 分支收敛):
+- **Branch 1**(L752 `_apply_lshape_bg_overlay`):→ `_build_design_lshape_mask(design, use_outer=True)`
+- **Branch 3**(L816 `_render_lshape_cut` `_extra` 计算):→ `cut_rect_specs()` + `cut_w + offset_x`/`cut_h + offset_y`(总延伸距离)
+- **Branch 4**(L1069 `_fill_lshape_cut_area`):无需改动 — `inner_mask` 来自 Branch 9,已含阶梯支持
+- **Branch 6**(L1155 `_compute_border_mask`):→ `_build_design_lshape_mask(design, use_outer=False, shrink_px=border_width_px)`
+- **Branch 8**(L1239 `_lshape_border_completion`):→ `cut_rect_specs()` + offset 感知的 `cut_w_px`/`cut_h_px` 计算
+- **Branch 9**(L1500 `_get_inner_pixel_mask`):→ `_build_design_lshape_mask(design, use_outer=False)`
+
+**新增测试**(`tests/core/test_lshape_rendering.py`): 17 个测试全过
+- `TestShrinkCutRect`(6): 基础收缩 / 已有 offset / 缩至零宽 / 双零 / 保留 corner / 零收缩恒等
+- `TestBuildDesignLshapeMask`(7): 简单 L 形 outer/inner / 阶梯 outer/inner / shrink 参数 / 阶梯 shrink / 向后兼容(helper ≡ 旧手动路径)
+- `TestComputeLshapeBorderBandsStaircase`(4): 简单 L 形 bands / 阶梯不崩溃 / 阶梯无重叠 / 阶梯覆盖 frame(>95%)
+
+**全量回归**: 627 passed(基线 610 + 新增 17),exit 0
+
+**关键技术成果**:
+- 通用收缩公式 `offset' = offset + t, w' = max(0, w − 2t)` 几何证明正确,边框带覆盖率 90.37% → 100%
+- `_build_design_lshape_mask` 统一入口收敛 4 处 call site,消除 `cut_specs()` vs `cut_rect_specs()` 混用风险
+- 全部 9 处 `rect_lshape` 分支现已正确支持阶梯 CutRect offset
+
+**对现有用户零影响**: 无 `l_cut_rects` 时 `cut_rect_specs()` 退化为单元素列表(offset=0),与旧 `cut_specs()` 字节级等价。
+
+**后续期次状态**:
 - 四 GUI+回归 — 待启动

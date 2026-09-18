@@ -752,18 +752,10 @@ def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, ha
     if design.mode == 'rect_lshape' and not is_pool_with_material:
         if _dbg:
             logger.info("[DEBUG-RD] STEP1.1 命中 rect_lshape + 非池素材 → 填outer_bg_color遮罩")
-        from .geometry import build_lshape_mask
+        from .geometry import _build_design_lshape_mask
         has_outer_img = design.outer_bg_image and os.path.isfile(design.outer_bg_image)
         if has_outer_img:
-            lshape = design.l_shapes_px()
-            outer = design.outer_rect_px()
-            corners = design.corners_px
-            # 构建outer_rect的L形mask（不包括cut区域）
-            lshape_mask_img = build_lshape_mask(
-                (W, H), outer, lshape.corner,
-                lshape.cut_w, lshape.cut_h,
-                corners, fill_value=255, cuts=lshape.cut_specs())
-            lshape_mask = np.array(lshape_mask_img, dtype=bool)
+            lshape_mask = _build_design_lshape_mask(design, use_outer=True)
             # 非L形区域填充为outer_bg_color
             outer_bg_arr = np.full((H, W, 3), design.outer_bg_color, dtype=np.uint8)
             non_lshape_mask = ~lshape_mask
@@ -821,8 +813,10 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
         _ir_x, _ir_y = int(round(inner_rect.x)), int(round(inner_rect.y))
         _ir_r, _ir_b = int(round(inner_rect.right)), int(round(inner_rect.bottom))
         _extra = np.zeros((H, W), dtype=bool)
-        for cut_corner, cut_w_px, cut_h_px in lshape.cut_specs():
-            _cw, _ch = int(round(cut_w_px)), int(round(cut_h_px))
+        for spec in lshape.cut_rect_specs():
+            cut_corner = spec['corner']
+            _cw = int(round(spec['cut_w'] + spec['offset_x']))
+            _ch = int(round(spec['cut_h'] + spec['offset_y']))
             if cut_corner == 'bl':
                 _extra[_ir_b - _ch:H, 0:_ir_x + _cw] = True
             elif cut_corner == 'br':
@@ -1161,24 +1155,11 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
 
         if has_shrunk:
             if design.mode == 'rect_lshape':
-                lshape = design.l_shapes_px()
-                shrunk_rect = RectShape(
-                    x=inner_rect.x + border_width_px,
-                    y=inner_rect.y + border_width_px,
-                    w=shrunk_w, h=shrunk_h,
-                    corner_r=0.0,
-                )
-                shrunk_corners = {ck: max(0.0, r - border_width_px)
-                                  for ck, r in inner_corners.items()}
-                shrunk_cut_w = max(0.0, lshape.cut_w - border_width_px)
-                shrunk_cut_h = max(0.0, lshape.cut_h - border_width_px)
-                mask_b_img = build_lshape_mask(
-                    (W, H), shrunk_rect, lshape.corner,
-                    shrunk_cut_w, shrunk_cut_h,
-                    shrunk_corners, fill_value=255,
-                    cuts=[(ck, max(0.0, cw - border_width_px),
-                            max(0.0, ch - border_width_px))
-                           for ck, cw, ch in lshape.cut_specs()])
+                from .geometry import _build_design_lshape_mask
+                mask_b = _build_design_lshape_mask(
+                    design, use_outer=False, shrink_px=border_width_px)
+                mask_b_img = np.zeros((H, W), dtype=np.uint8)
+                mask_b_img[mask_b] = 255
             else:
                 shrunk = RectShape(
                     x=inner_rect.x + border_width_px,
@@ -1256,7 +1237,10 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
             _ir_x, _ir_y = inner_rect.x, inner_rect.y
             _ir_r, _ir_b = inner_rect.right, inner_rect.bottom
             border_cuts = []
-            for cut_corner, cut_w, cut_h in lshape.cut_specs():
+            for spec in lshape.cut_rect_specs():
+                cut_corner = spec['corner']
+                cut_w = spec['cut_w'] + spec['offset_x']
+                cut_h = spec['cut_h'] + spec['offset_y']
                 if cut_corner in ('bl', 'tl'):
                     cut_w_px = cut_w + _ir_x
                 else:
@@ -1519,12 +1503,8 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
         return np.array(m, dtype=bool)
 
     elif design.mode == 'rect_lshape':
-        lshape = design.l_shapes_px()
-        m = build_lshape_mask(
-            (W, H), inner_rect, lshape.corner,
-            lshape.cut_w, lshape.cut_h,
-            inner_corners, fill_value=255, cuts=lshape.cut_specs())
-        return np.array(m, dtype=bool)
+        from .geometry import _build_design_lshape_mask
+        return _build_design_lshape_mask(design, use_outer=False)
 
     else:  # ellipse_hole
         fill_ellipse_mask(m, design.ellipse_px(), 255)

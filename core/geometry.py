@@ -809,6 +809,68 @@ def _get_lshape_cut_rect_at_offset(outer_rect: RectShape, corner_key: str,
         return RectShape(new_right - cw, new_bottom - ch, cw, ch)
 
 
+def _shrink_cut_rect(rect: dict, t: float) -> dict:
+    """
+    CutRect 通用收缩公式：outer rect 内缩 t 像素后，CutRect 的等效参数。
+
+    offset' = offset + t（锚定边内移，CutRect 距锚定边更远）
+    w' = max(0, w − 2t)（两侧各内缩 t）
+    """
+    return {
+        'corner': rect['corner'],
+        'offset_x': rect['offset_x'] + t,
+        'offset_y': rect['offset_y'] + t,
+        'cut_w': max(0.0, rect['cut_w'] - 2 * t),
+        'cut_h': max(0.0, rect['cut_h'] - 2 * t),
+    }
+
+
+def _build_design_lshape_mask(design: 'CropDesign',
+                              use_outer: bool = True,
+                              shrink_px: float = 0.0,
+                              direct_corners: bool | None = None,
+                              ) -> np.ndarray:
+    """
+    从 CropDesign 提取参数构建 L 形 bool mask（渲染层统一入口）。
+
+    Args:
+        use_outer: True=outer_rect + outer corners；False=inner_rect + inner corners
+        shrink_px: 额外内缩量（像素），用于边框 mask 计算
+        direct_corners: inner corners 的 direct 参数；None 时取 design.pool_hole_transparent
+    """
+    W, H = design.canvas_w_px, design.canvas_h_px
+    outer = design.outer_rect_px()
+    corners = design.corners_px
+    lshape = design.l_shapes_px()
+
+    if use_outer:
+        rect = outer
+        radii = corners
+    else:
+        inner = design.inner_rect_px()
+        dc = design.pool_hole_transparent if direct_corners is None else direct_corners
+        radii = compute_inner_corner_radii(outer, inner, corners, direct=dc)
+        rect = inner
+
+    if shrink_px > 0:
+        t = float(shrink_px)
+        rect = RectShape(
+            x=rect.x + t, y=rect.y + t,
+            w=max(1, rect.w - 2 * t), h=max(1, rect.h - 2 * t),
+            corner_r=0.0,
+        )
+        radii = {ck: max(0.0, r - t) for ck, r in radii.items()}
+        cut_list = [_shrink_cut_rect(c, t) for c in lshape.cut_rect_specs()]
+    else:
+        cut_list = lshape.cut_rect_specs()
+
+    mask_img = build_lshape_mask(
+        (W, H), rect, lshape.corner,
+        lshape.cut_w, lshape.cut_h,
+        radii, fill_value=255, cuts=cut_list)
+    return np.array(mask_img, dtype=bool)
+
+
 def _rect_from_anchor_offset(outer_rect: RectShape, anchor: str,
                              offset_x: float, offset_y: float,
                              w: float, h: float) -> RectShape:
@@ -933,7 +995,7 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
     outer = design.outer_rect_px()
     inner = design.inner_rect_px()
     lshape = design.l_shapes_px()
-    cut_specs = lshape.cut_specs()
+    cut_rects = lshape.cut_rect_specs()
     cut_corner = lshape.corner
     cut_w = lshape.cut_w
     cut_h = lshape.cut_h
@@ -942,12 +1004,12 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
     # 1. 计算 frame_mask（总边框带）
     frame_outer_img = build_lshape_mask(
         (w, h), outer, cut_corner, cut_w, cut_h, corners,
-        fill_value=255, cuts=cut_specs)
+        fill_value=255, cuts=cut_rects)
 
     inner_corners = compute_inner_corner_radii(outer, inner, corners)
     frame_inner_img = build_lshape_mask(
         (w, h), inner, cut_corner, cut_w, cut_h, inner_corners,
-        fill_value=255, cuts=cut_specs)
+        fill_value=255, cuts=cut_rects)
 
     frame_mask = np.array(frame_outer_img, dtype=bool) & ~np.array(frame_inner_img, dtype=bool)
 
@@ -973,17 +1035,15 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
             h=max(1, outer.h - 2 * t_inner),
             corner_r=0.0
         )
-        inner_cut_w = max(0.0, cut_w - t_inner)
-        inner_cut_h = max(0.0, cut_h - t_inner)
         inner_radii_i = {ck: max(0, corners.get(ck, 0.0) - t_inner)
                          for ck in ('tl', 'tr', 'bl', 'br')}
+        shrunk_cuts = [_shrink_cut_rect(c, t_inner) for c in cut_rects]
 
         band_inner_img = build_lshape_mask(
             (w, h), inner_at, cut_corner,
-            inner_cut_w, inner_cut_h,
+            cut_w, cut_h,
             inner_radii_i, fill_value=255,
-            cuts=[(ck, max(0.0, cw - t_inner), max(0.0, ch - t_inner))
-                   for ck, cw, ch in cut_specs])
+            cuts=shrunk_cuts)
         band_inner_bool = np.array(band_inner_img, dtype=bool)
 
         # band = 本层外边界(复用前层内边界) - 本层内边界
