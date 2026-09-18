@@ -344,7 +344,7 @@ cuts_cm.append({
 **后续期次状态**:
 - 二 识别层(sketch_parser 适配 CutRect)— 已完成(见第二期实施结果)
 - 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 已完成(见第三期实施结果)
-- 四 GUI+回归 — 待启动
+- 四 GUI+回归 — 已完成(见第四期实施结果)
 
 ### 第二期实施结果(2026-09-18)
 
@@ -370,7 +370,7 @@ cuts_cm.append({
 
 **后续期次状态**:
 - 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 已完成(见第三期实施结果)
-- 四 GUI+回归 — 待启动
+- 四 GUI+回归 — 已完成(见第四期实施结果)
 
 ### 第三期实施结果(2026-09-18)
 
@@ -406,4 +406,47 @@ cuts_cm.append({
 **对现有用户零影响**: 无 `l_cut_rects` 时 `cut_rect_specs()` 退化为单元素列表(offset=0),与旧 `cut_specs()` 字节级等价。
 
 **后续期次状态**:
-- 四 GUI+回归 — 待启动
+- 四 GUI+回归 — 已完成(见第四期实施结果)
+
+### 第四期实施结果(2026-09-18)
+
+**完成日期**: 2026-09-18
+
+**改动清单**:
+
+`gui/lshape_panel.py`:
+- 新增 `set_cut_rects(cut_rects: list[dict])`: 识别结果回填入口,自动切换至阶梯模式、按级数调整子行(1–3 行)、填充 offset/宽高 SpinBox(blockSignals 保护)
+- `_apply_lshape_params()` 分支:`result.debug['pattern'] == 'single_edge_stepped'` 时走 `set_cut_rects()`,跳过标准角位/宽高 SpinBox 填充;状态栏显示阶梯级数与各级尺寸
+- `get_corner()` / `get_cut_w_cm()` / `get_cut_h_cm()` 阶梯模式委托:当 `_staircase_mode` 为 True 时从 `_stair_corner` / 首行 SpinBox 读取,避免隐藏的标准控件返回陈旧值
+- `clear_lshape_params()` 阶梯模式重置:检测到 `_staircase_mode` 时调用 `_set_staircase_mode(False)`,恢复 `_gb_l` 显示
+
+`gui/property_panel_layers.py`:
+- `_LayersMixin._collect_ui_snapshot()` 新增 `cut_rects` 字段:`self._lshape_panel.get_cut_rects_cm()` 写入 lshape dict,与已有 `cuts_cm` 并存
+
+`models/design_model.py`:
+- `apply_ui_snapshot()` 新增 `CutRect` 转换:从 `_lp['cut_rects']` 构造 `CutRect` 列表写入 `d.l_cut_rects`,上限 3 个;`lshape is None` 分支清空 `d.l_cut_rects = []`
+
+**新增测试**(`tests/gui/test_lshape_panel_staircase.py`): 25 个测试全过
+- `TestStaircaseModeToggle`(3): 初始为标准模式 / `_set_staircase_mode(True)` 切换 `_gb_l`↔`_gb_staircase` 可见性 / 反向切换恢复
+- `TestSetCutRects`(6): 进入阶梯模式 / SpinBox 值回填 / 角位设置 / 行数自动调整(增减) / 空列表 noop / 超过 `_stair_max_levels` 截断
+- `TestGetCutRectsCm`(3): 标准模式返回空 / 阶梯模式正确提取 / 零尺寸行跳过
+- `TestStaircaseGetters`(4): `get_corner` / `get_cut_w_cm` / `get_cut_h_cm` / `get_cuts_cm` 阶梯模式委托
+- `TestStaircaseAddRemove`(4): 追加行 / 移除行 / 下限 1 行 / 上限 `_stair_max_levels`
+- `TestClearLshapeParamsResetsStaircase`(1): `clear_lshape_params()` 退出阶梯模式
+- `TestDesignModelCutRects`(4): `apply_ui_snapshot` 写入 `l_cut_rects` / 空列表清空 / `lshape=None` 清空 / 上限 3 个
+
+**全量回归**: 652 passed(基线 627 + 新增 25),exit 0
+
+**关键技术成果**:
+- GUI 数据流闭环:UI 子行 → `_on_staircase_changed()` → `_lshape_params['cut_rects']` → `_collect_ui_snapshot()` → `DesignModel.apply_ui_snapshot()` → `CropDesign.l_cut_rects` → 渲染层(第三期已支持)
+- 识别结果回填(Path B)与手动编辑(Path A)共享同一套 `_stair_rows` SpinBox,`set_cut_rects()` 统一入口
+- `get_corner()` / `get_cut_w_cm()` / `get_cut_h_cm()` 阶梯模式委托修复了隐藏控件返回陈旧值的隐患,保证 `_collect_ui_snapshot()` 在两种模式下均取到正确值
+
+**对现有用户零影响**:
+- 标准多角模式(`_staircase_mode=False`)行为完全不变,`get_cut_rects_cm()` 返回空列表,snapshot 中 `cut_rects` 字段为空不影响下游
+- 阶梯模式仅在用户手动启用或识别结果为 `single_edge_stepped` 时激活,不改变原有 L 形单角挖角流程
+
+**后续期次状态**:
+- 一至四期全部完成
+- 端到端链路(识别 → GUI → Model → 渲染)已贯通,全量 652 测试绿
+- 可选后续:「阶梯 + 多角混合」变体(决议暂缓,仅需 GUI 入口 + pattern 分类扩展,CutRect 模型无需改动)

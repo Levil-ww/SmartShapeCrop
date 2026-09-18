@@ -14,7 +14,7 @@ from __future__ import annotations
 import copy
 import os
 
-from core.geometry import CropDesign, BorderText
+from core.geometry import CropDesign, BorderText, CutRect
 
 
 class DesignModel:
@@ -131,11 +131,23 @@ class DesignModel:
                 d.l_corner = primary['corner']
                 d.l_cut_w_cm = float(primary['cut_w_cm'])
                 d.l_cut_h_cm = float(primary['cut_h_cm'])
+            _cr = _lp.get('cut_rects') or []
+            d.l_cut_rects = [
+                CutRect(
+                    anchor=r.get('anchor', 'tr'),
+                    offset_x_cm=float(r.get('offset_x_cm', 0)),
+                    offset_y_cm=float(r.get('offset_y_cm', 0)),
+                    w_cm=float(r.get('w_cm', 0)),
+                    h_cm=float(r.get('h_cm', 0)),
+                )
+                for r in _cr
+            ][:3]
         else:
             d.l_corner = 'br'
             d.l_cut_w_cm = 0.0
             d.l_cut_h_cm = 0.0
             d.l_cuts_cm = []
+            d.l_cut_rects = []
         # 圆角设置
         d.corner_tl_cm = snap['corners']['tl']
         d.corner_tr_cm = snap['corners']['tr']

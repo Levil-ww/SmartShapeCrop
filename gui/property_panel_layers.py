@@ -93,6 +93,7 @@ class _LayersMixin:
                 'cut_w_cm': self._lshape_panel.get_cut_w_cm(),
                 'cut_h_cm': self._lshape_panel.get_cut_h_cm(),
                 'cuts_cm': self._lshape_panel.get_cuts_cm(),
+                'cut_rects': self._lshape_panel.get_cut_rects_cm(),
             }
         else:
             lshape = None

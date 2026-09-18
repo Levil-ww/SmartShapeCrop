@@ -81,6 +81,11 @@ class LShapePanel(QWidget):
         self._lshape_parse_worker = None  # type: _LShapeParseWorker | None
         # —— 参数来源标记：None=未识别 / 'recognize'=识别值 / 'manual'=用户手动修改 ——
         self._params_source = None
+        # —— 阶梯模式：True=单边阶梯挖角（_gb_staircase 可见，_gb_l 隐藏）——
+        self._staircase_mode = False
+        # —— 阶梯子行控件列表：[(offset_x, offset_y, width, height), ...] ——
+        self._stair_rows = []
+        self._stair_max_levels = 3
         # —— 防止 target_changed 信号在 PropertyPanel 回填时触发递归 ——
         self._block_target_signal = False
         # —— 持久化设置（与水池设计器/圆角裁剪工具共用同一份 QSettings，但 source 隔离）——
@@ -271,6 +276,11 @@ class LShapePanel(QWidget):
 
         self._inner_layout.addLayout(params_row)
 
+        # ===== 4.5) 阶梯挖角参数 GroupBox（默认隐藏，阶梯模式时显示）=====
+        self._build_staircase_ui()
+        self._inner_layout.addWidget(self._gb_staircase)
+        self._gb_staircase.setVisible(False)
+
         # ===== 6) 一键生成预览 + 导出 JPG（底部主操作行，与水池设计器一致）=====
         row_action = QHBoxLayout()
         row_action.setSpacing(8)
@@ -333,6 +343,213 @@ class LShapePanel(QWidget):
             "QGroupBox::title { subcontrol-origin: border; subcontrol-position: top left;"
             " left: 10px; top: -2px; padding: 0 6px;"
             f" color: {accent}; }}")
+
+    def _build_staircase_ui(self):
+        """构建阶梯挖角参数 GroupBox（默认隐藏，_set_staircase_mode(True) 时显示）。
+
+        结构：
+          - 角位选择器（QComboBox）
+          - 2 级子行（默认）~ 3 级子行（上限），每级：offset_x / offset_y / 宽 / 高
+          - 「追加一级」/「删除末级」按钮
+        """
+        self._gb_staircase = QGroupBox("单边阶梯挖角参数")
+        self._gb_staircase.setStyleSheet(self._param_group_style("#E67E22"))
+        fs = QVBoxLayout(self._gb_staircase)
+        fs.setSpacing(6)
+
+        row_corner = QHBoxLayout()
+        row_corner.addWidget(QLabel("角位"), 0)
+        self._stair_corner = QComboBox()
+        self._stair_corner.addItem("左上角", "tl")
+        self._stair_corner.addItem("右上角", "tr")
+        self._stair_corner.addItem("左下角", "bl")
+        self._stair_corner.addItem("右下角", "br")
+        self._stair_corner.setCurrentIndex(1)
+        self._stair_corner.currentIndexChanged.connect(self._on_staircase_changed)
+        row_corner.addWidget(self._stair_corner, 1)
+        fs.addLayout(row_corner)
+
+        self._stair_rows_container = QVBoxLayout()
+        self._stair_rows_container.setSpacing(4)
+        fs.addLayout(self._stair_rows_container)
+
+        self._stair_add_btn = QPushButton("+ 追加一级")
+        self._stair_add_btn.setFixedWidth(100)
+        self._stair_add_btn.setToolTip("追加一级阶梯（最多 3 级）")
+        self._stair_add_btn.setStyleSheet(
+            "QPushButton { background:#FFF3E0; color:#B26A00; border:1px solid #E6A23C;"
+            " border-radius:3px; padding:3px 6px; font-size:11px; }"
+            "QPushButton:hover { background:#FFE8C2; }"
+            "QPushButton:disabled { color:#ccc; background:#f5f5f5; }")
+        self._stair_add_btn.clicked.connect(self._on_stair_add_level)
+        self._stair_remove_btn = QPushButton("- 删除末级")
+        self._stair_remove_btn.setFixedWidth(100)
+        self._stair_remove_btn.setToolTip("删除最后一级阶梯（至少保留 1 级）")
+        self._stair_remove_btn.setStyleSheet(
+            "QPushButton { background:#FFF3E0; color:#B26A00; border:1px solid #E6A23C;"
+            " border-radius:3px; padding:3px 6px; font-size:11px; }"
+            "QPushButton:hover { background:#FFE8C2; }"
+            "QPushButton:disabled { color:#ccc; background:#f5f5f5; }")
+        self._stair_remove_btn.clicked.connect(self._on_stair_remove_level)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self._stair_add_btn)
+        btn_row.addWidget(self._stair_remove_btn)
+        btn_row.addStretch(1)
+        fs.addLayout(btn_row)
+
+        self._stair_add_level_row()
+        self._stair_add_level_row()
+        self._update_stair_buttons()
+
+    def _stair_add_level_row(self, offset_x: float = 0.0, offset_y: float = 0.0,
+                             w: float = 0.0, h: float = 0.0):
+        """向阶梯容器追加一行（offset_x / offset_y / 宽 / 高 SpinBox）。"""
+        if len(self._stair_rows) >= self._stair_max_levels:
+            return
+        level_idx = len(self._stair_rows)
+        ox = self._dspin(0, 450, offset_x)
+        oy = self._dspin(0, 450, offset_y)
+        sp_w = self._dspin(0, 450, w)
+        sp_h = self._dspin(0, 450, h)
+        for sp in (ox, oy, sp_w, sp_h):
+            sp.valueChanged.connect(self._on_staircase_changed)
+        row = QHBoxLayout()
+        lbl = QLabel(f"L{level_idx + 1}")
+        lbl.setFixedWidth(20)
+        lbl.setStyleSheet("color:#E67E22; font-weight:bold; font-size:11px;")
+        row.addWidget(lbl, 0)
+        row.addWidget(QLabel("Δx"), 0)
+        row.addWidget(ox, 1)
+        row.addWidget(QLabel("Δy"), 0)
+        row.addWidget(oy, 1)
+        row.addWidget(QLabel("宽"), 0)
+        row.addWidget(sp_w, 1)
+        row.addWidget(QLabel("高"), 0)
+        row.addWidget(sp_h, 1)
+        container_widget = QWidget()
+        container_widget.setLayout(row)
+        container_widget.setStyleSheet("margin-left: 16px;")
+        self._stair_rows_container.addWidget(container_widget)
+        self._stair_rows.append((ox, oy, sp_w, sp_h, container_widget))
+
+    def _on_stair_add_level(self):
+        """用户点「追加一级」→ 新增一行子行。"""
+        if len(self._stair_rows) < self._stair_max_levels:
+            self._stair_add_level_row()
+            self._update_stair_buttons()
+            self._on_staircase_changed()
+
+    def _on_stair_remove_level(self):
+        """用户点「删除末级」→ 移除最后一行子行（至少保留 1 行）。"""
+        if len(self._stair_rows) <= 1:
+            return
+        ox, oy, sp_w, sp_h, w = self._stair_rows.pop()
+        self._stair_rows_container.removeWidget(w)
+        w.setParent(None)
+        w.deleteLater()
+        self._update_stair_buttons()
+        self._on_staircase_changed()
+
+    def _update_stair_buttons(self):
+        """根据当前子行数更新追加/删除按钮的启用状态。"""
+        n = len(self._stair_rows)
+        self._stair_add_btn.setEnabled(n < self._stair_max_levels)
+        self._stair_remove_btn.setEnabled(n > 1)
+
+    def _on_staircase_changed(self, *_):
+        """阶梯控件变化 → 更新 _lshape_params dict（与 _on_param_changed 同语义）。"""
+        if not self._staircase_mode:
+            return
+        cut_rects = self.get_cut_rects_cm()
+        outer_w = max(0.0, self._sp_outer_w.value() - CUT_LOSS_CM)
+        outer_h = max(0.0, self._sp_outer_h.value() - CUT_LOSS_CM)
+        anchor = self._stair_corner.currentData() or 'tr'
+        primary_w = cut_rects[0]['w_cm'] if cut_rects else 0.0
+        primary_h = cut_rects[0]['h_cm'] if cut_rects else 0.0
+        if self._lshape_params is None:
+            self._lshape_params = {}
+        self._lshape_params.update({
+            'corner': anchor,
+            'cut_w_cm': primary_w,
+            'cut_h_cm': primary_h,
+            'cuts_cm': self.get_cuts_cm(),
+            'cut_rects': cut_rects,
+            'outer_w_cm': outer_w,
+            'outer_h_cm': outer_h,
+        })
+        self._params_source = 'manual'
+
+    def _set_staircase_mode(self, enabled: bool):
+        """切换标准多角模式 ↔ 单边阶梯模式。
+
+        enabled=True:  隐藏 _gb_l（4 角行），显示 _gb_staircase
+        enabled=False: 显示 _gb_l（4 角行），隐藏 _gb_staircase
+        """
+        self._staircase_mode = enabled
+        self._gb_l.setVisible(not enabled)
+        self._gb_staircase.setVisible(enabled)
+
+    def get_cut_rects_cm(self) -> list[dict]:
+        """返回阶梯挖角的 CutRect 列表（厘米），按子行顺序。
+
+        每项：{'anchor': str, 'offset_x_cm': float, 'offset_y_cm': float,
+               'w_cm': float, 'h_cm': float}
+        非阶梯模式返回空列表。
+        """
+        if not self._staircase_mode:
+            return []
+        anchor = self._stair_corner.currentData() or 'tr'
+        result = []
+        for ox_sp, oy_sp, w_sp, h_sp, _ in self._stair_rows:
+            w_val = w_sp.value()
+            h_val = h_sp.value()
+            if w_val <= 0 or h_val <= 0:
+                continue
+            result.append({
+                'anchor': anchor,
+                'offset_x_cm': max(0.0, ox_sp.value()),
+                'offset_y_cm': max(0.0, oy_sp.value()),
+                'w_cm': w_val,
+                'h_cm': h_val,
+            })
+        return result
+
+    def set_cut_rects(self, cut_rects: list[dict]):
+        """识别结果回填：把 CutRect 列表写入阶梯子行 SpinBox。
+
+        cut_rects: [{'anchor': str, 'offset_x_cm': float, 'offset_y_cm': float,
+                      'w_cm': float, 'h_cm': float}, ...]
+        自动切换到阶梯模式（_gb_staircase 可见，_gb_l 隐藏）。
+        子行数按输入长度调整（1~3），多余行删除，不足行追加。
+        """
+        cut_rects = list(cut_rects or [])[:self._stair_max_levels]
+        if not cut_rects:
+            return
+        self._set_staircase_mode(True)
+        anchor = cut_rects[0].get('anchor', 'tr')
+        idx = self._stair_corner.findData(anchor)
+        self._stair_corner.blockSignals(True)
+        if idx >= 0:
+            self._stair_corner.setCurrentIndex(idx)
+        self._stair_corner.blockSignals(False)
+        while len(self._stair_rows) > len(cut_rects):
+            self._on_stair_remove_level()
+        for i, cr in enumerate(cut_rects):
+            if i >= len(self._stair_rows):
+                self._stair_add_level_row()
+            ox_sp, oy_sp, w_sp, h_sp, _ = self._stair_rows[i]
+            for sp in (ox_sp, oy_sp, w_sp, h_sp):
+                sp.blockSignals(True)
+            try:
+                ox_sp.setValue(max(0.0, float(cr.get('offset_x_cm', 0))))
+                oy_sp.setValue(max(0.0, float(cr.get('offset_y_cm', 0))))
+                w_sp.setValue(max(0.0, float(cr.get('w_cm', 0))))
+                h_sp.setValue(max(0.0, float(cr.get('h_cm', 0))))
+            finally:
+                for sp in (ox_sp, oy_sp, w_sp, h_sp):
+                    sp.blockSignals(False)
+        self._update_stair_buttons()
+        self._on_staircase_changed()
 
     # ====================================================================
     # 目标文件名处理
@@ -747,7 +964,14 @@ class LShapePanel(QWidget):
           - Worker 成功直接 auto-apply（_on_lshape_parsed）
           - 未来其他程序化回填路径
         因此参数来源使用统一的 `_params_source='recognize'` 标记。
+
+        [V2.2 Phase 4] 阶梯场景：result.debug['pattern'] == 'single_edge_stepped' 时
+        走 set_cut_rects() 路径，跳过标准 4 行 set_lshape_cuts()。
         """
+        debug = getattr(result, 'debug', {}) or {}
+        is_staircase = debug.get('pattern') == 'single_edge_stepped'
+        stair_cut_rects = debug.get('cuts_cm', []) if is_staircase else []
+
         self._lshape_params = {
             'corner': corner,
             'cut_w_cm': max(0.0, cut_w_cm),
@@ -756,43 +980,43 @@ class LShapePanel(QWidget):
             'outer_h_cm': max(0.0, float(result.outer_h_cm or 0)),
             'cuts_cm': [],
         }
-        # 优先回填识别层已产出的多角候选，以建议值占位，便于用户人工修正。
-        suggestions = self._extract_multicorner_suggestions(result)
-        if suggestions:
-            self.set_lshape_cuts(suggestions)
-        # corner code → 中文显示名（与 _cb_lcorner addItem 顺序一致，defensive 兜底未知）
+        if is_staircase and stair_cut_rects:
+            self._lshape_params['cut_rects'] = stair_cut_rects
+            self.set_cut_rects(stair_cut_rects)
+        else:
+            suggestions = self._extract_multicorner_suggestions(result)
+            if suggestions:
+                self.set_lshape_cuts(suggestions)
         _corner_label = {
             'tl': '左上角', 'tr': '右上角', 'bl': '左下角', 'br': '右下角',
         }.get(corner, corner or '未知')
         try:
-            # 1) L 形参数组回填（blockSignals 避免触发预览）
-            self._cb_lcorner.blockSignals(True)
-            self._sp_lw.blockSignals(True)
-            self._sp_lh.blockSignals(True)
             self._sp_outer_w.blockSignals(True)
             self._sp_outer_h.blockSignals(True)
             try:
-                ci = self._cb_lcorner.findData(corner)
-                if ci >= 0:
-                    self._cb_lcorner.setCurrentIndex(ci)
-                self._sp_lw.setValue(max(0.0, cut_w_cm))
-                self._sp_lh.setValue(max(0.0, cut_h_cm))
-                # 外框尺寸回填到 SpinBox（设计值 + 1cm = 画布值）
                 _TRIM = CUT_LOSS_CM
                 if result.outer_w_cm > 0:
                     self._sp_outer_w.setValue(max(0.0, float(result.outer_w_cm) + _TRIM))
                 if result.outer_h_cm > 0:
                     self._sp_outer_h.setValue(max(0.0, float(result.outer_h_cm) + _TRIM))
             finally:
-                self._cb_lcorner.blockSignals(False)
-                self._sp_lw.blockSignals(False)
-                self._sp_lh.blockSignals(False)
                 self._sp_outer_w.blockSignals(False)
                 self._sp_outer_h.blockSignals(False)
-            # [Fix Bug2] 主角 SpinBox 已用 OCR 真值（cut_w_cm/cut_h_cm）覆盖 set_lshape_cuts 的建议值，
-            # 此时再从 SpinBox 读取 cuts_cm，确保主角值 = 识别真值而非像素比例反推值。
-            self._lshape_params['cuts_cm'] = self.get_cuts_cm()
-            # 3) 标记为识别值 + 状态栏内联摘要（格式对齐池面板图1风格）
+            if not is_staircase:
+                self._cb_lcorner.blockSignals(True)
+                self._sp_lw.blockSignals(True)
+                self._sp_lh.blockSignals(True)
+                try:
+                    ci = self._cb_lcorner.findData(corner)
+                    if ci >= 0:
+                        self._cb_lcorner.setCurrentIndex(ci)
+                    self._sp_lw.setValue(max(0.0, cut_w_cm))
+                    self._sp_lh.setValue(max(0.0, cut_h_cm))
+                finally:
+                    self._cb_lcorner.blockSignals(False)
+                    self._sp_lw.blockSignals(False)
+                    self._sp_lh.blockSignals(False)
+                self._lshape_params['cuts_cm'] = self.get_cuts_cm()
             self._params_source = 'recognize'
             # 画布尺寸 = 外框设计值 + 1cm 损耗
             _canvas_w = float(result.outer_w_cm or 0) + 1.0
@@ -800,11 +1024,24 @@ class LShapePanel(QWidget):
             lines = [
                 f"✅ 成功！",
                 f"画布：{_canvas_w:.1f} × {_canvas_h:.1f} cm",
-                f"L形挖角：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm",
+            ]
+            if is_staircase and stair_cut_rects:
+                lines.append(
+                    f"单边阶梯挖角：corner={corner}，{len(stair_cut_rects)} 级阶梯")
+                for i, cr in enumerate(stair_cut_rects):
+                    lines.append(
+                        f"  L{i+1}: {cr.get('w_cm', 0):.1f}×{cr.get('h_cm', 0):.1f}cm "
+                        f"(Δx={cr.get('offset_x_cm', 0):.1f}, Δy={cr.get('offset_y_cm', 0):.1f})")
+            else:
+                lines.append(
+                    f"L形挖角：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm")
+            lines.extend([
                 f"外框尺寸：{result.outer_w_cm:.1f} × {result.outer_h_cm:.1f} cm"
                 f"（画布含 1cm 裁剪损耗）",
-                f"L形草图识别：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm",
-            ]
+            ])
+            if not is_staircase:
+                lines.append(
+                    f"L形草图识别：corner={corner}，挖角 {cut_w_cm:.1f} × {cut_h_cm:.1f} cm")
             consistency = float(getattr(result, 'self_consistency', 0.0) or 0.0)
             suggestions = self._extract_multicorner_suggestions(result)
             low_confidence = consistency < 0.75
@@ -815,7 +1052,7 @@ class LShapePanel(QWidget):
                 lines.append(
                     f"⚠️ G2 置信度偏低：结构自洽度 {consistency * 100:.0f}%（阈值 75%），"
                     "请人工核对挖角位置与尺寸")
-            if len(suggestions) > 1:
+            if not is_staircase and len(suggestions) > 1:
                 summary = '、'.join(
                     f"{item['corner']} {item['cut_w_cm']:.1f}×{item['cut_h_cm']:.1f}cm"
                     for item in suggestions)
@@ -837,19 +1074,40 @@ class LShapePanel(QWidget):
     # 外部访问 API（供 PropertyPanel 调用）
     # ====================================================================
     def get_corner(self) -> str:
-        """读取挖角位置"""
+        """读取挖角位置（阶梯模式从 _stair_corner 读取）。"""
+        if self._staircase_mode:
+            return self._stair_corner.currentData() or 'tr'
         return self._cb_lcorner.currentData()
 
     def get_cut_w_cm(self) -> float:
-        """读取挖角宽度"""
+        """读取挖角宽度（阶梯模式取第一级宽）。"""
+        if self._staircase_mode and self._stair_rows:
+            return self._stair_rows[0][2].value()
         return self._sp_lw.value()
 
     def get_cut_h_cm(self) -> float:
-        """读取挖角高度"""
+        """读取挖角高度（阶梯模式取第一级高）。"""
+        if self._staircase_mode and self._stair_rows:
+            return self._stair_rows[0][3].value()
         return self._sp_lh.value()
 
     def get_cuts_cm(self) -> list[dict]:
-        """返回启用的挖角列表，最多四个；未填写尺寸的行不写入设计。"""
+        """返回启用的挖角列表，最多四个；未填写尺寸的行不写入设计。
+
+        阶梯模式下：从 CutRect 子行转换为旧格式 {corner, cut_w_cm, cut_h_cm}。
+        """
+        if self._staircase_mode:
+            cuts = []
+            anchor = self._stair_corner.currentData() or 'tr'
+            for ox_sp, oy_sp, w_sp, h_sp, _ in self._stair_rows:
+                if w_sp.value() <= 0 or h_sp.value() <= 0:
+                    continue
+                cuts.append({
+                    'corner': anchor,
+                    'cut_w_cm': w_sp.value(),
+                    'cut_h_cm': h_sp.value(),
+                })
+            return cuts[:4]
         cuts = []
         for enabled, combo, width, height in self._corner_rows:
             if not enabled.isChecked() or width.value() <= 0 or height.value() <= 0:
@@ -868,6 +1126,8 @@ class LShapePanel(QWidget):
     def clear_lshape_params(self):
         """清除 L 形参数（草图被清除时调用）。"""
         self._lshape_params = None
+        if self._staircase_mode:
+            self._set_staircase_mode(False)
         # SpinBox 重置为最小画布值（5cm = 设计值 4cm + 1cm 损耗，clip 到 5cm）
         self._sp_outer_w.blockSignals(True)
         self._sp_outer_h.blockSignals(True)
