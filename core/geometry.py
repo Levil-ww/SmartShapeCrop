@@ -57,6 +57,21 @@ class EllipseShape:
 
 
 @dataclass
+class CutRect:
+    """阶梯 L 形的单级挖角矩形（厘米）。
+
+    anchor 为锚定角；offset_x_cm / offset_y_cm 是挖角矩形靠近锚定角的
+    那一角相对两条锚定边向内收缩的距离。旧 (corner, cut_w, cut_h)
+    等价于 offset ≡ 0 的 CutRect。
+    """
+    anchor: Literal['tl', 'tr', 'bl', 'br'] = 'tr'
+    offset_x_cm: float = 0.0
+    offset_y_cm: float = 0.0
+    w_cm: float = 0.0
+    h_cm: float = 0.0
+
+
+@dataclass
 class LShape:
     """
     L 形 = 大矩形 - 角落小矩形
@@ -68,13 +83,27 @@ class LShape:
     cut_h: float = 200.0   # 挖掉的高度
     # 多角扩展：单位仍为像素；为空时完全等价于旧单角字段。
     cuts: list[dict] = field(default_factory=list)
+    # 阶梯扩展：偏移感知 cut 列表（像素 dict：corner/cut_w/cut_h/offset_x/offset_y）；
+    # 非空时优先于 cuts 表达几何。
+    cut_rects: list[dict] = field(default_factory=list)
 
     def cut_specs(self) -> list[tuple[str, float, float]]:
-        """返回本 L 形实际使用的挖角列表，兼容旧单角对象。"""
+        """返回本 L 形实际使用的挖角列表，兼容旧单角对象与阶梯 cut_rects。"""
         if self.cuts:
             return [(str(c['corner']), float(c['cut_w']), float(c['cut_h']))
                     for c in self.cuts]
+        if self.cut_rects:
+            # 阶梯 CutRect 的边界近似（丢弃 offset），供 3 元组解包的下游使用
+            return [(str(c['corner']), float(c['cut_w']), float(c['cut_h']))
+                    for c in self.cut_rects]
         return [(self.corner, self.cut_w, self.cut_h)]
+
+    def cut_rect_specs(self) -> list[dict]:
+        """偏移感知 cut 列表（像素 dict），供 build_lshape_mask 阶梯渲染。"""
+        if self.cut_rects:
+            return [dict(c) for c in self.cut_rects]
+        return [{'corner': ck, 'cut_w': cw, 'cut_h': ch, 'offset_x': 0.0, 'offset_y': 0.0}
+                for ck, cw, ch in self.cut_specs()]
 
     def cut_rect(self) -> RectShape:
         """返回被挖掉的小矩形"""
@@ -148,6 +177,8 @@ class CropDesign:
     # 多角 L 形：[{"corner": "tr", "cut_w_cm": 28, "cut_h_cm": 8}, ...]
     # 空列表表示沿用旧的 l_corner/l_cut_w_cm/l_cut_h_cm。
     l_cuts_cm: list[dict] = field(default_factory=list)
+    # 单边阶梯 L 形：CutRect 列表（厘米）；非空时优先于 l_cuts_cm 表达几何。
+    l_cut_rects: list[CutRect] = field(default_factory=list)
 
     # —— 四个角的圆角半径（厘米），0 表示无圆角 ——
     corner_tl_cm: float = 0.0
@@ -294,38 +325,87 @@ class CropDesign:
                 if float(cut.get('cut_w_cm', 0)) <= 0 or float(cut.get('cut_h_cm', 0)) <= 0:
                     raise ValueError("l_cuts_cm 的宽高必须为正数")
 
-            cuts = self.l_cuts_cm or [{
-                'corner': self.l_corner,
-                'cut_w_cm': self.l_cut_w_cm,
-                'cut_h_cm': self.l_cut_h_cm,
-            }]
-            cut_by_corner = {cut['corner']: cut for cut in cuts}
-            inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
-                - self.inner_margin_left_cm - self.inner_margin_right_cm
-            inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
-                - self.inner_margin_top_cm - self.inner_margin_bottom_cm
-            edge_clearance_cm = 0.5
-            edge_limits = (
-                ('上边', ('tl', 'tr'), 'cut_w_cm', inner_w_cm),
-                ('下边', ('bl', 'br'), 'cut_w_cm', inner_w_cm),
-                ('左边', ('tl', 'bl'), 'cut_h_cm', inner_h_cm),
-                ('右边', ('tr', 'br'), 'cut_h_cm', inner_h_cm),
-            )
-            for edge_name, corners, size_key, edge_length_cm in edge_limits:
-                # F1 守卫：内矩形退化（边距之和超过画布）时边长为负，
-                # 边长校验对任何挖角都会误报超限，交给渲染层退化守卫处理
-                if edge_length_cm <= 0:
-                    continue
-                edge_sum_cm = sum(
-                    float(cut_by_corner[corner][size_key])
-                    for corner in corners
-                    if corner in cut_by_corner
+            # l_cut_rects 非空时是唯一几何来源，其「不重叠 + 不越界」约束
+            # 已由 _validate_l_cut_rects 接管；旧边约束仅作用于 l_cuts_cm 路径
+            if not self.l_cut_rects:
+                cuts = self.l_cuts_cm or [{
+                    'corner': self.l_corner,
+                    'cut_w_cm': self.l_cut_w_cm,
+                    'cut_h_cm': self.l_cut_h_cm,
+                }]
+                cut_by_corner = {cut['corner']: cut for cut in cuts}
+                inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
+                    - self.inner_margin_left_cm - self.inner_margin_right_cm
+                inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
+                    - self.inner_margin_top_cm - self.inner_margin_bottom_cm
+                edge_clearance_cm = 0.5
+                edge_limits = (
+                    ('上边', ('tl', 'tr'), 'cut_w_cm', inner_w_cm),
+                    ('下边', ('bl', 'br'), 'cut_w_cm', inner_w_cm),
+                    ('左边', ('tl', 'bl'), 'cut_h_cm', inner_h_cm),
+                    ('右边', ('tr', 'br'), 'cut_h_cm', inner_h_cm),
                 )
-                if edge_sum_cm > edge_length_cm - edge_clearance_cm:
-                    raise ValueError(
-                        f"L 形挖角在{edge_name}上的尺寸和 {edge_sum_cm:g}cm "
-                        f"必须小于外边长度 {edge_length_cm:g}cm 减 {edge_clearance_cm:g}cm 余量"
+                for edge_name, corners, size_key, edge_length_cm in edge_limits:
+                    # F1 守卫：内矩形退化（边距之和超过画布）时边长为负，
+                    # 边长校验对任何挖角都会误报超限，交给渲染层退化守卫处理
+                    if edge_length_cm <= 0:
+                        continue
+                    edge_sum_cm = sum(
+                        float(cut_by_corner[corner][size_key])
+                        for corner in corners
+                        if corner in cut_by_corner
                     )
+                    if edge_sum_cm > edge_length_cm - edge_clearance_cm:
+                        raise ValueError(
+                            f"L 形挖角在{edge_name}上的尺寸和 {edge_sum_cm:g}cm "
+                            f"必须小于外边长度 {edge_length_cm:g}cm 减 {edge_clearance_cm:g}cm 余量"
+                        )
+
+            if self.l_cut_rects:
+                self._validate_l_cut_rects()
+
+    def _validate_l_cut_rects(self) -> None:
+        """阶梯 l_cut_rects 校验：同角 ≤3 级、正宽高、非负偏移、不越界、两两不重叠。"""
+        per_anchor: dict[str, int] = {}
+        for i, cut in enumerate(self.l_cut_rects):
+            if cut.anchor not in self._VALID_CORNERS:
+                raise ValueError(f"l_cut_rects[{i}] anchor 无效: {cut.anchor!r}")
+            n = per_anchor.get(cut.anchor, 0) + 1
+            per_anchor[cut.anchor] = n
+            if n > 3:
+                raise ValueError(f"l_cut_rects 同角位 {cut.anchor!r} 最多支持 3 级阶梯")
+            if cut.w_cm <= 0 or cut.h_cm <= 0:
+                raise ValueError(f"l_cut_rects[{i}] 宽高必须为正数")
+            if cut.offset_x_cm < 0 or cut.offset_y_cm < 0:
+                raise ValueError(f"l_cut_rects[{i}] offset 不能为负数")
+
+        inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
+            - self.inner_margin_left_cm - self.inner_margin_right_cm
+        inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
+            - self.inner_margin_top_cm - self.inner_margin_bottom_cm
+        edge_clearance_cm = 0.5
+        # F1 守卫同款：内矩形退化（边长 ≤ 0）时跳过越界/重叠校验，交给渲染层退化守卫
+        if inner_w_cm <= 0 or inner_h_cm <= 0:
+            return
+        boxes = []
+        for i, cut in enumerate(self.l_cut_rects):
+            if cut.offset_x_cm + cut.w_cm > inner_w_cm - edge_clearance_cm:
+                raise ValueError(f"l_cut_rects[{i}] 超出外框可用宽度")
+            if cut.offset_y_cm + cut.h_cm > inner_h_cm - edge_clearance_cm:
+                raise ValueError(f"l_cut_rects[{i}] 超出外框可用高度")
+            box = _rect_from_anchor_offset(
+                RectShape(0.0, 0.0, inner_w_cm, inner_h_cm),
+                cut.anchor, cut.offset_x_cm, cut.offset_y_cm, cut.w_cm, cut.h_cm)
+            boxes.append((box.x, box.y, box.x + box.w, box.y + box.h))
+        eps = 1e-6
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                ax0, ay0, ax1, ay1 = boxes[i]
+                bx0, by0, bx1, by1 = boxes[j]
+                ox = min(ax1, bx1) - max(ax0, bx0)
+                oy = min(ay1, by1) - max(ay0, by0)
+                if ox > eps and oy > eps:
+                    raise ValueError(f"l_cut_rects[{i}] 与 l_cut_rects[{j}] 挖角区域重叠")
 
     @property
     def canvas_w_px(self) -> int:
@@ -396,9 +476,20 @@ class CropDesign:
         )
 
     def l_shapes_px(self) -> LShape:
-        """返回含多角 cut 列表的 LShape；旧字段仍作为兼容主 cut 保留。"""
+        """返回含多角/阶梯 cut 列表的 LShape；旧字段仍作为兼容主 cut 保留。"""
         shape = self.l_shape_px()
-        if self.l_cuts_cm:
+        if self.l_cut_rects:
+            shape.cut_rects = [
+                {
+                    'corner': cut.anchor,
+                    'cut_w': self.cm2px(float(cut.w_cm)),
+                    'cut_h': self.cm2px(float(cut.h_cm)),
+                    'offset_x': self.cm2px(float(cut.offset_x_cm)),
+                    'offset_y': self.cm2px(float(cut.offset_y_cm)),
+                }
+                for cut in self.l_cut_rects
+            ]
+        elif self.l_cuts_cm:
             shape.cuts = [
                 {
                     'corner': cut['corner'],
@@ -718,12 +809,38 @@ def _get_lshape_cut_rect_at_offset(outer_rect: RectShape, corner_key: str,
         return RectShape(new_right - cw, new_bottom - ch, cw, ch)
 
 
+def _rect_from_anchor_offset(outer_rect: RectShape, anchor: str,
+                             offset_x: float, offset_y: float,
+                             w: float, h: float) -> RectShape:
+    """
+    按「锚定角 + 相对两条锚定边的内缩偏移」计算单级挖角矩形（像素）。
+
+    offset_x/offset_y 是挖角矩形靠近锚定角的那一角向内收缩的距离；
+    offset ≡ 0 时与 _get_lshape_cut_rect_at_offset(outer_rect, anchor, w, h, 0) 等价。
+    [N1-01 同款钳制] cw/ch 钳制到可用宽/高，防止负坐标导致 numpy 负索引静默切错。
+    """
+    avail_w = max(0.0, outer_rect.w - offset_x)
+    avail_h = max(0.0, outer_rect.h - offset_y)
+    cw = max(0.0, min(w, avail_w))
+    ch = max(0.0, min(h, avail_h))
+
+    if anchor == 'tl':
+        return RectShape(outer_rect.x + offset_x, outer_rect.y + offset_y, cw, ch)
+    elif anchor == 'tr':
+        return RectShape(outer_rect.right - offset_x - cw, outer_rect.y + offset_y, cw, ch)
+    elif anchor == 'bl':
+        return RectShape(outer_rect.x + offset_x, outer_rect.bottom - offset_y - ch, cw, ch)
+    else:  # br
+        return RectShape(outer_rect.right - offset_x - cw,
+                         outer_rect.bottom - offset_y - ch, cw, ch)
+
+
 def build_lshape_mask(size: tuple[int, int],
                        outer_rect: RectShape, corner_key: str,
                        cut_w: float, cut_h: float,
                        radii: dict[str, float],
                        fill_value: int = 255,
-                       cuts: list[tuple[str, float, float]] | None = None) -> Image.Image:
+                       cuts: list[tuple[str, float, float] | dict] | None = None) -> Image.Image:
     """
     构建带圆角的 L 形 mask。
 
@@ -756,11 +873,20 @@ def build_lshape_mask(size: tuple[int, int],
     # Step 1: 填充外轮廓
     fill_rect_mask(m, outer_rect, fill_value)
 
-    cut_specs = cuts or [(corner_key, cut_w, cut_h)]
-    valid_cuts = [
-        (ck, cw, ch, _get_lshape_cut_rect_at_offset(outer_rect, ck, cw, ch, 0))
-        for ck, cw, ch in cut_specs
-    ]
+    raw_specs = cuts or [(corner_key, cut_w, cut_h)]
+    valid_cuts = []
+    for spec in raw_specs:
+        if isinstance(spec, dict):
+            ck = str(spec['corner'])
+            cw = float(spec['cut_w'])
+            ch = float(spec['cut_h'])
+            cut = _rect_from_anchor_offset(outer_rect, ck,
+                                           float(spec.get('offset_x', 0.0)),
+                                           float(spec.get('offset_y', 0.0)), cw, ch)
+        else:
+            ck, cw, ch = spec
+            cut = _get_lshape_cut_rect_at_offset(outer_rect, ck, cw, ch, 0)
+        valid_cuts.append((ck, cw, ch, cut))
     valid_cuts = [(ck, cw, ch, cut) for ck, cw, ch, cut in valid_cuts
                   if cut.w > 0.5 and cut.h > 0.5]
     has_cut = bool(valid_cuts)

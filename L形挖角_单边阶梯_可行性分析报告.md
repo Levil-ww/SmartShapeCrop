@@ -5,7 +5,7 @@
 | 文档类型 | ADR(架构决策记录) |
 | 主题 | 单边阶梯 L 形挖角识别 + 与多边 L 形区分判定 |
 | 状态 | Revised(评审后修订 — 原核心结论不可行,方案重构为 CutRect 路线) |
-| 报告版本 | V2.1(2026-09-17 同日代码级评审补充) |
+| 报告版本 | V2.2(2026-09-17 真实样本几何验证 — 校准「待确认 2:变体支持」字段) |
 | 日期 | 2026-09-17 |
 | 涉及模块 | `services/sketch_parser/`、`core/lshape_border*.py`、`workers/property_panel_workers.py` |
 | 决策范围 | 识别层改造、schema 扩展、G1 闸口扩展 |
@@ -261,7 +261,7 @@ cuts_cm.append({
 - 用户要求文件级区分(需新增 `pattern` 后缀命名约定)
 - 二期 OCR 同角分段归属实现
 - 滑动窗口桶上限 4 不足(出现 5+ 凹角场景)
-- 需支持「逐级外扩」「阶梯 + 多角混合」变体 → CutRect offset 独立取值
+- 「阶梯 + 多角混合」变体启用(决议:暂缓;CutRect 模型无需改动,仅需 GUI 入口 + pattern 分类扩展)
 
 ---
 
@@ -290,22 +290,58 @@ cuts_cm.append({
 
 | 期 | 内容 | 工期 | 关键验收 |
 |---|---|---|---|
-| **一 数据模型+几何** | `core/geometry.py`:新增 CutRect dataclass;`CropDesign` 增 `l_cut_rects`(保留 `l_cuts_cm` 兼容入口);`build_lshape_mask` 改遍历 CutRect + 新增 `_rect_from_anchor_offset()`;**重写 validate()(L284-295,允许同 anchor 多笔)与同边约束(L308-328,改「各级不重叠 + 不越界」)** | 2–3 天 | 手写 CutRect 列表 → 渲染出正确两级台阶(复用 `scripts/diagnose/_diag_stair_*.py`) |
+| **一 数据模型+几何** | `core/geometry.py`:新增 CutRect dataclass;`CropDesign` 增 `l_cut_rects`(保留 `l_cuts_cm` 兼容入口);`build_lshape_mask` 改遍历 CutRect + 新增 `_rect_from_anchor_offset()`;**重写 validate()(L284-295,允许同 anchor 多笔、上限 3 级)与同边约束(L308-328,改「各级不重叠 + 不越界」)** | 2–3 天 | 手写 CutRect 列表 → 渲染出正确两级台阶(复用 `scripts/diagnose/_diag_stair_*.py`) |
 | **二 识别层** | B1 解除滑动窗口桶合并(每桶保留全部候选,去重,cap 4);用 concave 坐标补 anchor+offset;`cut_w/h_px` 改「相邻顶点差值」;B4 G1 反拼 IoU≥0.92 校验 | 1–2 天 | 本例真实草图 cuts_cm 正确表达两级台阶 |
 | **三 渲染出口+边框** | `core/image_ops.py` 8 处 `mode=='rect_lshape'` 分支(733/759/779/1050/1068/1144/1204/1223)收敛为 helper;`core/lshape_border.py` 非 bbox 角凹角补边(唯一硬骨头,先 60×60 受控实验) | 3–5 天 | 多素材 × 多级台阶,边框连续无漏线、无越界 |
-| **四 GUI+回归** | `gui/lshape_panel.py` 同角位子行交互(缩进 + 「追加一级」);每期跑全量回归(~501 测试)作准入门槛 | 2–3 天 | 参数回填/预览/导出全通 |
+| **四 GUI+回归** | `gui/lshape_panel.py` 同角位子行交互(缩进 + 「追加一级」,默认 2 行、最多 3 行;不提供多角混合入口);每期跑全量回归(~501 测试)作准入门槛 | 2–3 天 | 参数回填/预览/导出全通 |
 
 建议先做一 + 二期(3–5 天)即可端到端看到正确的阶梯渲染;三、四期为体验与打磨。
 
-### 待确认(同 20260916 实测版报告)
+### 已确认决议(2026-09-17)
 
-1. **级数上限**:2 级 / 3 级 / 不限?→ 决定 GUI 子行数量与交互设计
-2. **变体支持**(V2.2 修订 — 基于 2026-09-17 真实样本几何验证):
+1. **级数上限 = 3 级(大多数情景 2 级)** — 已确认
+   - `validate()` 同 anchor 上限 3 级(见分期一)
+   - GUI 子行默认 2 行、最多 3 行(见分期四)
+2. **变体支持**(V2.2 修订 — 基于 2026-09-17 真实样本几何验证;决议:采纳 V2.2 建议,已确认):
    - **「逐级内缩」与「逐级外扩」两种连续阶梯方向** → CutRect 模型天然统一覆盖,无需独立分支
      - 两者都用「外包挖空 + 内嵌凸回」表达,凸回矩形的 offset = 前 N 级尺寸之和,**可自动推导,不需独立取值**
      - 内缩样本(吸水皮革-安妮森林,55×93.5CM):外包挖空 18.5×10 + 凸回 8.5×3.5 @ offset(10, 6.5)
      - 外扩样本(用户上传图):外包挖空 20×14 + 凸回 15×7 @ offset(5, 7)
      - 两者 CutRect 数据结构完全同构,差别仅在凸回矩形的相对大小(内缩凸回占比 ~46%×35%;外扩凸回占比 ~75%×50%)
    - **真正需要 offset 独立取值的变体** = 「阶梯 + 多角混合」(如 tr 阶梯 + bl 单挖角,bl 的 offset 与 tr 阶梯无关,必须独立)
-   - **建议**:一期只支持连续阶梯(内缩 + 外扩同模型,不需 offset 独立);二期再考虑多角混合(需 offset 独立)
+   - **决议**:一期支持连续阶梯(内缩 + 外扩同模型,offset 自动推导);**「阶梯 + 多角混合」暂缓不实现** — 不提供 GUI 入口,CutRect 模型无需改动,后续启用仅需 GUI 入口 + pattern 分类扩展(见 Revisit Triggers)
    - **识别层启示**:外扩形态第 1 级挖角尺寸小(5×7 vs 内缩 10×6.5),在滑动窗口桶内 score 较低,**更易被合并漏检** → 印证 B1「解除桶合并」的必要性
+
+### 第一期实施结果(2026-09-18)
+
+**完成日期**: 2026-09-18
+
+**改动清单**(`core/geometry.py`):
+- 新增 `CutRect` dataclass(anchor + offset_x_cm + offset_y_cm + w_cm + h_cm)
+- `CropDesign` 增 `l_cut_rects: list[CutRect]` 字段(保留 `l_cuts_cm` 兼容入口)
+- `LShape` 增 `cut_rects: list[dict]` 字段 + `cut_rect_specs()` 方法(offset 感知 dict 列表)
+- `validate()` 重写:当 `l_cut_rects` 非空时跳过旧边约束,改走 `_validate_l_cut_rects()`(同角 ≤3 级、正宽高、非负 offset、不越界、两两不重叠,eps=1e-6)
+- `build_lshape_mask` 支持 offset dict 路由 + 新增 `_rect_from_anchor_offset()` 辅助函数(N1-01 同款钳制)
+- 旧 tuple 路径(`_get_lshape_cut_rect_at_offset(..., 0)`)行为字节级不变
+
+**新增测试**(`tests/core/test_lshape_cutrect.py`): 33 个测试全过
+- CutRect 数据模型 + 默认值
+- `_rect_from_anchor_offset` 四角定位 + offset=0 ≡ 旧函数 + 钳制
+- validate 接受:内缩/外扩/对角/共享边/边界宽
+- validate 拒绝:4 级、非正宽高、负 offset、越界、重叠、坏 anchor
+- 旧路径兼容:cut_specs 仍返回 3 元组、重复角位仍拒绝
+- mask 渲染:offset=0 dict ≡ tuple(4 角 × 无圆角/有圆角)、两级内缩台阶、两级外扩台阶(br)
+
+**全量回归**: 604 passed(基线 571 + 新增 33),exit 0
+
+**验收脚本**(`scripts/diagnose/_diag_stair_cutrect_poc.py`):
+- 手写 CutRect 列表 `[CutRect('tr',0,0,18.5,6.5), CutRect('tr',0,6.5,8.5,3.5)]` → 渲染两级台阶
+- 与真实多边形 ground truth 逐行对比(容差 2 px)+ IoU
+- 结果:IoU **0.9994**(旧模型 0.9791),`[PASS]`,exit 0
+
+**对现有用户零影响**: 无生产入口设置 `l_cut_rects`(GUI/design_model 未改),旧路径字节级兼容。
+
+**后续期次状态**:
+- 二 识别层(sketch_parser 适配 CutRect)— 待启动
+- 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 待启动
+- 四 GUI+回归 — 待启动
