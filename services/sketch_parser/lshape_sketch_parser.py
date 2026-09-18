@@ -716,20 +716,22 @@ def _finalize_lshape_geometry(chosen_list):
     }
 
 
-def _classify_pattern(all_corners):
-    """分类 L 形挖角模式：单边阶梯 vs 多边 L 形。
+def _stepped_bucket_corner(all_corners):
+    """返回同边阶梯凹点桶的角位名；无则 None。
 
-    [V2.2 B3] 按 corner 分桶 → 桶内 ≥2 个凹点 → 检查是否在同竖边（|Δx| < ε）
-    或同横边（|Δy| < ε）→ 标记 single_edge_stepped；否则 multi_edge。
+    [V2.4 修正] 阶梯相邻凹点沿边方向对角错位（一轴距递增、另一轴距递减），
+    不共线；旧版 |Δx|/|Δy|<5px 共线判定对真实阶梯永不命中，导致识别退化为
+    单角 bbox 合并。改为：同角位桶内凹点按 x 排序后 y 单调（升/降均可，非
+    严格）→ 该角位为阶梯桶；同角双切等误报由 B4 反拼 IoU 闸口降级兜底。
 
     Args:
         all_corners: _finalize_lshape_geometry 返回的 all_corners 列表
 
     Returns:
-        'single_edge_stepped' 或 'multi_edge'
+        阶梯桶角位名（'tl'/'tr'/'bl'/'br'），无则 None
     """
     if len(all_corners) < 2:
-        return 'multi_edge'
+        return None
 
     # 按 corner 分桶
     from collections import defaultdict
@@ -737,20 +739,31 @@ def _classify_pattern(all_corners):
     for c in all_corners:
         by_corner[c['corner']].append(c)
 
-    # 检查是否有桶内 ≥2 个凹点在同边
-    eps = 5.0  # 像素容差
     for corner, candidates in by_corner.items():
         if len(candidates) < 2:
             continue
-        # 检查是否在同竖边（x 坐标接近）
-        xs = [c['concave'][0] for c in candidates]
-        if max(xs) - min(xs) < eps:
-            return 'single_edge_stepped'
-        # 检查是否在同横边（y 坐标接近）
-        ys = [c['concave'][1] for c in candidates]
-        if max(ys) - min(ys) < eps:
-            return 'single_edge_stepped'
+        pts = sorted(c['concave'] for c in candidates)
+        ys = [y for _, y in pts]
+        if (all(b >= a for a, b in zip(ys, ys[1:]))
+                or all(b <= a for a, b in zip(ys, ys[1:]))):
+            return corner
 
+    return None
+
+
+def _classify_pattern(all_corners):
+    """分类 L 形挖角模式：单边阶梯 vs 多边 L 形。
+
+    判定逻辑见 _stepped_bucket_corner；存在阶梯桶 → single_edge_stepped。
+
+    Args:
+        all_corners: _finalize_lshape_geometry 返回的 all_corners 列表
+
+    Returns:
+        'single_edge_stepped' 或 'multi_edge'
+    """
+    if _stepped_bucket_corner(all_corners) is not None:
+        return 'single_edge_stepped'
     return 'multi_edge'
 
 
@@ -816,6 +829,71 @@ def _compute_staircase_iou(cuts_cm, outer_w_cm, outer_h_cm, contour_pts, pxcm):
     if union == 0:
         return 0.0
     return float(intersection) / float(union)
+
+
+def _convert_stepped_to_cut_rects(all_corners_geo, corner, geo, dims):
+    """阶梯凹点坐标 → 条带分解 CutRect 列表（cm）。
+
+    [V2.4 B2 修正] 旧实现把 cut_w/h_px（凹点到 bbox 边距离）当条带尺寸并
+    双轴累加 offset，对阶梯系统性算错。改为直接以凹点坐标为条带边界，按
+    报告 V2.4 条带分解基准式换算：水平条带纵向堆叠、贴角位纵边——
+    tr 系公式 S_i = (ox=0, oy=y_{i-1}, w=W−x_i, h=y_i−y_{i-1})。
+    单调阶梯的凹点唯一确定切割区域，该条带分解对全部角位经镜像即得
+    （tl x 镜像 / bl xy 双镜像 / br y 镜像；offset 以角位自身两边为基准，
+    镜像不变换数值），内缩/外扩两种形态均覆盖。
+
+    Args:
+        all_corners_geo: _finalize_lshape_geometry 的 all_corners 列表
+        corner: 阶梯桶角位名（_stepped_bucket_corner 的返回值）
+        geo: 几何 dict（需 outer_w_px / outer_h_px / verts）
+        dims: 尺寸 dict（需 outer_w_cm / outer_h_cm，均已 >0）
+
+    Returns:
+        (cut_rects, iou)；cut_rects 为 None 表示无法构成有效条带，
+        iou 为 None 表示无轮廓可比对。
+    """
+    pts = [tuple(c['concave']) for c in all_corners_geo if c['corner'] == corner]
+    if len(pts) < 2:
+        return None, None
+    W = float(geo['outer_w_px'])
+    H = float(geo['outer_h_px'])
+    if W <= 0 or H <= 0:
+        return None, None
+
+    do_mx = corner in ('tl', 'bl')
+    do_my = corner in ('bl', 'br')
+    frame_pts = [((W - x) if do_mx else x, (H - y) if do_my else y) for x, y in pts]
+    prev_y = 0.0
+    strips_px = []
+    for x, y in sorted(frame_pts, key=lambda p: p[1]):
+        strips_px.append({'ox': 0.0, 'oy': prev_y, 'w': W - x, 'h': y - prev_y})
+        prev_y = y
+
+    sx = dims['outer_w_cm'] / W
+    sy = dims['outer_h_cm'] / H
+    cut_rects = [
+        {
+            'anchor': corner,
+            'offset_x_cm': round(s['ox'] * sx, 2),
+            'offset_y_cm': round(s['oy'] * sy, 2),
+            'w_cm': round(s['w'] * sx, 2),
+            'h_cm': round(s['h'] * sy, 2),
+        }
+        for s in strips_px if s['w'] > 0 and s['h'] > 0
+    ]
+    if not cut_rects:
+        return None, None
+
+    # B4 反拼轮廓 IoU（有轮廓时供调用方闸口判定）
+    iou = None
+    verts = geo.get('verts')
+    if verts is not None and len(verts) >= 3:
+        contour_pts = np.array(verts, dtype=float)
+        pxcm = W / dims['outer_w_cm'] if dims['outer_w_cm'] > 0 else 0
+        iou = _compute_staircase_iou(
+            cut_rects, dims['outer_w_cm'], dims['outer_h_cm'],
+            contour_pts, pxcm)
+    return cut_rects, iou
 
 
 def _detect_lshape_geometry(cv2, gray):
@@ -1850,48 +1928,24 @@ def parse_lshape_sketch(
                 'source': 'pixel_ratio',
             })
 
-    # [V2.2 B2] 阶梯场景：转换为 CutRect 格式
+    # [V2.2 B2 / V2.4 修正] 阶梯场景：凹点坐标 → 条带分解 CutRect（IoU 择优读法）
     pattern = _classify_pattern(all_corners_geo) if all_corners_geo else 'multi_edge'
+    stair_debug = {}
     if pattern == 'single_edge_stepped' and len(cuts_cm) >= 2:
-        # 按 concave 坐标排序（y 升序或 x 升序，取决于角位）
-        corner = cuts_cm[0]['corner']
-        # 构建 CutRect 列表：每级的 offset = 前一级的尺寸累加
-        cut_rects = []
-        sorted_corners = sorted(all_corners_geo, key=lambda c: (
-            c['concave'][1] if corner in ('tl', 'tr') else -c['concave'][1],
-            c['concave'][0] if corner in ('tl', 'bl') else -c['concave'][0],
-        ))
-        offset_x, offset_y = 0.0, 0.0
-        for cand in sorted_corners:
-            cut_w_px = float(cand.get('cut_w_px', 0.0) or 0.0)
-            cut_h_px = float(cand.get('cut_h_px', 0.0) or 0.0)
-            if cut_w_px <= 0 or cut_h_px <= 0:
-                continue
-            w_cm = round(dims['outer_w_cm'] * cut_w_px / geo['outer_w_px'], 2)
-            h_cm = round(dims['outer_h_cm'] * cut_h_px / geo['outer_h_px'], 2)
-            cut_rects.append({
-                'anchor': corner,
-                'offset_x_cm': round(offset_x, 2),
-                'offset_y_cm': round(offset_y, 2),
-                'w_cm': w_cm,
-                'h_cm': h_cm,
-            })
-            # 累加 offset（内缩阶梯：每级向内收缩）
-            offset_x += w_cm
-            offset_y += h_cm
-        # 替换 cuts_cm 为 cut_rects
-        cuts_cm = cut_rects
-
-        # [V2.2 B4] 反拼轮廓 IoU 校验
-        if geo.get('verts') and len(geo['verts']) >= 3:
-            contour_pts = np.array(geo['verts'], dtype=float)
-            pxcm = geo['outer_w_px'] / dims['outer_w_cm'] if dims['outer_w_cm'] > 0 else 0
-            iou = _compute_staircase_iou(
-                cuts_cm, dims['outer_w_cm'], dims['outer_h_cm'],
-                contour_pts, pxcm)
-            if iou < 0.92:
-                # 降级为 multi_edge，转换回旧格式
+        stepped_corner = _stepped_bucket_corner(all_corners_geo)
+        cut_rects, best_iou = _convert_stepped_to_cut_rects(
+            all_corners_geo, stepped_corner, geo, dims)
+        stair_debug = {
+            'staircase_pattern': pattern,
+            'staircase_corner': stepped_corner,
+            'staircase_iou': best_iou,
+        }
+        if cut_rects is not None:
+            cuts_cm = cut_rects
+            # [V2.2 B4] 反拼轮廓 IoU 闸口：< 0.92 降级为多边 L 形（旧格式）
+            if best_iou is not None and best_iou < 0.92:
                 pattern = 'multi_edge'
+                stair_debug['staircase_downgraded'] = True
                 cuts_cm = [
                     {
                         'corner': cut['anchor'],
@@ -1901,6 +1955,10 @@ def parse_lshape_sketch(
                     }
                     for cut in cut_rects
                 ]
+        else:
+            # 条带退化（如同 y 双凹点拼不出阶梯）→ 按多边 L 形处理，保留旧格式
+            pattern = 'multi_edge'
+            stair_debug['staircase_invalid_strips'] = True
 
     # —— G1 闸口：检测到的凹角数 vs 实际消费数（不变量常驻） ——
     n_consumed = len(cuts_cm)
@@ -1938,6 +1996,7 @@ def parse_lshape_sketch(
         'all_corners': geo.get('all_corners', []),
         'cuts_cm': cuts_cm,
         'n_detected': n_detected,
+        **stair_debug,
         'n_consumed': n_consumed,
         'n_detected_hull': geo.get('n_detected_hull', 0),
         'n_detected_sliding': geo.get('n_detected_sliding', 0),

@@ -125,12 +125,8 @@ class DesignModel:
             # 挖角值直接取草图识别的成品真值，不做额外损耗补偿
             d.l_cut_w_cm = _lp.get('cut_w_cm', 0.0)
             d.l_cut_h_cm = _lp.get('cut_h_cm', 0.0)
-            d.l_cuts_cm = [dict(cut) for cut in (_lp.get('cuts_cm') or [])][:4]
-            if d.l_cuts_cm:
-                primary = d.l_cuts_cm[0]
-                d.l_corner = primary['corner']
-                d.l_cut_w_cm = float(primary['cut_w_cm'])
-                d.l_cut_h_cm = float(primary['cut_h_cm'])
+            # 阶梯路径：cut_rects 非空时是唯一几何来源（同角位多级），
+            # 旧格式 l_cuts_cm 不允许同角位重复，必须保持为空
             _cr = _lp.get('cut_rects') or []
             d.l_cut_rects = [
                 CutRect(
@@ -142,6 +138,15 @@ class DesignModel:
                 )
                 for r in _cr
             ][:3]
+            if not d.l_cut_rects:
+                d.l_cuts_cm = [dict(cut) for cut in (_lp.get('cuts_cm') or [])][:4]
+                if d.l_cuts_cm:
+                    primary = d.l_cuts_cm[0]
+                    d.l_corner = primary['corner']
+                    d.l_cut_w_cm = float(primary['cut_w_cm'])
+                    d.l_cut_h_cm = float(primary['cut_h_cm'])
+            else:
+                d.l_cuts_cm = []
         else:
             d.l_corner = 'br'
             d.l_cut_w_cm = 0.0

@@ -11,7 +11,7 @@ import os
 from PyQt5.QtCore import pyqtSignal, QThread
 from PIL import Image
 
-from core.geometry import CropDesign
+from core.geometry import CropDesign, CutRect
 from core.config import CUT_LOSS_CM
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
@@ -512,20 +512,41 @@ class PoolRenderWorker(QThread):
         # 挖角值直接用草图识别的成品真值，不做额外损耗补偿
         design.l_cut_w_cm = max(0.0, float(lp.get('cut_w_cm', 0)))
         design.l_cut_h_cm = max(0.0, float(lp.get('cut_h_cm', 0)))
-        cuts_cm = lp.get('cuts_cm') or []
-        if cuts_cm:
-            design.l_cuts_cm = [
-                {
-                    'corner': str(cut['corner']),
-                    'cut_w_cm': max(0.0, float(cut['cut_w_cm'])),
-                    'cut_h_cm': max(0.0, float(cut['cut_h_cm'])),
-                }
-                for cut in cuts_cm
-                if isinstance(cut, dict)
-                and cut.get('corner') in {'tl', 'tr', 'bl', 'br'}
-                and float(cut.get('cut_w_cm', 0) or 0) > 0
-                and float(cut.get('cut_h_cm', 0) or 0) > 0
-            ][:4]
+        # 阶梯路径：cut_rects 非空时是唯一几何来源（同角位多级 CutRect），
+        # 旧格式 cuts_cm 不允许同角位重复，必须保持为空
+        cut_rects = lp.get('cut_rects') or []
+        if cut_rects:
+            design.l_cut_rects = [
+                CutRect(
+                    anchor=str(r['anchor']),
+                    offset_x_cm=max(0.0, float(r.get('offset_x_cm', 0))),
+                    offset_y_cm=max(0.0, float(r.get('offset_y_cm', 0))),
+                    w_cm=max(0.0, float(r.get('w_cm', 0))),
+                    h_cm=max(0.0, float(r.get('h_cm', 0))),
+                )
+                for r in cut_rects
+                if isinstance(r, dict) and r.get('anchor') in {'tl', 'tr', 'bl', 'br'}
+                and float(r.get('w_cm', 0) or 0) > 0
+                and float(r.get('h_cm', 0) or 0) > 0
+            ][:3]
+            self._log(
+                f"L 形阶梯挖角：corner={design.l_corner}, "
+                f"{len(design.l_cut_rects)} 级 CutRect（同角位条带）")
+        else:
+            cuts_cm = lp.get('cuts_cm') or []
+            if cuts_cm:
+                design.l_cuts_cm = [
+                    {
+                        'corner': str(cut['corner']),
+                        'cut_w_cm': max(0.0, float(cut['cut_w_cm'])),
+                        'cut_h_cm': max(0.0, float(cut['cut_h_cm'])),
+                    }
+                    for cut in cuts_cm
+                    if isinstance(cut, dict)
+                    and cut.get('corner') in {'tl', 'tr', 'bl', 'br'}
+                    and float(cut.get('cut_w_cm', 0) or 0) > 0
+                    and float(cut.get('cut_h_cm', 0) or 0) > 0
+                ][:4]
         design.inner_margin_top_cm = 0.0
         design.inner_margin_bottom_cm = 0.0
         design.inner_margin_left_cm = 0.0
