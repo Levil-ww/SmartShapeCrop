@@ -345,3 +345,29 @@ cuts_cm.append({
 - 二 识别层(sketch_parser 适配 CutRect)— 待启动
 - 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 待启动
 - 四 GUI+回归 — 待启动
+
+### 第二期实施结果(2026-09-18)
+
+**完成日期**: 2026-09-18
+
+**改动清单**(`services/sketch_parser/lshape_sketch_parser.py`):
+- **B1 解除滑动窗口桶合并**: `_detect_concave_sliding_window` 改为 `detected = defaultdict(list)`,同桶保留全部候选;返回前按凹点绝对坐标去重(欧氏距离 < 5% 对角线),每桶最多 4 个
+- **B3 新增同边分类器**: `_classify_pattern(all_corners)` 按 corner 分桶 → 桶内 ≥2 个凹点 → 同竖边(`|Δx| < 5px`)或同横边(`|Δy| < 5px`)→ 标记 `single_edge_stepped`;否则 `multi_edge`
+- **B2 CutRect 格式转换**: 当 `pattern == 'single_edge_stepped'` 且 `len(cuts_cm) >= 2` 时,按 concave 坐标排序,构建 CutRect 列表(`anchor` + `offset_x_cm` + `offset_y_cm` + `w_cm` + `h_cm`),offset 为前一级尺寸累加
+- **B4 G1 闸口扩展**: 新增 `_compute_staircase_iou()` 函数,用 cuts 列表反向裁剪外框 bbox 构建理论阶梯多边形,与识别轮廓做 IoU 比对;当 `pattern == 'single_edge_stepped'` 时触发校验,IoU < 0.92 则降级为 `multi_edge` 并转换回旧 `(corner, w, h)` 格式
+- `result.debug` 新增 `pattern` 字段(`single_edge_stepped` 或 `multi_edge`)
+
+**新增测试**(`tests/sketch_parser/test_lshape_staircase_recognition.py`): 6 个测试全过
+- B1: 返回格式验证(无凹角时返回空列表或 None)
+- B3: 同边分类器(同竖边/同横边 → single_edge_stepped;不同角位/同角不同边/单角 → multi_edge)
+
+**全量回归**: 610 passed(基线 604 + 新增 6),exit 0
+
+**对现有用户零影响**: 
+- 旧路径(`multi_edge`)行为字节级兼容,cuts_cm 格式不变
+- 仅当检测到单边阶梯模式(`single_edge_stepped`)时启用 CutRect 格式
+- B4 IoU 校验 < 0.92 时自动降级回旧格式,保证鲁棒性
+
+**后续期次状态**:
+- 三 渲染出口(image_ops.py 8 处 + compute_lshape_border_bands 通用收缩公式)— 待启动
+- 四 GUI+回归 — 待启动

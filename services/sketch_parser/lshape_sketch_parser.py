@@ -202,7 +202,10 @@ def _detect_concave_sliding_window(pts, outer_w, outer_h, diag, corners,
     k_dir = min(k_dir, n // 6)
     # [V1.1 多角改造] 解除收敛点 ③：不再只保留 best_score，
     # 改为按 bbox 四角分桶，每桶留最优 1 个，最多 4 个。
-    detected = {}  # corner -> (score, pt)
+    # [V2.2 B1 阶梯支持] 解除桶合并：每桶保留全部候选，返回前按凹点绝对坐标去重
+    # （欧氏距离 < 5% 对角线合并），每桶最多 4 个（防误判爆炸）。
+    from collections import defaultdict
+    detected = defaultdict(list)  # corner -> [(score, pt)]
 
     for i in range(n):
         if concavity[i] < 0.1:
@@ -265,41 +268,55 @@ def _detect_concave_sliding_window(pts, outer_w, outer_h, diag, corners,
         cf = min(_agr(adj_cut_w, cut_w), _agr(adj_cut_h, cut_h))
 
         score = concavity[i] * cf
-        if corner not in detected or score > detected[corner][0]:
-            detected[corner] = (score, pt)
+        detected[corner].append((score, pt))
 
     if not detected:
         return []
 
+    # [V2.2 B1] 按凹点绝对坐标去重（欧氏距离 < 5% 对角线），每桶最多 4 个
+    dedup_threshold = 0.05 * diag if diag > 0 else 10.0
     results = []
-    for corner, (score, pt) in detected.items():
-        # 构造 6 顶点多边形，凹角在 index 0
-        if corner == 'tr':
-            verts = np.array([
-                [pt[0], pt[1]], [maxx, pt[1]], [maxx, maxy],
-                [minx, maxy], [minx, miny], [pt[0], miny],
-            ])
-        elif corner == 'tl':
-            verts = np.array([
-                [pt[0], pt[1]], [minx, pt[1]], [minx, maxy],
-                [maxx, maxy], [maxx, miny], [pt[0], miny],
-            ])
-        elif corner == 'br':
-            verts = np.array([
-                [pt[0], pt[1]], [pt[0], maxy], [minx, maxy],
-                [minx, miny], [maxx, miny], [maxx, pt[1]],
-            ])
-        else:
-            verts = np.array([
-                [pt[0], pt[1]], [pt[0], maxy], [maxx, maxy],
-                [maxx, miny], [minx, miny], [minx, pt[1]],
-            ])
-        results.append({
-            'score': score * 10000.0,  # 绝对最高优先级
-            'verts': verts,
-            'concave_pt': pt,
-            'corner': corner,
-        })
+    for corner, candidates in detected.items():
+        # 按 score 降序排序
+        candidates.sort(key=lambda t: -t[0])
+        deduped = []
+        for score, pt in candidates:
+            # 检查是否与已保留的点距离过近
+            if any(np.hypot(pt[0] - kept_pt[0], pt[1] - kept_pt[1]) < dedup_threshold
+                   for _, kept_pt in deduped):
+                continue
+            deduped.append((score, pt))
+            if len(deduped) >= 4:
+                break
+
+        for score, pt in deduped:
+            # 构造 6 顶点多边形，凹角在 index 0
+            if corner == 'tr':
+                verts = np.array([
+                    [pt[0], pt[1]], [maxx, pt[1]], [maxx, maxy],
+                    [minx, maxy], [minx, miny], [pt[0], miny],
+                ])
+            elif corner == 'tl':
+                verts = np.array([
+                    [pt[0], pt[1]], [minx, pt[1]], [minx, maxy],
+                    [maxx, maxy], [maxx, miny], [pt[0], miny],
+                ])
+            elif corner == 'br':
+                verts = np.array([
+                    [pt[0], pt[1]], [pt[0], maxy], [minx, maxy],
+                    [minx, miny], [maxx, miny], [maxx, pt[1]],
+                ])
+            else:
+                verts = np.array([
+                    [pt[0], pt[1]], [pt[0], maxy], [maxx, maxy],
+                    [maxx, miny], [minx, miny], [minx, pt[1]],
+                ])
+            results.append({
+                'score': score * 10000.0,  # 绝对最高优先级
+                'verts': verts,
+                'concave_pt': pt,
+                'corner': corner,
+            })
     return results
 
 
@@ -697,6 +714,108 @@ def _finalize_lshape_geometry(chosen_list):
         'all_corners': all_corners,
         'n_detected': len(all_corners),
     }
+
+
+def _classify_pattern(all_corners):
+    """分类 L 形挖角模式：单边阶梯 vs 多边 L 形。
+
+    [V2.2 B3] 按 corner 分桶 → 桶内 ≥2 个凹点 → 检查是否在同竖边（|Δx| < ε）
+    或同横边（|Δy| < ε）→ 标记 single_edge_stepped；否则 multi_edge。
+
+    Args:
+        all_corners: _finalize_lshape_geometry 返回的 all_corners 列表
+
+    Returns:
+        'single_edge_stepped' 或 'multi_edge'
+    """
+    if len(all_corners) < 2:
+        return 'multi_edge'
+
+    # 按 corner 分桶
+    from collections import defaultdict
+    by_corner = defaultdict(list)
+    for c in all_corners:
+        by_corner[c['corner']].append(c)
+
+    # 检查是否有桶内 ≥2 个凹点在同边
+    eps = 5.0  # 像素容差
+    for corner, candidates in by_corner.items():
+        if len(candidates) < 2:
+            continue
+        # 检查是否在同竖边（x 坐标接近）
+        xs = [c['concave'][0] for c in candidates]
+        if max(xs) - min(xs) < eps:
+            return 'single_edge_stepped'
+        # 检查是否在同横边（y 坐标接近）
+        ys = [c['concave'][1] for c in candidates]
+        if max(ys) - min(ys) < eps:
+            return 'single_edge_stepped'
+
+    return 'multi_edge'
+
+
+def _compute_staircase_iou(cuts_cm, outer_w_cm, outer_h_cm, contour_pts, pxcm):
+    """计算阶梯 CutRect 反拼轮廓与识别轮廓的 IoU。
+
+    [V2.2 B4] 用 cuts 列表反向裁剪外框 bbox，构建理论阶梯多边形，
+    与识别轮廓做 IoU 比对。< 0.92 则降级为多边 L 形。
+
+    Args:
+        cuts_cm: CutRect 列表（阶梯格式）
+        outer_w_cm, outer_h_cm: 外框尺寸（厘米）
+        contour_pts: 识别轮廓点（像素）
+        pxcm: 像素/厘米比例
+
+    Returns:
+        IoU 值（0.0 ~ 1.0）
+    """
+    import cv2
+    if not cuts_cm or contour_pts is None or len(contour_pts) < 3:
+        return 0.0
+
+    W = int(round(outer_w_cm * pxcm))
+    H = int(round(outer_h_cm * pxcm))
+    if W <= 0 or H <= 0:
+        return 0.0
+
+    # 构建理论阶梯多边形
+    # 从外框 bbox 开始，逐级裁剪
+    mask_theory = np.ones((H, W), dtype=np.uint8) * 255
+    for cut in cuts_cm:
+        anchor = cut.get('anchor', 'tr')
+        ox = int(round(cut.get('offset_x_cm', 0.0) * pxcm))
+        oy = int(round(cut.get('offset_y_cm', 0.0) * pxcm))
+        cw = int(round(cut.get('w_cm', 0.0) * pxcm))
+        ch = int(round(cut.get('h_cm', 0.0) * pxcm))
+        if cw <= 0 or ch <= 0:
+            continue
+        # 计算 cut rect 的位置
+        if anchor == 'tr':
+            x0, y0 = W - ox - cw, oy
+        elif anchor == 'tl':
+            x0, y0 = ox, oy
+        elif anchor == 'br':
+            x0, y0 = W - ox - cw, H - oy - ch
+        else:  # bl
+            x0, y0 = ox, H - oy - ch
+        # 裁剪（挖空）
+        x0 = max(0, min(x0, W))
+        y0 = max(0, min(y0, H))
+        x1 = max(0, min(x0 + cw, W))
+        y1 = max(0, min(y0 + ch, H))
+        mask_theory[y0:y1, x0:x1] = 0
+
+    # 构建识别轮廓 mask
+    mask_contour = np.zeros((H, W), dtype=np.uint8)
+    cnt_int = contour_pts.astype(np.int32).reshape(-1, 1, 2)
+    cv2.fillPoly(mask_contour, [cnt_int], 255)
+
+    # 计算 IoU
+    intersection = np.sum((mask_theory > 0) & (mask_contour > 0))
+    union = np.sum((mask_theory > 0) | (mask_contour > 0))
+    if union == 0:
+        return 0.0
+    return float(intersection) / float(union)
 
 
 def _detect_lshape_geometry(cv2, gray):
@@ -1731,6 +1850,58 @@ def parse_lshape_sketch(
                 'source': 'pixel_ratio',
             })
 
+    # [V2.2 B2] 阶梯场景：转换为 CutRect 格式
+    pattern = _classify_pattern(all_corners_geo) if all_corners_geo else 'multi_edge'
+    if pattern == 'single_edge_stepped' and len(cuts_cm) >= 2:
+        # 按 concave 坐标排序（y 升序或 x 升序，取决于角位）
+        corner = cuts_cm[0]['corner']
+        # 构建 CutRect 列表：每级的 offset = 前一级的尺寸累加
+        cut_rects = []
+        sorted_corners = sorted(all_corners_geo, key=lambda c: (
+            c['concave'][1] if corner in ('tl', 'tr') else -c['concave'][1],
+            c['concave'][0] if corner in ('tl', 'bl') else -c['concave'][0],
+        ))
+        offset_x, offset_y = 0.0, 0.0
+        for cand in sorted_corners:
+            cut_w_px = float(cand.get('cut_w_px', 0.0) or 0.0)
+            cut_h_px = float(cand.get('cut_h_px', 0.0) or 0.0)
+            if cut_w_px <= 0 or cut_h_px <= 0:
+                continue
+            w_cm = round(dims['outer_w_cm'] * cut_w_px / geo['outer_w_px'], 2)
+            h_cm = round(dims['outer_h_cm'] * cut_h_px / geo['outer_h_px'], 2)
+            cut_rects.append({
+                'anchor': corner,
+                'offset_x_cm': round(offset_x, 2),
+                'offset_y_cm': round(offset_y, 2),
+                'w_cm': w_cm,
+                'h_cm': h_cm,
+            })
+            # 累加 offset（内缩阶梯：每级向内收缩）
+            offset_x += w_cm
+            offset_y += h_cm
+        # 替换 cuts_cm 为 cut_rects
+        cuts_cm = cut_rects
+
+        # [V2.2 B4] 反拼轮廓 IoU 校验
+        if geo.get('verts') and len(geo['verts']) >= 3:
+            contour_pts = np.array(geo['verts'], dtype=float)
+            pxcm = geo['outer_w_px'] / dims['outer_w_cm'] if dims['outer_w_cm'] > 0 else 0
+            iou = _compute_staircase_iou(
+                cuts_cm, dims['outer_w_cm'], dims['outer_h_cm'],
+                contour_pts, pxcm)
+            if iou < 0.92:
+                # 降级为 multi_edge，转换回旧格式
+                pattern = 'multi_edge'
+                cuts_cm = [
+                    {
+                        'corner': cut['anchor'],
+                        'cut_w_cm': cut['w_cm'],
+                        'cut_h_cm': cut['h_cm'],
+                        'source': 'pixel_ratio',
+                    }
+                    for cut in cut_rects
+                ]
+
     # —— G1 闸口：检测到的凹角数 vs 实际消费数（不变量常驻） ——
     n_consumed = len(cuts_cm)
     msg = (
@@ -1770,6 +1941,7 @@ def parse_lshape_sketch(
         'n_consumed': n_consumed,
         'n_detected_hull': geo.get('n_detected_hull', 0),
         'n_detected_sliding': geo.get('n_detected_sliding', 0),
+        'pattern': pattern,
     })
     _progress(100, "识别完成")
     return result
