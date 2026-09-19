@@ -466,16 +466,15 @@ def _draw_staircase_union_layers(
     """沿多个同角位 cut 矩形的联合外轮廓补边。
 
     ``cut_rects`` 使用画布绝对坐标的半开区间 ``(x0, y0, x1, y1)``，
-    每个矩形已经向对应画布边缘延展。只在联合 cut 区域外侧绘制，
-    因此阶梯内部重叠边不会被重复绘制，也不会把边框画回挖空区。
+    每个矩形已经向对应画布边缘延展。
+
+    [Fix 2026-09-19 v2] 改用逐边 strip + max(dx,dy) 凸角填充方式，
+    替代 Chebyshev 距离变换。距离变换在阶梯凸角处产生对角线过渡纹，
+    导致边框层之间出现割裂感和过渡线条。新方式沿联合轮廓的每段暴露边
+    绘制矩形 strip，凸角处用 max(dx, dy) 几何分层，与单边 L 形的
+    _fill_layers_vertical_horizontal 行为一致。
     """
     if not cut_rects or not layers:
-        return False
-
-    try:
-        import cv2
-    except ImportError:
-        logger.warning("[LShapeBorder] 阶梯联合边界需要 OpenCV，跳过补边")
         return False
 
     H, W = canvas_arr.shape[:2]
@@ -495,36 +494,266 @@ def _draw_staircase_union_layers(
     if total_t <= 0:
         return False
 
-    # 只在 cut 联合区域附近建立 mask，避免对印刷级整张画布做全图距离变换。
-    x0 = max(0, min(r[0] for r in normalized) - total_t)
-    y0 = max(0, min(r[1] for r in normalized) - total_t)
-    x1 = min(W, max(r[2] for r in normalized) + total_t)
-    y1 = min(H, max(r[3] for r in normalized) + total_t)
-    if x1 <= x0 or y1 <= y0:
-        return False
-
-    cut_mask = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
-    for rx0, ry0, rx1, ry1 in normalized:
-        cut_mask[ry0 - y0:ry1 - y0, rx0 - x0:rx1 - x0] = 1
-
-    # DIST_C 与当前单边路径内凹角使用的 max(dx, dy) 距离规则一致；
-    # 对 union mask 求距离后，只会在阶梯真正暴露的外轮廓补边。
-    retained = (cut_mask == 0).astype(np.uint8)
-    distances = cv2.distanceTransform(retained, cv2.DIST_C, 3)
-    paint_mask = (retained != 0) & (distances > 0.0) & (distances <= total_t)
-    if not paint_mask.any():
-        return False
+    # 层偏移量累积: offs[0]=0, offs[k]=前k层厚度之和
+    offs = [0]
+    for t in thicknesses:
+        offs.append(offs[-1] + t)
 
     color_arr = np.asarray(
-        [tuple(int(channel) for channel in color) for color, _ in layers],
+        [tuple(int(ch) for ch in color) for color, _ in layers],
         dtype=np.uint8,
     )
-    thresholds = np.cumsum(thicknesses, dtype=np.float32)
-    layer_idx = np.searchsorted(thresholds, distances, side='left')
-    layer_idx = np.clip(layer_idx, 0, len(layers) - 1)
 
-    region = canvas_arr[y0:y1, x0:x1, :]
-    region[paint_mask] = color_arr[layer_idx[paint_mask]]
+    # 联合区域接触了哪些画布边缘
+    touches_top = any(r[1] == 0 for r in normalized)
+    touches_bottom = any(r[3] == H for r in normalized)
+    touches_left = any(r[0] == 0 for r in normalized)
+    touches_right = any(r[2] == W for r in normalized)
+
+    # ---- 联合轮廓提取 ----
+    # 对每个矩形的四条边，检查是否被其它矩形覆盖，计算暴露区间。
+    # 覆盖判定需在垂直轴上验证区间重叠，避免不相邻矩形误屏蔽。
+    rects_sorted = sorted(normalized, key=lambda r: (r[0], r[1]))
+    exposed_edges: list[tuple[str, int, int, int]] = []
+    n_rects = len(rects_sorted)
+
+    def _exposed_intervals(lo: int, hi: int, covs: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        """从 [lo, hi) 中减去 covs 各区间，返回暴露的子区间列表。"""
+        if lo >= hi:
+            return []
+        relevant = [(c0, c1) for c0, c1 in covs if c0 < hi and c1 > lo]
+        if not relevant:
+            return [(lo, hi)]
+        relevant.sort()
+        result: list[tuple[int, int]] = []
+        cur = lo
+        for c0, c1 in relevant:
+            if c0 > cur:
+                result.append((cur, min(c0, hi)))
+            cur = max(cur, c1)
+            if cur >= hi:
+                break
+        if cur < hi:
+            result.append((cur, hi))
+        return result
+
+    for i, (rx0, ry0, rx1, ry1) in enumerate(rects_sorted):
+        # ---- right-facing V (x = rx1), 保留区在右 ----
+        covs_vr: list[tuple[int, int]] = []
+        for j in range(n_rects):
+            if j == i:
+                continue
+            ox0, oy0, ox1, oy1 = rects_sorted[j]
+            if ox1 > rx1 and ox0 < rx1:
+                covs_vr.append((oy0, oy1))
+        for e0, e1 in _exposed_intervals(ry0, ry1, covs_vr):
+            exposed_edges.append(('V', rx1, e0, e1))
+
+        # ---- left-facing V (x = rx0), 保留区在左 ----
+        covs_vl: list[tuple[int, int]] = []
+        for j in range(n_rects):
+            if j == i:
+                continue
+            ox0, oy0, ox1, oy1 = rects_sorted[j]
+            if ox0 <= rx0 and ox1 > rx0:
+                covs_vl.append((oy0, oy1))
+        for e0, e1 in _exposed_intervals(ry0, ry1, covs_vl):
+            exposed_edges.append(('V', rx0, e0, e1))
+
+        # ---- top-facing H (y = ry0), 保留区在上 ----
+        covs_ht: list[tuple[int, int]] = []
+        for j in range(n_rects):
+            if j == i:
+                continue
+            ox0, oy0, ox1, oy1 = rects_sorted[j]
+            if oy0 < ry0 and oy1 > ry0:
+                covs_ht.append((ox0, ox1))
+        for e0, e1 in _exposed_intervals(rx0, rx1, covs_ht):
+            exposed_edges.append(('H', ry0, e0, e1))
+
+        # ---- bottom-facing H (y = ry1), 保留区在下 ----
+        covs_hb: list[tuple[int, int]] = []
+        for j in range(n_rects):
+            if j == i:
+                continue
+            ox0, oy0, ox1, oy1 = rects_sorted[j]
+            if oy0 <= ry1 and oy1 > ry1:
+                covs_hb.append((ox0, ox1))
+        for e0, e1 in _exposed_intervals(rx0, rx1, covs_hb):
+            exposed_edges.append(('H', ry1, e0, e1))
+
+    if not exposed_edges:
+        return False
+
+    # 排序: V 段和 H 段按阶梯遍历方向排序, 交替形成轮廓
+    v_edges = sorted(
+        [e for e in exposed_edges if e[0] == 'V'],
+        key=lambda e: e[2],
+        reverse=touches_right,
+    )
+    h_edges = sorted(
+        [e for e in exposed_edges if e[0] == 'H'],
+        key=lambda e: e[2],
+        reverse=touches_left,
+    )
+    outline: list[tuple[str, int, int, int]] = []
+    vi, hi = 0, 0
+    while vi < len(v_edges) or hi < len(h_edges):
+        if vi < len(v_edges):
+            outline.append(v_edges[vi])
+            vi += 1
+        if hi < len(h_edges):
+            outline.append(h_edges[hi])
+            hi += 1
+
+    # 画布边缘屏蔽: 仅当像素紧邻一条"有 cut 区域接触"的画布边缘时生效。
+    # 使用 per-edge mask 避免错误屏蔽阶梯过渡区。
+    left_cols: set[int] = set()
+    right_cols: set[int] = set()
+    top_rows: set[int] = set()
+    bottom_rows: set[int] = set()
+    for rx0, ry0, rx1, ry1 in normalized:
+        if rx0 == 0:
+            left_cols.update(range(rx0, min(rx1, W)))
+        if rx1 == W:
+            right_cols.update(range(max(0, rx0), rx1))
+        if ry0 == 0:
+            top_rows.update(range(ry0, min(ry1, H)))
+        if ry1 == H:
+            bottom_rows.update(range(max(0, ry0), ry1))
+
+    def _apply_shield(
+        layer_k: np.ndarray,
+        paint: np.ndarray,
+        ys: np.ndarray,
+        xs: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """在画布边缘屏蔽区内跳过 layer 0 并将其它层前移。"""
+        if len(layers) < 2:
+            return layer_k, paint
+        sh = np.zeros_like(paint, dtype=bool)
+        t0 = thicknesses[0]
+        if touches_left and left_cols:
+            sh |= (xs < t0) & np.isin(xs, list(left_cols))
+        if touches_right and right_cols:
+            sh |= (xs >= W - t0) & np.isin(xs, list(right_cols))
+        if touches_top and top_rows:
+            sh |= (ys < t0) & np.isin(ys, list(top_rows))
+        if touches_bottom and bottom_rows:
+            sh |= (ys >= H - t0) & np.isin(ys, list(bottom_rows))
+        mask_sh = paint & sh
+        first = (layer_k == 0) & mask_sh
+        layer_k[first] = -1
+        rest = (layer_k > 0) & mask_sh
+        layer_k[rest] -= 1
+        paint = paint & (layer_k >= 0)
+        return layer_k, paint
+
+    # ---- 1. 沿轮廓边段绘制 strip ----
+    # 保留区方向: V strip 向左/右, H strip 向上/下, 由画布边缘接触决定
+    v_sign = 1 if touches_left else -1   # bl/tl → 保留区在右(+1); br/tr → 保留区在左(-1)
+    h_sign = -1 if touches_bottom else 1  # bl/br → 保留区在上(-1); tl/tr → 保留区在下(+1)
+
+    for edge_type, pos, start, end in outline:
+        if edge_type == 'V':
+            x, y_lo, y_hi = pos, start, end
+            for k, (color, _) in enumerate(layers):
+                d0, d1 = offs[k], offs[k + 1]
+                if v_sign > 0:
+                    sx0, sx1 = max(0, x + d0), min(W, x + d1)
+                else:
+                    sx0, sx1 = max(0, x - d1), min(W, x - d0)
+                if sx1 <= sx0 or y_hi <= y_lo:
+                    continue
+                ys_s = np.arange(y_lo, y_hi)
+                xs_s = np.arange(sx0, sx1)
+                if ys_s.size == 0 or xs_s.size == 0:
+                    continue
+                lk = np.full((ys_s.size, xs_s.size), k, dtype=np.int32)
+                pm = np.ones((ys_s.size, xs_s.size), dtype=bool)
+                XS = np.broadcast_to(xs_s[None, :], lk.shape)
+                YS = np.broadcast_to(ys_s[:, None], lk.shape)
+                lk, pm = _apply_shield(lk, pm, YS, XS)
+                region = canvas_arr[y_lo:y_hi, sx0:sx1, :]
+                region[pm] = color_arr[lk[pm]]
+        else:
+            y, x_lo, x_hi = pos, start, end
+            for k, (color, _) in enumerate(layers):
+                d0, d1 = offs[k], offs[k + 1]
+                if h_sign < 0:
+                    sy0, sy1 = max(0, y - d1), min(H, y - d0)
+                else:
+                    sy0, sy1 = max(0, y + d0), min(H, y + d1)
+                if sy1 <= sy0 or x_hi <= x_lo:
+                    continue
+                ys_s = np.arange(sy0, sy1)
+                xs_s = np.arange(x_lo, x_hi)
+                if ys_s.size == 0 or xs_s.size == 0:
+                    continue
+                lk = np.full((ys_s.size, xs_s.size), k, dtype=np.int32)
+                pm = np.ones((ys_s.size, xs_s.size), dtype=bool)
+                XS = np.broadcast_to(xs_s[None, :], lk.shape)
+                YS = np.broadcast_to(ys_s[:, None], lk.shape)
+                lk, pm = _apply_shield(lk, pm, YS, XS)
+                region = canvas_arr[sy0:sy1, x_lo:x_hi, :]
+                region[pm] = color_arr[lk[pm]]
+
+    # ---- 2. 凸角填充: max(dx, dy) 几何分层 ----
+    # 轮廓中相邻垂直/水平边段的交汇处形成凸角，strip 在此留下空隙，
+    # 用 Chebyshev 距离分层填补，与 _fill_layers_vertical_horizontal 的
+    # 凹角处理一致。
+    # 凸角填充方向: 朝向保留区（与 strip 方向一致）
+    fdx = 1 if touches_left else (-1 if touches_right else 0)
+    fdy = -1 if touches_bottom else (1 if touches_top else 0)
+    if fdx == 0 or fdy == 0:
+        return True
+
+    for idx in range(len(outline) - 1):
+        e1 = outline[idx]
+        e2 = outline[idx + 1]
+        if e1[0] == e2[0]:
+            continue
+
+        if e1[0] == 'V':
+            vx = e1[1]
+            vy = e1[3]     # V 段终点 y
+            hx = e2[2]     # H 段起点 x
+        else:
+            hx = e1[3]     # H 段终点 x
+            vx = e2[1]     # V 段位置 x
+            vy = e1[1]     # H 段位置 y
+
+        if fdx > 0:
+            cx0, cx1 = vx, min(W, vx + total_t)
+        else:
+            cx0, cx1 = max(0, vx - total_t), vx
+        if fdy > 0:
+            cy0, cy1 = vy, min(H, vy + total_t)
+        else:
+            cy0, cy1 = max(0, vy - total_t), vy
+        if cx1 <= cx0 or cy1 <= cy0:
+            continue
+
+        ys_c = np.arange(cy0, cy1)
+        xs_c = np.arange(cx0, cx1)
+        if ys_c.size == 0 or xs_c.size == 0:
+            continue
+        dx_c = np.abs(xs_c - vx)
+        dy_c = np.abs(ys_c - vy)
+        dist = np.maximum(dx_c[None, :], dy_c[:, None])
+        valid = dist > 0
+        if not valid.any():
+            continue
+        offs_arr = np.array(offs, dtype=np.float64)
+        lk = np.searchsorted(offs_arr, dist.astype(np.float64), side='right') - 1
+        lk = np.clip(lk, 0, len(layers) - 1).astype(np.int32)
+        pm = valid.copy()
+        XS = np.broadcast_to(xs_c[None, :], lk.shape)
+        YS = np.broadcast_to(ys_c[:, None], lk.shape)
+        lk, pm = _apply_shield(lk, pm, YS, XS)
+        region = canvas_arr[cy0:cy1, cx0:cx1, :]
+        region[pm] = color_arr[lk[pm]]
+
     return True
 
 
