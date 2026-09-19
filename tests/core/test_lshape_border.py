@@ -336,6 +336,42 @@ class TestApplyLshapeBorderCompletion:
 # 远离边缘的区域（保留区中心）必须保持未涂色
         np.testing.assert_array_equal(canvas[300, 400], [255, 255, 255])
 
+    def test_staircase_union_paints_only_exposed_step_boundary(self):
+        """同角两级阶梯只沿联合外轮廓补边，不绘制第二级外包矩形。"""
+        canvas = self._canvas(100, 100)
+        src = _make_plain_material(size=(100, 100))
+
+        ok = apply_lshape_border_completion(
+            canvas_arr=canvas,
+            material_img=src,
+            src_material_img=src,
+            outer_rect=RectShape(0, 0, 100, 100),
+            cut_corner='tr',
+            cut_w_px=0.0,
+            cut_h_px=0.0,
+            manual_edge_px=3,
+            manual_band_px=2,
+            manual_band_color=(220, 180, 120),
+            staircase_cut_rects=[
+                (60, 0, 100, 40),
+                (75, 40, 100, 70),
+            ],
+        )
+        assert ok is True
+
+        # 两个 cut 矩形的联合区域保持原底色。
+        np.testing.assert_array_equal(canvas[20, 80], [255, 255, 255])
+        np.testing.assert_array_equal(canvas[55, 80], [255, 255, 255])
+
+        # 阶梯的三段外露边均有黑描边：上级左边、台阶横边、下级左边。
+        assert canvas[20, 59].max() <= 60
+        assert canvas[40, 65].max() <= 60
+        assert canvas[55, 74].max() <= 60
+        assert canvas[70, 80].max() <= 60
+
+        # 第二级外包矩形左侧的远离区域不能被错误补成整条边。
+        np.testing.assert_array_equal(canvas[55, 65], [255, 255, 255])
+
     def test_multiple_cuts_paint_each_cut_edges(self):
         """多角入口应逐角补边，且不把边框画回任一缺口内部。"""
         canvas = self._canvas()

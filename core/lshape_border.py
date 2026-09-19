@@ -458,6 +458,76 @@ def draw_border_layers_on_cut_edges(
                 remaining -= actual_t
 
 
+def _draw_staircase_union_layers(
+    canvas_arr: np.ndarray,
+    cut_rects: list[tuple[float, float, float, float]],
+    layers: list[tuple[tuple[int, int, int], float]],
+) -> bool:
+    """沿多个同角位 cut 矩形的联合外轮廓补边。
+
+    ``cut_rects`` 使用画布绝对坐标的半开区间 ``(x0, y0, x1, y1)``，
+    每个矩形已经向对应画布边缘延展。只在联合 cut 区域外侧绘制，
+    因此阶梯内部重叠边不会被重复绘制，也不会把边框画回挖空区。
+    """
+    if not cut_rects or not layers:
+        return False
+
+    try:
+        import cv2
+    except ImportError:
+        logger.warning("[LShapeBorder] 阶梯联合边界需要 OpenCV，跳过补边")
+        return False
+
+    H, W = canvas_arr.shape[:2]
+    normalized: list[tuple[int, int, int, int]] = []
+    for x0, y0, x1, y1 in cut_rects:
+        ix0 = max(0, min(W, int(round(x0))))
+        iy0 = max(0, min(H, int(round(y0))))
+        ix1 = max(0, min(W, int(round(x1))))
+        iy1 = max(0, min(H, int(round(y1))))
+        if ix1 > ix0 and iy1 > iy0:
+            normalized.append((ix0, iy0, ix1, iy1))
+    if not normalized:
+        return False
+
+    thicknesses = [max(1, int(round(t))) for _, t in layers]
+    total_t = sum(thicknesses)
+    if total_t <= 0:
+        return False
+
+    # 只在 cut 联合区域附近建立 mask，避免对印刷级整张画布做全图距离变换。
+    x0 = max(0, min(r[0] for r in normalized) - total_t)
+    y0 = max(0, min(r[1] for r in normalized) - total_t)
+    x1 = min(W, max(r[2] for r in normalized) + total_t)
+    y1 = min(H, max(r[3] for r in normalized) + total_t)
+    if x1 <= x0 or y1 <= y0:
+        return False
+
+    cut_mask = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+    for rx0, ry0, rx1, ry1 in normalized:
+        cut_mask[ry0 - y0:ry1 - y0, rx0 - x0:rx1 - x0] = 1
+
+    # DIST_C 与当前单边路径内凹角使用的 max(dx, dy) 距离规则一致；
+    # 对 union mask 求距离后，只会在阶梯真正暴露的外轮廓补边。
+    retained = (cut_mask == 0).astype(np.uint8)
+    distances = cv2.distanceTransform(retained, cv2.DIST_C, 3)
+    paint_mask = (retained != 0) & (distances > 0.0) & (distances <= total_t)
+    if not paint_mask.any():
+        return False
+
+    color_arr = np.asarray(
+        [tuple(int(channel) for channel in color) for color, _ in layers],
+        dtype=np.uint8,
+    )
+    thresholds = np.cumsum(thicknesses, dtype=np.float32)
+    layer_idx = np.searchsorted(thresholds, distances, side='left')
+    layer_idx = np.clip(layer_idx, 0, len(layers) - 1)
+
+    region = canvas_arr[y0:y1, x0:x1, :]
+    region[paint_mask] = color_arr[layer_idx[paint_mask]]
+    return True
+
+
 def _draw_lshape_layers_on_retained_side(
     canvas_arr: np.ndarray,
     outer_rect: RectShape,
@@ -521,6 +591,7 @@ def _try_apply_v13(
     band_px: int | None,
     band_color: tuple[int, int, int] | None,
     edge_color: tuple[int, int, int] | None = None,
+    staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
 ) -> bool:
     """[H-04] V13 路径统一绘制尝试（manual 覆盖 / 自动路由公共出口）。
 
@@ -542,6 +613,7 @@ def _try_apply_v13(
         manual_band_px=band_px,
         manual_band_color=band_color,
         manual_edge_color=edge_color,
+        staircase_cut_rects=staircase_cut_rects,
     )
 
 
@@ -585,6 +657,7 @@ def apply_lshape_border_completion(
     manual_band_px: int | None = None,
     manual_band_color: tuple[int, int, int] | None = None,
     cuts: list[tuple[str, float, float]] | None = None,
+    staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
@@ -604,6 +677,8 @@ def apply_lshape_border_completion(
         manual_band_px: [V13] 手动指定主色带宽（0=无主带，None=自动）。
         manual_band_color: [V13] 手动指定主色带 RGB（band>0 时必须）。
         cuts: 多角挖角列表 [(corner, cut_w_px, cut_h_px)]；为空时使用旧单角参数。
+        staircase_cut_rects: 单边阶梯 L 形的联合 cut 矩形列表，使用画布绝对
+                              坐标半开区间 (x0, y0, x1, y1)。仅由阶梯模式传入。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
@@ -679,6 +754,7 @@ def apply_lshape_border_completion(
             edge_px=manual_edge_px,
             band_px=manual_band_px,
             band_color=manual_band_color,
+            staircase_cut_rects=staircase_cut_rects,
         )
 
     # Step 1: 边框检测
@@ -722,6 +798,7 @@ def apply_lshape_border_completion(
             band_px=_v13[1],
             band_color=_v13[3],
             edge_color=_v13[2],
+            staircase_cut_rects=staircase_cut_rects,
         )
         if _v13_ok:
             return True
@@ -740,6 +817,7 @@ def apply_lshape_border_completion(
             scale_x=scale_x,
             scale_y=scale_y,
             bg_color=bg_color,
+            staircase_cut_rects=staircase_cut_rects,
         ):
             return True
         logger.info("[LShapeBorder] Profile 路径绘制失败，回退 V13/旧路径")
@@ -775,6 +853,7 @@ def apply_lshape_border_completion(
             band_px=v13[1],
             band_color=v13[3],
             edge_color=v13[2],
+            staircase_cut_rects=staircase_cut_rects,
         )
         if _v13_ok2:
             return True
@@ -805,6 +884,11 @@ def apply_lshape_border_completion(
         len(border_layers_canvas), scale_avg, total_t, border_layers_canvas,
     )
 
+    if staircase_cut_rects:
+        return _draw_staircase_union_layers(
+            canvas_arr, staircase_cut_rects, border_layers_canvas,
+        )
+
     # Step 3: 使用统一的 L 形距离分层绘制。旧的两矩形 bbox 画法在内凹角
     # 需要靠端点重叠拼接，取整后会留下细缝/短线，且可能画入缺口。
     return _draw_lshape_layers_on_retained_side(
@@ -832,6 +916,7 @@ def _apply_v13_path(
     manual_band_px: int | None,
     manual_band_color: tuple[int, int, int] | None,
     manual_edge_color: tuple[int, int, int] | None = None,
+    staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
 ) -> bool:
     """V13 路径：手动覆盖或原检测兜底时使用。
 
@@ -902,6 +987,18 @@ def _apply_v13_path(
         "[LShapeBorder/V13] edge=%.1fpx band=%.1fpx color=%s (scale=%.2f×)",
         edge_canvas, band_canvas, color_src, scale_avg,
     )
+
+    if staircase_cut_rects:
+        staircase_layers = [
+            (edge_color_src, max(1, int(round(edge_canvas)))),
+        ]
+        if band_canvas > 0:
+            staircase_layers.append(
+                (color_src, max(1, int(round(band_canvas))))
+            )
+        return _draw_staircase_union_layers(
+            canvas_arr, staircase_cut_rects, staircase_layers,
+        )
 
     # —— 3) V13 patch 补边（确认 V13 交付模块 lshape_border_module.py 移植）——
     # 绘制方向：沿两条切边在**保留区一侧**补齐「黑描边 + 主色带」：

@@ -1237,10 +1237,40 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
             _ir_x, _ir_y = inner_rect.x, inner_rect.y
             _ir_r, _ir_b = inner_rect.right, inner_rect.bottom
             border_cuts = []
+            staircase_cut_rects = []
+            staircase_mode = bool(getattr(design, 'l_cut_rects', None))
             for spec in lshape.cut_rect_specs():
                 cut_corner = spec['corner']
-                cut_w = spec['cut_w'] + spec['offset_x']
-                cut_h = spec['cut_h'] + spec['offset_y']
+                cut_w = float(spec['cut_w'])
+                cut_h = float(spec['cut_h'])
+                offset_x = float(spec.get('offset_x', 0.0))
+                offset_y = float(spec.get('offset_y', 0.0))
+
+                # 阶梯模式保留每一级的真实矩形，随后按联合 cut 外轮廓补边。
+                # 这里先把矩形从 inner_rect 坐标延展到对应画布边缘；
+                # 不把 offset 合并成单个外包矩形，避免丢失台阶边界。
+                if staircase_mode:
+                    if cut_corner in ('bl', 'tl'):
+                        sx0 = _ir_x + offset_x
+                        sx1 = sx0 + cut_w
+                        sx0 = 0.0
+                    else:
+                        sx1 = _ir_r - offset_x
+                        sx0 = sx1 - cut_w
+                        sx1 = float(W)
+                    if cut_corner in ('bl', 'br'):
+                        sy1 = _ir_b - offset_y
+                        sy0 = sy1 - cut_h
+                        sy1 = float(H)
+                    else:
+                        sy0 = _ir_y + offset_y
+                        sy1 = sy0 + cut_h
+                        sy0 = 0.0
+                    staircase_cut_rects.append((sx0, sy0, sx1, sy1))
+                    continue
+
+                cut_w += offset_x
+                cut_h += offset_y
                 if cut_corner in ('bl', 'tl'):
                     cut_w_px = cut_w + _ir_x
                 else:
@@ -1278,10 +1308,19 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 scale_x=_scale_x,
                 scale_y=_scale_y,
                 outer_rect=_canvas_rect,             # 整个 canvas（cut 已扩展到边缘）
-                cut_corner=border_cuts[0][0],
-                cut_w_px=border_cuts[0][1],
-                cut_h_px=border_cuts[0][2],
-                cuts=border_cuts,
+                cut_corner=(
+                    border_cuts[0][0]
+                    if border_cuts else lshape.corner
+                ),
+                cut_w_px=(
+                    border_cuts[0][1]
+                    if border_cuts else 0.0
+                ),
+                cut_h_px=(
+                    border_cuts[0][2]
+                    if border_cuts else 0.0
+                ),
+                cuts=border_cuts or None,
                 dpi=design.dpi,
                 # [Fix 2026-09-08 v3] bg_color 从硬编码白色改为实际素材底色：
                 # 白色导致 detect_pool_material_borders 把米色等底色误判为边框层，
@@ -1296,6 +1335,7 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 manual_edge_px=getattr(design, 'lshape_manual_edge_px', None),
                 manual_band_px=getattr(design, 'lshape_manual_band_px', None),
                 manual_band_color=getattr(design, 'lshape_manual_band_color', None),
+                staircase_cut_rects=staircase_cut_rects or None,
             )
             # [Fix N-P1-01] 补全返回值接入真值（仅日志记录，不改变渲染逻辑）
             if not _completion_ok:
