@@ -39,11 +39,13 @@ SmartShapeCrop分析报告/  # assets/ 配图 + patches/ 补丁（html 报告）
 | Python | `F:\SmartShapeCrop\.venv\Scripts\python.exe`（3.13.14，含 PyQt5/PIL/numpy/cv2/psd_tools） |
 | PyInstaller | `.venv` 内 **6.22.2**，可随时出包 |
 | Tesseract | `D:\Programs\Tesseract-OCR`（**非** C 盘），`core.config.PathResolver` 探测 |
-| 测试基线 | **501 项：500 passed / 1 failed / 0 skipped，162.7s**（2026-09-16 实跑）。
-|  | 失败项为**存量**：`tests/integration/test_f1_inner_rect_crash.py::test_render_design_lshape_degenerate_no_crash`
-|  | —— `validate()` 新增逐边约束后主动抛 `ValueError`，属测试意图与新规则冲突，非渲染缺陷。 |
+| 测试基线 | **672 passed / 0 failed / 0 error / 0 skipped**（2026-09-19 实跑，HEAD `b444ada`）；GUI offscreen 97 全绿。 |
+|  | 历史失败项 `test_render_design_lshape_degenerate_no_crash` **已修复**（`core/geometry.py:349-352` 新增退化守卫）→ 告警可关闭。 |
+|  | 旧载「626 passed / 45 errors」为**环境伪失败**：pytest 收尾清理 `%TEMP%\pytest-of-Administrator` 触发本机 safe-delete 护栏。规避：`--basetemp` 指向项目内可写目录（如 `.pytest_tmp`）。 |
 | 依赖实测版本 | Pillow 12.3.0 / numpy 2.5.3 / opencv-headless 5.0.0 / Qt 5.15.2 / psd_tools 1.19.0 / pytesseract 0.3.13 |
 | Bash 工具 | PATH 无 Unix 工具（`ls`/`cd`/`head`/`dirname` not found）。**绝对路径调 exe 可行**；首选 Bash + Python 绝对路径，需管道就写进 Python 内部 |
+| ⚠️ PowerShell 工具 | **stdout 常为空**（只回 `exit code 0`，无任何输出）。**绝不可把「无输出」当作「无内容」** —— 曾致子代理误判「`git status` 为空、工作树 == HEAD」。状态判定类命令一律改走 `Bash` + `.venv\Scripts\python.exe` 调 `subprocess` 并 `print(repr(...))` |
+| 状态判定铁律 | 争论「工作树是否干净」时，用 **`git show HEAD:<path>` 搜关键子串**判「HEAD 里有没有这段代码」，比看 status 更硬、一锤定音 |
 | 长命令输出 | `>` 重定向 + 系统 `tail` 均不可靠（截断）。**取测试基线用 `--junitxml` 再解析 XML**，别指望 stdout 尾部。 |
 
 - **误追踪**：`.gitignore` 未覆盖 `.workbuddy/`、`.dumate/`、`.trae-html-share-packages/`，曾误跟踪 54 文件 / 76.86 MB。
