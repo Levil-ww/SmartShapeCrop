@@ -462,14 +462,20 @@ def _draw_staircase_union_layers(
     canvas_arr: np.ndarray,
     cut_rects: list[tuple[float, float, float, float]],
     layers: list[tuple[tuple[int, int, int], float]],
+    cut_area_mask: np.ndarray | None = None,
 ) -> bool:
     """沿多个同角位 cut 矩形的联合外轮廓补边。
 
     ``cut_rects`` 使用画布绝对坐标的半开区间 ``(x0, y0, x1, y1)``，
     每个矩形已经向对应画布边缘延展。只在联合 cut 区域外侧绘制，
     因此阶梯内部重叠边不会被重复绘制，也不会把边框画回挖空区。
+
+    若提供 ``cut_area_mask``（与画布同尺寸的布尔掩膜），优先使用它作为
+    cut 区域，避免对角线阶梯时矩形并集把阶梯间的保留区也错误包含。
     """
-    if not cut_rects or not layers:
+    if not layers:
+        return False
+    if cut_area_mask is None and not cut_rects:
         return False
 
     try:
@@ -479,33 +485,53 @@ def _draw_staircase_union_layers(
         return False
 
     H, W = canvas_arr.shape[:2]
-    normalized: list[tuple[int, int, int, int]] = []
-    for x0, y0, x1, y1 in cut_rects:
-        ix0 = max(0, min(W, int(round(x0))))
-        iy0 = max(0, min(H, int(round(y0))))
-        ix1 = max(0, min(W, int(round(x1))))
-        iy1 = max(0, min(H, int(round(y1))))
-        if ix1 > ix0 and iy1 > iy0:
-            normalized.append((ix0, iy0, ix1, iy1))
-    if not normalized:
-        return False
 
     thicknesses = [max(1, int(round(t))) for _, t in layers]
     total_t = sum(thicknesses)
     if total_t <= 0:
         return False
 
-    # 只在 cut 联合区域附近建立 mask，避免对印刷级整张画布做全图距离变换。
-    x0 = max(0, min(r[0] for r in normalized) - total_t)
-    y0 = max(0, min(r[1] for r in normalized) - total_t)
-    x1 = min(W, max(r[2] for r in normalized) + total_t)
-    y1 = min(H, max(r[3] for r in normalized) + total_t)
-    if x1 <= x0 or y1 <= y0:
-        return False
+    if cut_area_mask is not None:
+        # 直接使用渲染阶段算出的实际 cut 掩膜（保留阶梯形状）
+        full_cut = np.asarray(cut_area_mask, dtype=bool)
+        if full_cut.shape != (H, W):
+            return False
+        if not full_cut.any():
+            return False
+        # 裁剪到 cut 区域附近，避免全图距离变换
+        ys, xs = np.where(full_cut)
+        cx0 = max(0, int(xs.min()) - total_t)
+        cy0 = max(0, int(ys.min()) - total_t)
+        cx1 = min(W, int(xs.max()) + 1 + total_t)
+        cy1 = min(H, int(ys.max()) + 1 + total_t)
+        if cx1 <= cx0 or cy1 <= cy0:
+            return False
+        cut_mask = full_cut[cy0:cy1, cx0:cx1].astype(np.uint8)
+        y0, y1, x0, x1 = cy0, cy1, cx0, cx1
+    else:
+        # 从 cut_rects 构建（单轴阶梯时仍可使用）
+        normalized: list[tuple[int, int, int, int]] = []
+        for x0, y0, x1, y1 in cut_rects:
+            ix0 = max(0, min(W, int(round(x0))))
+            iy0 = max(0, min(H, int(round(y0))))
+            ix1 = max(0, min(W, int(round(x1))))
+            iy1 = max(0, min(H, int(round(y1))))
+            if ix1 > ix0 and iy1 > iy0:
+                normalized.append((ix0, iy0, ix1, iy1))
+        if not normalized:
+            return False
 
-    cut_mask = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
-    for rx0, ry0, rx1, ry1 in normalized:
-        cut_mask[ry0 - y0:ry1 - y0, rx0 - x0:rx1 - x0] = 1
+        # 只在 cut 联合区域附近建立 mask，避免对印刷级整张画布做全图距离变换。
+        x0 = max(0, min(r[0] for r in normalized) - total_t)
+        y0 = max(0, min(r[1] for r in normalized) - total_t)
+        x1 = min(W, max(r[2] for r in normalized) + total_t)
+        y1 = min(H, max(r[3] for r in normalized) + total_t)
+        if x1 <= x0 or y1 <= y0:
+            return False
+
+        cut_mask = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+        for rx0, ry0, rx1, ry1 in normalized:
+            cut_mask[ry0 - y0:ry1 - y0, rx0 - x0:rx1 - x0] = 1
 
     # DIST_C 与当前单边路径内凹角使用的 max(dx, dy) 距离规则一致；
     # 对 union mask 求距离后，只会在阶梯真正暴露的外轮廓补边。
@@ -523,8 +549,48 @@ def _draw_staircase_union_layers(
     layer_idx = np.searchsorted(thresholds, distances, side='left')
     layer_idx = np.clip(layer_idx, 0, len(layers) - 1)
 
+    # [Fix 2026-09-22] 画布边缘衔接按"嵌套直角"逐像素裁剪内层（替换 09-21
+    # 只裁最内层的策略）。挖角切边与画布边缘相交处，补画的层 k（按距切边
+    # 距离）与素材自身边框层 j（按距画布边缘距离）叠加，最终视觉取
+    # min(k, j)：距画布边缘 T_j 深度内只允许绘制层 ≤ j。
+    #   - 最外层（黑描边，k=0）全范围绘制 → 描边连描边（切边轮廓连续）；
+    #   - 素材描边区（j=0）内禁画色带/细线：修复 Bug2（色带压过画布边缘
+    #     黑描边造成最外层边框缺口）；
+    #   - 素材色带区（j=1）内禁画细线：修复 Bug1（细线连到画布最外层边框），
+    #     同时保留"色带覆盖素材横向细线"的既有行为；
+    #   - 色带连色带、细线连细线在素材对应层深处正常相接。
+    # 注意按"距画布边缘距离"逐像素裁剪（而非整带遮蔽），距边缘远于
+    # total_t 的阶梯内部竖边（step2 vertical edge）不受影响。
+    if len(layers) > 1:
+        h_crop, w_crop = cut_mask.shape
+        touches_top = (y0 == 0) and cut_mask[0, :].any()
+        touches_bottom = (y1 == H) and cut_mask[-1, :].any()
+        touches_left = (x0 == 0) and cut_mask[:, 0].any()
+        touches_right = (x1 == W) and cut_mask[:, -1].any()
+        if touches_top or touches_bottom or touches_left or touches_right:
+            edge_dist = np.full((h_crop, w_crop), np.inf, dtype=np.float32)
+            if touches_top:
+                edge_dist = np.minimum(
+                    edge_dist, np.arange(h_crop, dtype=np.float32)[:, None])
+            if touches_bottom:
+                edge_dist = np.minimum(
+                    edge_dist, (h_crop - 1 - np.arange(h_crop, dtype=np.float32))[:, None])
+            if touches_left:
+                edge_dist = np.minimum(
+                    edge_dist, np.arange(w_crop, dtype=np.float32)[None, :])
+            if touches_right:
+                edge_dist = np.minimum(
+                    edge_dist, (w_crop - 1 - np.arange(w_crop, dtype=np.float32))[None, :])
+            # 距边缘 edge_dist 落在层 j 深度区 (T_{j-1}, T_j] 内 → 只允许层 ≤ j
+            max_allowed_layer = np.searchsorted(thresholds, edge_dist, side='right')
+            final_mask = paint_mask & (layer_idx <= max_allowed_layer)
+        else:
+            final_mask = paint_mask
+    else:
+        final_mask = paint_mask
+
     region = canvas_arr[y0:y1, x0:x1, :]
-    region[paint_mask] = color_arr[layer_idx[paint_mask]]
+    region[final_mask] = color_arr[layer_idx[final_mask]]
     return True
 
 
@@ -592,6 +658,7 @@ def _try_apply_v13(
     band_color: tuple[int, int, int] | None,
     edge_color: tuple[int, int, int] | None = None,
     staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
+    cut_area_mask: np.ndarray | None = None,
 ) -> bool:
     """[H-04] V13 路径统一绘制尝试（manual 覆盖 / 自动路由公共出口）。
 
@@ -614,6 +681,7 @@ def _try_apply_v13(
         manual_band_color=band_color,
         manual_edge_color=edge_color,
         staircase_cut_rects=staircase_cut_rects,
+        cut_area_mask=cut_area_mask,
     )
 
 
@@ -658,6 +726,7 @@ def apply_lshape_border_completion(
     manual_band_color: tuple[int, int, int] | None = None,
     cuts: list[tuple[str, float, float]] | None = None,
     staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
+    cut_area_mask: np.ndarray | None = None,
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
@@ -679,6 +748,9 @@ def apply_lshape_border_completion(
         cuts: 多角挖角列表 [(corner, cut_w_px, cut_h_px)]；为空时使用旧单角参数。
         staircase_cut_rects: 单边阶梯 L 形的联合 cut 矩形列表，使用画布绝对
                               坐标半开区间 (x0, y0, x1, y1)。仅由阶梯模式传入。
+        cut_area_mask: 实际 cut 区域的布尔掩膜 (H, W)，与 canvas_arr 同尺寸。
+                       优先级高于 staircase_cut_rects（对角线阶梯时矩形并集会
+                       错误地把阶梯间的保留区也包含进来，造成边框画到色带内部）。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
@@ -755,6 +827,7 @@ def apply_lshape_border_completion(
             band_px=manual_band_px,
             band_color=manual_band_color,
             staircase_cut_rects=staircase_cut_rects,
+            cut_area_mask=cut_area_mask,
         )
 
     # Step 1: 边框检测
@@ -799,6 +872,7 @@ def apply_lshape_border_completion(
             band_color=_v13[3],
             edge_color=_v13[2],
             staircase_cut_rects=staircase_cut_rects,
+            cut_area_mask=cut_area_mask,
         )
         if _v13_ok:
             return True
@@ -818,6 +892,7 @@ def apply_lshape_border_completion(
             scale_y=scale_y,
             bg_color=bg_color,
             staircase_cut_rects=staircase_cut_rects,
+            cut_area_mask=cut_area_mask,
         ):
             return True
         logger.info("[LShapeBorder] Profile 路径绘制失败，回退 V13/旧路径")
@@ -854,6 +929,7 @@ def apply_lshape_border_completion(
             band_color=v13[3],
             edge_color=v13[2],
             staircase_cut_rects=staircase_cut_rects,
+            cut_area_mask=cut_area_mask,
         )
         if _v13_ok2:
             return True
@@ -884,9 +960,10 @@ def apply_lshape_border_completion(
         len(border_layers_canvas), scale_avg, total_t, border_layers_canvas,
     )
 
-    if staircase_cut_rects:
+    if cut_area_mask is not None or staircase_cut_rects:
         return _draw_staircase_union_layers(
             canvas_arr, staircase_cut_rects, border_layers_canvas,
+            cut_area_mask=cut_area_mask,
         )
 
     # Step 3: 使用统一的 L 形距离分层绘制。旧的两矩形 bbox 画法在内凹角
@@ -917,6 +994,7 @@ def _apply_v13_path(
     manual_band_color: tuple[int, int, int] | None,
     manual_edge_color: tuple[int, int, int] | None = None,
     staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
+    cut_area_mask: np.ndarray | None = None,
 ) -> bool:
     """V13 路径：手动覆盖或原检测兜底时使用。
 
@@ -988,7 +1066,7 @@ def _apply_v13_path(
         edge_canvas, band_canvas, color_src, scale_avg,
     )
 
-    if staircase_cut_rects:
+    if cut_area_mask is not None or staircase_cut_rects:
         staircase_layers = [
             (edge_color_src, max(1, int(round(edge_canvas)))),
         ]
@@ -998,6 +1076,7 @@ def _apply_v13_path(
             )
         return _draw_staircase_union_layers(
             canvas_arr, staircase_cut_rects, staircase_layers,
+            cut_area_mask=cut_area_mask,
         )
 
     # —— 3) V13 patch 补边（确认 V13 交付模块 lshape_border_module.py 移植）——
@@ -1259,6 +1338,25 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
     if pt[1] > 0 and not _v13_band_consistent(arr, pt[1], pt[3]):
         logger.info("[V13] 主色带未通过四边一致性校验，按仅黑描边处理")
         pt = (pt[0], 0, pt[2], (0, 0, 0))
+
+    # [Fix 2026-09-19 大理石纹理误检] 褐色/黑色大理石等素材的"色带"实际是
+    # 大理石纹理本身（与中心内容色一致），不是独立的边框色带。白色大理石
+    # 因 max(c)>235 被天然过滤，深色大理石需要额外用"中心色匹配"剔除。
+    if pt[1] > 0:
+        H, W = arr.shape[:2]
+        m0, m1 = int(H * 0.1), int(H * 0.9)
+        n0, n1 = int(W * 0.1), int(W * 0.9)
+        if m1 - m0 >= 5 and n1 - n0 >= 5:
+            center_color = arr[m0:m1, n0:n1].reshape(-1, 3).mean(axis=0)
+            band_color = np.asarray(pt[3], dtype=np.float64)
+            dist = float(np.linalg.norm(band_color - center_color))
+            if dist < 30.0:
+                logger.info(
+                    "[V13] 主色带色 %s 与素材中心色 %s 距离 %.1f < 30，"
+                    "判定为纹理底色（大理石类），按仅黑描边处理",
+                    pt[3], tuple(int(v) for v in center_color), dist,
+                )
+                pt = (pt[0], 0, pt[2], (0, 0, 0))
 
     # 返回四元组：edge/band 宽度 + 真实描边色（取自顶边剖面） + 主带色
     return (edge, pt[1], pt[2], pt[3])

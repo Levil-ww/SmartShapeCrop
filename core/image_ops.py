@@ -629,7 +629,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     inner_fill_arr = np.array(inner_fill, dtype=np.uint8)
     inner_mask = _get_inner_pixel_mask(design)
     # 3.x L形挖角（cut 区填白 + 素材底色采样）
-    lshape_cut_done, _lshape_cut_bg_color = _render_lshape_cut(
+    lshape_cut_done, _lshape_cut_bg_color, lshape_cut_area_mask = _render_lshape_cut(
         canvas_arr, design, W, H, inner_mask, is_pool_with_material, _dbg)
     # [SINGLE-HOLE Add-On] Stale Decor Black Border Invalidation (V1)
     _stale_decor_black_border_invalidation(
@@ -645,7 +645,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB, _dbg)
     # 3.6 [L-Shape Border Completion] L 形挖角处的素材边框补全
     _lshape_border_completion(canvas_arr, design, W, H, cached_img,
-        is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB)
+        is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB, lshape_cut_area_mask)
     # [SINGLE-HOLE Add-On V2] Stale-Decor Universal Residual Cleaner
     _stale_decor_residual_cleaner(
         canvas_arr, design, W, H, border_mask, inner_mask, has_outer_pool_material)
@@ -884,7 +884,7 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
                     design.hole_bg_color, dtype=np.uint8).reshape(1, 3)
         # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
         lshape_cut_done = True
-    return lshape_cut_done, _lshape_cut_bg_color
+    return lshape_cut_done, _lshape_cut_bg_color, (cut_area_mask if design.mode == 'rect_lshape' and is_pool_with_material else None)
 
 def _stale_decor_black_border_invalidation(canvas_arr, design, W, H, has_outer_pool_material):
     """[C-01] 单洞 Stale-Decor 黑边框失效清理 Add-On V1（原 L847-951）。"""
@@ -1210,7 +1210,7 @@ def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_ma
         if not _skip_unified:
             canvas_arr[border_mask] = BLACK_RGB
 
-def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB):
+def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB, lshape_cut_area_mask=None):
     """[C-01] L形挖角处素材边框补全（含三层失败兜底，原 L1170-1269）。"""
     # ===== [L-Shape Border Completion 2026-09-03] L 形挖角处的素材边框补全 =====
     # 当素材图自带边框（如克罗印花的棕色+黑色双层边框、安妮森林的细黑边框），
@@ -1246,9 +1246,8 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 offset_x = float(spec.get('offset_x', 0.0))
                 offset_y = float(spec.get('offset_y', 0.0))
 
-                # 阶梯模式保留每一级的真实矩形，随后按联合 cut 外轮廓补边。
-                # 这里先把矩形从 inner_rect 坐标延展到对应画布边缘；
-                # 不把 offset 合并成单个外包矩形，避免丢失台阶边界。
+                # 阶梯模式：每一级都向锚定的两条画布边延展（与 _render_lshape_cut
+                # 中的 _extra 行为一致），联合形状即为真实 cut 外轮廓。
                 if staircase_mode:
                     if cut_corner in ('bl', 'tl'):
                         sx0 = _ir_x + offset_x
@@ -1336,6 +1335,7 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 manual_band_px=getattr(design, 'lshape_manual_band_px', None),
                 manual_band_color=getattr(design, 'lshape_manual_band_color', None),
                 staircase_cut_rects=staircase_cut_rects or None,
+                cut_area_mask=lshape_cut_area_mask,
             )
             # [Fix N-P1-01] 补全返回值接入真值（仅日志记录，不改变渲染逻辑）
             if not _completion_ok:

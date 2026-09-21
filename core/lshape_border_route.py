@@ -605,6 +605,7 @@ def _apply_profile_path(*,
                         scale_y: float,
                         bg_color: tuple[int, int, int] = (255, 255, 255),
                         staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
+                        cut_area_mask: np.ndarray | None = None,
                         ) -> bool:
     """Profile 路径：源图层结构 → 画布坐标 → patch_lshape_cut_layers。
 
@@ -657,10 +658,11 @@ def _apply_profile_path(*,
     if not layers_canvas:
         return False
 
-    if staircase_cut_rects:
+    if cut_area_mask is not None or staircase_cut_rects:
         from .lshape_border import _draw_staircase_union_layers
         return _draw_staircase_union_layers(
             canvas_arr, staircase_cut_rects, layers_canvas,
+            cut_area_mask=cut_area_mask,
         )
 
     H, W = canvas_arr.shape[:2]

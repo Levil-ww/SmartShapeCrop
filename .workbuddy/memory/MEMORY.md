@@ -38,7 +38,7 @@ SmartShapeCrop分析报告/  # assets/ 配图 + patches/ 补丁（html 报告）
 |---|---|
 | Python | `F:\SmartShapeCrop\.venv\Scripts\python.exe`（3.13.14，含 PyQt5/PIL/numpy/cv2/psd_tools） |
 | PyInstaller | `.venv` 内 **6.22.2**，可随时出包 |
-| Tesseract | `D:\Programs\Tesseract-OCR`（**非** C 盘），`core.config.PathResolver` 探测 |
+| Tesseract | `D:\Programs\Tesseract-OCR`（**非** C 盘，v5.5.3，langs: chi_sim/eng/osd）。系统 PATH 已配该目录；⚠️ 但 `PathResolver` 候选模板**刻意不含 D 盘**（F12），只认 PATH 或 `TESSERACT_PATH`。日志报 "not in your PATH" 时**先查是不是进程环境快照过期**（改完 PATH 必须重启 IDE/终端）：`scripts/diagnose/_diag_tesseract_env.py` 一键对比注册表 vs 进程 PATH |
 | 测试基线 | **672 passed / 0 failed / 0 error / 0 skipped**（2026-09-19 实跑，HEAD `b444ada`）；GUI offscreen 97 全绿。 |
 |  | 历史失败项 `test_render_design_lshape_degenerate_no_crash` **已修复**（`core/geometry.py:349-352` 新增退化守卫）→ 告警可关闭。 |
 |  | 旧载「626 passed / 45 errors」为**环境伪失败**：pytest 收尾清理 `%TEMP%\pytest-of-Administrator` 触发本机 safe-delete 护栏。规避：`--basetemp` 指向项目内可写目录（如 `.pytest_tmp`）。 |
