@@ -26,7 +26,6 @@ from services.sketch_parser import validate_sketch_file
 from services.sketch_parser.sketch_parser import _SKETCH_ACCEPT_EXT, get_tesseract_status
 
 logger = logging.getLogger(__name__)
-
 from .property_panel_widgets import ColorButton, _SketchDropLabel
 from workers.property_panel_workers import PoolRenderWorker, _SketchParseWorker, _InnerMatchWorker
 from .property_panel_dialogs import _LayersDialog, _SketchViewerDialog
@@ -464,6 +463,7 @@ class _GenerateMixin:
                 for _i, _hc in enumerate(self.design.pool_holes_cm):
                     if _i < len(holes):
                         _hc['inner_material_path'] = holes[_i].get('path')
+                        _path = _hc.get('inner_material_path')
                         _p = _hc.get('inner_material_path')
                         if _p and _p in preload:
                             _hc['_cached_inner_image'] = preload[_p]

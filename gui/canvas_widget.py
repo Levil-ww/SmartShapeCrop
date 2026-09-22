@@ -33,6 +33,7 @@ ASYNC_RENDER_THRESHOLD = 200_000  # 20万像素
 
 # Worker 类已迁移至 workers/canvas_workers.py
 from workers.canvas_workers import PreviewRenderWorker, ExportSaveWorker
+from core.config import CUT_LOSS_CM
 
 
 class PreviewCanvas(QWidget):
@@ -44,6 +45,7 @@ class PreviewCanvas(QWidget):
         super().__init__(parent)
         self._design = None
         self._notch_overlay: list[dict] = []
+        self._pool_holes_overlay: list[dict] = []
         self._full_image: Image.Image | None = None  # 预览渲染图（LOD 或全分辨率）
         self._preview_pixmap: QPixmap | None = None  # 缩放后的预览图
         self._use_lod: bool = False  # 当前是否使用 LOD 渲染
@@ -64,6 +66,7 @@ class PreviewCanvas(QWidget):
             logger.info(f"[PreviewCanvas.set_design] called mode={getattr(design, 'mode', '?')} canvas_w_cm={getattr(design, 'canvas_w_cm', '?')} canvas_h_cm={getattr(design, 'canvas_h_cm', '?')}")
         self._design = design
         self._update_notch_overlay(design)
+        self._update_pool_holes_overlay(design)
         self._render_async()
 
     def clear_notch_overlay(self) -> None:
@@ -99,6 +102,32 @@ class PreviewCanvas(QWidget):
                 })
         except (AttributeError, TypeError, ValueError):
             logger.debug("无法生成 L 形凹角预览标注", exc_info=True)
+
+    def _update_pool_holes_overlay(self, design) -> None:
+        """准备多洞只读标注数据，不参与渲染或修改设计几何。"""
+        self._pool_holes_overlay = []
+        if (design is None or getattr(design, 'mode', None) != 'rect_hole'
+                or not getattr(design, 'pool_is_multi_hole', False)):
+            return
+        holes = getattr(design, 'pool_holes_cm', None)
+        if not isinstance(holes, list) or len(holes) < 2:
+            return
+        try:
+            for index, hole in enumerate(holes):
+                if not isinstance(hole, dict):
+                    continue
+                w = max(0.0, float(hole.get('w_cm', 0.0)) - CUT_LOSS_CM)
+                h = max(0.0, float(hole.get('h_cm', 0.0)) - CUT_LOSS_CM)
+                if w <= 0 or h <= 0:
+                    continue
+                self._pool_holes_overlay.append({
+                    'index': index,
+                    'rect_cm': (float(hole.get('x_cm', 0.0)),
+                                float(hole.get('y_cm', 0.0)), w, h),
+                    'size_cm': (w, h),
+                })
+        except (TypeError, ValueError):
+            logger.debug("无法生成多洞预览标注", exc_info=True)
 
     def full_image(self) -> Image.Image | None:
         """返回全尺寸渲染图（保存时使用这个，不要用预览图）"""
@@ -328,6 +357,7 @@ class PreviewCanvas(QWidget):
         p.setPen(QColor(120, 120, 120))
         p.drawRect(x, y, pm_w - 1, pm_h - 1)
         self._paint_notch_overlay(p, x, y, pm_w, pm_h)
+        self._paint_pool_holes_overlay(p, x, y, pm_w, pm_h)
         # LOD 模式提示
         if self._use_lod:
             p.setPen(QColor(255, 200, 50))
@@ -373,4 +403,43 @@ class PreviewCanvas(QWidget):
             tx = x + int(round(mx * width / canvas_w)) + 5
             ty = y + int(round(my * height / canvas_h)) - 5
             painter.drawText(tx, ty, item['corner'].upper())
+        painter.restore()
+
+    def _paint_pool_holes_overlay(self, painter: QPainter, x: int, y: int,
+                                  width: int, height: int) -> None:
+        """绘制多洞边框、编号、有效尺寸和间距（只读）。"""
+        if not self._pool_holes_overlay or self._design is None:
+            return
+        canvas_w_cm = max(float(getattr(self._design, 'canvas_w_cm', 1.0)), 1e-6)
+        canvas_h_cm = max(float(getattr(self._design, 'canvas_h_cm', 1.0)), 1e-6)
+        painter.save()
+        pen = painter.pen()
+        pen.setColor(QColor(220, 38, 38, 220))
+        pen.setStyle(Qt.SolidLine)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(max(8, min(12, int(min(width, height) / 65))))
+        painter.setFont(font)
+        gaps = list(getattr(self._design, 'pool_holes_gaps_cm', []) or [])
+        for item in self._pool_holes_overlay:
+            rx, ry, rw_cm, rh_cm = item['rect_cm']
+            # pool_holes_cm 坐标和尺寸均为 cm，按画布实际显示尺寸换算。
+            px = x + int(round(rx / canvas_w_cm * width))
+            py = y + int(round(ry / canvas_h_cm * height))
+            pw = max(1, int(round(rw_cm / canvas_w_cm * width)))
+            ph = max(1, int(round(rh_cm / canvas_h_cm * height)))
+            painter.drawRect(px, py, pw, ph)
+            label = f"{item['index'] + 1}: {rw_cm:.1f}×{rh_cm:.1f} cm"
+            painter.drawText(px + 4, max(y + 14, py - 4), label)
+            next_index = item['index'] + 1
+            if next_index < len(self._pool_holes_overlay) and item['index'] < len(gaps):
+                nxt = self._pool_holes_overlay[next_index]['rect_cm']
+                nx = x + int(round(nxt[0] / canvas_w_cm * width))
+                ny = y + int(round(nxt[1] / canvas_h_cm * height))
+                painter.setPen(QColor(245, 158, 11, 230))
+                painter.drawText((px + nx) // 2, (py + ny) // 2,
+                                 f"间距 {float(gaps[item['index']]):.1f} cm")
+                painter.setPen(pen)
         painter.restore()
