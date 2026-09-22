@@ -352,7 +352,16 @@ class _GenerateMixin:
                         layout_m,
                     )
                 else:
-                    self._hide_multi_hole_ui()
+                    # 用户主动选择多洞时保留入口和参数；自动识别失败不应
+                    # 将“识别失败”静默等同于“不可使用多洞”。
+                    if (hasattr(self, '_pool_shape_mode')
+                            and self._pool_shape_mode.currentData() == 'multi'):
+                        self.design.pool_is_multi_hole = True
+                        if int(getattr(self, '_mh_active_count', 0) or 0) >= 2:
+                            self._gb_multihole.show()
+                            self._set_multi_hole_row_visibility(self._mh_active_count)
+                    else:
+                        self._hide_multi_hole_ui()
             except Exception as e:
                 import logging as _lgg
                 _lgg.getLogger(__name__).warning(f"[Multi-hole UI] Worker 回填多洞 UI 失败: {e}")
@@ -723,4 +732,3 @@ class _GenerateMixin:
         except Exception as e:
             logger.warning(f"[Multi-hole UI] _detect_multihole_edits 失败（忽略，按 sketch 默认跑）: {e}")
             return None
-

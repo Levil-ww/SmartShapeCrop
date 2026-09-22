@@ -127,7 +127,17 @@ class _PoolBoxMixin:
         row_sk.addWidget(sk_desc, 1)
         f.addLayout(row_sk)
 
-        # D) 挖空方式
+        # D) 挖洞模式（与自动识别解耦：识别结果只提供默认值）
+        row_shape = QHBoxLayout()
+        self._pool_shape_mode = QComboBox()
+        self._pool_shape_mode.addItem("单洞", "single")
+        self._pool_shape_mode.addItem("多洞", "multi")
+        self._pool_shape_mode.currentIndexChanged.connect(self._on_pool_shape_mode_change)
+        row_shape.addWidget(QLabel("挖洞模式:"), 0)
+        row_shape.addWidget(self._pool_shape_mode, 1)
+        f.addLayout(row_shape)
+
+        # E) 挖空方式（与挖洞模式独立）
         row_mode = QHBoxLayout()
         self._pool_hole_mode = QComboBox()
         self._pool_hole_mode.addItem("✂️ 空白(挖去不留白)", "blank")
@@ -188,6 +198,33 @@ class _PoolBoxMixin:
             if d.hole_bg_image is not None:
                 d.hole_bg_image = None
                 self._ed_hole_img.setText("")
+
+    def _on_pool_shape_mode_change(self):
+        """切换单洞/多洞入口，不改变挖空方式或既有多洞参数。"""
+        mode = self._pool_shape_mode.currentData() if hasattr(self, '_pool_shape_mode') else 'single'
+        is_multi = (mode == 'multi')
+        self.design.pool_is_multi_hole = is_multi
+        if is_multi:
+            # 没有识别结果时仍提供可编辑的最小多洞配置。
+            if int(getattr(self, '_mh_active_count', 0) or 0) < 2:
+                self._mh_active_count = 0
+                self._mh_add_hole()
+                self._mh_add_hole()
+                # _mh_add_hole 复制“前一个间距”时，第二个洞对应间距索引为 0。
+                # 首次手动进入多洞模式时显式给出可用默认值。
+                if self._mh_sp_gaps and self._mh_sp_gaps[0].value() <= 0:
+                    self._mh_sp_gaps[0].setValue(10.0)
+            self._set_multi_hole_row_visibility(self._mh_active_count)
+            self._gb_multihole.show()
+            self._mh_title_label.setText(
+                f"共 {self._mh_active_count} 洞（手动配置）")
+            self._set_pool_status("已切换为多洞模式，可手动配置洞数量和参数。")
+        else:
+            # 仅停用多洞生成，不销毁用户之前的参数，切回多洞时可恢复。
+            if hasattr(self, '_gb_multihole'):
+                self._gb_multihole.hide()
+            self._set_multi_hole_row_visibility(0)
+            self._set_pool_status("已切换为单洞模式。")
 
 
     def _on_pool_target_changed(self, text: str, source: str = 'pool'):
@@ -784,6 +821,15 @@ class _PoolBoxMixin:
                                     and isinstance(result.holes, list)
                                     and len(result.holes) >= 2)
                     if is_mh_result:
+                        # 自动识别仅作为默认值；首次识别出多洞时切入入口，
+                        # 不覆盖用户已经主动选择的多洞模式。
+                        if (hasattr(self, '_pool_shape_mode')
+                                and self._pool_shape_mode.currentData() != 'multi'):
+                            self._pool_shape_mode.blockSignals(True)
+                            self._pool_shape_mode.setCurrentIndex(
+                                self._pool_shape_mode.findData('multi'))
+                            self._pool_shape_mode.blockSignals(False)
+                        self.design.pool_is_multi_hole = True
                         # 从 sketch_result 构建一份"假的"画布相对 holes_cm（因为 PoolWorker 还没跑，
                         # design 还没最终确定），给用户预览多洞参数。值仅用于 UI 显示，不会触发渲染。
                         holes = result.holes
@@ -843,7 +889,18 @@ class _PoolBoxMixin:
                                 cursor_x += h.w_cm
                         self._fill_multi_hole_ui(fake_holes_cm, gaps, layout)
                     else:
-                        self._hide_multi_hole_ui()
+                        # 识别失败/识别为单洞时，不得静默关闭用户已选的多洞入口。
+                        if (hasattr(self, '_pool_shape_mode')
+                                and self._pool_shape_mode.currentData() == 'multi'):
+                            self.design.pool_is_multi_hole = True
+                            if int(getattr(self, '_mh_active_count', 0) or 0) < 2:
+                                self._on_pool_shape_mode_change()
+                            else:
+                                self._gb_multihole.show()
+                                self._set_multi_hole_row_visibility(self._mh_active_count)
+                        else:
+                            self.design.pool_is_multi_hole = False
+                            self._hide_multi_hole_ui()
                 except Exception as e:
                     import logging as _lgg2
                     _lgg2.getLogger(__name__).warning(f"[Multi-hole UI] 草图解析后回填多洞 UI 失败: {e}")

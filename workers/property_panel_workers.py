@@ -19,6 +19,23 @@ from services.parser.template_matcher import TemplateMatcher
 logger = logging.getLogger(__name__)
 
 
+def _inherit_multihole_material(old_holes, index):
+    """Return optional per-hole material fields when rebuilding UI overrides.
+
+    Geometry edits must not discard material matching results already attached to
+    the corresponding hole.  Missing/invalid entries intentionally inherit
+    nothing, preserving the historical fallback to the normal fill behavior.
+    """
+    if not (0 <= index < len(old_holes)):
+        return {}
+    old = old_holes[index]
+    if not isinstance(old, dict):
+        return {}
+    fields = ('inner_material_path', '_cached_inner_image',
+              '_src_design_w_cm', '_src_design_h_cm')
+    return {key: old[key] for key in fields if key in old}
+
+
 class _SketchDecodeWorker(QThread):
     """[Perf-Opt P1-07] 草图大图解码后台线程：Image.open + convert 移出 GUI 线程。
 
@@ -857,13 +874,15 @@ class PoolRenderWorker(QThread):
                             hmb = _mb_i(i)
                             hml = _ml_i(i, _s_ml)
                             hmr = _mr_i(i, _s_mr)
-                            _new_holes.append({
+                            _hole = {
                                 'x_cm': _ox + hml,
                                 'y_cm': cursor_y,
                                 'w_cm': _w, 'h_cm': _h,
                                 'mt_cm': hmt, 'mb_cm': hmb,
                                 'ml_cm': hml, 'mr_cm': hmr,
-                            })
+                            }
+                            _hole.update(_inherit_multihole_material(_old, i))
+                            _new_holes.append(_hole)
                             cursor_y += _h
                     else:  # horizontal / mixed → 横排语义（占 90% 业务）
                         cursor_x = _ox + _ml_i(0, _s_ml)
@@ -874,13 +893,15 @@ class PoolRenderWorker(QThread):
                             hmb = _mb_i(i)
                             hml = _ml_i(i, _s_ml)
                             hmr = _mr_i(i, _s_mr)
-                            _new_holes.append({
+                            _hole = {
                                 'x_cm': cursor_x,
                                 'y_cm': _oy + hmt,
                                 'w_cm': _w, 'h_cm': _h,
                                 'mt_cm': hmt, 'mb_cm': hmb,
                                 'ml_cm': hml, 'mr_cm': hmr,
-                            })
+                            }
+                            _hole.update(_inherit_multihole_material(_old, i))
+                            _new_holes.append(_hole)
                             cursor_x += _w
                     design.pool_holes_cm = _new_holes
                     design.pool_holes_gaps_cm = _new_gaps
