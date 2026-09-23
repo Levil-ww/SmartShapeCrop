@@ -636,7 +636,19 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         canvas_arr, design, W, H, has_outer_pool_material)
     # 3.1 接缝羽化（仅非 L形挖角路径）
     if not lshape_cut_done:
-        _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr)
+        # 单洞水池内挖素材已经按 inner_rect 精确缩放；接缝羽化会把外框
+        # 素材混入洞内最外侧像素，形成洞边一圈轻微的花纹溢出。
+        # 仅在该路径关闭羽化，其他水池/多洞/圆角/L 形路径保持原行为。
+        _single_hole_material = (
+            design.mode == 'rect_hole'
+            and not getattr(design, 'pool_is_multi_hole', False)
+            and bool(getattr(design, 'pool_inner_material_image', None))
+            and os.path.isfile(getattr(design, 'pool_inner_material_image', ''))
+        )
+        if _single_hole_material:
+            canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+        else:
+            _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr)
     # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
     _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, has_outer_img, lshape_cut_done)
     # 3.5 在挖空区域边缘绘制统一的黑色边框线（border_mask 计算）
