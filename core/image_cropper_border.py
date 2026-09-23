@@ -561,21 +561,14 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     # 注意：若将来需要支持"边框打印 + 内部强制纯白"的严格场景，建议新增
     #   参数显式开启强清空模式，而不是默认破坏绝大多数产品。
 
-    # Step A: 只重绘最外层边框在圆弧上
+    # Step A: 圆弧主体由 Step B 统一重绘。
     #
     # apply_border_only_corners 的设计语义是“仅处理最外层圆角边框线”，
     # 不再把内层装饰/间隙/深色带也沿圆弧重绘，避免产生紧贴黑色外框的深色弧形。
-    if border_layers and corners_px:
-        for corner_key, r_px in corners_px.items():
-            if r_px <= 0:
-                continue
-            _redraw_border_on_corner(
-                result, corner_key, r_px, outermost_layers,
-                src_img=img, validity_mask=validity_mask,
-                only_outermost=True,  # 仅绘制最外层边框
-                bg_color=bg_color,
-                paint_inside_arc=False,
-            )
+    # 不在这里先写入检测得到的代表色。该颜色是边框层统计值，可能包含
+    # 抗锯齿/过渡像素，随后再由 Step B 按原素材直边采样会产生两次覆盖，
+    # 表现为圆弧上的阴影或颜色不一致。保留函数导入和实现供其他调用路径使用，
+    # 本流程只让 Step B 负责最终像素颜色。
 
     # Step B: 安全补绘外轮廓
     # [Fix 2026-08-27] 仅当检测到真实边框层时才补绘。
@@ -600,4 +593,3 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         )
 
     return result
-
