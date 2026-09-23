@@ -7,7 +7,7 @@
 | 状态 | Revised(评审后修订 — 原核心结论不可行,方案重构为 CutRect 路线) |
 | 报告版本 | V2.4(2026-09-18 第④步尺寸输入改步进标注值 + G1 闸口拆分;V2.3 三种模式区分判定 + GUI 阶梯使用流程) |
 | 日期 | 2026-09-18 |
-| 涉及模块 | `services/sketch_parser/`、`core/lshape_border*.py`、`workers/property_panel_workers.py` |
+| 涉及模块 | `../../services/sketch_parser`、`core/lshape_border*.py`、`../../workers/property_panel_workers.py` |
 | 决策范围 | 识别层改造、schema 扩展、G1 闸口扩展 |
 | 不影响 | ~~渲染层已天然支持~~ → 评审证伪:数据模型/几何/渲染均需改造(见「〇、评审结论」) |
 
@@ -290,10 +290,10 @@ cuts_cm.append({
 
 | 期 | 内容 | 工期 | 关键验收 |
 |---|---|---|---|
-| **一 数据模型+几何** | `core/geometry.py`:新增 CutRect dataclass;`CropDesign` 增 `l_cut_rects`(保留 `l_cuts_cm` 兼容入口);`build_lshape_mask` 改遍历 CutRect + 新增 `_rect_from_anchor_offset()`;**重写 validate()(L284-295,允许同 anchor 多笔、上限 3 级)与同边约束(L308-328,改「各级不重叠 + 不越界」)** | 2–3 天 | 手写 CutRect 列表 → 渲染出正确两级台阶(复用 `scripts/diagnose/_diag_stair_*.py`) |
+| **一 数据模型+几何** | `../../core/geometry.py`:新增 CutRect dataclass;`CropDesign` 增 `l_cut_rects`(保留 `l_cuts_cm` 兼容入口);`build_lshape_mask` 改遍历 CutRect + 新增 `_rect_from_anchor_offset()`;**重写 validate()(L284-295,允许同 anchor 多笔、上限 3 级)与同边约束(L308-328,改「各级不重叠 + 不越界」)** | 2–3 天 | 手写 CutRect 列表 → 渲染出正确两级台阶(复用 `scripts/diagnose/_diag_stair_*.py`) |
 | **二 识别层** | B1 解除滑动窗口桶合并(每桶保留全部候选,去重,cap 4);用 concave 坐标补 anchor+offset;`cut_w/h_px` 改「相邻顶点差值」;B4 G1 反拼 IoU≥0.92 校验 | 1–2 天 | 本例真实草图 cuts_cm 正确表达两级台阶 |
-| **三 渲染出口+边框** | `core/image_ops.py` 8 处 `mode=='rect_lshape'` 分支(733/759/779/1050/1068/1144/1204/1223)收敛为 helper;`core/lshape_border.py` 非 bbox 角凹角补边(唯一硬骨头,先 60×60 受控实验) | 3–5 天 | 多素材 × 多级台阶,边框连续无漏线、无越界 |
-| **四 GUI+回归** | `gui/lshape_panel.py` 同角位子行交互(缩进 + 「追加一级」,默认 2 行、最多 3 行;不提供多角混合入口);每期跑全量回归(~501 测试)作准入门槛 | 2–3 天 | 参数回填/预览/导出全通 |
+| **三 渲染出口+边框** | `../../core/image_ops.py` 8 处 `mode=='rect_lshape'` 分支(733/759/779/1050/1068/1144/1204/1223)收敛为 helper;`../../core/lshape_border.py` 非 bbox 角凹角补边(唯一硬骨头,先 60×60 受控实验) | 3–5 天 | 多素材 × 多级台阶,边框连续无漏线、无越界 |
+| **四 GUI+回归** | `../../gui/lshape_panel.py` 同角位子行交互(缩进 + 「追加一级」,默认 2 行、最多 3 行;不提供多角混合入口);每期跑全量回归(~501 测试)作准入门槛 | 2–3 天 | 参数回填/预览/导出全通 |
 
 建议先做一 + 二期(3–5 天)即可端到端看到正确的阶梯渲染;三、四期为体验与打磨。
 
@@ -375,7 +375,7 @@ cuts_cm.append({
 
 **完成日期**: 2026-09-18
 
-**改动清单**(`core/geometry.py`):
+**改动清单**(`../../core/geometry.py`):
 - 新增 `CutRect` dataclass(anchor + offset_x_cm + offset_y_cm + w_cm + h_cm)
 - `CropDesign` 增 `l_cut_rects: list[CutRect]` 字段(保留 `l_cuts_cm` 兼容入口)
 - `LShape` 增 `cut_rects: list[dict]` 字段 + `cut_rect_specs()` 方法(offset 感知 dict 列表)
@@ -383,7 +383,7 @@ cuts_cm.append({
 - `build_lshape_mask` 支持 offset dict 路由 + 新增 `_rect_from_anchor_offset()` 辅助函数(N1-01 同款钳制)
 - 旧 tuple 路径(`_get_lshape_cut_rect_at_offset(..., 0)`)行为字节级不变
 
-**新增测试**(`tests/core/test_lshape_cutrect.py`): 33 个测试全过
+**新增测试**(`../../tests/core/test_lshape_cutrect.py`): 33 个测试全过
 - CutRect 数据模型 + 默认值
 - `_rect_from_anchor_offset` 四角定位 + offset=0 ≡ 旧函数 + 钳制
 - validate 接受:内缩/外扩/对角/共享边/边界宽
@@ -409,14 +409,14 @@ cuts_cm.append({
 
 **完成日期**: 2026-09-18
 
-**改动清单**(`services/sketch_parser/lshape_sketch_parser.py`):
+**改动清单**(`../../services/sketch_parser/lshape_sketch_parser.py`):
 - **B1 解除滑动窗口桶合并**: `_detect_concave_sliding_window` 改为 `detected = defaultdict(list)`,同桶保留全部候选;返回前按凹点绝对坐标去重(欧氏距离 < 5% 对角线),每桶最多 4 个
 - **B3 新增同边分类器**: `_classify_pattern(all_corners)` 按 corner 分桶 → 桶内 ≥2 个凹点 → 同竖边(`|Δx| < 5px`)或同横边(`|Δy| < 5px`)→ 标记 `single_edge_stepped`;否则 `multi_edge`
 - **B2 CutRect 格式转换**: 当 `pattern == 'single_edge_stepped'` 且 `len(cuts_cm) >= 2` 时,按 concave 坐标排序,构建 CutRect 列表(`anchor` + `offset_x_cm` + `offset_y_cm` + `w_cm` + `h_cm`),offset 为前一级尺寸累加
 - **B4 G1 闸口扩展**: 新增 `_compute_staircase_iou()` 函数,用 cuts 列表反向裁剪外框 bbox 构建理论阶梯多边形,与识别轮廓做 IoU 比对;当 `pattern == 'single_edge_stepped'` 时触发校验,IoU < 0.92 则降级为 `multi_edge` 并转换回旧 `(corner, w, h)` 格式
 - `result.debug` 新增 `pattern` 字段(`single_edge_stepped` 或 `multi_edge`)
 
-**新增测试**(`tests/sketch_parser/test_lshape_staircase_recognition.py`): 6 个测试全过
+**新增测试**(`../../tests/sketch_parser/test_lshape_staircase_recognition.py`): 6 个测试全过
 - B1: 返回格式验证(无凹角时返回空列表或 None)
 - B3: 同边分类器(同竖边/同横边 → single_edge_stepped;不同角位/同角不同边/单角 → multi_edge)
 
@@ -437,12 +437,12 @@ cuts_cm.append({
 
 **改动清单**:
 
-`core/geometry.py`:
+`../../core/geometry.py`:
 - 新增 `_shrink_cut_rect(rect, t)` — CutRect 通用收缩公式:`offset' = offset + t, w' = max(0, w − 2t)`
 - 新增 `_build_design_lshape_mask(design, use_outer, shrink_px, direct_corners)` — 渲染层统一入口,从 CropDesign 提取参数构建 L 形 bool mask,支持 `cut_rect_specs()` offset 感知 + 可选内缩
 - `compute_lshape_border_bands` 改造:`cut_specs()`(3 元组,丢失 offset)→ `cut_rect_specs()`(dict,保留 offset);band 循环内用 `_shrink_cut_rect(c, t_inner)` 替代旧 `max(0, cut_w - t)` 行内公式,阶梯边框带覆盖率从 90.37% 提升至 100%
 
-`core/image_ops.py`(9 处 `rect_lshape` 分支收敛):
+`../../core/image_ops.py`(9 处 `rect_lshape` 分支收敛):
 - **Branch 1**(L752 `_apply_lshape_bg_overlay`):→ `_build_design_lshape_mask(design, use_outer=True)`
 - **Branch 3**(L816 `_render_lshape_cut` `_extra` 计算):→ `cut_rect_specs()` + `cut_w + offset_x`/`cut_h + offset_y`(总延伸距离)
 - **Branch 4**(L1069 `_fill_lshape_cut_area`):无需改动 — `inner_mask` 来自 Branch 9,已含阶梯支持
@@ -450,7 +450,7 @@ cuts_cm.append({
 - **Branch 8**(L1239 `_lshape_border_completion`):→ `cut_rect_specs()` + offset 感知的 `cut_w_px`/`cut_h_px` 计算
 - **Branch 9**(L1500 `_get_inner_pixel_mask`):→ `_build_design_lshape_mask(design, use_outer=False)`
 
-**新增测试**(`tests/core/test_lshape_rendering.py`): 17 个测试全过
+**新增测试**(`../../tests/core/test_lshape_rendering.py`): 17 个测试全过
 - `TestShrinkCutRect`(6): 基础收缩 / 已有 offset / 缩至零宽 / 双零 / 保留 corner / 零收缩恒等
 - `TestBuildDesignLshapeMask`(7): 简单 L 形 outer/inner / 阶梯 outer/inner / shrink 参数 / 阶梯 shrink / 向后兼容(helper ≡ 旧手动路径)
 - `TestComputeLshapeBorderBandsStaircase`(4): 简单 L 形 bands / 阶梯不崩溃 / 阶梯无重叠 / 阶梯覆盖 frame(>95%)
@@ -473,19 +473,19 @@ cuts_cm.append({
 
 **改动清单**:
 
-`gui/lshape_panel.py`:
+`../../gui/lshape_panel.py`:
 - 新增 `set_cut_rects(cut_rects: list[dict])`: 识别结果回填入口,自动切换至阶梯模式、按级数调整子行(1–3 行)、填充 offset/宽高 SpinBox(blockSignals 保护)
 - `_apply_lshape_params()` 分支:`result.debug['pattern'] == 'single_edge_stepped'` 时走 `set_cut_rects()`,跳过标准角位/宽高 SpinBox 填充;状态栏显示阶梯级数与各级尺寸
 - `get_corner()` / `get_cut_w_cm()` / `get_cut_h_cm()` 阶梯模式委托:当 `_staircase_mode` 为 True 时从 `_stair_corner` / 首行 SpinBox 读取,避免隐藏的标准控件返回陈旧值
 - `clear_lshape_params()` 阶梯模式重置:检测到 `_staircase_mode` 时调用 `_set_staircase_mode(False)`,恢复 `_gb_l` 显示
 
-`gui/property_panel_layers.py`:
+`../../gui/property_panel_layers.py`:
 - `_LayersMixin._collect_ui_snapshot()` 新增 `cut_rects` 字段:`self._lshape_panel.get_cut_rects_cm()` 写入 lshape dict,与已有 `cuts_cm` 并存
 
-`models/design_model.py`:
+`../../models/design_model.py`:
 - `apply_ui_snapshot()` 新增 `CutRect` 转换:从 `_lp['cut_rects']` 构造 `CutRect` 列表写入 `d.l_cut_rects`,上限 3 个;`lshape is None` 分支清空 `d.l_cut_rects = []`
 
-**新增测试**(`tests/gui/test_lshape_panel_staircase.py`): 25 个测试全过
+**新增测试**(`../../tests/gui/test_lshape_panel_staircase.py`): 25 个测试全过
 - `TestStaircaseModeToggle`(3): 初始为标准模式 / `_set_staircase_mode(True)` 切换 `_gb_l`↔`_gb_staircase` 可见性 / 反向切换恢复
 - `TestSetCutRects`(6): 进入阶梯模式 / SpinBox 值回填 / 角位设置 / 行数自动调整(增减) / 空列表 noop / 超过 `_stair_max_levels` 截断
 - `TestGetCutRectsCm`(3): 标准模式返回空 / 阶梯模式正确提取 / 零尺寸行跳过
