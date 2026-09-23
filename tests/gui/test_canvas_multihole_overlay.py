@@ -17,8 +17,8 @@ def test_multihole_overlay_uses_effective_size_and_list_order(qapp):
     canvas._update_pool_holes_overlay(design)
 
     assert [item['index'] for item in canvas._pool_holes_overlay] == [0, 1]
-    assert canvas._pool_holes_overlay[0]['size_cm'] == (30.0, 20.0)
-    assert canvas._pool_holes_overlay[1]['size_cm'] == (25.0, 15.0)
+    assert canvas._pool_holes_overlay[0]['size_cm'] == (31.0, 21.0)
+    assert canvas._pool_holes_overlay[1]['size_cm'] == (26.0, 16.0)
     canvas.deleteLater()
 
 

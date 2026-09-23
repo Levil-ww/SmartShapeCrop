@@ -51,9 +51,10 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         其次回退到本面板 _pool_output_name；
         最后按尺寸兜底命名。
         """
-        # 1) 尝试读 LShapePanel 的输出文件名（若 L形面板 当前是用户操作来源）
+        # 1) 按最近一次生成来源选择输出名，避免水池生成沿用 L 形面板名称。
+        source = getattr(self, '_last_generate_source', 'pool')
         lp = getattr(self, '_lshape_panel', None)
-        if lp is not None:
+        if source == 'lshape' and lp is not None:
             s = lp.get_output_filename()
             if s:
                 return s

@@ -84,3 +84,32 @@ class TestPropertyPanelInteraction:
         assert spin.value() == 300
         spin.setValue(old)
         qapp.processEvents()
+
+    def test_pool_export_name_does_not_use_lshape_name(self, property_panel):
+        class FakeLShape:
+            def get_output_filename(self):
+                return 'lshape-name'
+
+        property_panel._lshape_panel = FakeLShape()
+        property_panel._pool_output_name.setText('pool-name')
+        property_panel._last_generate_source = 'pool'
+        assert property_panel.get_output_filename() == 'pool-name'
+        property_panel._last_generate_source = 'lshape'
+        assert property_panel.get_output_filename() == 'lshape-name'
+
+    def test_multihole_margin_edits_are_sent_to_worker(self, property_panel):
+        property_panel._mh_active_count = 2
+        property_panel.design.pool_is_multi_hole = True
+        for i in range(2):
+            property_panel._mh_sp_hole_w[i].setValue(40 + i)
+            property_panel._mh_sp_hole_h[i].setValue(20 + i)
+            property_panel._mh_sp_mt[i].setValue(8 + i)
+            property_panel._mh_sp_mb[i].setValue(10 + i)
+            property_panel._mh_sp_ml[i].setValue(12 + i)
+            property_panel._mh_sp_mr[i].setValue(14 + i)
+        property_panel._mh_sp_gaps[0].setValue(5)
+        data = property_panel._detect_multihole_edits()
+        assert data['mt'] == [8.0, 9.0]
+        assert data['mb'] == [10.0, 11.0]
+        assert data['ml'] == [12.0, 13.0]
+        assert data['mr'] == [14.0, 15.0]

@@ -715,6 +715,14 @@ class _GenerateMixin:
             gs = []
             for i in range(n_gaps_needed):
                 gs.append(max(0.0, float(gaps[i].value())))
+            # 每洞边距也必须作为 UI 真值传入 Worker；否则 Worker 覆盖几何时
+            # 只重建宽高/间距，会把用户单独修改的上/下/左/右边距恢复为旧值。
+            def _margin_values(attr):
+                boxes = getattr(self, attr, None)
+                if not isinstance(boxes, list) or len(boxes) < active_count:
+                    return [None] * active_count
+                return [max(0.0, float(boxes[i].value()))
+                        for i in range(active_count)]
             layout = None
             if hasattr(self, 'design') and self.design is not None:
                 layout = getattr(self.design, 'pool_layout_type', None)
@@ -727,6 +735,10 @@ class _GenerateMixin:
                 'active_count': active_count,
                 'holes_wh': wh,
                 'gaps_cm': gs,
+                'mt': _margin_values('_mh_sp_mt'),
+                'mb': _margin_values('_mh_sp_mb'),
+                'ml': _margin_values('_mh_sp_ml'),
+                'mr': _margin_values('_mh_sp_mr'),
                 'layout_type': layout,
             }
         except Exception as e:

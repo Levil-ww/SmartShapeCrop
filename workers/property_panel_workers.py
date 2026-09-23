@@ -835,25 +835,37 @@ class PoolRenderWorker(QThread):
                     # 保留原 per-hole 边距 (mt/mb/ml/mr) 作为 y/x 起点的真值
                     # —— 这些来自 sketch 方向锁定，用户没改就不变。
                     _old = list(design.pool_holes_cm or [])
+                    _ump_mt = _ump.get('mt', []) or []
+                    _ump_mb = _ump.get('mb', []) or []
+                    _ump_ml = _ump.get('ml', []) or []
+                    _ump_mr = _ump.get('mr', []) or []
                     def _mt_i(i):
+                        if i < len(_ump_mt) and _ump_mt[i] and _ump_mt[i] > 0:
+                            return float(_ump_mt[i])
                         if 0 <= i < len(_old):
                             v = _old[i].get('mt_cm', 0.0)
                             if v and v > 0:
                                 return float(v)
                         return design.inner_margin_top_cm
                     def _mb_i(i):
+                        if i < len(_ump_mb) and _ump_mb[i] and _ump_mb[i] > 0:
+                            return float(_ump_mb[i])
                         if 0 <= i < len(_old):
                             v = _old[i].get('mb_cm', 0.0)
                             if v and v > 0:
                                 return float(v)
                         return design.inner_margin_bottom_cm
                     def _ml_i(i, shared_ml):
+                        if i < len(_ump_ml) and _ump_ml[i] and _ump_ml[i] > 0:
+                            return float(_ump_ml[i])
                         if 0 <= i < len(_old):
                             v = _old[i].get('ml_cm', 0.0)
                             if v and v > 0:
                                 return float(v)
                         return shared_ml if i == 0 else 0.0
                     def _mr_i(i, shared_mr):
+                        if i < len(_ump_mr) and _ump_mr[i] and _ump_mr[i] > 0:
+                            return float(_ump_mr[i])
                         if 0 <= i < len(_old):
                             v = _old[i].get('mr_cm', 0.0)
                             if v and v > 0:

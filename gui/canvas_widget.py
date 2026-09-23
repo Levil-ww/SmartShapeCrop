@@ -33,7 +33,6 @@ ASYNC_RENDER_THRESHOLD = 200_000  # 20万像素
 
 # Worker 类已迁移至 workers/canvas_workers.py
 from workers.canvas_workers import PreviewRenderWorker, ExportSaveWorker
-from core.config import CUT_LOSS_CM
 
 
 class PreviewCanvas(QWidget):
@@ -116,8 +115,10 @@ class PreviewCanvas(QWidget):
             for index, hole in enumerate(holes):
                 if not isinstance(hole, dict):
                     continue
-                w = max(0.0, float(hole.get('w_cm', 0.0)) - CUT_LOSS_CM)
-                h = max(0.0, float(hole.get('h_cm', 0.0)) - CUT_LOSS_CM)
+                # 叠加层必须显示当前 design 数据；该数据与右侧多洞面板
+                # 回填值保持一致，不再额外扣除裁剪扩展。
+                w = max(0.0, float(hole.get('w_cm', 0.0)))
+                h = max(0.0, float(hole.get('h_cm', 0.0)))
                 if w <= 0 or h <= 0:
                     continue
                 self._pool_holes_overlay.append({
