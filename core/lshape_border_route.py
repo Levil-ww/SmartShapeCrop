@@ -433,6 +433,41 @@ def detect_border_profile(src_img: Image.Image) -> list[tuple[tuple[int, int, in
         logger.info("[LShapeRoute] 总厚度 %dpx > %.0f%%×%dpx，判定为图案误检",
                     total, _TOTAL_DEPTH_RATIO * 100, min_dim)
         return None
+
+    # [Fix 2026-09-23 大理石纹理兜底] 当 V13 路径失效回退到 Profile 时，深色
+    # 大理石素材的暗纹理可能被误检为厚黑边框（如 50px）。修正：若首层近黑且
+    # >30px，从外向内扫描原始像素，找到颜色显著偏离均匀描边的位置——即纹理起点。
+    # 合法厚边框（巴洛克等）整段均匀暗色，不会被截断。
+    if layers and max(layers[0][0]) < 40 and layers[0][1] > 30:
+        first_t = layers[0][1]
+        edge_raws = []
+        for edge_name, (_prof, _std, raw) in _edge_profiles(arr, depth).items():
+            if per_edge.get(edge_name) is not None:
+                edge_raws.append(raw)
+        if edge_raws:
+            def _find_stroke_end(profile_1d: np.ndarray, raw_t: int) -> int:
+                if raw_t < 6 or len(profile_1d) < raw_t:
+                    return raw_t
+                ref = np.median(profile_1d[2:6], axis=0).astype(np.float64)
+                for i in range(3, raw_t):
+                    dist = float(np.linalg.norm(
+                        profile_1d[i].astype(np.float64) - ref))
+                    if dist > 25:
+                        return max(3, i)
+                return raw_t
+
+            refined_ts = []
+            for prof in edge_raws:
+                rt = _find_stroke_end(prof, first_t)
+                refined_ts.append(rt)
+            new_t = int(round(float(np.median(refined_ts))))
+            if new_t < first_t:
+                logger.info(
+                    "[LShapeRoute] 大理石纹理兜底修正：首层 %dpx → %dpx",
+                    first_t, new_t,
+                )
+                layers[0] = (layers[0][0], new_t)
+
     logger.info("[LShapeRoute] 命中 %d 层结构（%d/4 边一致）: %s",
                 len(layers), votes[best_count], layers)
     return layers

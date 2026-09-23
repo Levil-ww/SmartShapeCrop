@@ -1298,8 +1298,34 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
     # 顶边：取上 1/3 中心列；左边：取左 1/3 中心行（用于校验一致性）
     top_win = min(H // 3, 400)
     left_win = min(W // 3, 400)
-    pt = _v13_pick(_v13_segv(arr[:top_win, W // 2]))
-    pl = _v13_pick(_v13_segv(arr[H // 2, :left_win]))
+
+    # [Fix 2026-09-23 切边后 V13 失效] 当 src_material_img 为 None 时，V13
+    # 使用 canvas 做检测。如果 L 形切角覆盖了中心扫描位置（如 tr 切角覆盖
+    # W//2 列），顶边/左边扫描会命中白色切区，导致 _v13_pick 返回 None，
+    # 路由回退到 Profile 路径（将暗纹理误检为 50px 边框）。修正：当扫描起点
+    # 为白色（亮度 > 200）时，从对边扫描（底边代替顶边、右边代替左边）。
+    def _scan_start_bright(arr_2d: np.ndarray, axis: str, pos: int) -> float:
+        """返回扫描起点附近像素的平均亮度。axis='top'/'left'。"""
+        if axis == 'top':
+            strip = arr_2d[:min(5, arr_2d.shape[0]), max(0, pos - 3):pos + 4]
+        else:
+            strip = arr_2d[max(0, pos - 3):pos + 4, :min(5, arr_2d.shape[1])]
+        return float(strip.mean()) if strip.size else 0.0
+
+    top_col = arr[:top_win, W // 2]
+    if _scan_start_bright(arr, 'top', W // 2) > 200:
+        # 顶边被切区覆盖 → 从底边向上扫描
+        bottom_win = min(H // 3, 400)
+        top_col = arr[H - bottom_win:, W // 2][::-1]
+    pt = _v13_pick(_v13_segv(top_col))
+
+    left_row = arr[H // 2, :left_win]
+    if _scan_start_bright(arr, 'left', H // 2) > 200:
+        # 左边被切区覆盖 → 从右边向左扫描
+        right_win = min(W // 3, 400)
+        left_row = arr[H // 2, W - right_win:][:, ::-1]
+    pl = _v13_pick(_v13_segv(left_row))
+
     if pt is None:
         return None
 
@@ -1317,6 +1343,38 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
         edge = round((top_edge + left_edge) / 2)
     else:
         edge = top_edge
+
+    # [Fix 2026-09-23 黑色大理石描边过粗] 深色大理石素材的暗纹理从边缘向内延伸，
+    # _v13_segv 将实际薄描边 + 暗纹理合并为一个大段（段内相邻像素 L1 ≤ 12），
+    # 导致 edge 远大于真实描边宽度。修正：若 edge > 30px，从外向内扫描原始像素，
+    # 找到颜色显著偏离最外层均匀描边色的位置——即实际描边结束/纹理开始处。
+    # 合法厚边框（巴洛克 148px / 蝴蝶契约 118px）整段均匀暗色，不会被修正。
+    if edge > 30:
+        def _refine_edge_scan(profile_line: np.ndarray, raw_edge: int) -> int:
+            """沿单条剖线从外向内扫描，返回修正后的描边宽度。"""
+            if raw_edge < 6 or len(profile_line) < 6:
+                return raw_edge
+            ref = np.median(profile_line[2:6], axis=0).astype(np.float64)
+            for i in range(3, raw_edge):
+                dist = float(np.linalg.norm(
+                    profile_line[i].astype(np.float64) - ref))
+                if dist > 25:
+                    return max(3, i)
+            return raw_edge
+
+        refined_top = _refine_edge_scan(top_col, top_edge)
+        if pl is not None:
+            refined_left = _refine_edge_scan(left_row, left_edge)
+            refined_edge = round((refined_top + refined_left) / 2)
+        else:
+            refined_edge = refined_top
+
+        if refined_edge < edge:
+            logger.info(
+                "[V13] 大理石纹理修正：原始 edge=%dpx → 修正后 edge=%dpx",
+                edge, refined_edge,
+            )
+            edge = refined_edge
 
     # 最终 sanity check
     min_dim = min(H, W)
