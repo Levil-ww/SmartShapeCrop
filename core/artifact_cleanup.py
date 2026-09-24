@@ -77,6 +77,9 @@ def cleanup_debug_artifacts(
 
         # 第一步：按保留期删除
         expired = [p for p in candidates if p.stat().st_mtime < cutoff]
+        # [Fix 2026-09-24 P2-6] set 只构建一次：原写法在推导式内调用 set(expired)，
+        # 每次迭代都重建一次，整体 O(len(candidates) × len(expired))；提到循环外后为 O(n)。
+        expired_set = set(expired)
         for p in sorted(expired):
             if dry_run:
                 removed.append(f'[dry-run] {p}')
@@ -88,7 +91,7 @@ def cleanup_debug_artifacts(
                     logger.debug(f"[artifact_cleanup] 删除失败 {p}: {e}")
 
         # 第二步：数量上限（从最旧开始删）
-        remaining = [p for p in candidates if p not in set(expired)]
+        remaining = [p for p in candidates if p not in expired_set]
         remaining.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         overflow = remaining[max_files:]
         for p in sorted(overflow, key=lambda p: p.stat().st_mtime):

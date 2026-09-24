@@ -1,6 +1,6 @@
 # SmartShapeCrop 项目全面审查报告
 
-**报告版本** V1.3 · **审查日期** 2026-09-24 · **修订记录** V1.0 → V1.1：当日完成 P0-2 修复并回填实测数据；V1.1 → V1.2：**当日完成 P0-3、P0-4 修复**（含纠正原报告对 P0-3 的错误修法建议）；V1.2 → V1.3：**当日完成 P1 批次（11.2 节 #9–#14）与 P2-3（`APP_VERSION` 单一来源）**，新建 `packageV2.2.3.py`，并更正本报告自身的 4 处事实/口径错误，详见附录 G
+**报告版本** V1.4 · **审查日期** 2026-09-24 · **修订记录** V1.0 → V1.1：当日完成 P0-2 修复并回填实测数据；V1.1 → V1.2：**当日完成 P0-3、P0-4 修复**（含纠正原报告对 P0-3 的错误修法建议）；V1.2 → V1.3：**当日完成 P1 批次（11.2 节 #9–#14）与 P2-3（`APP_VERSION` 单一来源）**，新建 `packageV2.2.3.py`，并更正本报告自身的 4 处事实/口径错误，详见附录 G；V1.3 → V1.4：**当日完成批次②「文档同步与低风险卫生」**（README 全篇同步至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6、迁移 P2-10、**P2-7 实测后严重度由 🟢 上调至 🟠**）
 **审查对象** `F:\SmartShapeCrop` · **审查基线** `9c1937d`（`v2.2.3-综合可行性分析V2.0`，2026-09-23 15:55）
 **项目版本** V2.2.3 · **分支** `master`（累计 390 次提交）
 **审查方式** 全程只读：源码静态扫描 + 全量测试实跑 + Git 仓库取证 + 文档交叉核对
@@ -64,6 +64,16 @@
 11. **`#14` 的两种截断口径在现有可达路径上逐例等价**（V1.3 论证）——「按锚定角分组、每角 ≤3」与旧「按总数 `[:3]`」结果相同，因为 `LShapePanel.get_cut_rects_cm()` 与 `_convert_stepped_to_cut_rects()` 产出的条带 `anchor` **恒为同一个角**。等价的**前提**是输入单锚定；一旦未来开放多锚定 UI，旧口径会静默丢弃第 4 条，新口径不会。故本次改的是「未来可达」而非「今日行为」，功能零变化。
 12. **`APP_VERSION` 的唯一硬约束是「不得经由 `core/__init__.py` 加载」**（V1.3 实测）—— 打包脚本若 `import core.config`，会连带触发 `core/__init__.py` 对 `image_ops` / `psd_tools` / `PyQt5` 的聚合导入，使打包机在无 GUI 依赖时直接失败。正解是 `importlib.util.spec_from_file_location` **按文件路径加载** `core/config.py`。
 13. **本项目在 Windows 上「补丁留档」有两处必踩的坑**（V1.3 实测，已固化为方法）——（a）**必须按 LF 写出**：用 Python 默认文本模式写补丁会得到 CRLF，使每条内容行多带 `\r`，`git apply` 全部匹配失败；（b）**分类 hunk 不能用关键字**：本批次 `#9` 要删的 DEBUG 快照块内含有 `{getattr(design,'l_cut_w_cm',None)}`，用 `l_cut_w_cm` 做「P0 关键字」会把 `#9` 的 hunk 一起误剔，导致补丁**漏掉主体**。正解是按 `[Fix 2026-09-24 P0-x]` **标记**判定。详见附录 G.3。
+14. **⚠️ `artifact_cleanup` 的越界删除风险来自 junction，不是符号链接**（V1.4 实测更正，P2-7 严重度 🟢→🟠）—— 实跑三种链接于临时目录：
+
+    | 场景 | `rglob('*')` | `os.remove` 后果 |
+    |---|---|---|
+    | 符号链接（目录） | 不进入 ✅ | 安全 |
+    | 符号链接（文件） | 列出链接本身 | **只删链接，目标存活** ✅ |
+    | **junction（目录联接）** | **进入，列出 `junc\secret.txt`** | **删除了目录外的真实文件** ❌ |
+
+    **根因**：Python 3.13 的 `glob`/`rglob` 变更只覆盖 **symlink**，而 **junction 不是 symlink**（`os.path.islink()` 返回 `False`），故 `**` 仍会递归进入。本项目 `logs/` / `debug_output/` 若被用户以 junction 挂到其他盘（跨盘搬目录的常见做法），清理逻辑会删掉目标盘上的真实文件。
+    **建议加固**：遍历时用 `os.path.isjunction()`（Python 3.12+）剪枝；不要改用 `os.walk(followlinks=False)` —— 它同样不拦 junction。详见 §9 P2-7 行。
 
 ---
 
@@ -116,14 +126,15 @@
 | `workers/` | 4 | 1,250 | QThread 调度 |
 | `models/` | 2 | 432 | 数据模型 |
 | **生产代码小计** | **54** | **28,404** | — |
-| `tests/` | 57 | 13,820 | pytest |
-| `scripts/` | 37 | 3,770 | 人工诊断（不进 CI） |
+| `tests/` | 56 | 13,678 | pytest（2026-09-24 迁出 `debug_lshape.py`） |
+| `scripts/` | 38 | 3,912 | 人工诊断（不进 CI，含 `diagnose/_archive/` 73 py） |
 | `packaging/` | 2 | 1,102 | 打包入口（V2.2.2 + 新增 V2.2.3） |
 | **目录小计** | **150** | **47,096** | — |
 | 根文件 | 3 | 647 | `main.py` 529 + `process_image.py` 76 + `conftest.py` 42 |
 | **全项目** | **153** | **47,743** | — |
 
 > **V1.2 → V1.3 变化**：`tests/` 49 → 57 文件（新增 5 个本批次测试 + 3 个 P0 批次测试）、`packaging/` 1 → 2 文件（新增 `packageV2.2.3.py` 569 行）；全项目 141 → 153 文件、44,743 → 47,743 行（+6.7%）。
+> **V1.3 → V1.4 变化**：`tests/` 57 → **56**、`scripts/` 37 → **38**（`debug_lshape.py` 自 `tests/core/` 迁入 `scripts/diagnose/`，142 行随之转移）。**全项目仍 153 文件 / 47,743 行**（纯内部迁移，总量不变）。
 > 测试代码占比约 29%。
 
 ### 2.3 依赖实装版本
@@ -346,14 +357,15 @@ _dbg = False  # 临时开关，问题定位后改 False
 | `process_image.py` | 77 | 仅源码字符串检查 | 🟢 CLI 示例脚本 |
 | **LOD × 阶梯 `l_cut_rects`** | 24 | **已补用例**（`tests/integration/test_lod_geometry_consistency.py`，2026-09-24） | ✅ **P0-2 逃逸缺口已封堵** |
 
-### 5.5 ⚠️ 测试目录命名违规
+### 5.5 ✅ 已修复：测试目录命名违规（P2-10）
 
-`tests/core/debug_lshape.py` 是调试脚本（含 `_load_font()` 等辅助逻辑、无 `test_` 函数），却以 `.py` 形式混在正式测试目录中：
+`tests/core/debug_lshape.py` 是调试脚本（含 `_load_font()` 等辅助逻辑、无 `test_` 函数），却以 `.py` 形式混在正式测试目录中，**虚增了测试文件计数**。
 
-- 违反 AGENTS.md「不要把调试脚本混入 tests/」的精神；
-- 该文件是 V2.2.3 版本报告列为「新增测试文件」的 12 个之一（142 行），**虚增了测试文件计数**。
+**✅ 已于 2026-09-24 迁入 `scripts/diagnose/debug_lshape.py`**（`git mv`，保留 rename 记录）。
 
-**建议**：移入 `scripts/diagnose/`。
+> 迁移安全性已核实：脚本顶部 `PROJECT_ROOT` 上溯层数为 3，而 `tests/core/` 与 `scripts/diagnose/` **深度相同**，
+> 故注入代码无需改动；全仓库 `git grep debug_lshape` 除文档外**无代码引用**。
+> 计数影响：`tests/` 57 → **56** py，`scripts/` 37 → **38** py，全项目仍 153 文件 / 47,743 行。
 
 ---
 
@@ -431,15 +443,27 @@ _dbg = False  # 临时开关，问题定位后改 False
 >
 > **另有 7 个文件在磁盘上但未纳入版本控制**：`项目全面审查报告.md` 与 `综合形状功能可行性分析报告.md`（由仓库根移入，原已被跟踪 → 当前呈 2 条 ` D`，见 6.2）、`SmartShapeCrop-项目全面审查报告-20260924.md`（本报告）、`V2.2.3版本报告.md`、以及 `patches/patch-04/05/06`。三者补丁均**未跟踪**（此前入库的只有 patch-01/02/03）。
 
-### 6.5 `scripts/` 目录实际结构
+### 6.5 ✅ 已修复：`scripts/` 目录结构与说明不符（P2-11）
 
-```
-scripts/                       files=5   （README + 4 脚本）
-├── diagnose/                  files=25  + _archive/ _live/ fix_output/
-└── verify/                    files=6   （含 huayang_result.png —— 产物混入脚本目录）
-```
+**V1.3 原状**：`scripts/README.md`（78 行）描述的清单与实际结构**大面积不符** —— 它声称存在
+`scripts/_archive/`、`scripts/verify/_archive/`，并列举 `_diagnose_*.py`、`_verify_fix*.py`、
+`_selfcheck_syntax.py` 等文件；实际**前两个目录均不存在**，后者多数已归档。
 
-`scripts/README.md`（78 行）描述的清单与实际结构**大面积不符**（历史已知问题 #5，仍未修）。`references` 中列出的 `_diag_e2e_three_cases.py`、`_diagnose_*.py` 等多已归档进 `_archive/`。
+**实测结构（2026-09-24，按 py 计数）**：
+
+| 位置 | py | 说明 |
+|---|---:|---|
+| `scripts/`（根） | 4 | `_v13_baseline_render.py`、`verify_v13_fix.py`、`split_property_panel.py`、`split_sketch_parser.py` |
+| `scripts/diagnose/` | 25 | `_diag_*.py` ×23 + `_gui_sim_diag.py` + `debug_lshape.py`（本批次迁入） |
+| `scripts/diagnose/_live/` | 4 | 实时诊断 |
+| `scripts/diagnose/_archive/` | 73 | 归档：`debug_scripts/` 17 + `ocr_scripts/` 34 + `verification_scripts/` 22 |
+| `scripts/verify/` | 5 | 修复验证 / 效果演示 |
+| **合计** | **111** | — |
+
+**✅ 已于 2026-09-24 按实测重写 `scripts/README.md`**：更正为「归档入口统一在 `scripts/diagnose/_archive/`」，
+补齐各层实际清单与 py 计数，并把 SOP 中硬编码绝对路径的示例改为相对项目根写法。
+
+> 附：`scripts/verify/huayang_result.png` 仍为产物混入脚本目录（未处理，属 🟢 级）。
 
 ---
 
@@ -581,28 +605,29 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | ~~**P2-3**~~ | 🟡 | 版本一致性 | ~~项目无 `__version__` 常量，版本无单一事实来源~~ → **2026-09-24 已修复**：`core/config.APP_VERSION` 唯一定义点 + 三处消费方引用 | `core/config.py` | **✅ 已修复** |
 | ~~**P2-4**~~ | 🟢 | 正确性 | ~~`l_cut_rects` 按**总数** `[:3]` 截断（`validate` 是**每锚定角** ≤3）→ 多锚定第 4 条静默丢弃~~ → **2026-09-24 已修复**：新增 `limit_l_cut_rects_per_anchor()`，与 `validate()` 共用 `MAX_L_CUT_RECTS_PER_ANCHOR` | `workers/property_panel_workers.py`、`models/design_model.py` | **✅ 已修复** |
 | ~~**P2-5**~~ | 🟢 | 代码异味 | ~~遗留 `_dbg = False` 开关 + 大段调试分支~~ → **2026-09-24 已修复**：开关、快照块、19 处引用与 5 个形参全删（净 −61 行） | `core/image_ops.py` | **✅ 已修复** |
-| **P2-6** | 🟢 | 性能 | 推导式内 `set(expired)` 每次重建 → O(n²) | `core/artifact_cleanup.py:91` | ⏳ 仍存在 |
-| **P2-7** | 🟢 | 加固 | 清理时跟随符号链接删除 | `core/artifact_cleanup.py:79-102` | ⏳ 仍存在 |
+| ~~**P2-6**~~ | 🟢 | 性能 | ~~推导式内 `set(expired)` 每次重建 → O(n²)~~ → **2026-09-24 已修复**：`set` 提到循环外，O(n×m)→O(n)，语义等价 | `core/artifact_cleanup.py:91` | **✅ 已修复** |
+| **P2-7** | 🟠 | 加固 | 清理时**越界删除**：`Path.rglob('*')` 会进入 **junction（目录联接）** 并联出目录外文件后 `os.remove` 删掉（**已复现目录外真实文件被删**）。符号链接无此问题：目录链接不被进入、文件链接只删链接自身。旧描述「跟随符号链接」**不准确** | `core/artifact_cleanup.py:71-102` | **⚠️ 实测确认（🟢→🟠 上调），修复待确认** |
 | **P2-8** | 🟢 | 仓库卫生 | 根目录残留：`crash.log` 已删 ✅、2 份报告 md 已归位 ✅、**`debug.log` 删除受阻**（搜狗输入法占用） | 根目录 | **🟡 部分处置** |
-| **P2-9** | 🟢 | 仓库卫生 | `ProductSummary/2026-08|09/` 11 个文件与 `月度总结/` 重复 | `ProductSummary/` | ⏳ 仍存在 |
-| **P2-10** | 🟢 | 目录规范 | `tests/core/debug_lshape.py` 调试脚本混入正式测试目录 | `tests/core/` | ⏳ 仍存在 |
-| **P2-11** | 🟢 | 文档 | `scripts/README.md` 清单与实际结构大面积不符 | `scripts/README.md` | ⏳ 仍存在 |
+| **P2-9** | 🟢 | 仓库卫生 | `ProductSummary/2026-08\|09/` 11 个文件与 `月度总结/` 重复 | `ProductSummary/` | ⏳ 仍存在 |
+| ~~**P2-10**~~ | 🟢 | 目录规范 | ~~`tests/core/debug_lshape.py` 调试脚本混入正式测试目录~~ → **2026-09-24 已迁移**至 `scripts/diagnose/`（`git mv`，rename 记录保留） | `tests/core/` | **✅ 已修复** |
+| ~~**P2-11**~~ | 🟢 | 文档 | ~~`scripts/README.md` 清单与实际结构大面积不符~~ → **2026-09-24 已按实测重写**（更正 `_archive/` 位置、补齐各层计数） | `scripts/README.md` | **✅ 已修复** |
 | ~~**P2-12**~~ | 🟢 | 仓库卫生 | ~~`.pytest_tmp/`、`.pytest_cache/` 未 ignore（09-19 QA 遗留）~~ → **2026-09-24 已修复**：两条规则已补入 `.gitignore` | 根目录 | **✅ 已修复** |
 
-### 严重度分布（V1.3 重算）
+### 严重度分布（V1.4 重算）
 
 | 严重度 | 条目数 | 已闭环 | 部分处置 | 仍存在 |
 |---|---:|---:|---:|---:|
 | 🔴 阻塞 | 1 | 0 | 0 | 1 |
-| 🟠 高 | 3 | 2 | 0 | 1 |
+| 🟠 高 | 4 | 2 | 0 | 2 |
 | 🟡 中 | 8 | 4 | 0 | 4 |
-| 🟢 低 | 9 | 3 | 1 | 5 |
-| **小计（V1.2 起跟踪的 21 项）** | **21** | **9** | **1** | **11** |
+| 🟢 低 | 8 | 6 | 1 | 1 |
+| **小计（V1.2 起跟踪的 21 项）** | **21** | **12** | **1** | **8** |
 | P0 批次（V1.1/V1.2 引入，已闭环） | 3 | 3 | 0 | 0 |
-| **合计** | **24** | **12** | **1** | **11** |
+| **合计** | **24** | **15** | **1** | **8** |
 
 > ⚠️ **口径更正（V1.3）**：V1.2 的分布表记「🔴1 / 🟠6 / 🟡9 / 🟢11，合计 **27**」，但其上方的条目表实际只有 **24** 项（P0×4 + P1×8 + P2×12），**两者对不上**。V1.3 已按条目表逐项重算并统一。
-> 本批次共闭环 **12** 项（P0-2/P0-3/P0-4 + P1-1/P1-2/P1-4/P1-7 + P2-1/P2-3/P2-4/P2-5/P2-12），占 24 项的 50%。
+> **V1.3 → V1.4（2026-09-24 批次② 文档同步与低风险卫生）**：新闭环 **3 项**（P2-6 / P2-10 / P2-11）；**P2-7 严重度由 🟢 上调至 🟠**（junction 越界删除实测复现）。故 🟠 3→**4** 项、🟢 9→**8** 项。
+> 累计闭环 **15 项**（P0 批次 3 + P1/P2 共 12），占 24 项的 **62.5%**；仍存在 8 项、部分处置 1 项。
 
 ---
 
@@ -668,7 +693,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | 16 | **拆分 `core/image_ops.py`**（1,833 行） | 与 P0-2/P0-3 同批做，拆出「素材适配」「L 形渲染」「边框补全集成」三个模块 |
 | 17 | **架构分层定策**（P1-5 + P1-6） | `core ↔ services` 循环与 `core→PyQt5` 需明确取舍：要么修正声明，要么拆出服务聚合层。**建议先改文档声明（成本 0），再评估是否真拆** |
 | 18 | **补 PSD / app_settings / workers 测试**（P1-3） | 优先 `services/psd/loader.py`（零覆盖的对外特性） |
-| 19 | **`tests/core/debug_lshape.py` 移入 `scripts/diagnose/`**（P2-10） | 顺带更新 V2.2.3 报告中的测试文件计数 |
+| 19 | ~~**`tests/core/debug_lshape.py` 移入 `scripts/diagnose/`**（P2-10）~~ **✅ 已于 2026-09-24 执行** | 已同步测试文件计数 57 → **56** |
 | 20 | **`ProductSummary/2026-08|09/` 去重**（P2-9） | 迁移 + `git rm --cached` + 提交，防 restore 复活 |
 
 ### 11.4 建议引入的防复发机制（V1.3：2 条 → 4 条，其中 3 条已落地）
@@ -1027,5 +1052,5 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 python -m pytest tests/ -q -p no:cacheprovider \
 
 ---
 
-<sub>SmartShapeCrop 项目全面审查报告 · 报告版本 **V1.3** · 审查日期 2026-09-24 · 基线 `9c1937d`（V2.2.3） · 修订：V1.0 全面审查（全程只读）→ V1.1 修复 P0-2（4 族几何字段补齐 LOD 缩放，+24 用例）→ V1.2 修复 P0-3（删除恒真死守卫，+11 用例）与 P0-4（受限 Unpickler，+17 用例），并纠正原报告对二者修法的错误建议 → **V1.3 完成 P1 批次 #9–#14 与 P2-3（`APP_VERSION` 单一来源），新建 `packageV2.2.3.py` + V2.2.3 spec，留档 `patch-06`，并更正本报告自身 4 处事实/口径错误（附录 G.2）** · 测试基线 **805 全绿** · 源码零功能变更</sub>
+<sub>SmartShapeCrop 项目全面审查报告 · 报告版本 **V1.4** · 审查日期 2026-09-24 · 基线 `9c1937d`（V2.2.3） · 修订：V1.0 全面审查（全程只读）→ V1.1 修复 P0-2（4 族几何字段补齐 LOD 缩放，+24 用例）→ V1.2 修复 P0-3（删除恒真死守卫，+11 用例）与 P0-4（受限 Unpickler，+17 用例），并纠正原报告对二者修法的错误建议 → **V1.3 完成 P1 批次 #9–#14 与 P2-3（`APP_VERSION` 单一来源），新建 `packageV2.2.3.py` + V2.2.3 spec，留档 `patch-06`，并更正本报告自身 4 处事实/口径错误（附录 G.2）** → **V1.4 完成批次②文档同步与低风险卫生：README 全篇升至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6（O(n²)→O(n)）、迁移 P2-10、P2-7 实测后由 🟢 上调 🟠（junction 越界删除）** · 测试基线 **805 全绿** · 源码零功能变更</sub>
 
