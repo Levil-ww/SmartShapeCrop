@@ -1,0 +1,49 @@
+diff --git a/core/image_ops.py b/core/image_ops.py
+index 5154e80..a547bdd 100644
+--- a/core/image_ops.py
++++ b/core/image_ops.py
+@@ -551,6 +551,44 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
+             for cut in lod_design.l_cuts_cm
+         ]
+ 
++    # [Fix 2026-09-24 P0-2] 阶梯 L 形 CutRect 同步缩放。
++    # 与 l_cuts_cm 同源问题：cm2px() 只依赖 dpi（geometry.py:271-272），与 canvas_w_cm 无关；
++    # 画布缩小而长度量不缩，会使挖角相对画布放大 1/scale 倍（默认 LOD_SCALE_FACTOR=0.5 → 2×），
++    # 导致预览几何 ≠ 导出几何。clone() 已深拷贝 CutRect，原地修改不影响原 design。
++    for _cut in getattr(lod_design, 'l_cut_rects', None) or []:
++        _cut.w_cm = float(_cut.w_cm) * sx
++        _cut.h_cm = float(_cut.h_cm) * sy
++        _cut.offset_x_cm = float(_cut.offset_x_cm) * sx
++        _cut.offset_y_cm = float(_cut.offset_y_cm) * sy
++
++    # [Fix 2026-09-24 P0-2] 四角圆角半径同步缩放（corners_px → cm2px）。
++    # 圆角为各向同性单值，按既有约定（outer_margin_cm / borders.offset_cm）取 min(sx, sy)。
++    _lod_rscale = min(sx, sy)
++    lod_design.corner_tl_cm = design.corner_tl_cm * _lod_rscale
++    lod_design.corner_tr_cm = design.corner_tr_cm * _lod_rscale
++    lod_design.corner_bl_cm = design.corner_bl_cm * _lod_rscale
++    lod_design.corner_br_cm = design.corner_br_cm * _lod_rscale
++
++    # [Fix 2026-09-24 P0-2] 椭圆直径同步缩放（ellipse_px → cm2px，宽高分方向）。
++    # 0 表示自动模式（回退 inner_w_cm / inner_h_cm，二者已缩放）；0 * sx 仍为 0，语义不变。
++    lod_design.ellipse_diameter_w_cm = design.ellipse_diameter_w_cm * sx
++    lod_design.ellipse_diameter_h_cm = design.ellipse_diameter_h_cm * sy
++
++    # [Fix 2026-09-24 P0-2] 多洞池坐标同步缩放（image_ops.py:1122-1125 / 1527-1530 走 cm2px）。
++    # 仅缩放参与渲染几何的 x/y/w/h 四个 cm 键；mt_cm/mb_cm/ml_cm/mr_cm 与素材路径等
++    # 非几何键原样保留（前者当前仅用于 UI 展示，不进入渲染路径）。
++    if getattr(lod_design, 'pool_holes_cm', None):
++        lod_design.pool_holes_cm = [
++            {
++                **hole,
++                'x_cm': float(hole.get('x_cm', 0.0)) * sx,
++                'y_cm': float(hole.get('y_cm', 0.0)) * sy,
++                'w_cm': float(hole.get('w_cm', 0.0)) * sx,
++                'h_cm': float(hole.get('h_cm', 0.0)) * sy,
++            }
++            for hole in lod_design.pool_holes_cm
++        ]
++
+     return lod_design
+ 
+ 

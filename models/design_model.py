@@ -14,7 +14,7 @@ from __future__ import annotations
 import copy
 import os
 
-from core.geometry import CropDesign, BorderText, CutRect
+from core.geometry import CropDesign, BorderText, CutRect, limit_l_cut_rects_per_anchor
 
 
 class DesignModel:
@@ -128,7 +128,10 @@ class DesignModel:
             # 阶梯路径：cut_rects 非空时是唯一几何来源（同角位多级），
             # 旧格式 l_cuts_cm 不允许同角位重复，必须保持为空
             _cr = _lp.get('cut_rects') or []
-            d.l_cut_rects = [
+            # [Fix 2026-09-24 P2-4] 原为 [:3]（按总数截断）——与 validate() 的
+            #   「同角位 ≤3」口径不一致，会把多锚定输入的第 4 条静默丢弃。
+            #   改用按锚定角分组截断；单锚定输入（全部可达路径）逐例等价。
+            d.l_cut_rects = limit_l_cut_rects_per_anchor([
                 CutRect(
                     anchor=r.get('anchor', 'tr'),
                     offset_x_cm=float(r.get('offset_x_cm', 0)),
@@ -137,7 +140,7 @@ class DesignModel:
                     h_cm=float(r.get('h_cm', 0)),
                 )
                 for r in _cr
-            ][:3]
+            ])
             if not d.l_cut_rects:
                 d.l_cuts_cm = [dict(cut) for cut in (_lp.get('cuts_cm') or [])][:4]
                 if d.l_cuts_cm:

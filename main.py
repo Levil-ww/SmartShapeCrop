@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 
 from core.geometry import CropDesign, BorderLayer
 from core.log_setup import setup_logging
-from core.config import px_to_cm  # [N-P2-08] 集中换算函数
+from core.config import px_to_cm, APP_VERSION  # [N-P2-08] 集中换算函数 + 版本单一来源
 from core.image_ops import save_jpg, render_design
 from gui.canvas_widget import PreviewCanvas, ExportSaveWorker
 from gui.property_panel import PropertyPanel
@@ -252,6 +252,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self, "关于 SmartShapeCrop",
             "<h3>SmartShapeCrop</h3>"
+            f"<p>当前版本：V{APP_VERSION}</p>"
             "<p>矩形 / L形 / 椭圆 挖水池裁剪设计器</p>"
             "<ul>"
             "<li>尺寸单位：厘米（按 DPI 自动换算像素）</li>"

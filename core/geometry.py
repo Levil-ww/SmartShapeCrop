@@ -71,6 +71,47 @@ class CutRect:
     h_cm: float = 0.0
 
 
+# 阶梯 L 形：单个锚定角最多支持的 CutRect 级数。
+# [Fix 2026-09-24 P2-4] validate 与「写入端截断」共用同一常量，避免历史上
+# 「校验按每角 ≤3、截断按总数 [:3]」两套口径各自漂移而再次分叉。
+MAX_L_CUT_RECTS_PER_ANCHOR: int = 3
+
+
+def limit_l_cut_rects_per_anchor(cuts, max_per_anchor: int = MAX_L_CUT_RECTS_PER_ANCHOR):
+    """按锚定角分组截断 CutRect 序列：每角最多保留 max_per_anchor 级，保持原有顺序。
+
+    [Fix 2026-09-24 P2-4] 取代历史上的「按总数 [:max_per_anchor] 截断」。后者与
+    ``CropDesign._validate_l_cut_rects()`` 的「同角位 ≤3」口径不一致 —— 例如
+    「tr×3 + tl×1」合计 4 条是 validate() 允许的合法输入，却在写入端被总数截断
+    静默丢掉第 4 条（tl 那级），用户看不到任何报错。
+
+    对**单锚定输入**该函数与 ``[:max_per_anchor]`` 逐例等价：UI 的
+    ``LShapePanel.get_cut_rects_cm()`` 与草图解析器的
+    ``_convert_stepped_to_cut_rects()`` 全部可达路径均只产出单一 anchor
+    （条带 ``'anchor'`` 恒为同一个角），故本次改动不改变任何可达行为。
+
+    类型无关：``CutRect`` 实例与含 ``'anchor'`` 键的 dict 均可传入；
+    返回新列表，元素与入参保持同一性（不复制、不改写内容）。
+
+    Args:
+        cuts: CutRect 序列或 dict 序列，允许 None。
+        max_per_anchor: 每个锚定角最多保留的级数。
+
+    Returns:
+        截断后的 list。
+    """
+    picked: list = []
+    seen: dict = {}
+    for cut in cuts or []:
+        anchor = cut.anchor if hasattr(cut, 'anchor') else cut.get('anchor')
+        n = seen.get(anchor, 0)
+        if n >= max_per_anchor:
+            continue
+        seen[anchor] = n + 1
+        picked.append(cut)
+    return picked
+
+
 @dataclass
 class LShape:
     """
@@ -372,8 +413,10 @@ class CropDesign:
                 raise ValueError(f"l_cut_rects[{i}] anchor 无效: {cut.anchor!r}")
             n = per_anchor.get(cut.anchor, 0) + 1
             per_anchor[cut.anchor] = n
-            if n > 3:
-                raise ValueError(f"l_cut_rects 同角位 {cut.anchor!r} 最多支持 3 级阶梯")
+            if n > MAX_L_CUT_RECTS_PER_ANCHOR:
+                raise ValueError(
+                    f"l_cut_rects 同角位 {cut.anchor!r} 最多支持 "
+                    f"{MAX_L_CUT_RECTS_PER_ANCHOR} 级阶梯")
             if cut.w_cm <= 0 or cut.h_cm <= 0:
                 raise ValueError(f"l_cut_rects[{i}] 宽高必须为正数")
             if cut.offset_x_cm < 0 or cut.offset_y_cm < 0:

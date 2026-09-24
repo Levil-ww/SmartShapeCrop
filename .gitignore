@@ -46,3 +46,15 @@ scripts/logs/
 
 # 本地归档（2026-09-02 整理：调试图片与 .bak 备份，仅本地保留）
 _archive/
+
+# 本地工具与归档（2026-09-24 治理）
+# 根因：以下三个目录曾各有文件被误跟踪（.workbuddy 55 / .dumate 15 /
+# .trae-html-share-packages 1，合计 71），而 .gitignore 从未覆盖它们。
+# ⚠️ .gitignore 只对「未跟踪」文件生效 —— 已跟踪文件必须先
+# `git rm -r --cached .workbuddy .dumate .trae-html-share-packages` 才能解除。
+/.workbuddy/
+/.dumate/
+/.trae-html-share-packages/
+# Python 测试遗留（09-19 QA 起未覆盖；.pytest_cache 另有其自带 .gitignore）
+/.pytest_tmp/
+/.pytest_cache/

@@ -1,0 +1,2107 @@
+SmartShapeCrop V2.2.3 —— P1 批次增强补丁（代码卫生 + 版本单一来源 + 仓库卫生）
+================================================================================
+
+生成时间：2026-09-24
+基线：HEAD = 9c1937d（V2.2.3）
+对应报告：《SmartShapeCrop-项目全面审查报告 V1.3》第 11.2 节 #9 ~ #14
+生成方式：git diff 全仓库相对 HEAD 的差异，按「P0 修复标记」精确剔除非本批次 hunk
+
+本补丁内容（文件内容层面）
+--------------------------------------------------------------------------------
+  #9  清理热路径 print 与 _dbg 死开关   → core/image_ops.py
+  #10 仓库卫生（.gitignore 补 5 条规则）→ .gitignore
+  #11 根目录归位（CHANGELOG 路径引用）  → CHANGELOG.md
+  #12 os.popen → subprocess.run         → core/config.py
+  #13 property_panel.py 改 findData     → gui/property_panel.py
+  #14 cut_rects 截断改为按锚定角分组     → core/geometry.py
+                                          models/design_model.py
+                                          workers/property_panel_workers.py
+  P2-3 引入 APP_VERSION 单一来源         → core/config.py
+                                          core/log_setup.py
+                                          main.py
+                                          packaging/packageV2.2.3.py（新增）
+                                          packaging/specs/智能裁剪设计器V2.2.3.spec（新增）
+                                          packaging/README.md
+  配套回归测试（新增 5 个文件）
+      tests/core/test_lshape_cut_rect_anchor_limit.py
+      tests/core/test_debug_residue_removed.py
+      tests/core/test_app_version_single_source.py
+      tests/core/test_config_tesseract_probe_hardened.py
+      tests/gui/test_property_panel_write_paths.py
+
+有意排除（属 P0 批次，另有独立补丁留档）
+--------------------------------------------------------------------------------
+  core/image_ops.py 的 3 个 hunk 被剔除：
+      _make_lod_design 阶梯 CutRect/圆角/椭圆/多洞坐标同步缩放（P0-2，patch-04）
+      _stale_decor_black_border_invalidation 恒真死守卫清理（P0-3，patch-05）
+      _stale_decor_residual_cleaner 恒真死守卫清理（P0-3，patch-05）
+  services/parser/template_matcher.py 全部改动（P0-4，patch-05）
+
+不在本补丁范围内（非文件内容差异，无法用 patch 表达）
+--------------------------------------------------------------------------------
+  #10 的 git 索引操作：`git rm -r --cached` 解除 71 个误跟踪文件
+      （.workbuddy 55 / .dumate 15 / .trae-html-share-packages 1），本地文件全部保留。
+      需在仓库根目录手工执行：
+          git rm -r --cached .workbuddy .dumate .trae-html-share-packages
+  #10 的文档归位：2 份审查报告 md 从仓库根移入 ProductSummary/项目审查报告/
+      （保持原文件名，内容未改），以及 debug.log / crash.log 的清理。
+
+语义保证
+--------------------------------------------------------------------------------
+  补丁仅做上述清理与常量抽取，未改变任何程序功能：
+  删除行只含 _dbg / print / 恒真合取项 / os.popen；新增行只含注释与等价实现。
+  验证方式见报告 11.4 节：反向应用补丁可逐字节还原「HEAD + P0 批次」状态。
+
+应用方式
+--------------------------------------------------------------------------------
+  正向（在 HEAD 上恢复本批次改动；需先应用 patch-04 / patch-05）：
+      git apply -p1 patch-06-P1批次增强-代码卫生与版本单一来源.patch
+  反向（校验补丁正确性）：
+      git apply -p1 --reverse <本补丁>
+
+================================================================================
+
+diff --git a/.gitignore b/.gitignore
+index b4ac317..006513f 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -46,3 +46,15 @@ scripts/logs/
+ 
+ # 本地归档（2026-09-02 整理：调试图片与 .bak 备份，仅本地保留）
+ _archive/
++
++# 本地工具与归档（2026-09-24 治理）
++# 根因：以下三个目录曾各有文件被误跟踪（.workbuddy 55 / .dumate 15 /
++# .trae-html-share-packages 1，合计 71），而 .gitignore 从未覆盖它们。
++# ⚠️ .gitignore 只对「未跟踪」文件生效 —— 已跟踪文件必须先
++# `git rm -r --cached .workbuddy .dumate .trae-html-share-packages` 才能解除。
++/.workbuddy/
++/.dumate/
++/.trae-html-share-packages/
++# Python 测试遗留（09-19 QA 起未覆盖；.pytest_cache 另有其自带 .gitignore）
++/.pytest_tmp/
++/.pytest_cache/
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index ca75ef3..f25a6bb 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -165,6 +165,7 @@
+ 本 changelog 从代码中的 `[Fix ...]` 注释整理而来，记录了项目演进过程中的关键修复决策。
+ 
+ 详细的技术背景和根因分析请参考：
+-- `项目全面审查报告.md`
++- `ProductSummary/项目审查报告/` —— 全部项目审查报告归档目录
++  （原根目录的 `项目全面审查报告.md` 已于 2026-09-24 归位至此）
+ - 各模块的 docstring 注释
+ - Git commit history
+diff --git a/core/config.py b/core/config.py
+index d8689bb..7a31cae 100644
+--- a/core/config.py
++++ b/core/config.py
+@@ -23,6 +23,25 @@ from typing import Optional
+ logger = logging.getLogger(__name__)
+ 
+ 
++# ============================================================================
++# 应用版本（单一事实来源）
++# ============================================================================
++
++# [Fix 2026-09-24 P1-1 / P2-3] 项目唯一的版本号定义点。
++#   根因：全项目 `git grep __version__` 仅命中第三方 `PyInstaller.__version__`，
++#   项目自身无任何版本常量，版本只靠提交信息与散落文档追踪 —— 2026-09-24 审查
++#   实测由此产生「仓库是 V2.2.3、打包脚本却仍叫 packageV2.2.2 并产出标识为
++#   V2.2.2 的 exe」的错位。
++#   约定：发版只改这一行；下列消费方一律引用本常量，不得再硬编码版本字符串。
++#     - packaging/packageV<版本>.py  → exe 文件名 / 打包横幅
++#     - core/log_setup.py            → 启动日志头
++#     - main.py                      → 「关于」对话框
++APP_VERSION: str = "2.2.3"
++
++# exe 名与窗口显示名（由 APP_VERSION 派生，勿另行硬编码）
++APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
++
++
+ # ============================================================================
+ # 圆角边框宽度
+ # ============================================================================
+@@ -343,8 +362,19 @@ class PathResolver:
+             tessdata = None
+             # 尝试查找 tessdata
+             try:
+-                result = os.popen('tesseract --list-langs 2>&1').read()
+-                if 'chi_sim' in result or 'eng' in result:
++                # [Fix 2026-09-24 P1-7] 原实现用 os.popen('tesseract --list-langs 2>&1')
++                #   起 shell 且从不 close 管道（进程句柄泄漏）。改为 subprocess.run：
++                #   不启用 shell（list 参数，无注入面），stderr 合并进 stdout 保持原语义，
++                #   并复用刚解析出的 path_exe（原 shell 依赖 PATH 二次解析）。
++                #   容错语义不变：任何异常一律忽略，tessdata 维持 None。
++                import subprocess
++                _proc = subprocess.run(
++                    [path_exe, '--list-langs'],
++                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
++                    text=True, encoding='utf-8', errors='replace',
++                )
++                _langs_out = _proc.stdout or ''
++                if 'chi_sim' in _langs_out or 'eng' in _langs_out:
+                     tessdata = 'system'
+             except Exception:
+                 pass
+diff --git a/core/geometry.py b/core/geometry.py
+index 188e4a7..09b2e2f 100644
+--- a/core/geometry.py
++++ b/core/geometry.py
+@@ -71,6 +71,47 @@ class CutRect:
+     h_cm: float = 0.0
+ 
+ 
++# 阶梯 L 形：单个锚定角最多支持的 CutRect 级数。
++# [Fix 2026-09-24 P2-4] validate 与「写入端截断」共用同一常量，避免历史上
++# 「校验按每角 ≤3、截断按总数 [:3]」两套口径各自漂移而再次分叉。
++MAX_L_CUT_RECTS_PER_ANCHOR: int = 3
++
++
++def limit_l_cut_rects_per_anchor(cuts, max_per_anchor: int = MAX_L_CUT_RECTS_PER_ANCHOR):
++    """按锚定角分组截断 CutRect 序列：每角最多保留 max_per_anchor 级，保持原有顺序。
++
++    [Fix 2026-09-24 P2-4] 取代历史上的「按总数 [:max_per_anchor] 截断」。后者与
++    ``CropDesign._validate_l_cut_rects()`` 的「同角位 ≤3」口径不一致 —— 例如
++    「tr×3 + tl×1」合计 4 条是 validate() 允许的合法输入，却在写入端被总数截断
++    静默丢掉第 4 条（tl 那级），用户看不到任何报错。
++
++    对**单锚定输入**该函数与 ``[:max_per_anchor]`` 逐例等价：UI 的
++    ``LShapePanel.get_cut_rects_cm()`` 与草图解析器的
++    ``_convert_stepped_to_cut_rects()`` 全部可达路径均只产出单一 anchor
++    （条带 ``'anchor'`` 恒为同一个角），故本次改动不改变任何可达行为。
++
++    类型无关：``CutRect`` 实例与含 ``'anchor'`` 键的 dict 均可传入；
++    返回新列表，元素与入参保持同一性（不复制、不改写内容）。
++
++    Args:
++        cuts: CutRect 序列或 dict 序列，允许 None。
++        max_per_anchor: 每个锚定角最多保留的级数。
++
++    Returns:
++        截断后的 list。
++    """
++    picked: list = []
++    seen: dict = {}
++    for cut in cuts or []:
++        anchor = cut.anchor if hasattr(cut, 'anchor') else cut.get('anchor')
++        n = seen.get(anchor, 0)
++        if n >= max_per_anchor:
++            continue
++        seen[anchor] = n + 1
++        picked.append(cut)
++    return picked
++
++
+ @dataclass
+ class LShape:
+     """
+@@ -372,8 +413,10 @@ class CropDesign:
+                 raise ValueError(f"l_cut_rects[{i}] anchor 无效: {cut.anchor!r}")
+             n = per_anchor.get(cut.anchor, 0) + 1
+             per_anchor[cut.anchor] = n
+-            if n > 3:
+-                raise ValueError(f"l_cut_rects 同角位 {cut.anchor!r} 最多支持 3 级阶梯")
++            if n > MAX_L_CUT_RECTS_PER_ANCHOR:
++                raise ValueError(
++                    f"l_cut_rects 同角位 {cut.anchor!r} 最多支持 "
++                    f"{MAX_L_CUT_RECTS_PER_ANCHOR} 级阶梯")
+             if cut.w_cm <= 0 or cut.h_cm <= 0:
+                 raise ValueError(f"l_cut_rects[{i}] 宽高必须为正数")
+             if cut.offset_x_cm < 0 or cut.offset_y_cm < 0:
+diff --git a/core/image_ops.py b/core/image_ops.py
+index 5154e80..610f253 100644
+--- a/core/image_ops.py
++++ b/core/image_ops.py
+@@ -578,39 +616,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
+     if not skip_validate:
+         design.validate()
+     W, H = design.canvas_w_px, design.canvas_h_px
+-    # === [DEBUG 2026-09-10] 调试日志：全参数快照 ===
+-    import os as _os  # 避免与已有的 os 覆盖
+-    _dbg = False  # 临时开关，问题定位后改 False
+-    if _dbg:
+-        _has_pool_outer = bool(
+-            getattr(design, 'pool_outer_material_image', None)
+-            and _os.path.isfile(design.pool_outer_material_image))
+-        _has_pool_inner = bool(
+-            getattr(design, 'pool_inner_material_image', None)
+-            and _os.path.isfile(getattr(design, 'pool_inner_material_image', '')))
+-        _has_outer_bg = bool(
+-            getattr(design, 'outer_bg_image', None)
+-            and _os.path.isfile(design.outer_bg_image))
+-        _cached = getattr(design, '_cached_outer_image', None) is not None
+-        logger.info(
+-            f"[DEBUG-RD] ========= render_design() 开始 =========")
+-        logger.info(
+-            f"[DEBUG-RD] mode={design.mode!r} quality={quality!r} "
+-            f"W={W} H={H} outer_margin={design.outer_margin_cm} "
+-            f"inner_margin_t/b/l/r={design.inner_margin_top_cm}/{design.inner_margin_bottom_cm}/"
+-            f"{design.inner_margin_left_cm}/{design.inner_margin_right_cm} "
+-            f"l_corner={getattr(design,'l_corner',None)} "
+-            f"l_cut_w={getattr(design,'l_cut_w_cm',None)} "
+-            f"l_cut_h={getattr(design,'l_cut_h_cm',None)} "
+-            f"pool_hole_transparent={getattr(design,'pool_hole_transparent',None)}")
+-        logger.info(
+-            f"[DEBUG-RD] pool_outer_material={_has_pool_outer} "
+-            f"pool_inner_material={_has_pool_inner} "
+-            f"outer_bg_image={_has_outer_bg} "
+-            f"cached_outer_image={_cached} "
+-            f"outer_bg_color={design.outer_bg_color} "
+-            f"hole_bg_color={design.hole_bg_color}")
+-    # ===============================================
++    # [Fix 2026-09-24 P2-5] 移除 2026-09-10 遗留的 `_dbg` 调试开关及其实参传递链。
++    #   该开关硬编码为 False（注释自称"临时开关，问题定位后改 False"，已遗留 14 天），
++    #   其下全部 `if _dbg:` 分支恒不可达；配套的 8 处热路径 `print(..., flush=True)`
++    #   同期清理（见 P1-4）。删除后判定与输出行为逐例不变。
+     # 固定像素值按比例缩放（用于 LOD 渲染）
+     # 最小 2 像素，确保边框在低分辨率下仍可见
+     import math
+@@ -618,10 +627,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
+     BLACK_RGB = (0, 0, 0)
+     # 1. 整体背景（最外层）+ 水池/外背景状态判定
+     canvas, canvas_arr, cached_img, has_outer_img, has_outer_pool_material, is_pool_with_material = \
+-        _render_outer_background(design, W, H, quality, _dbg)
++        _render_outer_background(design, W, H, quality)
+     # 1.1 L形模式 + 花型图：非L形区域填充 outer_bg_color（返回覆盖后 has_outer_img）
+     has_outer_img = _apply_lshape_bg_overlay(
+-        canvas_arr, design, W, H, is_pool_with_material, has_outer_img, _dbg)
++        canvas_arr, design, W, H, is_pool_with_material, has_outer_img)
+     # 2. 渲染边框 band（水池模式且有素材图时跳过）
+     _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material, has_outer_img)
+     # 3. 挖洞后的内部区域（内矩形/椭圆/L形内部）填背景色或素材
+@@ -630,7 +639,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
+     inner_mask = _get_inner_pixel_mask(design)
+     # 3.x L形挖角（cut 区填白 + 素材底色采样）
+     lshape_cut_done, _lshape_cut_bg_color, lshape_cut_area_mask = _render_lshape_cut(
+-        canvas_arr, design, W, H, inner_mask, is_pool_with_material, _dbg)
++        canvas_arr, design, W, H, inner_mask, is_pool_with_material)
+     # [SINGLE-HOLE Add-On] Stale Decor Black Border Invalidation (V1)
+     _stale_decor_black_border_invalidation(
+         canvas_arr, design, W, H, has_outer_pool_material)
+@@ -654,10 +663,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
+     # 3.5 在挖空区域边缘绘制统一的黑色边框线（border_mask 计算）
+     border_mask = _compute_border_mask(design, W, H, inner_mask, border_width_px)
+     _apply_unified_black_border(
+-        canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB, _dbg)
++        canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB)
+     # 3.6 [L-Shape Border Completion] L 形挖角处的素材边框补全
+     _lshape_border_completion(canvas_arr, design, W, H, cached_img,
+-        is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB, lshape_cut_area_mask)
++        is_pool_with_material, _lshape_cut_bg_color, border_mask, canvas, BLACK_RGB, lshape_cut_area_mask)
+     # [SINGLE-HOLE Add-On V2] Stale-Decor Universal Residual Cleaner
+     _stale_decor_residual_cleaner(
+         canvas_arr, design, W, H, border_mask, inner_mask, has_outer_pool_material)
+@@ -666,19 +675,12 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
+         pil = Image.fromarray(canvas_arr, 'RGB')
+         _draw_border_text(pil, design)
+         canvas_arr = np.array(pil, dtype=np.uint8)
+-    if _dbg:
+-        _final_blacks = (canvas_arr.max(axis=2) < 200).sum()
+-        _final_whites = (canvas_arr.min(axis=2) > 200).sum()
+-        logger.info(
+-            f"[DEBUG-RD] STEP-END total_blacks={_final_blacks} "
+-            f"total_whites={_final_whites} total_pixels={canvas_arr.shape[0]*canvas_arr.shape[1]}")
+-        logger.info("[DEBUG-RD] ========= render_design() 结束 ==========")
+     return Image.fromarray(canvas_arr, 'RGB')
+ 
+ 
+ # ---------- [C-01] render_design 拆分辅助函数（逻辑与原实现逐行一致） ----------
+ 
+-def _render_outer_background(design, W, H, quality, _dbg):
++def _render_outer_background(design, W, H, quality):
+     """[C-01] 整体背景渲染 + 水池素材/外背景图状态判定（原 render_design L604-678）。"""
+     # 1. 整体背景（最外层）
+     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
+@@ -750,20 +752,13 @@ def _render_outer_background(design, W, H, quality, _dbg):
+         and os.path.isfile(getattr(design, 'pool_inner_material_image', ''))
+     )
+     is_pool_with_material = has_outer_pool_material or has_inner_pool_material
+-    if _dbg:
+-        logger.info(
+-            f"[DEBUG-RD] STEP1 判定: is_pool_with_material={is_pool_with_material} "
+-            f"(outer={has_outer_pool_material} inner={has_inner_pool_material}) "
+-            f"mode={design.mode!r}")
+     return canvas, canvas_arr, cached_img, has_outer_img, has_outer_pool_material, is_pool_with_material
+ 
+-def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, has_outer_img, _dbg):
++def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, has_outer_img):
+     """[C-01] L形模式 + 花型图：非L形区域填充 outer_bg_color（原 L679-700）。"""
+     # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
+     # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color
+     if design.mode == 'rect_lshape' and not is_pool_with_material:
+-        if _dbg:
+-            logger.info("[DEBUG-RD] STEP1.1 命中 rect_lshape + 非池素材 → 填outer_bg_color遮罩")
+         from .geometry import _build_design_lshape_mask
+         has_outer_img = design.outer_bg_image and os.path.isfile(design.outer_bg_image)
+         if has_outer_img:
+@@ -792,7 +787,7 @@ def _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material
+             # 把 band_mask=True 的像素写入 canvas
+             canvas_arr[band_mask] = fill_arr[band_mask]
+ 
+-def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_material, _dbg):
++def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_material):
+     """[C-01] L形挖角：cut 区填白/填 bg + 素材底色采样（原 L733-846）。"""
+     lshape_cut_done = False
+     # [Fix 2026-09-08 v5] 素材底色采样：给 border completion 当 bg_color 用（用来过滤
+@@ -800,8 +795,6 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
+     #   cut_area 始终填纯白(255,255,255)（用户明确要求 L 形挖空区保持白色）。
+     _lshape_cut_bg_color = None
+     if design.mode == 'rect_lshape' and is_pool_with_material:
+-        if _dbg:
+-            logger.info("[DEBUG-RD] STEP3 命中 rect_lshape + 池素材 → L形挖角处理路径")
+         from .geometry import build_lshape_mask, compute_inner_corner_radii
+         lshape = design.l_shapes_px()
+         inner_rect = design.inner_rect_px()
+@@ -837,16 +830,9 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
+                 _extra[0:_ir_y + _ch, 0:_ir_x + _cw] = True
+             elif cut_corner == 'tr':
+                 _extra[0:_ir_y + _ch, _ir_r - _cw:W] = True
+-        # ===== DEBUG: 打印 L 形 cut 关键坐标 =====
+-        print(f'\n========== [LSHAPE CUT DEBUG] ==========', flush=True)
+-        print(f'corner={lshape.corner} canvas={W}x{H}', flush=True)
+-        print(f'inner_rect px: ({_ir_x},{_ir_y})-({_ir_r},{_ir_b})', flush=True)
+-        print(f'DESIGN l_cut_w_cm={design.l_cut_w_cm} l_cut_h_cm={design.l_cut_h_cm}', flush=True)
+-        print(f'canvas_w_cm={design.canvas_w_cm} canvas_h_cm={design.canvas_h_cm}', flush=True)
+-        print(f'outer_margin={design.outer_margin_cm} inner_margins_tblr=({design.inner_margin_top_cm},{design.inner_margin_bottom_cm},{design.inner_margin_left_cm},{design.inner_margin_right_cm})', flush=True)
+-        print(f'lshape.cut_w={lshape.cut_w} (px) lshape.cut_h={lshape.cut_h} (px)', flush=True)
+-        if _dbg:
+-            print(f'cut specs: {lshape.cut_specs()}', flush=True)
++        # [Fix 2026-09-24 P1-4] 移除 8 处无条件 `print(..., flush=True)`（原 L878-887）。
++        #   原为 2026-09-10 定位 cut 坐标用的临时打印，却在每次 L 形渲染热路径上
++        #   强制刷盘；打包为 --windowed 后 stdout 不可见，纯属性能损耗与死代码。
+         cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
+         if cut_area_mask.any():
+             # 预先采样素材底色——给 Step 3.6 border completion 当 bg_color 用
+@@ -1203,7 +1199,7 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
+         border_mask = inner_mask & ~eroded
+     return border_mask
+ 
+-def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB, _dbg):
++def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB):
+     """[C-01] 统一黑框应用（原 L1153-1168）。"""
+     if border_mask.any():
+         # [Fix 2026-09-10] L 形 + 池素材：素材已拉伸到 inner_rect，其自身边框
+@@ -1214,15 +1210,10 @@ def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_ma
+         #   （V13 → Profile → 旧路径）全部失败（_completion_ok=False），
+         #   会在 Step 3.6 末尾补画统一黑框兜底，保证切口至少有一条边框。
+         _skip_unified = design.mode == 'rect_lshape' and is_pool_with_material
+-        if _dbg:
+-            logger.info(
+-                f"[DEBUG-RD] STEP3.5 border_mask={border_mask.sum()}px "
+-                f"skip_unified_black={_skip_unified} "
+-                f"(mode={design.mode!r} is_pool={is_pool_with_material})")
+         if not _skip_unified:
+             canvas_arr[border_mask] = BLACK_RGB
+ 
+-def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB, lshape_cut_area_mask=None):
++def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, canvas, BLACK_RGB, lshape_cut_area_mask=None):
+     """[C-01] L形挖角处素材边框补全（含三层失败兜底，原 L1170-1269）。"""
+     # ===== [L-Shape Border Completion 2026-09-03] L 形挖角处的素材边框补全 =====
+     # 当素材图自带边框（如克罗印花的棕色+黑色双层边框、安妮森林的细黑边框），
+@@ -1233,10 +1224,6 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
+     # 仅在 rect_lshape + 池素材 + 非 tile（tile 无边框）时触发。
+     _is_tile = _looks_like_tile(design.pool_outer_material_image or '')
+     _do_completion = design.mode == 'rect_lshape' and is_pool_with_material and not _is_tile
+-    if _dbg:
+-        logger.info(
+-            f"[DEBUG-RD] STEP3.6 border_completion={_do_completion} "
+-            f"(mode={design.mode!r} is_pool={is_pool_with_material} tile={_is_tile})")
+     if _do_completion:
+         _completion_ok = False  # 兜底初值；异常/失败时保持 False（三层失败掩盖修复）
+         try:
+diff --git a/core/log_setup.py b/core/log_setup.py
+index 5d25f9a..2db9db0 100644
+--- a/core/log_setup.py
++++ b/core/log_setup.py
+@@ -100,7 +100,15 @@ def setup_logging(level: str | int | None = None, log_file: str | Path | None =
+     _logging_configured = True
+ 
+     # 自己输出一条启动信息（用 root logger，避免模块 logger 名混乱）
+-    root_logger.info(f'[log_setup] 日志系统已配置：级别={logging.getLevelName(level)}，'
++    # [Fix 2026-09-24 P1-1] 日志头带上 APP_VERSION（单一事实来源），
++    #   便于从用户回传的日志直接判定运行版本。纯文案追加，无逻辑变化。
++    _version_tag = ''
++    try:
++        from .config import APP_VERSION
++        _version_tag = f'SmartShapeCrop v{APP_VERSION} '
++    except Exception:
++        pass
++    root_logger.info(f'[log_setup] {_version_tag}日志系统已配置：级别={logging.getLevelName(level)}，'
+                      f'控制台={console}，文件={log_file}')
+ 
+ 
+diff --git a/gui/property_panel.py b/gui/property_panel.py
+index f4ebebd..3faa8c7 100644
+--- a/gui/property_panel.py
++++ b/gui/property_panel.py
+@@ -924,8 +924,13 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
+         由 Panel 自己负责 UI 控件的同步，main.py 不再直接访问 Panel 私有属性。
+         """
+         self._sp_w.setValue(d.canvas_w_cm); self._sp_h.setValue(d.canvas_h_cm); self._sp_dpi.setValue(d.dpi)
+-        idx = {'rect_hole': 0, 'rect_lshape': 1, 'ellipse_hole': 2}.get(d.mode, 0)
+-        self._cb_mode.setCurrentIndex(idx)
++        # [Fix 2026-09-24 P2-1] 原为硬编码索引表 {'rect_hole':0,'rect_lshape':1,'ellipse_hole':2}
++        #   —— 一旦 combo 增删项或调整顺序，未同步该表就会静默回落到索引 0（rect_hole），
++        #   表现为「模板加载后模式显示错误且无任何报错」。
++        #   改为按 userData 反查，与 line 560 的 findData('rect_lshape') 及
++        #   _on_mode_change 的 currentData() 形成对称；反查失败（-1）时保留原回落索引 0 语义。
++        _idx = self._cb_mode.findData(d.mode)
++        self._cb_mode.setCurrentIndex(_idx if _idx >= 0 else 0)
+         self._sp_outer_margin.setValue(d.outer_margin_cm)
+         self._sp_mt.setValue(d.inner_margin_top_cm); self._sp_mb.setValue(d.inner_margin_bottom_cm)
+         self._sp_ml.setValue(d.inner_margin_left_cm); self._sp_mr.setValue(d.inner_margin_right_cm)
+diff --git a/main.py b/main.py
+index 7c68bba..f08d21b 100644
+--- a/main.py
++++ b/main.py
+@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
+ 
+ from core.geometry import CropDesign, BorderLayer
+ from core.log_setup import setup_logging
+-from core.config import px_to_cm  # [N-P2-08] 集中换算函数
++from core.config import px_to_cm, APP_VERSION  # [N-P2-08] 集中换算函数 + 版本单一来源
+ from core.image_ops import save_jpg, render_design
+ from gui.canvas_widget import PreviewCanvas, ExportSaveWorker
+ from gui.property_panel import PropertyPanel
+@@ -252,6 +252,7 @@ class MainWindow(QMainWindow):
+         QMessageBox.about(
+             self, "关于 SmartShapeCrop",
+             "<h3>SmartShapeCrop</h3>"
++            f"<p>当前版本：V{APP_VERSION}</p>"
+             "<p>矩形 / L形 / 椭圆 挖水池裁剪设计器</p>"
+             "<ul>"
+             "<li>尺寸单位：厘米（按 DPI 自动换算像素）</li>"
+diff --git a/models/design_model.py b/models/design_model.py
+index 9ed158e..3949d91 100644
+--- a/models/design_model.py
++++ b/models/design_model.py
+@@ -14,7 +14,7 @@ from __future__ import annotations
+ import copy
+ import os
+ 
+-from core.geometry import CropDesign, BorderText, CutRect
++from core.geometry import CropDesign, BorderText, CutRect, limit_l_cut_rects_per_anchor
+ 
+ 
+ class DesignModel:
+@@ -128,7 +128,10 @@ class DesignModel:
+             # 阶梯路径：cut_rects 非空时是唯一几何来源（同角位多级），
+             # 旧格式 l_cuts_cm 不允许同角位重复，必须保持为空
+             _cr = _lp.get('cut_rects') or []
+-            d.l_cut_rects = [
++            # [Fix 2026-09-24 P2-4] 原为 [:3]（按总数截断）——与 validate() 的
++            #   「同角位 ≤3」口径不一致，会把多锚定输入的第 4 条静默丢弃。
++            #   改用按锚定角分组截断；单锚定输入（全部可达路径）逐例等价。
++            d.l_cut_rects = limit_l_cut_rects_per_anchor([
+                 CutRect(
+                     anchor=r.get('anchor', 'tr'),
+                     offset_x_cm=float(r.get('offset_x_cm', 0)),
+@@ -137,7 +140,7 @@ class DesignModel:
+                     h_cm=float(r.get('h_cm', 0)),
+                 )
+                 for r in _cr
+-            ][:3]
++            ])
+             if not d.l_cut_rects:
+                 d.l_cuts_cm = [dict(cut) for cut in (_lp.get('cuts_cm') or [])][:4]
+                 if d.l_cuts_cm:
+diff --git a/workers/property_panel_workers.py b/workers/property_panel_workers.py
+index 55d56f2..3d7ff6a 100644
+--- a/workers/property_panel_workers.py
++++ b/workers/property_panel_workers.py
+@@ -11,7 +11,7 @@ import os
+ from PyQt5.QtCore import pyqtSignal, QThread
+ from PIL import Image
+ 
+-from core.geometry import CropDesign, CutRect
++from core.geometry import CropDesign, CutRect, limit_l_cut_rects_per_anchor
+ from core.config import CUT_LOSS_CM
+ from services.parser.name_parser import parse_filename
+ from services.parser.template_matcher import TemplateMatcher
+@@ -533,7 +533,10 @@ class PoolRenderWorker(QThread):
+         # 旧格式 cuts_cm 不允许同角位重复，必须保持为空
+         cut_rects = lp.get('cut_rects') or []
+         if cut_rects:
+-            design.l_cut_rects = [
++            # [Fix 2026-09-24 P2-4] 原为 [:3]（按总数截断）——与 validate() 的
++            #   「同角位 ≤3」口径不一致，会把多锚定输入的第 4 条静默丢弃。
++            #   改用按锚定角分组截断；单锚定输入（全部可达路径）逐例等价。
++            design.l_cut_rects = limit_l_cut_rects_per_anchor([
+                 CutRect(
+                     anchor=str(r['anchor']),
+                     offset_x_cm=max(0.0, float(r.get('offset_x_cm', 0))),
+@@ -545,7 +548,7 @@ class PoolRenderWorker(QThread):
+                 if isinstance(r, dict) and r.get('anchor') in {'tl', 'tr', 'bl', 'br'}
+                 and float(r.get('w_cm', 0) or 0) > 0
+                 and float(r.get('h_cm', 0) or 0) > 0
+-            ][:3]
++            ])
+             self._log(
+                 f"L 形阶梯挖角：corner={design.l_corner}, "
+                 f"{len(design.l_cut_rects)} 级 CutRect（同角位条带）")
+diff --git a/packaging/README.md b/packaging/README.md
+index 4a436b4..7e95b5b 100644
+--- a/packaging/README.md
++++ b/packaging/README.md
+@@ -1,46 +1,41 @@
+ # packaging 目录说明
+ 
+-**唯一打包入口：`packageV2.2.2.py`**（当前 V2.2.2 生产打包脚本，位于 `packaging/` 根目录）。
+-配套 spec：`packaging/specs/智能裁剪设计器V2.2.2.spec`。
++**唯一打包入口：`packageV2.2.3.py`**（当前 V2.2.3 生产打包脚本，位于 `packaging/` 根目录）。
++配套 spec：`packaging/specs/智能裁剪设计器V2.2.3.spec`。
+ 
+ ```bash
+-python packaging/packageV2.2.2.py                 # 单文件模式（默认，内嵌 Tesseract）
+-python packaging/packageV2.2.2.py --onedir        # 目录模式（更稳定）
+-python packaging/packageV2.2.2.py --debug         # 调试模式（显示控制台）
+-python packaging/packageV2.2.2.py --clean         # 清理旧构建后打包
+-python packaging/packageV2.2.2.py --no-tesseract  # 不内嵌 Tesseract
++python packaging/packageV2.2.3.py                 # 单文件模式（默认，内嵌 Tesseract）
++python packaging/packageV2.2.3.py --onedir        # 目录模式（更稳定）
++python packaging/packageV2.2.3.py --debug         # 调试模式（显示控制台）
++python packaging/packageV2.2.3.py --clean         # 清理旧构建后打包
++python packaging/packageV2.2.3.py --no-tesseract  # 不内嵌 Tesseract
+ ```
+ 
+-产物：`dist/智能裁剪设计器V2.2.2.exe`（单文件，约 202 MB，内嵌 Tesseract-OCR 约 115 MB）。
++产物：`dist/智能裁剪设计器V2.2.3.exe`（单文件，约 202 MB，内嵌 Tesseract-OCR 约 115 MB）。
++
++> **版本号不再硬编码在打包脚本里**：`packageV2.2.3.py` 从 `core/config.py` 的
++> `APP_VERSION` / `APP_DISPLAY_NAME` 派生 exe 名与打包横幅（单一事实来源）。
++> 发版只需改 `core/config.py` 一处，脚本不会滞后于源码。
+ 
+ ## 目录组织
+ 
+ | 路径 | 说明 |
+ |---|---|
+-| `packageV2.2.2.py` | **当前打包入口**（V2.2.2，唯一在用） |
+-| `legacy/` | 历史打包脚本归档（V2.0 / V2.1 / V2.1.2 / V2.2 / V2.2.1 等），请勿使用 |
+-| `specs/` | PyInstaller spec 归档（`SmartShapeCrop` / V2.1 / V2.1.2 / V2.2 / V2.2.2） |
+-
+-### legacy/ 归档清单
++| `packageV2.2.3.py` | **当前打包入口**（V2.2.3，唯一在用；版本取自 `core.config.APP_VERSION`） |
++| `packageV2.2.2.py` | 上一版入口（保留备查，不建议再用于出包 —— 其 exe 名硬编码为 V2.2.2） |
++| `specs/` | PyInstaller spec 归档（`SmartShapeCrop` / V2.1 / V2.1.2 / V2.2 / V2.2.2 / **V2.2.3**） |
++| `legacy/` | ⛔ **已于 2026-09-17 整目录删除**（原含 V2.0 / V2.1 / V2.1.2 / V2.2 / V2.2.1 旧脚本与 `build_exe.bat`） |
+ 
+-| 文件 | 说明 |
+-|---|---|
+-| `package.py` | 初版打包脚本（历史归档） |
+-| `packageV2.0.py` | V2.0 打包脚本（历史归档） |
+-| `packageV2.1.py` | V2.1 打包脚本（历史归档） |
+-| `packageV2.1.2.py` | V2.1.2 打包脚本（历史归档） |
+-| `packageV2.2.py` | V2.2 打包脚本（历史归档，2026-09-16 移入） |
+-| `packageV2.2.1.py` | V2.2.1 打包脚本（历史归档，2026-09-16 移入） |
+-| `build_exe.bat` | 旧版一键打包入口（历史归档） |
+-
+-> ⚠️ **注意**：历史归档脚本的 `PROJECT_ROOT` 基于旧目录结构（`__file__.parent` 指向项目根）。
+-> 移入 `legacy/` 后**未改逻辑**，若误用旧脚本打包，`PROJECT_ROOT` 会指向 `packaging/legacy/`
+-> 而非项目根，导致打包失败。**请始终使用 `packageV2.2.2.py`**（其 `PROJECT_ROOT` 为 `.parent.parent`）。
++> ⚠️ **历史脚本的 `PROJECT_ROOT` 陷阱（留作警示）**：早期归档脚本的 `PROJECT_ROOT` 基于旧目录结构
++> （`__file__.parent` 指向项目根），一旦被移入子目录就**会指向子目录而非项目根**，导致打包失败。
++> 当前入口 `packageV2.2.3.py` 的 `PROJECT_ROOT` 为 `.parent.parent`，是正确的。
+ 
+ ## 维护约定
+ 
+-- **新版发布时**：新建 `packageV<新版本>.py`（复制上一版改 `APP_NAME` 与 `HIDDEN_IMPORTS`），
+-  旧版脚本移入 `legacy/`，自动生成的 `智能裁剪设计器V<版本>.spec` 从项目根移入 `specs/`。
++- **新版发布时**：新建 `packageV<新版本>.py`（复制上一版，只改文档串与 `HIDDEN_IMPORTS`；
++  版本号已不在此硬编码），并把 `core/config.py` 的 `APP_VERSION` 提升。旧版脚本如无保留
++  价值可直接删除，或恢复 `legacy/` 归档；PyInstaller 在项目根生成的
++  `智能裁剪设计器V<版本>.spec` 移入 `specs/`。
+ - **hidden-import 有「同名双包」陷阱**：`core/psd/`、`core/parser/`、`core/pool_designer/`
+   均为**目录占位 shim**（只有 `__init__.py`），真实实现已迁至 `services/`，由 `core.compat`
+   用 `sys.modules` 别名重定向。因此**不要**声明 `core.psd.loader` 之类的子路径
+diff --git a/packaging/packageV2.2.3.py b/packaging/packageV2.2.3.py
+new file mode 100644
+index 0000000..59c310a
+--- /dev/null
++++ b/packaging/packageV2.2.3.py
+@@ -0,0 +1,569 @@
++# -*- coding: utf-8 -*-
++"""
++packageV2.2.3.py
++SmartShapeCrop V2.2.3 打包脚本（Python 版）
++
++功能：
++    将 main.py 打包为 Windows 桌面可执行文件（单文件模式，双击即可运行）：
++      - exe 文件名：由 core.config.APP_VERSION 派生（当前为 智能裁剪设计器V2.2.3）
++      - exe 图标：images/SmartShapeCrop.ico
++      - 运行时窗口图标：images/logo.png（由 main.py 的 set_app_icon 加载）
++      - 默认内嵌本机 Tesseract-OCR 到 exe 内部（用户免安装即可使用草图 OCR）
++
++版本来源（单一事实来源）：
++    exe 名与打包横幅一律取自 core/config.py 的 APP_VERSION / APP_DISPLAY_NAME，
++    本脚本内不硬编码任何版本字符串。发版只需改 core/config.py 一处。
++    本脚本按文件路径直接加载该模块，不触发 core/__init__.py 的聚合导入
++    （image_ops / psd_tools / PyQt5），因此在依赖不完整的环境下也能读到版本号。
++
++V2.2.3 相对 V2.2.2 的增量（本次打包携带）：
++      - 单边阶梯 L 形挖角落地：同一锚定角支持多级 CutRect 条带
++        （core.geometry.CutRect / CropDesign.l_cut_rects / _validate_l_cut_rects
++         / 统一掩膜 _build_design_lshape_mask），GUI 侧新增阶梯子行录入与回填
++      - 修复 LOD 预览几何未缩放（core.image_ops._make_lod_design 补齐 4 族
++        几何字段缩放），消除「预览几何 ≠ 导出几何」
++      - 修复 Stale-Decor 清理函数中的恒真死守卫（core.image_ops）
++      - 加固模板缓存反序列化：DiskCache 改用受限 Unpickler，仅放行惰性内置类型
++        （services.parser.template_matcher）
++      - 引入版本号单一事实来源 core.config.APP_VERSION，由本脚本 /
++        core.log_setup 日志头 / main.py「关于」对话框统一引用
++      - 代码卫生：清理 L 形渲染热路径上的 8 处无条件 print(flush=True) 与遗留
++        _dbg 调试开关；os.popen 改写为 subprocess.run；模式回填改 findData
++
++V2.2.2 基础功能（继承）：
++      - 多边 L 形挖角（多角同时挖）：LShapePanel / property_panel 支持多行
++        (角位, 宽, 高) 参数录入与回填，core.geometry 生成多角并集 mask，
++        与「单角 L 形」共用同一面板 —— 按锚定角分组推导形状，不新增 shape_type 字段
++      - G1 结构一致性闸口（不变量常驻）：notches_detected != notches_consumed 即拦截
++      - OCR 逐角归属：lshape_sketch_parser 按「最近边 + 凹角分割」把每个数值归入
++        A/B/C/D/E/F 角色，完全不依赖字母 OCR（字母识别仅作辅助校验）
++      - L 形挖角草图数据识别优化：四角同挖、相邻角冲突消解、抽点扩充与四角验证、
++        逐边几何约束、ValueError 转换与边界值补齐
++      - 实时边余量与低置信度警告（G3 预览可视化）
++      - 圆角裁剪黑色大理石多边框问题修复（core.image_cropper_border /
++        core.corner.detection：多边框层扫描与黑大理石素材的层结构判定）
++      - 多边 L 形挖角内凹角线条溢出修复（core.lshape_border / lshape_border_route）
++      - 水池设计器【椭圆挖洞】功能：支持圆形/椭圆内挖孔洞参数录入与渲染
++      - 圆角检测步长问题修复、L 形挖角重绘避免漏线
++
++V2.2.1 基础功能（继承）：
++      - 架构分层重构：core/ 迁移出 services/（parser / sketch_parser / psd）、
++        workers/（QThread Worker 集中管理）、models/（设计数据模型）三个新层，
++        core.compat 以 sys.modules 别名保持旧导入路径向后兼容
++      - 全面审查修复 Critical 级问题（C-01 ~ C-05）与 High 级问题（H-01 ~ H-15）
++      - L 形边框颜色检测修复
++      - 圆角裁剪抗锯齿修复（core.corner 子包：algorithm / detection / sector_render）
++      - 水池挖洞素材填充失真问题修复
++      - 新增 gui.lshape_panel_bridge（[H-13] LShapePanel 信号桥接适配器）
++
++V2.2 基础功能（继承）：
++      - L 形挖角边框补全模块：core.lshape_border
++      - L 形挖角描边/色带/细边框结构重走线模块：core.lshape_border_route
++      - L 形挖角独立 GUI 面板：gui.lshape_panel
++
++V2.1.2 基础功能（继承）：
++      - 水池设计器【多洞功能】：支持识别并解析草图中多个内挖孔洞
++      - 多洞 GUI 参数面板：动态显示多个洞的尺寸与中距，支持手动修改
++      - 多洞状态栏：显示各洞尺寸（洞1/洞2/...）与中间距
++      - 多洞内孔边框：统一 10px 黑色边框线，采用几何差集法绘制
++      - 圆角裁剪直角尾巴与白色空隙修复
++      - 草图识别拆分为 9 大子模块：base / cache / margins / multihole /
++        numbers / vision / lshape，提升可维护性与稳定性
++      - 圆角裁剪 border/mask 独立模块：image_cropper_border / image_cropper_mask
++
++使用方式：
++    python packageV2.2.3.py                    # 单文件模式（默认，生成单个 exe，双击即可运行）
++    python packageV2.2.3.py --onedir           # 目录模式（更稳定，若 onefile 有问题可用）
++    python packageV2.2.3.py --debug            # 调试模式（显示控制台窗口，便于排查错误）
++    python packageV2.2.3.py --clean            # 清理旧构建后打包
++    python packageV2.2.3.py --no-tesseract     # 不内嵌 Tesseract（默认已内嵌；OCR 不可用时草图识别将失败，需自装 Tesseract）
++
++依赖：
++    PyInstaller（脚本会自动检测并尝试安装）
++    本机已安装 Tesseract-OCR（默认嵌入 exe，用户机器无需另装）
++"""
++
++from __future__ import annotations
++
++import os
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++# ==================== 配置 ====================
++# 脚本位于 packaging/ 子目录，项目根目录是上一级
++PROJECT_ROOT = Path(__file__).resolve().parent.parent
++# 将项目根目录加入 sys.path，确保 _find_tesseract_install() 能 import core.config.PathResolver
++# （脚本运行时 sys.path[0] 是 packaging/ 子目录，不含项目根目录，会导致 import core 失败，
++#   退回到 fallback 候选列表，而非标准安装路径下的 Tesseract 将无法被内嵌）
++if str(PROJECT_ROOT) not in sys.path:
++    sys.path.insert(0, str(PROJECT_ROOT))
++ENTRY_SCRIPT = PROJECT_ROOT / "main.py"
++# ==================== 版本（单一事实来源） ====================
++# [Fix 2026-09-24 P1-1] exe 名一律由 core.config.APP_VERSION 派生，本脚本内不再
++#   出现任何版本字面量 —— 否则发版时脚本必然滞后于源码（历史事实：仓库已是
++#   V2.2.3，旧入口 packageV2.2.2.py 仍产出标识为 V2.2.2 的 exe）。
++#   这里按**文件路径**直接加载 core/config.py，而不是 `from core.config import ...`：
++#   后者会先执行 core/__init__.py 的聚合导入（image_ops / services.psd.loader /
++#   PyQt5 等），在依赖不完整或版本探测场景下会连带失败。
++def _load_version_constants() -> tuple:
++    import importlib.util
++    cfg_path = PROJECT_ROOT / "core" / "config.py"
++    spec = importlib.util.spec_from_file_location("_ssc_version_probe", cfg_path)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return str(module.APP_VERSION), str(module.APP_DISPLAY_NAME)
++
++
++APP_VERSION, APP_NAME = _load_version_constants()
++ICON_FILE = PROJECT_ROOT / "images" / "SmartShapeCrop.ico"
++LOGO_FILE = PROJECT_ROOT / "images" / "logo.png"
++DIST_DIR = PROJECT_ROOT / "dist"
++BUILD_DIR = PROJECT_ROOT / "build"
++
++HIDDEN_IMPORTS = [
++    "PyQt5.sip",
++    "PyQt5.QtCore",
++    "PyQt5.QtGui",
++    "PyQt5.QtWidgets",
++    "PyQt5.QtPrintSupport",
++    "PIL",
++    "PIL.Image",
++    "PIL.ImageTk",
++    "numpy",
++    "cv2",
++    # 草图识别依赖
++    "pytesseract",
++    "psd_tools",
++    "psd_tools.api",
++    "psd_tools.constants",
++    # 项目内部模块（确保打包时被正确收集）
++    "core",
++    # ===== V2.1 基础核心运行时模块 =====
++    "core.config",          # PathResolver：跨平台 Tesseract 自动定位
++    "core.geometry",        # CropDesign / BorderLayer 数据模型（V2.2.2：多角并集 mask）
++    "core.image_cropper",   # 裁剪主流程
++    "core.image_ops",       # 渲染 + 镜像对称扩展填充
++    "core.log_setup",       # 日志初始化
++    "core.app_settings",    # 应用设置
++    "core.artifact_cleanup",  # 产物清理
++    "core.compat",          # V2.1.2 新增：兼容层（sys.modules 别名重定向旧路径）
++    # ===== V2.1.2 圆角裁剪 border/mask 独立模块 =====
++    "core.image_cropper_border",   # V2.2.2：黑大理石多边框修复落点之一
++    "core.image_cropper_mask",
++    # ===== V2.2 新增：L 形挖角边框补全模块 =====
++    "core.lshape_border",          # 池素材 L 形挖角后新边缘边框层补全
++    "core.lshape_border_route",    # L 形挖角描边/色带/细边框结构重走线（V13 扩展）
++    # ===== V2.2.1 圆角处理子包（抗锯齿修复 / 边框层检测 / 圆弧边框重绘）=====
++    "core.corner",
++    "core.corner.algorithm",       # 单步扇形切割算法
++    "core.corner.detection",       # 边框层自动检测（V2.2.2：黑大理石多边框层判定）
++    "core.corner.sector_render",   # 圆角弧线上的多层边框重绘
++    # ===== 服务层（从 core/ 迁移至 services/）=====
++    "services",
++    "services.parser",                              # 文件名解析 + 模板匹配
++    "services.parser.name_parser",
++    "services.parser.template_matcher",
++    "services.sketch_parser",                       # 草图尺寸识别
++    "services.sketch_parser.sketch_parser",         # 主入口
++    "services.sketch_parser.sketch_parser_base",
++    "services.sketch_parser.sketch_parser_cache",
++    "services.sketch_parser.sketch_parser_margins",
++    "services.sketch_parser.sketch_parser_multihole",
++    "services.sketch_parser.sketch_parser_numbers",
++    "services.sketch_parser.sketch_parser_vision",
++    # V2.2.2：L 形草图解析器新增多角/逐角归属能力
++    "services.sketch_parser.lshape_sketch_parser",
++    "services.psd",                                 # PSD 加载
++    "services.psd.loader",
++    # ===== core/ 旧路径 shim（通过 core.compat sys.modules 别名重定向到 services/）=====
++    "core.parser",                                  # shim → services.parser
++    "core.pool_designer",                           # shim → services.sketch_parser
++    "core.psd",                                     # shim → services.psd
++    # 注意：core.psd / core.parser / core.pool_designer 均为**目录占位 shim**
++    # （core/psd/ 下只有 __init__.py，无 loader.py），真实实现已迁到 services/，
++    # 由 core.compat 用 sys.modules 别名重定向。因此**不要**声明
++    # core.psd.loader / core.parser.name_parser 之类子路径 ——
++    # PyInstaller 静态分析查不到这些文件，会报
++    # "ERROR: Hidden import 'core.psd.loader' not found"（虽不致命，但污染日志）。
++    # 真正需要收集的是 services.psd.loader（已在上面列出）。
++    # ===== GUI（V2.1.2 拆分为多个子模块，V2.2 新增 L 形面板）=====
++    "gui",
++    "gui.canvas_widget",
++    "gui.property_panel",          # 主属性面板（V2.2.2：多边 L 形多行参数录入/回填）
++    "gui.cropper_panel",
++    # V2.1.2 新增：GUI 子模块拆分
++    "gui.property_panel_dialogs",   # 对话框
++    "gui.property_panel_generate",  # 生成器
++    "gui.property_panel_layers",    # 图层管理
++    "gui.property_panel_poolbox",   # 多洞参数面板（QFormLayout + QDoubleSpinBox）
++    "gui.property_panel_widgets",   # 自定义控件
++    "gui.property_panel_workers",   # 工作线程 shim（→ workers/）
++    # V2.2 新增：L 形挖角独立 GUI 面板
++    "gui.lshape_panel",            # L 形挖角设计面板（草图上传 + 目标文件名 + 一键生成）
++    # V2.2.1 新增：LShapePanel 信号桥接适配器（[H-13]，property_panel 内惰性导入，必须显式收集）
++    "gui.lshape_panel_bridge",
++    # ===== Workers 层（从 gui/ 提取，QThread Worker 集中管理）=====
++    "workers",
++    "workers.property_panel_workers",  # 水池设计相关 Worker
++    "workers.cropper_workers",         # 裁剪相关 Worker
++    "workers.canvas_workers",          # 画布渲染相关 Worker
++    # ===== Models 层（数据模型，纯数据结构）=====
++    "models",
++    "models.design_model",              # DesignModel：CropDesign 包装器
++]
++
++# 需要复制元数据的包（运行时依赖包的元数据）
++COPY_METADATA_PACKAGES = [
++    "Pillow",
++    "numpy",
++    "pytesseract",
++    "psd-tools",
++]
++
++# 需要 collect-all 的包（包含动态加载的子模块/资源）
++COLLECT_ALL_PACKAGES = [
++    "PyQt5.Qt5",
++    "pytesseract",
++]
++
++# 需要 collect-submodules 的包
++COLLECT_SUBMODULES_PACKAGES = [
++    "PyQt5",
++    "psd_tools",
++]
++
++
++def _print_step(idx: int, total: int, msg: str) -> None:
++    print(f"\n[{idx}/{total}] {msg}")
++
++
++def _fail(msg: str) -> None:
++    print(f"\n[ERROR] {msg}", file=sys.stderr)
++    sys.exit(1)
++
++
++def parse_args() -> dict:
++    args = {
++        "mode": "onefile",          # onefile | onedir（默认单文件）
++        "debug": False,
++        "clean": False,
++        "embed_tesseract": True,    # 默认内嵌 Tesseract 到 exe，用户机器免安装即可用 OCR
++    }
++    for arg in sys.argv[1:]:
++        if arg == "--onefile":
++            args["mode"] = "onefile"
++        elif arg == "--onedir":
++            args["mode"] = "onedir"
++        elif arg == "--debug":
++            args["debug"] = True
++        elif arg == "--clean":
++            args["clean"] = True
++        elif arg == "--no-tesseract":
++            args["embed_tesseract"] = False
++        elif arg == "--with-tesseract":
++            # 兼容旧参数：默认已内嵌，此参数仅作为旧用法兼容，无实际效果
++            print("      [提示] --with-tesseract 已弃用（默认即内嵌 Tesseract），可忽略")
++        elif arg in ("-h", "--help"):
++            print(__doc__)
++            sys.exit(0)
++        else:
++            _fail(f"未知参数: {arg}（使用 --help 查看帮助）")
++    return args
++
++
++def check_resources() -> None:
++    _print_step(1, 5, "检查资源文件...")
++    if not ENTRY_SCRIPT.is_file():
++        _fail(f"缺少入口脚本: {ENTRY_SCRIPT}")
++    if not ICON_FILE.is_file():
++        _fail(f"缺少 exe 图标: {ICON_FILE}")
++    if not LOGO_FILE.is_file():
++        _fail(f"缺少窗口图标: {LOGO_FILE}")
++    print(f"      OK: 入口脚本  {ENTRY_SCRIPT.name}")
++    print(f"      OK: exe 图标 {ICON_FILE.name}")
++    print(f"      OK: 窗口图标 {LOGO_FILE.name}")
++
++
++def _get_pyinstaller_version() -> tuple[int, ...] | None:
++    try:
++        import PyInstaller
++        parts = PyInstaller.__version__.split(".")
++        return tuple(int(p) for p in parts[:3])
++    except Exception:
++        return None
++
++
++def ensure_pyinstaller() -> None:
++    _print_step(2, 5, "检查 PyInstaller...")
++    result = subprocess.run(
++        [sys.executable, "-m", "pip", "show", "pyinstaller"],
++        capture_output=True, text=True,
++    )
++    if result.returncode != 0:
++        print("      PyInstaller 未安装，正在安装...")
++        r = subprocess.run(
++            [sys.executable, "-m", "pip", "install", "pyinstaller"],
++            capture_output=True, text=True,
++        )
++        if r.returncode != 0:
++            print(r.stdout); print(r.stderr, file=sys.stderr)
++            _fail("PyInstaller 安装失败，请手动执行: pip install pyinstaller")
++    else:
++        pyinst_ver = _get_pyinstaller_version()
++        if pyinst_ver and pyinst_ver < (6, 0):
++            print(f"      PyInstaller {'.'.join(str(v) for v in pyinst_ver)} 版本较旧，正在升级...")
++            r = subprocess.run(
++                [sys.executable, "-m", "pip", "install", "--upgrade", "pyinstaller"],
++                capture_output=True, text=True,
++            )
++            if r.returncode != 0:
++                print("      [WARN] 升级失败，继续使用当前版本")
++            else:
++                print("      OK: PyInstaller 已升级")
++    print("      OK: PyInstaller 已就绪")
++
++
++def clean_build() -> None:
++    if DIST_DIR.exists():
++        print(f"      清理 {DIST_DIR}")
++        shutil.rmtree(DIST_DIR, ignore_errors=True)
++    if BUILD_DIR.exists():
++        print(f"      清理 {BUILD_DIR}")
++        shutil.rmtree(BUILD_DIR, ignore_errors=True)
++    # 仅清理本脚本生成的 .spec，避免误删其他手工维护的 .spec
++    v2_spec = PROJECT_ROOT / f"{APP_NAME}.spec"
++    if v2_spec.exists():
++        print(f"      清理 {v2_spec.name}")
++        v2_spec.unlink(missing_ok=True)
++
++
++def _build_cmd(mode: str, debug: bool, tesseract_src_dir: Path | None = None) -> list[str]:
++    """构建 PyInstaller 命令行参数
++
++    Args:
++        tesseract_src_dir: 本机 Tesseract 安装目录；非空则通过 --add-data 内嵌到 exe，
++            运行时由 PathResolver 在 _MEIPASS/tesseract 下自动定位。
++    """
++    cmd: list[str] = [
++        sys.executable, "-m", "PyInstaller",
++        "--noconfirm",
++        "--clean",
++        "--name", APP_NAME,
++        "--icon", str(ICON_FILE),
++        "--add-data", f"{str(LOGO_FILE)};images",
++    ]
++
++    # 内嵌 Tesseract（onefile 运行时解压到 _MEIPASS/tesseract，由 PathResolver 自动发现）
++    if tesseract_src_dir is not None:
++        sep = ";" if os.name == "nt" else ":"
++        cmd.extend(["--add-data", f"{str(tesseract_src_dir)}{sep}tesseract"])
++
++    # collect-all：收集包的全部子模块、二进制和数据文件
++    for pkg in COLLECT_ALL_PACKAGES:
++        cmd.extend(["--collect-all", pkg])
++
++    # collect-submodules：仅收集子模块
++    for pkg in COLLECT_SUBMODULES_PACKAGES:
++        cmd.extend(["--collect-submodules", pkg])
++
++    # copy-metadata：复制包的元数据（部分运行时依赖）
++    for pkg in COPY_METADATA_PACKAGES:
++        cmd.extend(["--copy-metadata", pkg])
++
++    # hidden-import：显式声明隐藏导入（含 V2.2.2 全部新增模块）
++    for imp in HIDDEN_IMPORTS:
++        cmd.extend(["--hidden-import", imp])
++
++    if debug:
++        cmd.append("--console")
++    else:
++        cmd.append("--windowed")
++
++    if mode == "onefile":
++        # onefile 模式：运行时自动解压到系统临时目录 %TEMP%\_MEIxxxxxx\
++        # 内嵌的 Tesseract 同样会解压到 _MEIPASS/tesseract，由 PathResolver 自动定位
++        cmd.append("--onefile")
++    else:
++        cmd.append("--onedir")
++
++    cmd.append(str(ENTRY_SCRIPT))
++    return cmd
++
++
++def _run_build(mode: str, debug: bool, tesseract_src_dir: Path | None = None) -> bool:
++    cmd = _build_cmd(mode, debug, tesseract_src_dir)
++    print(f"      命令: {' '.join(cmd)}")
++    print("      注意：首次打包较慢（约 2-5 分钟），请耐心等待...\n")
++
++    result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
++    return result.returncode == 0
++
++
++def build_exe(mode: str, debug: bool, embed_tesseract: bool) -> tuple[bool, str]:
++    """打包 exe，返回 (是否内嵌了 Tesseract, 说明文字)。
++
++    若 embed_tesseract=True 但本机未找到 Tesseract 安装目录，
++    则发出警告并继续打包（运行时草图 OCR 将不可用，需用户自装 Tesseract）。
++    """
++    _print_step(3, 5, "开始打包（PyInstaller）...")
++    py_ver = sys.version.split()[0]
++    pyinst_ver = _get_pyinstaller_version()
++    print(f"      Python 版本: {py_ver}")
++    print(f"      PyInstaller : {'.'.join(str(v) for v in pyinst_ver) if pyinst_ver else '待安装'}")
++    print(f"      exe 名称: {APP_NAME}")
++    print(f"      exe 图标: {ICON_FILE.name}")
++    print(f"      打包模式: {'单文件 (onefile, 默认)' if mode == 'onefile' else '目录 (onedir)'}")
++    print(f"      调试模式: {'是（显示控制台）' if debug else '否（无控制台）'}")
++
++    tess_src_dir: Path | None = None
++    tess_info: str = ""
++    if embed_tesseract:
++        tess_src_dir = _find_tesseract_install()
++        if tess_src_dir is None:
++            tess_info = "本机未找到 Tesseract-OCR 安装目录，未内嵌；运行时草图 OCR 将不可用（7 步法无几何降级路径）"
++            print(f"\n      [!] {tess_info}")
++            print("          可设置环境变量 TESSERACT_PATH 指向 tesseract.exe 后重试")
++        else:
++            size_mb = _dir_size_mb(tess_src_dir)
++            tess_info = f"已内嵌 Tesseract（源 {tess_src_dir}，约 {size_mb:.1f}MB）到 exe"
++            print(f"      内嵌 Tesseract: {tess_src_dir} (约 {size_mb:.1f}MB)")
++    else:
++        tess_info = "未启用内嵌（用户机器如需草图 OCR 需自装 Tesseract-OCR 引擎）"
++        print(f"      内嵌 Tesseract: 否")
++
++    success = _run_build(mode, debug, tess_src_dir)
++    if not success and mode == "onefile":
++        print("\n      [!] onefile 打包失败，自动回退到 onedir 模式...")
++        success = _run_build("onedir", debug, tess_src_dir)
++        if success:
++            print("\n      [√] onedir 模式打包成功！")
++    if not success:
++        _fail("打包失败，请检查上方错误信息")
++
++    return (tess_src_dir is not None, tess_info)
++
++
++def _dir_size_mb(path: Path) -> float:
++    """估算目录总大小（MB），仅用于打包日志显示。"""
++    total = 0
++    try:
++        for p in path.rglob("*"):
++            if p.is_file():
++                total += p.stat().st_size
++    except Exception:
++        pass
++    return total / (1024 * 1024)
++
++
++def _find_tesseract_install() -> Path | None:
++    """查找本机已安装的 Tesseract-OCR 目录（包含 tesseract.exe + tessdata 子文件夹）。"""
++    # [Q-04] 优先读取 TESSERACT_PATH 环境变量（可指向 tesseract.exe 或安装目录）
++    env_path = os.environ.get('TESSERACT_PATH', '').strip().strip('"')
++    if env_path:
++        p = Path(env_path)
++        if p.is_file():
++            p = p.parent
++        if ((p / "tesseract.exe").is_file() or (p / "tesseract").is_file()) \
++                and (p / "tessdata").is_dir():
++            return p
++
++    # 使用 PathResolver 跨平台查找
++    try:
++        from core.config import PathResolver
++        PathResolver.clear_cache()
++        exe_path, tessdata_path = PathResolver.find_tesseract()
++        if exe_path:
++            return Path(os.path.dirname(exe_path))
++    except Exception:
++        pass
++
++    # Fallback：保留原有搜索逻辑作为兜底
++    candidates = [
++        r"C:\Program Files\Tesseract-OCR",
++        r"C:\Program Files (x86)\Tesseract-OCR",
++        os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR"),
++        # 非标准安装路径（如 D:\Programs\Tesseract-OCR）
++        r"D:\Programs\Tesseract-OCR", r"E:\Programs\Tesseract-OCR",
++        r"F:\Programs\Tesseract-OCR",
++        r"D:\Tesseract-OCR", r"E:\Tesseract-OCR", r"F:\Tesseract-OCR",
++        # macOS
++        "/usr/local/opt/tesseract",
++        "/opt/homebrew/opt/tesseract",
++        # Linux
++        "/usr/share/tesseract-ocr",
++        "/usr/lib/tesseract",
++    ]
++    for c in candidates:
++        p = Path(c)
++        if (p / "tesseract.exe").is_file() and (p / "tessdata").is_dir():
++            return p
++        if (p / "tesseract").is_file() and (p / "tessdata").is_dir():
++            return p
++    return None
++
++
++def show_result(mode: str, tesseract_embedded: bool, tess_info: str) -> None:
++    _print_step(5, 5, "打包完成")
++    if mode == "onefile":
++        exe_path = DIST_DIR / f"{APP_NAME}.exe"
++    else:
++        exe_path = DIST_DIR / APP_NAME / f"{APP_NAME}.exe"
++
++    print("\n" + "=" * 60)
++    print("  打包成功！")
++    print("=" * 60)
++    print(f"  输出目录 : {DIST_DIR}")
++    print(f"  可执行文件: {exe_path}")
++    print(f"  OCR 状态: {'已内嵌 Tesseract，用户免安装即可使用草图 OCR' if tesseract_embedded else tess_info}")
++    print("=" * 60)
++
++    if mode == "onefile":
++        print("\n  使用说明（单文件模式）:")
++        print(f"    直接双击 {APP_NAME}.exe 即可运行，无需其他文件。")
++        print("    首次启动需要解压临时文件（到系统临时目录），可能需要 5-15 秒。")
++        print()
++        print("    重要提示：")
++        print("      1. 拷贝到其他机器之前，先在本机双击测试能否正常运行")
++        print("      2. 若仍打不开，在 exe 同目录会生成 crash.log，把该日志发给开发者")
++        if tesseract_embedded:
++            print("      3. [OCR 已内嵌] Tesseract 已打包进 exe 内部，单 exe 分发即可使用草图 OCR")
++            print("         用户无需单独安装 Tesseract，无需附带任何外部文件夹")
++        else:
++            print("      3. [OCR 未内嵌] 草图识别需 Tesseract-OCR，未内嵌时识别将失败（无几何估算降级路径）；")
++            print("         可让用户自行安装，或本机装好 Tesseract 后重新打包")
++    else:
++        folder = DIST_DIR / APP_NAME
++        print(f"\n  使用说明（目录模式）:")
++        print(f"    1. 保持整个文件夹 ({folder.name}) 完整，不要单独移动 exe")
++        print(f"    2. 双击文件夹内的 {APP_NAME}.exe 即可运行")
++        print(f"    3. 如需分发：右键整个文件夹 → 发送到 → 压缩(zipped)文件夹")
++        if tesseract_embedded:
++            print("      4. [OCR 已内嵌] Tesseract 已打包进 exe 内部，文件夹分发即可使用草图 OCR")
++    print()
++
++
++def main() -> None:
++    args = parse_args()
++    print("=" * 60)
++    print(f"  SmartShapeCrop V{APP_VERSION} 打包工具")
++    print(f"  exe 名称: {APP_NAME}")
++    print(f"  exe 图标: {ICON_FILE.name}")
++    print(f"  Python:   {sys.version.split()[0]}")
++    print(f"  内嵌Tesseract: {'是（用户免安装 OCR）' if args['embed_tesseract'] else '否（用户机器需自装或降级）'}")
++    print("=" * 60)
++
++    check_resources()
++    ensure_pyinstaller()
++
++    if args["clean"]:
++        _print_step(3, 5, "清理旧构建产物...")
++        clean_build()
++
++    embedded, tess_info = build_exe(args["mode"], args["debug"], args["embed_tesseract"])
++    show_result(args["mode"], embedded, tess_info)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/packaging/specs/智能裁剪设计器V2.2.3.spec b/packaging/specs/智能裁剪设计器V2.2.3.spec
+new file mode 100644
+index 0000000..2b7b3e3
+--- /dev/null
++++ b/packaging/specs/智能裁剪设计器V2.2.3.spec
+@@ -0,0 +1,81 @@
++# -*- mode: python ; coding: utf-8 -*-
++import os
++
++from PyInstaller.utils.hooks import collect_submodules
++from PyInstaller.utils.hooks import collect_all
++from PyInstaller.utils.hooks import copy_metadata
++
++datas = [('F:/SmartShapeCrop/images/logo.png', 'images')]
++
++# [Q-04] Tesseract 内嵌目录改为读取 TESSERACT_PATH 环境变量（可指向安装目录或 tesseract.exe）。
++# 未设置时回退历史默认目录；两者均无效则不内嵌（运行时由 core.config.PathResolver 自动定位/降级），
++# 不再因写死路径导致换机打包失败。
++def _tess_dir_valid(d):
++    return (os.path.isfile(os.path.join(d, 'tesseract.exe'))
++            or os.path.isfile(os.path.join(d, 'tesseract'))) \
++        and os.path.isdir(os.path.join(d, 'tessdata'))
++
++
++_tess_env = os.environ.get('TESSERACT_PATH', '').strip().strip('"')
++if _tess_env and os.path.isfile(_tess_env):
++    _tess_env = os.path.dirname(_tess_env)
++_tess_dir = next(
++    (d for d in (_tess_env, r'D:/Programs/Tesseract-OCR') if d and _tess_dir_valid(d)),
++    None,
++)
++if _tess_dir:
++    print(f'[spec] 内嵌 Tesseract: {_tess_dir} -> tesseract/')
++    datas.append((_tess_dir, 'tesseract'))
++else:
++    print('[spec] 未找到有效 Tesseract 目录（可设置 TESSERACT_PATH 环境变量后重试），本次打包不内嵌 OCR')
++
++binaries = []
++hiddenimports = ['PyQt5.sip', 'PyQt5.QtCore', 'PyQt5.QtGui', 'PyQt5.QtWidgets', 'PyQt5.QtPrintSupport', 'PIL', 'PIL.Image', 'PIL.ImageTk', 'numpy', 'cv2', 'pytesseract', 'psd_tools', 'psd_tools.api', 'psd_tools.constants', 'core', 'core.config', 'core.geometry', 'core.image_cropper', 'core.image_ops', 'core.log_setup', 'core.app_settings', 'core.artifact_cleanup', 'core.compat', 'core.image_cropper_border', 'core.image_cropper_mask', 'core.lshape_border', 'core.lshape_border_route', 'core.corner', 'core.corner.algorithm', 'core.corner.detection', 'core.corner.sector_render', 'services', 'services.parser', 'services.parser.name_parser', 'services.parser.template_matcher', 'services.sketch_parser', 'services.sketch_parser.sketch_parser', 'services.sketch_parser.sketch_parser_base', 'services.sketch_parser.sketch_parser_cache', 'services.sketch_parser.sketch_parser_margins', 'services.sketch_parser.sketch_parser_multihole', 'services.sketch_parser.sketch_parser_numbers', 'services.sketch_parser.sketch_parser_vision', 'services.sketch_parser.lshape_sketch_parser', 'services.psd', 'services.psd.loader', 'core.parser', 'core.pool_designer', 'core.psd', 'gui', 'gui.canvas_widget', 'gui.property_panel', 'gui.cropper_panel', 'gui.property_panel_dialogs', 'gui.property_panel_generate', 'gui.property_panel_layers', 'gui.property_panel_poolbox', 'gui.property_panel_widgets', 'gui.property_panel_workers', 'gui.lshape_panel', 'gui.lshape_panel_bridge', 'workers', 'workers.property_panel_workers', 'workers.cropper_workers', 'workers.canvas_workers', 'models', 'models.design_model']
++datas += copy_metadata('Pillow')
++datas += copy_metadata('numpy')
++datas += copy_metadata('pytesseract')
++datas += copy_metadata('psd-tools')
++hiddenimports += collect_submodules('PyQt5')
++hiddenimports += collect_submodules('psd_tools')
++tmp_ret = collect_all('PyQt5.Qt5')
++datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
++tmp_ret = collect_all('pytesseract')
++datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
++
++
++a = Analysis(
++    ['F:/SmartShapeCrop/main.py'],
++    pathex=[],
++    binaries=binaries,
++    datas=datas,
++    hiddenimports=hiddenimports,
++    hookspath=[],
++    hooksconfig={},
++    runtime_hooks=[],
++    excludes=[],
++    noarchive=False,
++    optimize=0,
++)
++pyz = PYZ(a.pure)
++
++exe = EXE(
++    pyz,
++    a.scripts,
++    a.binaries,
++    a.datas,
++    [],
++    name='智能裁剪设计器V2.2.3',
++    debug=False,
++    bootloader_ignore_signals=False,
++    strip=False,
++    upx=True,
++    upx_exclude=[],
++    runtime_tmpdir=None,
++    console=False,
++    disable_windowed_traceback=False,
++    argv_emulation=False,
++    target_arch=None,
++    codesign_identity=None,
++    entitlements_file=None,
++    icon=['F:/SmartShapeCrop/images/SmartShapeCrop.ico'],
++)
+diff --git a/tests/core/test_app_version_single_source.py b/tests/core/test_app_version_single_source.py
+new file mode 100644
+index 0000000..7b7cbf7
+--- /dev/null
++++ b/tests/core/test_app_version_single_source.py
+@@ -0,0 +1,151 @@
++"""
++tests/core/test_app_version_single_source.py
++[Fix 2026-09-24 P1-1 / P2-3] 版本号单一事实来源（``core.config.APP_VERSION``）。
++
++根因
++----
++2026-09-24 审查实测：全项目 ``git grep __version__`` 仅命中第三方
++``PyInstaller.__version__``，项目自身**没有任何版本常量**，版本只靠提交信息与
++散落文档追踪 —— 由此产生「仓库已是 V2.2.3、打包脚本仍叫 packageV2.2.2 并产出
++标识为 V2.2.2 的 exe」的错位（P1-1）。
++
++约定
++----
++发版只改 ``core/config.py`` 的 ``APP_VERSION`` 一行；下列消费方一律引用它：
++  - ``packaging/packageV<版本>.py`` → exe 名 / 打包横幅
++  - ``core/log_setup.py``           → 启动日志头
++  - ``main.py``                     → 「关于」对话框
++
++本文件锁住「单一来源」这件事本身：常量存在且格式正确、派生名一致、
++三个消费方都真实引用它、打包脚本内不再硬编码版本字面量。
++"""
++import ast
++import importlib.util
++import re
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++PROJECT_ROOT = Path(__file__).resolve().parents[2]
++
++from core.config import APP_DISPLAY_NAME, APP_VERSION
++
++PACKAGE_SCRIPT = PROJECT_ROOT / 'packaging' / 'packageV2.2.3.py'
++SPEC_FILE = PROJECT_ROOT / 'packaging' / 'specs' / f'{APP_DISPLAY_NAME}.spec'
++
++
++# ---------------------------------------------------------------------------
++# 1) 常量本身
++# ---------------------------------------------------------------------------
++
++class TestVersionConstant:
++    def test_is_semver_like_string(self):
++        assert isinstance(APP_VERSION, str)
++        assert re.fullmatch(r'\d+\.\d+(\.\d+)?', APP_VERSION), APP_VERSION
++
++    def test_display_name_derived_from_version(self):
++        assert APP_DISPLAY_NAME == f'智能裁剪设计器V{APP_VERSION}'
++
++    def test_single_definition_point(self):
++        """全项目只应有一个 APP_VERSION 赋值点。
++
++        跳过隐藏目录与归档/产物目录 —— 尤其是 ``.pytest_tmp``：验证脚本会在其下
++        复制一份仓库子集（用于补丁往返校验），若不跳过会误判为「多个定义点」。
++        """
++        skip_parts = {'.venv', '.git', '.pytest_cache', '.pytest_tmp', '.workbuddy',
++                      '.dumate', '.trae-html-share-packages', '__pycache__',
++                      '_archive', 'build', 'dist', 'ProductSummary'}
++        hits = []
++        for path in PROJECT_ROOT.rglob('*.py'):
++            rel = path.relative_to(PROJECT_ROOT)
++            if set(rel.parts) & skip_parts:
++                continue
++            if any(p.startswith('.') for p in rel.parts[:-1]):
++                continue
++            text = path.read_text(encoding='utf-8', errors='replace')
++            if re.search(r'^\s*APP_VERSION\s*[:=]', text, re.M):
++                hits.append(rel.as_posix())
++        assert hits == ['core/config.py'], f'APP_VERSION 定义点不唯一：{hits}'
++
++
++# ---------------------------------------------------------------------------
++# 2) 打包脚本
++# ---------------------------------------------------------------------------
++
++def _load_package_script():
++    spec = importlib.util.spec_from_file_location('_ssc_pkg_probe', PACKAGE_SCRIPT)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++class TestPackagingScript:
++    def test_new_entry_exists(self):
++        assert PACKAGE_SCRIPT.is_file(), '缺少 packaging/packageV2.2.3.py'
++        assert SPEC_FILE.is_file(), f'缺少 spec：{SPEC_FILE.name}'
++
++    def test_exe_name_matches_app_version(self):
++        module = _load_package_script()
++        assert module.APP_VERSION == APP_VERSION
++        assert module.APP_NAME == APP_DISPLAY_NAME
++
++    def test_no_hardcoded_version_literal_in_code(self):
++        """可执行代码里不得再出现版本字面量（文档串里的历史叙述不算）。"""
++        tree = ast.parse(PACKAGE_SCRIPT.read_text(encoding='utf-8'))
++        docstrings = set()
++        for node in ast.walk(tree):
++            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef)):
++                body = getattr(node, 'body', [])
++                if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
++                    docstrings.add(id(body[0].value))
++        offenders = []
++        for node in ast.walk(tree):
++            if isinstance(node, ast.Constant) and isinstance(node.value, str):
++                if id(node) in docstrings:
++                    continue
++                if re.search(r'\d+\.\d+\.\d+', node.value):
++                    offenders.append((node.lineno, node.value[:60]))
++        assert offenders == [], f'打包脚本内仍有硬编码版本字面量：{offenders}'
++
++    def test_spec_name_matches_display_name(self):
++        assert f"name='{APP_DISPLAY_NAME}'" in SPEC_FILE.read_text(encoding='utf-8')
++
++
++# ---------------------------------------------------------------------------
++# 3) 日志头与 GUI 关于框
++# ---------------------------------------------------------------------------
++
++class TestConsumers:
++    def test_log_setup_source_references_version(self):
++        src = (PROJECT_ROOT / 'core' / 'log_setup.py').read_text(encoding='utf-8')
++        assert 'APP_VERSION' in src
++
++    def test_log_header_actually_contains_version(self, tmp_path):
++        log_file = tmp_path / 'probe.log'
++        code = (
++            "from core.log_setup import setup_logging\n"
++            f"setup_logging(level='INFO', log_file=r'{log_file}', console=False)\n"
++        )
++        proc = subprocess.run([sys.executable, '-c', code], cwd=str(PROJECT_ROOT),
++                              capture_output=True, text=True, encoding='utf-8',
++                              errors='replace')
++        assert proc.returncode == 0, proc.stderr
++        text = log_file.read_text(encoding='utf-8')
++        assert f'SmartShapeCrop v{APP_VERSION}' in text, text[:400]
++
++    def test_main_about_dialog_references_version(self):
++        src = (PROJECT_ROOT / 'main.py').read_text(encoding='utf-8')
++        tree = ast.parse(src)
++        about = None
++        for node in ast.walk(tree):
++            if isinstance(node, ast.FunctionDef) and node.name == '_about':
++                about = node
++        assert about is not None, 'main.py 未找到 _about'
++        body = ast.get_source_segment(src, about)
++        assert 'APP_VERSION' in body, '「关于」对话框未引用 APP_VERSION'
++
++    def test_main_imports_version_from_config(self):
++        src = (PROJECT_ROOT / 'main.py').read_text(encoding='utf-8')
++        assert re.search(r'from core\.config import[^\n]*APP_VERSION', src)
+diff --git a/tests/core/test_config_tesseract_probe_hardened.py b/tests/core/test_config_tesseract_probe_hardened.py
+new file mode 100644
+index 0000000..b92d79f
+--- /dev/null
++++ b/tests/core/test_config_tesseract_probe_hardened.py
+@@ -0,0 +1,117 @@
++"""
++tests/core/test_config_tesseract_probe_hardened.py
++[Fix 2026-09-24 P1-7] ``PathResolver`` 探测 Tesseract 时不再用 ``os.popen``。
++
++缺陷本质
++--------
++``core/config.py::PathResolver._do_find_tesseract`` 在「系统 PATH」分支里用
++
++    result = os.popen('tesseract --list-langs 2>&1').read()
++
++探测语言包。三个问题：
++  1. ``os.popen`` **起 shell**（此处参数是字面量、无注入面，但属不必要的 shell 依赖）；
++  2. 返回的管道对象**从不 close**（文件句柄泄漏，每次调用泄漏一个）；
++  3. 依赖 shell 的 PATH 二次解析，而调用点刚刚已用 ``shutil.which`` 解析出绝对路径。
++
++修复
++----
++改为 ``subprocess.run([path_exe, '--list-langs'], stdout=PIPE, stderr=STDOUT, ...)``，
++复用已解析的 ``path_exe``，不启用 shell，stderr 合并进 stdout 以保持原语义。
++**容错语义不变**：任何异常一律忽略，``tessdata`` 维持 ``None``。
++
++本文件锁住：源码不再出现 ``os.popen``，以及四种探测结果与旧实现一致。
++"""
++import ast
++import shutil
++import subprocess
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++PROJECT_ROOT = Path(__file__).resolve().parents[2]
++
++from core import config as config_mod
++from core.config import PathResolver
++
++CONFIG_PY = PROJECT_ROOT / 'core' / 'config.py'
++FAKE_EXE = r'C:\fake\tesseract-ocr\tesseract.exe'
++
++
++@pytest.fixture()
++def path_branch(monkeypatch):
++    """把 ``_do_find_tesseract`` 逼进「系统 PATH」分支，并隔离全局状态。
++
++    注意：``core/config.py`` 在函数体内做 ``import shutil``，绑定到的是
++    ``sys.modules`` 里的真实模块，因此必须 patch ``shutil.which`` 这个**模块属性**，
++    而不是 ``config_mod.shutil``（后者不存在，patch 了也不生效）。
++    """
++    monkeypatch.setattr(config_mod, 'TESSERACT_SEARCH_PATH_TEMPLATES', [], raising=True)
++    monkeypatch.setattr(shutil, 'which', lambda name: FAKE_EXE)
++    PathResolver.clear_cache()
++    yield
++    PathResolver.clear_cache()
++
++
++def _patch_run(monkeypatch, *, stdout=None, raises=None):
++    calls = []
++
++    def fake_run(args, **kwargs):
++        calls.append((args, kwargs))
++        if raises is not None:
++            raise raises
++        return SimpleNamespace(stdout=stdout)
++
++    monkeypatch.setattr(subprocess, 'run', fake_run)
++    return calls
++
++
++class TestNoPopenInSource:
++    # 说明：此处**只能**用 AST 判定。修复点的说明注释里会引述旧写法
++    # `os.popen('tesseract --list-langs 2>&1')`，任何原文/正则扫描都会误伤自己。
++    def test_ast_has_no_popen_call(self):
++        tree = ast.parse(CONFIG_PY.read_text(encoding='utf-8'))
++        offenders = [
++            node.lineno for node in ast.walk(tree)
++            if isinstance(node, ast.Call)
++            and isinstance(node.func, ast.Attribute)
++            and node.func.attr == 'popen'
++        ]
++        assert offenders == [], f'core/config.py 仍调用 os.popen（行 {offenders}）'
++
++    def test_ast_has_no_popen_reference_at_all(self):
++        tree = ast.parse(CONFIG_PY.read_text(encoding='utf-8'))
++        names = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
++        assert 'popen' not in names
++
++
++class TestProbeBehaviour:
++    def test_detects_system_langs(self, path_branch, monkeypatch):
++        calls = _patch_run(monkeypatch, stdout='List of available languages:\neng\nchi_sim\n')
++        assert PathResolver._do_find_tesseract() == (FAKE_EXE, 'system')
++        args, kwargs = calls[0]
++        assert args == [FAKE_EXE, '--list-langs'], '应复用已解析的绝对路径，而非裸命令名'
++        assert kwargs.get('shell') is not True, '不应启用 shell'
++        assert kwargs.get('stderr') is subprocess.STDOUT, 'stderr 应合并进 stdout（保持原 2>&1 语义）'
++
++    def test_eng_only_still_detected(self, path_branch, monkeypatch):
++        _patch_run(monkeypatch, stdout='eng\n')
++        assert PathResolver._do_find_tesseract() == (FAKE_EXE, 'system')
++
++    def test_unknown_langs_leave_tessdata_none(self, path_branch, monkeypatch):
++        _patch_run(monkeypatch, stdout='List of available languages:\nosd\n')
++        assert PathResolver._do_find_tesseract() == (FAKE_EXE, None)
++
++    @pytest.mark.parametrize('exc', [
++        FileNotFoundError('missing'),
++        subprocess.TimeoutExpired(cmd='tesseract', timeout=1),
++        OSError('boom'),
++    ], ids=['FileNotFoundError', 'TimeoutExpired', 'OSError'])
++    def test_probe_failure_is_swallowed(self, path_branch, monkeypatch, exc):
++        """原实现的 ``except Exception: pass`` 语义必须保留：异常不外泄。"""
++        _patch_run(monkeypatch, raises=exc)
++        assert PathResolver._do_find_tesseract() == (FAKE_EXE, None)
++
++    def test_no_tesseract_on_path_returns_none(self, path_branch, monkeypatch):
++        monkeypatch.setattr(shutil, 'which', lambda name: None)
++        assert PathResolver._do_find_tesseract() == (None, None)
+diff --git a/tests/core/test_debug_residue_removed.py b/tests/core/test_debug_residue_removed.py
+new file mode 100644
+index 0000000..6bc1038
+--- /dev/null
++++ b/tests/core/test_debug_residue_removed.py
+@@ -0,0 +1,168 @@
++"""
++tests/core/test_debug_residue_removed.py
++[Fix 2026-09-24 P1-4 + P2-5] L 形渲染热路径上的调试残留清理。
++
++被清理的两类残留（均在 ``core/image_ops.py``）
++-------------------------------------------
++1. **8 处无条件 ``print(..., flush=True)``** —— 原为 2026-09-10 定位 cut 坐标的临时
++   打印，却挂在 ``render_design`` 的每次 L 形渲染热路径上，且带 ``flush=True``
++   强制刷盘。打包为 ``--windowed``（无控制台）时 stdout 不可见，纯属性能损耗与死代码。
++2. **``_dbg = False`` 「临时开关」及其实参传递链** —— 贯穿 ``render_design`` 与
++   4 个辅助函数（``_render_outer_background`` / ``_apply_lshape_bg_overlay`` /
++   ``_render_lshape_cut`` / ``_apply_unified_black_border`` /
++   ``_lshape_border_completion``），注释自称「问题定位后改 False」却遗留 14 天。
++   其下全部 ``if _dbg:`` 分支恒不可达。
++
++「不改功能」的论证
++-----------------
++被删除的 ``if _dbg:`` 块内**只有 logger 输出、print 与纯局部变量赋值**
++（无 return、无画布写入、无外部副作用）；且守卫是字面量 ``False``，等价于删除。
++本文件用「源码级锁定（AST）+ 渲染行为锁定」双重防回归。
++"""
++import ast
++import inspect
++from pathlib import Path
++
++import numpy as np
++import pytest
++from PIL import Image
++
++PROJECT_ROOT = Path(__file__).resolve().parents[2]
++
++from core.image_ops import (
++    _apply_lshape_bg_overlay,
++    _apply_unified_black_border,
++    _lshape_border_completion,
++    _render_lshape_cut,
++    _render_outer_background,
++    render_design,
++)
++
++IMAGE_OPS = PROJECT_ROOT / 'core' / 'image_ops.py'
++HELPERS = (
++    _render_outer_background,
++    _apply_lshape_bg_overlay,
++    _render_lshape_cut,
++    _apply_unified_black_border,
++    _lshape_border_completion,
++)
++
++
++# ---------------------------------------------------------------------------
++# 1) 源码级锁定
++# ---------------------------------------------------------------------------
++
++class TestNoDebugResidueAtSourceLevel:
++    @staticmethod
++    def _tree():
++        return ast.parse(IMAGE_OPS.read_text(encoding='utf-8'))
++
++    def test_no_dbg_identifier_in_code(self):
++        """AST 只看可执行代码，天然排除注释与文档串。"""
++        found = []
++        for node in ast.walk(self._tree()):
++            if isinstance(node, ast.Name) and node.id == '_dbg':
++                found.append(node.lineno)
++            elif isinstance(node, ast.arg) and node.arg == '_dbg':
++                found.append(node.lineno)
++        assert found == [], f'core/image_ops.py 仍存在 _dbg 引用（行 {found}）'
++
++    def test_no_bare_print_call(self):
++        found = []
++        for node in ast.walk(self._tree()):
++            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
++                    and node.func.id == 'print'):
++                found.append(node.lineno)
++        assert found == [], f'core/image_ops.py 仍存在裸 print 调用（行 {found}）'
++
++    def test_no_debug_rd_logger_tag(self):
++        """用 AST 常量而非原文扫描 —— 修复说明注释里会引述被删代码的标签。"""
++        found = [
++            node.lineno for node in ast.walk(self._tree())
++            if isinstance(node, ast.Constant) and isinstance(node.value, str)
++            and 'DEBUG-RD' in node.value
++        ]
++        assert found == [], f'仍存在 [DEBUG-RD] 调试日志字符串（行 {found}）'
++
++    @pytest.mark.parametrize('func', HELPERS, ids=lambda f: f.__name__)
++    def test_helper_signatures_have_no_dbg(self, func):
++        assert '_dbg' not in inspect.signature(func).parameters
++
++    def test_render_design_body_has_no_dbg_identifier(self):
++        """同样走 AST：``inspect.getsource`` 会把说明注释一并带出，不可用于此断言。"""
++        tree = ast.parse(IMAGE_OPS.read_text(encoding='utf-8'))
++        target = next(n for n in ast.walk(tree)
++                      if isinstance(n, ast.FunctionDef) and n.name == 'render_design')
++        found = [
++            node.lineno for node in ast.walk(target)
++            if (isinstance(node, ast.Name) and node.id == '_dbg')
++            or (isinstance(node, ast.arg) and node.arg == '_dbg')
++        ]
++        assert found == [], f'render_design 内仍引用 _dbg（行 {found}）'
++
++
++# ---------------------------------------------------------------------------
++# 2) 渲染行为锁定（L 形 + 池素材路径会走到被清理的代码块）
++# ---------------------------------------------------------------------------
++
++@pytest.fixture()
++def pool_material(tmp_path):
++    """一张带黑描边的小素材图，使其被识别为「池素材」。"""
++    arr = np.full((60, 90, 3), (200, 180, 120), dtype=np.uint8)
++    arr[:3, :] = 0
++    arr[-3:, :] = 0
++    arr[:, :3] = 0
++    arr[:, -3:] = 0
++    path = tmp_path / 'material.png'
++    Image.fromarray(arr, 'RGB').save(path)
++    return str(path)
++
++
++def _design(pool_material, cut_rects=None, corner='tr', cut_w=10.0, cut_h=5.0):
++    from core.geometry import CropDesign, CutRect
++    d = CropDesign(mode='rect_lshape', canvas_w_cm=8.0, canvas_h_cm=10.0, dpi=150)
++    d.outer_margin_cm = 0.0
++    d.inner_margin_top_cm = d.inner_margin_bottom_cm = 0.0
++    d.inner_margin_left_cm = d.inner_margin_right_cm = 0.0
++    d.corner_tl_cm = d.corner_tr_cm = d.corner_bl_cm = d.corner_br_cm = 0.0
++    d.l_corner = corner
++    d.l_cut_w_cm = cut_w
++    d.l_cut_h_cm = cut_h
++    d.l_cut_rects = [CutRect(**c) for c in (cut_rects or [])]
++    d.pool_outer_material_image = pool_material
++    return d
++
++
++def _strip(anchor, offset_y, w, h):
++    return {'anchor': anchor, 'offset_x_cm': 0.0, 'offset_y_cm': offset_y,
++            'w_cm': w, 'h_cm': h}
++
++
++class TestRenderBehaviourUnchanged:
++    def test_lshape_pool_render_emits_no_stdout(self, pool_material, capsys):
++        """被清理的 print 正位于本路径上 —— 现在必须零 stdout 输出。"""
++        d = _design(pool_material, cut_rects=[_strip('tr', 0.0, 10.0, 5.0)])
++        img = render_design(d, quality='export', skip_validate=True)
++        assert img.size == (d.canvas_w_px, d.canvas_h_px)
++        captured = capsys.readouterr()
++        assert captured.out == '', f'渲染过程仍有 stdout 输出：{captured.out[:200]!r}'
++
++    def test_render_is_deterministic(self, pool_material):
++        d1 = _design(pool_material, cut_rects=[_strip('tr', 0.0, 10.0, 5.0)])
++        d2 = _design(pool_material, cut_rects=[_strip('tr', 0.0, 10.0, 5.0)])
++        a = render_design(d1, quality='export', skip_validate=True)
++        b = render_design(d2, quality='export', skip_validate=True)
++        assert a.tobytes() == b.tobytes()
++
++    def test_staircase_geometry_still_applied(self, pool_material):
++        """阶梯 cut_rects 仍在渲染中生效：与单级挖角产出不同的画面。"""
++        single = render_design(
++            _design(pool_material, cut_rects=None, cut_w=10.0, cut_h=5.0),
++            quality='export', skip_validate=True)
++        stair = render_design(
++            _design(pool_material, cut_rects=[
++                _strip('tr', 0.0, 10.0, 5.0),
++                _strip('tr', 6.0, 10.0, 5.0),
++            ]),
++            quality='export', skip_validate=True)
++        assert single.tobytes() != stair.tobytes(), '阶梯 cut_rects 未进入渲染几何'
+diff --git a/tests/core/test_lshape_cut_rect_anchor_limit.py b/tests/core/test_lshape_cut_rect_anchor_limit.py
+new file mode 100644
+index 0000000..d11b423
+--- /dev/null
++++ b/tests/core/test_lshape_cut_rect_anchor_limit.py
+@@ -0,0 +1,230 @@
++"""
++tests/core/test_lshape_cut_rect_anchor_limit.py
++[Fix 2026-09-24 P2-4] CutRect 截断口径：按锚定角分组（取代历史的按总数 ``[:3]``）。
++
++缺陷本质
++--------
++``CropDesign._validate_l_cut_rects()`` 的约束是「**同一锚定角** ≤ 3 级」，
++而两个写入端
++  - ``models.design_model.DesignModel.apply_ui_snapshot``
++  - ``workers.property_panel_workers.PoolRenderWorker._apply_lshape_params``
++却按**总数** ``[:3]`` 截断 —— 两套口径不一致。对 validate() 允许的
++「tr×3 + tl×1」（合计 4 条）输入，第 4 条会被**静默丢弃**，用户看不到任何报错。
++
++为什么这不是功能变更
++--------------------
++UI（``LShapePanel.get_cut_rects_cm``）与草图解析器
++（``lshape_sketch_parser._convert_stepped_to_cut_rects``）的**全部可达路径**都只产出
++单一锚定角（条带 ``'anchor'`` 恒为同一个角），故本文件第 2 组用例逐例锁定
++「单锚定输入下新实现与旧 ``[:3]`` 完全等价」。
++
++本文件锁住四件事
++----------------
++1. ``limit_l_cut_rects_per_anchor()`` 的分组语义 / 顺序 / 类型无关；
++2. 与旧 ``[:3]`` 在单锚定输入上的逐例等价性（可达行为不变）；
++3. ``validate()`` 的每角上限与截断逻辑共用同一常量，不再各自硬编码；
++4. 两个写入端已不再按总数截断，且 DesignModel 写入路径行为符合预期。
++"""
++import ast
++import re
++from collections import Counter
++from pathlib import Path
++
++import pytest
++
++PROJECT_ROOT = Path(__file__).resolve().parents[2]
++
++from core.geometry import (
++    MAX_L_CUT_RECTS_PER_ANCHOR,
++    CropDesign,
++    CutRect,
++    limit_l_cut_rects_per_anchor,
++)
++
++
++def _cr(anchor, offset_y=0.0, offset_x=0.0, w=10.0, h=5.0):
++    return CutRect(anchor=anchor, offset_x_cm=offset_x, offset_y_cm=offset_y,
++                   w_cm=w, h_cm=h)
++
++
++def _bands(anchor, n, w=10.0, h=5.0):
++    """同一锚定角的 n 条互不重叠的水平条带（dict 形态，与 UI/JSON 一致）。"""
++    return [
++        {'anchor': anchor, 'offset_x_cm': 0.0, 'offset_y_cm': float(i * (h + 1)),
++         'w_cm': w, 'h_cm': h}
++        for i in range(n)
++    ]
++
++
++# ---------------------------------------------------------------------------
++# 1) 辅助函数语义
++# ---------------------------------------------------------------------------
++
++class TestHelperSemantics:
++    def test_constant_is_three(self):
++        assert MAX_L_CUT_RECTS_PER_ANCHOR == 3
++
++    @pytest.mark.parametrize('value', [None, [], ()])
++    def test_empty_inputs_return_empty_list(self, value):
++        assert limit_l_cut_rects_per_anchor(value) == []
++
++    @pytest.mark.parametrize('n', [0, 1, 2, 3, 4, 5, 8])
++    def test_single_anchor_equivalent_to_total_slice(self, n):
++        """单锚定输入（全部可达路径）下与旧 ``[:3]`` 逐例等价。"""
++        cuts = _bands('tr', n)
++        assert limit_l_cut_rects_per_anchor(cuts) == cuts[:MAX_L_CUT_RECTS_PER_ANCHOR]
++
++    def test_multi_anchor_keeps_every_group(self):
++        cuts = _bands('tr', 3) + _bands('tl', 1)
++        picked = limit_l_cut_rects_per_anchor(cuts)
++        assert len(picked) == 4, '旧实现 [:3] 会丢掉 tl 那一条'
++        assert [c['anchor'] for c in picked] == ['tr', 'tr', 'tr', 'tl']
++        assert picked == cuts
++
++    def test_cap_applies_per_group_not_in_total(self):
++        cuts = _bands('tr', 4) + _bands('tl', 4) + _bands('br', 2)
++        picked = limit_l_cut_rects_per_anchor(cuts)
++        assert Counter(c['anchor'] for c in picked) == {'tr': 3, 'tl': 3, 'br': 2}
++        assert len(picked) == 8
++
++    def test_total_may_exceed_cap(self):
++        """总数可以超过 3（每角各自 ≤3）—— 这正是与旧口径的分歧点。"""
++        cuts = _bands('tr', 3) + _bands('bl', 3)
++        assert len(limit_l_cut_rects_per_anchor(cuts)) == 6
++
++    def test_order_and_object_identity_preserved(self):
++        cuts = [_cr('tr'), _cr('tl'), _cr('tr'), _cr('tl'), _cr('tr')]
++        picked = limit_l_cut_rects_per_anchor(cuts)
++        assert len(picked) == 5
++        assert all(a is b for a, b in zip(picked, cuts))
++
++    def test_keeps_first_n_per_anchor_for_interleaved_input(self):
++        cuts = [{'anchor': a} for a in ['tr', 'tl', 'tr', 'bl', 'tr', 'tl', 'tr']]
++        picked = limit_l_cut_rects_per_anchor(cuts)
++        assert [c['anchor'] for c in picked] == ['tr', 'tl', 'tr', 'bl', 'tr', 'tl']
++
++    def test_accepts_cutrect_instances(self):
++        cuts = [_cr('tr'), _cr('tr'), _cr('tr'), _cr('tr')]
++        picked = limit_l_cut_rects_per_anchor(cuts)
++        assert len(picked) == 3
++        assert picked[0] is cuts[0]
++
++    def test_custom_cap(self):
++        cuts = _bands('tr', 5)
++        assert len(limit_l_cut_rects_per_anchor(cuts, max_per_anchor=1)) == 1
++        assert limit_l_cut_rects_per_anchor(cuts, max_per_anchor=0) == []
++
++
++# ---------------------------------------------------------------------------
++# 2) validate() 与截断共用同一上限
++# ---------------------------------------------------------------------------
++
++class TestValidateSharesTheSameCap:
++    @staticmethod
++    def _design(rects):
++        d = CropDesign(mode='rect_lshape', canvas_w_cm=80.0, canvas_h_cm=130.0, dpi=150)
++        d.outer_margin_cm = 0.0
++        d.inner_margin_top_cm = d.inner_margin_bottom_cm = 0.0
++        d.inner_margin_left_cm = d.inner_margin_right_cm = 0.0
++        d.l_cut_rects = list(rects)
++        return d
++
++    def _stack(self, anchor, n, w=10.0, h=5.0):
++        return [_cr(anchor, offset_y=float(i * (h + 1)), w=w, h=h) for i in range(n)]
++
++    def test_same_anchor_four_levels_rejected(self):
++        d = self._design(self._stack('tr', 4))
++        with pytest.raises(ValueError, match=f'最多支持 {MAX_L_CUT_RECTS_PER_ANCHOR} 级'):
++            d.validate()
++
++    def test_same_anchor_three_levels_accepted(self):
++        self._design(self._stack('tr', 3)).validate()
++
++    def test_multi_anchor_four_total_is_legal(self):
++        """tr×3 + tl×1 合计 4 条 —— validate() 允许，故写入端不应按总数截断。"""
++        d = self._design(self._stack('tr', 3) + self._stack('tl', 1))
++        d.validate()
++        assert len(d.l_cut_rects) == 4
++
++
++# ---------------------------------------------------------------------------
++# 3) 源码级防回归：写入端不得再按总数截断
++# ---------------------------------------------------------------------------
++
++WRITE_PATH_FILES = [
++    PROJECT_ROOT / 'models' / 'design_model.py',
++    PROJECT_ROOT / 'workers' / 'property_panel_workers.py',
++]
++
++
++class TestWritePathsNoLongerTruncateByTotal:
++    @pytest.mark.parametrize('path', WRITE_PATH_FILES, ids=lambda p: p.name)
++    def test_no_total_slice(self, path):
++        src = path.read_text(encoding='utf-8')
++        assert not re.search(r'\]\s*\[\s*:\s*3\s*\]', src), (
++            f'{path.name} 仍存在按总数 [:3] 截断 —— '
++            f'应改用 limit_l_cut_rects_per_anchor()，与 validate() 的每角 ≤3 对齐')
++
++    @pytest.mark.parametrize('path', WRITE_PATH_FILES, ids=lambda p: p.name)
++    def test_imports_helper(self, path):
++        tree = ast.parse(path.read_text(encoding='utf-8'))
++        imported = set()
++        for node in ast.walk(tree):
++            if isinstance(node, ast.ImportFrom):
++                imported |= {a.name for a in node.names}
++        assert 'limit_l_cut_rects_per_anchor' in imported, (
++            f'{path.name} 未从 core.geometry 导入分组截断辅助函数')
++
++
++# ---------------------------------------------------------------------------
++# 4) DesignModel 写入路径行为
++# ---------------------------------------------------------------------------
++
++def _base_snap(**over):
++    """与 tests/gui/test_lshape_panel_staircase.py::_base_snap 保持同构。"""
++    snap = {
++        'canvas_w_cm': 80.0, 'canvas_h_cm': 130.0, 'dpi': 150, 'mode': 'rect_lshape',
++        'outer_margin_cm': 0.0,
++        'inner': {'top': 0.0, 'bottom': 0.0, 'left': 0.0, 'right': 0.0},
++        'lshape': None,
++        'corners': {'tl': 0.0, 'tr': 0.0, 'bl': 0.0, 'br': 0.0},
++        'ellipse': {'diameter_w_cm': 0.0, 'diameter_h_cm': 0.0},
++        'colors': {'outer': (255, 255, 255), 'hole': (255, 255, 255)},
++        'images': {'outer': None, 'hole': None},
++        'text': {'enabled': False, 'text': '', 'font_size_px': 12,
++                 'color': (0, 0, 0), 'mirror_bottom': False},
++        'hole_mode': None,
++        'multihole': None,
++    }
++    snap.update(over)
++    return snap
++
++
++class TestDesignModelWritePath:
++    @staticmethod
++    def _apply(cut_rects):
++        from models.design_model import DesignModel
++        m = DesignModel()
++        m.apply_ui_snapshot(_base_snap(lshape={
++            'corner': 'tr', 'cut_w_cm': 20.0, 'cut_h_cm': 7.0,
++            'cuts_cm': [], 'cut_rects': list(cut_rects),
++        }))
++        return m.design
++
++    def test_single_anchor_three_identical_to_old_behaviour(self):
++        rects = _bands('tr', 3, w=20.0, h=7.0)
++        kept = self._apply(rects).l_cut_rects
++        assert len(kept) == 3
++        assert [(c.anchor, c.offset_y_cm, c.w_cm, c.h_cm) for c in kept] == [
++            (r['anchor'], r['offset_y_cm'], r['w_cm'], r['h_cm']) for r in rects]
++
++    def test_multi_anchor_fourth_rect_kept(self):
++        rects = _bands('tr', 3, w=20.0, h=7.0) + _bands('tl', 1, w=20.0, h=7.0)
++        kept = self._apply(rects).l_cut_rects
++        assert len(kept) == 4, '按总数截断会丢掉第 4 条（tl）'
++        assert kept[-1].anchor == 'tl'
++        assert all(isinstance(c, CutRect) for c in kept)
++
++    def test_per_anchor_cap_still_enforced(self):
++        rects = _bands('tr', 5, w=20.0, h=7.0)
++        assert len(self._apply(rects).l_cut_rects) == MAX_L_CUT_RECTS_PER_ANCHOR
+diff --git a/tests/gui/test_property_panel_write_paths.py b/tests/gui/test_property_panel_write_paths.py
+new file mode 100644
+index 0000000..4ec55f8
+--- /dev/null
++++ b/tests/gui/test_property_panel_write_paths.py
+@@ -0,0 +1,131 @@
++"""
++tests/gui/test_property_panel_write_paths.py
++[Fix 2026-09-24 P2-1 + P2-4] 面板 / Worker 的写入路径修复锁定。
++
++P2-1 —— 模式回填硬编码索引
++    ``gui/property_panel.PropertyPanel.sync_from_design`` 原用
++    ``{'rect_hole': 0, 'rect_lshape': 1, 'ellipse_hole': 2}.get(d.mode, 0)``
++    硬编码索引。一旦 combo 增删项或调整顺序而忘记同步该表，模板加载后模式会
++    **静默回落**到索引 0（rect_hole），且不报任何错。
++    改为按 userData 反查（``findData``），与同文件 line 560 的
++    ``findData('rect_lshape')`` 及 ``_on_mode_change`` 的 ``currentData()`` 对称。
++
++P2-4 —— CutRect 截断口径
++    ``workers.property_panel_workers.PoolRenderWorker._apply_lshape_params`` 原按
++    **总数** ``[:3]`` 截断，与 ``validate()`` 的「同角位 ≤3」不一致。
++    改为 ``limit_l_cut_rects_per_anchor()``；对单锚定输入逐例等价。
++
++（P2-4 的 core 侧语义与等价性证明见 tests/core/test_lshape_cut_rect_anchor_limit.py）
++"""
++from types import SimpleNamespace
++
++import pytest
++
++from core.geometry import CropDesign, CutRect
++
++MODE_TABLE = [('rect_hole', 0), ('rect_lshape', 1), ('ellipse_hole', 2)]
++
++
++# ---------------------------------------------------------------------------
++# P2-1：模式回填
++# ---------------------------------------------------------------------------
++
++class TestModeBackfillByUserData:
++    @pytest.mark.parametrize('mode,expected', MODE_TABLE)
++    def test_known_modes_select_their_combo_entry(self, property_panel, qapp, mode, expected):
++        property_panel.sync_from_design(CropDesign(mode=mode))
++        qapp.processEvents()
++        assert property_panel._cb_mode.currentData() == mode
++        assert property_panel._cb_mode.currentIndex() == expected
++
++    @pytest.mark.parametrize('mode,expected', MODE_TABLE)
++    def test_equivalent_to_legacy_hardcoded_table(self, property_panel, qapp, mode, expected):
++        """旧口径 = 硬编码索引表；新口径 = findData 反查。两者逐例一致。"""
++        legacy_idx = {'rect_hole': 0, 'rect_lshape': 1, 'ellipse_hole': 2}.get(mode, 0)
++        property_panel.sync_from_design(CropDesign(mode=mode))
++        qapp.processEvents()
++        assert property_panel._cb_mode.currentIndex() == legacy_idx == expected
++
++    def test_combo_userdata_covers_all_three_modes(self, property_panel):
++        combo = property_panel._cb_mode
++        assert [combo.itemData(i) for i in range(combo.count())] == [
++            m for m, _ in MODE_TABLE]
++
++    def test_unknown_mode_falls_back_to_index_zero(self, property_panel, qapp):
++        """反查失败（-1）时必须保留原「回落索引 0」语义，不得变成 -1 / 空选。"""
++        design = CropDesign()
++        design.mode = 'not_a_real_mode'
++        property_panel.sync_from_design(design)
++        qapp.processEvents()
++        assert property_panel._cb_mode.currentIndex() == 0
++
++    def test_source_no_longer_hardcodes_index_dict(self):
++        from pathlib import Path
++        src = (Path(__file__).resolve().parents[2] / 'gui' / 'property_panel.py'
++               ).read_text(encoding='utf-8')
++        assert "{'rect_hole': 0" not in src, '仍存在硬编码 mode 索引表'
++        assert 'findData(d.mode)' in src
++
++
++# ---------------------------------------------------------------------------
++# P2-4：Worker 写入路径
++# ---------------------------------------------------------------------------
++
++def _worker(cut_rects, corner='tr', cut_w=20.0, cut_h=14.0):
++    from workers.property_panel_workers import PoolRenderWorker
++    return PoolRenderWorker(
++        matcher=None, template_dir='', target_filename='x',
++        lshape_params={
++            'corner': corner, 'cut_w_cm': cut_w, 'cut_h_cm': cut_h,
++            'cuts_cm': [], 'cut_rects': list(cut_rects),
++            'outer_w_cm': 188.5, 'outer_h_cm': 74.0,
++        })
++
++
++def _apply(worker, canvas_w=188.5, canvas_h=74.0):
++    design = CropDesign()
++    try:
++        worker._apply_lshape_params(
++            design, SimpleNamespace(path='x'), canvas_w, canvas_h, 1.0)
++    finally:
++        worker.deleteLater()
++    return design
++
++
++def _bands(anchor, n, w=20.0, h=7.0):
++    return [
++        {'anchor': anchor, 'offset_x_cm': 0.0, 'offset_y_cm': float(i * (h + 1)),
++         'w_cm': w, 'h_cm': h}
++        for i in range(n)
++    ]
++
++
++class TestPoolRenderWorkerCutRectAnchorLimit:
++    def test_single_anchor_three_identical_to_old_behaviour(self):
++        rects = _bands('tr', 3)
++        design = _apply(_worker(rects))
++        assert len(design.l_cut_rects) == 3
++        assert all(isinstance(c, CutRect) for c in design.l_cut_rects)
++        assert [c.offset_y_cm for c in design.l_cut_rects] == [0.0, 8.0, 16.0]
++
++    def test_multi_anchor_fourth_rect_kept(self):
++        rects = _bands('tr', 3) + _bands('tl', 1)
++        design = _apply(_worker(rects))
++        assert len(design.l_cut_rects) == 4, '按总数截断会丢掉第 4 条（tl）'
++        assert [c.anchor for c in design.l_cut_rects] == ['tr', 'tr', 'tr', 'tl']
++
++    def test_per_anchor_cap_still_enforced(self):
++        design = _apply(_worker(_bands('tr', 5)))
++        assert len(design.l_cut_rects) == 3
++
++    def test_invalid_entries_still_filtered(self):
++        """分组截断不得放松原有的合法性过滤。"""
++        rects = _bands('tr', 2) + [
++            {'anchor': 'xx', 'offset_x_cm': 0, 'offset_y_cm': 20,
++             'w_cm': 5.0, 'h_cm': 7.0},
++            {'anchor': 'tr', 'offset_x_cm': 0, 'offset_y_cm': 20,
++             'w_cm': 0.0, 'h_cm': 7.0},
++        ]
++        design = _apply(_worker(rects))
++        assert len(design.l_cut_rects) == 2
++        assert all(c.anchor == 'tr' for c in design.l_cut_rects)

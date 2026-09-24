@@ -24,6 +24,25 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# 应用版本（单一事实来源）
+# ============================================================================
+
+# [Fix 2026-09-24 P1-1 / P2-3] 项目唯一的版本号定义点。
+#   根因：全项目 `git grep __version__` 仅命中第三方 `PyInstaller.__version__`，
+#   项目自身无任何版本常量，版本只靠提交信息与散落文档追踪 —— 2026-09-24 审查
+#   实测由此产生「仓库是 V2.2.3、打包脚本却仍叫 packageV2.2.2 并产出标识为
+#   V2.2.2 的 exe」的错位。
+#   约定：发版只改这一行；下列消费方一律引用本常量，不得再硬编码版本字符串。
+#     - packaging/packageV<版本>.py  → exe 文件名 / 打包横幅
+#     - core/log_setup.py            → 启动日志头
+#     - main.py                      → 「关于」对话框
+APP_VERSION: str = "2.2.3"
+
+# exe 名与窗口显示名（由 APP_VERSION 派生，勿另行硬编码）
+APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
+
+
+# ============================================================================
 # 圆角边框宽度
 # ============================================================================
 
@@ -343,8 +362,19 @@ class PathResolver:
             tessdata = None
             # 尝试查找 tessdata
             try:
-                result = os.popen('tesseract --list-langs 2>&1').read()
-                if 'chi_sim' in result or 'eng' in result:
+                # [Fix 2026-09-24 P1-7] 原实现用 os.popen('tesseract --list-langs 2>&1')
+                #   起 shell 且从不 close 管道（进程句柄泄漏）。改为 subprocess.run：
+                #   不启用 shell（list 参数，无注入面），stderr 合并进 stdout 保持原语义，
+                #   并复用刚解析出的 path_exe（原 shell 依赖 PATH 二次解析）。
+                #   容错语义不变：任何异常一律忽略，tessdata 维持 None。
+                import subprocess
+                _proc = subprocess.run(
+                    [path_exe, '--list-langs'],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding='utf-8', errors='replace',
+                )
+                _langs_out = _proc.stdout or ''
+                if 'chi_sim' in _langs_out or 'eng' in _langs_out:
                     tessdata = 'system'
             except Exception:
                 pass

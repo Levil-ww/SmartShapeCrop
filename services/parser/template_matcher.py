@@ -216,6 +216,36 @@ class TemplateEntry:
 # 磁盘缓存容器
 # ============================================================================
 
+# [Fix 2026-09-24 P0-4] pickle 反序列化加固：受限 Unpickler
+#   背景：缓存路径 ~/.smartshapecrop/caches/<名>_<md5>.cache.pickle 可预测，
+#     任意本地进程可替换该文件；而 pickle.load 在归还数据前即可执行任意代码
+#     （__reduce__ → os.system / subprocess），构成本地反序列化 RCE 面。
+#   做法：只放行惰性内置类型。缓存载荷实为纯内置类型
+#     （实测 119 个真实缓存文件，find_class 调用 0 次 —— 全部是
+#      dict/list/str/int/float/bool），正常读写完全不需要实例化任何自定义类。
+#   效果：任何 find_class 请求一律拒绝 → 反序列化不可能产生可执行对象；
+#     被拒时沿用既有 JSON fallback（DiskCache.load 内 try/except），功能不变。
+_SAFE_PICKLE_GLOBALS = frozenset({
+    ("builtins", "set"),
+    ("builtins", "frozenset"),
+    ("builtins", "bytes"),
+    ("builtins", "bytearray"),
+    ("builtins", "complex"),
+    ("collections", "OrderedDict"),
+})
+
+
+class _RestrictedUnpickler(pickle.Unpickler):
+    """仅允许惰性内置类型的 Unpickler，阻断 pickle 反序列化代码执行。"""
+
+    def find_class(self, module: str, name: str):
+        if (module, name) in _SAFE_PICKLE_GLOBALS:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"缓存文件包含不允许的对象类型 {module}.{name}，已拒绝反序列化"
+        )
+
+
 _CACHE_SCHEMA_VERSION = 3  # v3：新增 _has_corners 字段，用于排除已裁剪素材
 
 
@@ -286,13 +316,19 @@ class DiskCache:
 
     @classmethod
     def load(cls, path_without_ext: str, expected_template_dir: str) -> Optional["DiskCache"]:
-        """加载：优先 pickle → 其次 JSON → None"""
+        """加载：优先 pickle → 其次 JSON → None
+
+        [Fix 2026-09-24 P0-4] pickle 分支改用 _RestrictedUnpickler。
+        schema_version / template_dir 校验仍在反序列化之后 —— 版本号本身在包内，
+        无法「先校验再解包」；安全目标是「解包不能执行代码」，已由受限 Unpickler 达成
+        （只放行惰性内置类型）。校验失败或被拒时统一走既有 JSON fallback / 返回 None。
+        """
         pkl_path = path_without_ext + ".pickle"
         data = None
         if os.path.exists(pkl_path):
             try:
                 with open(pkl_path, "rb") as f:
-                    data = pickle.load(f)
+                    data = _RestrictedUnpickler(f).load()
             except Exception as e:
                 logger.warning(f"磁盘缓存 pickle 加载失败 path={pkl_path}: {e}")
                 data = None

@@ -11,7 +11,7 @@ import os
 from PyQt5.QtCore import pyqtSignal, QThread
 from PIL import Image
 
-from core.geometry import CropDesign, CutRect
+from core.geometry import CropDesign, CutRect, limit_l_cut_rects_per_anchor
 from core.config import CUT_LOSS_CM
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
@@ -533,7 +533,10 @@ class PoolRenderWorker(QThread):
         # 旧格式 cuts_cm 不允许同角位重复，必须保持为空
         cut_rects = lp.get('cut_rects') or []
         if cut_rects:
-            design.l_cut_rects = [
+            # [Fix 2026-09-24 P2-4] 原为 [:3]（按总数截断）——与 validate() 的
+            #   「同角位 ≤3」口径不一致，会把多锚定输入的第 4 条静默丢弃。
+            #   改用按锚定角分组截断；单锚定输入（全部可达路径）逐例等价。
+            design.l_cut_rects = limit_l_cut_rects_per_anchor([
                 CutRect(
                     anchor=str(r['anchor']),
                     offset_x_cm=max(0.0, float(r.get('offset_x_cm', 0))),
@@ -545,7 +548,7 @@ class PoolRenderWorker(QThread):
                 if isinstance(r, dict) and r.get('anchor') in {'tl', 'tr', 'bl', 'br'}
                 and float(r.get('w_cm', 0) or 0) > 0
                 and float(r.get('h_cm', 0) or 0) > 0
-            ][:3]
+            ])
             self._log(
                 f"L 形阶梯挖角：corner={design.l_corner}, "
                 f"{len(design.l_cut_rects)} 级 CutRect（同角位条带）")

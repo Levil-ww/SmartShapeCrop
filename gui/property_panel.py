@@ -924,8 +924,13 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         由 Panel 自己负责 UI 控件的同步，main.py 不再直接访问 Panel 私有属性。
         """
         self._sp_w.setValue(d.canvas_w_cm); self._sp_h.setValue(d.canvas_h_cm); self._sp_dpi.setValue(d.dpi)
-        idx = {'rect_hole': 0, 'rect_lshape': 1, 'ellipse_hole': 2}.get(d.mode, 0)
-        self._cb_mode.setCurrentIndex(idx)
+        # [Fix 2026-09-24 P2-1] 原为硬编码索引表 {'rect_hole':0,'rect_lshape':1,'ellipse_hole':2}
+        #   —— 一旦 combo 增删项或调整顺序，未同步该表就会静默回落到索引 0（rect_hole），
+        #   表现为「模板加载后模式显示错误且无任何报错」。
+        #   改为按 userData 反查，与 line 560 的 findData('rect_lshape') 及
+        #   _on_mode_change 的 currentData() 形成对称；反查失败（-1）时保留原回落索引 0 语义。
+        _idx = self._cb_mode.findData(d.mode)
+        self._cb_mode.setCurrentIndex(_idx if _idx >= 0 else 0)
         self._sp_outer_margin.setValue(d.outer_margin_cm)
         self._sp_mt.setValue(d.inner_margin_top_cm); self._sp_mb.setValue(d.inner_margin_bottom_cm)
         self._sp_ml.setValue(d.inner_margin_left_cm); self._sp_mr.setValue(d.inner_margin_right_cm)

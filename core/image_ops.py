@@ -551,6 +551,44 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
             for cut in lod_design.l_cuts_cm
         ]
 
+    # [Fix 2026-09-24 P0-2] 阶梯 L 形 CutRect 同步缩放。
+    # 与 l_cuts_cm 同源问题：cm2px() 只依赖 dpi（geometry.py:271-272），与 canvas_w_cm 无关；
+    # 画布缩小而长度量不缩，会使挖角相对画布放大 1/scale 倍（默认 LOD_SCALE_FACTOR=0.5 → 2×），
+    # 导致预览几何 ≠ 导出几何。clone() 已深拷贝 CutRect，原地修改不影响原 design。
+    for _cut in getattr(lod_design, 'l_cut_rects', None) or []:
+        _cut.w_cm = float(_cut.w_cm) * sx
+        _cut.h_cm = float(_cut.h_cm) * sy
+        _cut.offset_x_cm = float(_cut.offset_x_cm) * sx
+        _cut.offset_y_cm = float(_cut.offset_y_cm) * sy
+
+    # [Fix 2026-09-24 P0-2] 四角圆角半径同步缩放（corners_px → cm2px）。
+    # 圆角为各向同性单值，按既有约定（outer_margin_cm / borders.offset_cm）取 min(sx, sy)。
+    _lod_rscale = min(sx, sy)
+    lod_design.corner_tl_cm = design.corner_tl_cm * _lod_rscale
+    lod_design.corner_tr_cm = design.corner_tr_cm * _lod_rscale
+    lod_design.corner_bl_cm = design.corner_bl_cm * _lod_rscale
+    lod_design.corner_br_cm = design.corner_br_cm * _lod_rscale
+
+    # [Fix 2026-09-24 P0-2] 椭圆直径同步缩放（ellipse_px → cm2px，宽高分方向）。
+    # 0 表示自动模式（回退 inner_w_cm / inner_h_cm，二者已缩放）；0 * sx 仍为 0，语义不变。
+    lod_design.ellipse_diameter_w_cm = design.ellipse_diameter_w_cm * sx
+    lod_design.ellipse_diameter_h_cm = design.ellipse_diameter_h_cm * sy
+
+    # [Fix 2026-09-24 P0-2] 多洞池坐标同步缩放（image_ops.py:1122-1125 / 1527-1530 走 cm2px）。
+    # 仅缩放参与渲染几何的 x/y/w/h 四个 cm 键；mt_cm/mb_cm/ml_cm/mr_cm 与素材路径等
+    # 非几何键原样保留（前者当前仅用于 UI 展示，不进入渲染路径）。
+    if getattr(lod_design, 'pool_holes_cm', None):
+        lod_design.pool_holes_cm = [
+            {
+                **hole,
+                'x_cm': float(hole.get('x_cm', 0.0)) * sx,
+                'y_cm': float(hole.get('y_cm', 0.0)) * sy,
+                'w_cm': float(hole.get('w_cm', 0.0)) * sx,
+                'h_cm': float(hole.get('h_cm', 0.0)) * sy,
+            }
+            for hole in lod_design.pool_holes_cm
+        ]
+
     return lod_design
 
 
@@ -578,39 +616,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     if not skip_validate:
         design.validate()
     W, H = design.canvas_w_px, design.canvas_h_px
-    # === [DEBUG 2026-09-10] 调试日志：全参数快照 ===
-    import os as _os  # 避免与已有的 os 覆盖
-    _dbg = False  # 临时开关，问题定位后改 False
-    if _dbg:
-        _has_pool_outer = bool(
-            getattr(design, 'pool_outer_material_image', None)
-            and _os.path.isfile(design.pool_outer_material_image))
-        _has_pool_inner = bool(
-            getattr(design, 'pool_inner_material_image', None)
-            and _os.path.isfile(getattr(design, 'pool_inner_material_image', '')))
-        _has_outer_bg = bool(
-            getattr(design, 'outer_bg_image', None)
-            and _os.path.isfile(design.outer_bg_image))
-        _cached = getattr(design, '_cached_outer_image', None) is not None
-        logger.info(
-            f"[DEBUG-RD] ========= render_design() 开始 =========")
-        logger.info(
-            f"[DEBUG-RD] mode={design.mode!r} quality={quality!r} "
-            f"W={W} H={H} outer_margin={design.outer_margin_cm} "
-            f"inner_margin_t/b/l/r={design.inner_margin_top_cm}/{design.inner_margin_bottom_cm}/"
-            f"{design.inner_margin_left_cm}/{design.inner_margin_right_cm} "
-            f"l_corner={getattr(design,'l_corner',None)} "
-            f"l_cut_w={getattr(design,'l_cut_w_cm',None)} "
-            f"l_cut_h={getattr(design,'l_cut_h_cm',None)} "
-            f"pool_hole_transparent={getattr(design,'pool_hole_transparent',None)}")
-        logger.info(
-            f"[DEBUG-RD] pool_outer_material={_has_pool_outer} "
-            f"pool_inner_material={_has_pool_inner} "
-            f"outer_bg_image={_has_outer_bg} "
-            f"cached_outer_image={_cached} "
-            f"outer_bg_color={design.outer_bg_color} "
-            f"hole_bg_color={design.hole_bg_color}")
-    # ===============================================
+    # [Fix 2026-09-24 P2-5] 移除 2026-09-10 遗留的 `_dbg` 调试开关及其实参传递链。
+    #   该开关硬编码为 False（注释自称"临时开关，问题定位后改 False"，已遗留 14 天），
+    #   其下全部 `if _dbg:` 分支恒不可达；配套的 8 处热路径 `print(..., flush=True)`
+    #   同期清理（见 P1-4）。删除后判定与输出行为逐例不变。
     # 固定像素值按比例缩放（用于 LOD 渲染）
     # 最小 2 像素，确保边框在低分辨率下仍可见
     import math
@@ -618,10 +627,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     BLACK_RGB = (0, 0, 0)
     # 1. 整体背景（最外层）+ 水池/外背景状态判定
     canvas, canvas_arr, cached_img, has_outer_img, has_outer_pool_material, is_pool_with_material = \
-        _render_outer_background(design, W, H, quality, _dbg)
+        _render_outer_background(design, W, H, quality)
     # 1.1 L形模式 + 花型图：非L形区域填充 outer_bg_color（返回覆盖后 has_outer_img）
     has_outer_img = _apply_lshape_bg_overlay(
-        canvas_arr, design, W, H, is_pool_with_material, has_outer_img, _dbg)
+        canvas_arr, design, W, H, is_pool_with_material, has_outer_img)
     # 2. 渲染边框 band（水池模式且有素材图时跳过）
     _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material, has_outer_img)
     # 3. 挖洞后的内部区域（内矩形/椭圆/L形内部）填背景色或素材
@@ -630,7 +639,7 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     inner_mask = _get_inner_pixel_mask(design)
     # 3.x L形挖角（cut 区填白 + 素材底色采样）
     lshape_cut_done, _lshape_cut_bg_color, lshape_cut_area_mask = _render_lshape_cut(
-        canvas_arr, design, W, H, inner_mask, is_pool_with_material, _dbg)
+        canvas_arr, design, W, H, inner_mask, is_pool_with_material)
     # [SINGLE-HOLE Add-On] Stale Decor Black Border Invalidation (V1)
     _stale_decor_black_border_invalidation(
         canvas_arr, design, W, H, has_outer_pool_material)
@@ -654,10 +663,10 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     # 3.5 在挖空区域边缘绘制统一的黑色边框线（border_mask 计算）
     border_mask = _compute_border_mask(design, W, H, inner_mask, border_width_px)
     _apply_unified_black_border(
-        canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB, _dbg)
+        canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB)
     # 3.6 [L-Shape Border Completion] L 形挖角处的素材边框补全
     _lshape_border_completion(canvas_arr, design, W, H, cached_img,
-        is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB, lshape_cut_area_mask)
+        is_pool_with_material, _lshape_cut_bg_color, border_mask, canvas, BLACK_RGB, lshape_cut_area_mask)
     # [SINGLE-HOLE Add-On V2] Stale-Decor Universal Residual Cleaner
     _stale_decor_residual_cleaner(
         canvas_arr, design, W, H, border_mask, inner_mask, has_outer_pool_material)
@@ -666,19 +675,12 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
         pil = Image.fromarray(canvas_arr, 'RGB')
         _draw_border_text(pil, design)
         canvas_arr = np.array(pil, dtype=np.uint8)
-    if _dbg:
-        _final_blacks = (canvas_arr.max(axis=2) < 200).sum()
-        _final_whites = (canvas_arr.min(axis=2) > 200).sum()
-        logger.info(
-            f"[DEBUG-RD] STEP-END total_blacks={_final_blacks} "
-            f"total_whites={_final_whites} total_pixels={canvas_arr.shape[0]*canvas_arr.shape[1]}")
-        logger.info("[DEBUG-RD] ========= render_design() 结束 ==========")
     return Image.fromarray(canvas_arr, 'RGB')
 
 
 # ---------- [C-01] render_design 拆分辅助函数（逻辑与原实现逐行一致） ----------
 
-def _render_outer_background(design, W, H, quality, _dbg):
+def _render_outer_background(design, W, H, quality):
     """[C-01] 整体背景渲染 + 水池素材/外背景图状态判定（原 render_design L604-678）。"""
     # 1. 整体背景（最外层）
     #    水池模式优先：如果 pool_outer_material_image 设置了（匹配到的花纹图），整幅铺满
@@ -750,20 +752,13 @@ def _render_outer_background(design, W, H, quality, _dbg):
         and os.path.isfile(getattr(design, 'pool_inner_material_image', ''))
     )
     is_pool_with_material = has_outer_pool_material or has_inner_pool_material
-    if _dbg:
-        logger.info(
-            f"[DEBUG-RD] STEP1 判定: is_pool_with_material={is_pool_with_material} "
-            f"(outer={has_outer_pool_material} inner={has_inner_pool_material}) "
-            f"mode={design.mode!r}")
     return canvas, canvas_arr, cached_img, has_outer_img, has_outer_pool_material, is_pool_with_material
 
-def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, has_outer_img, _dbg):
+def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, has_outer_img):
     """[C-01] L形模式 + 花型图：非L形区域填充 outer_bg_color（原 L679-700）。"""
     # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
     # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color
     if design.mode == 'rect_lshape' and not is_pool_with_material:
-        if _dbg:
-            logger.info("[DEBUG-RD] STEP1.1 命中 rect_lshape + 非池素材 → 填outer_bg_color遮罩")
         from .geometry import _build_design_lshape_mask
         has_outer_img = design.outer_bg_image and os.path.isfile(design.outer_bg_image)
         if has_outer_img:
@@ -792,7 +787,7 @@ def _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material
             # 把 band_mask=True 的像素写入 canvas
             canvas_arr[band_mask] = fill_arr[band_mask]
 
-def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_material, _dbg):
+def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_material):
     """[C-01] L形挖角：cut 区填白/填 bg + 素材底色采样（原 L733-846）。"""
     lshape_cut_done = False
     # [Fix 2026-09-08 v5] 素材底色采样：给 border completion 当 bg_color 用（用来过滤
@@ -800,8 +795,6 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
     #   cut_area 始终填纯白(255,255,255)（用户明确要求 L 形挖空区保持白色）。
     _lshape_cut_bg_color = None
     if design.mode == 'rect_lshape' and is_pool_with_material:
-        if _dbg:
-            logger.info("[DEBUG-RD] STEP3 命中 rect_lshape + 池素材 → L形挖角处理路径")
         from .geometry import build_lshape_mask, compute_inner_corner_radii
         lshape = design.l_shapes_px()
         inner_rect = design.inner_rect_px()
@@ -837,16 +830,9 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
                 _extra[0:_ir_y + _ch, 0:_ir_x + _cw] = True
             elif cut_corner == 'tr':
                 _extra[0:_ir_y + _ch, _ir_r - _cw:W] = True
-        # ===== DEBUG: 打印 L 形 cut 关键坐标 =====
-        print(f'\n========== [LSHAPE CUT DEBUG] ==========', flush=True)
-        print(f'corner={lshape.corner} canvas={W}x{H}', flush=True)
-        print(f'inner_rect px: ({_ir_x},{_ir_y})-({_ir_r},{_ir_b})', flush=True)
-        print(f'DESIGN l_cut_w_cm={design.l_cut_w_cm} l_cut_h_cm={design.l_cut_h_cm}', flush=True)
-        print(f'canvas_w_cm={design.canvas_w_cm} canvas_h_cm={design.canvas_h_cm}', flush=True)
-        print(f'outer_margin={design.outer_margin_cm} inner_margins_tblr=({design.inner_margin_top_cm},{design.inner_margin_bottom_cm},{design.inner_margin_left_cm},{design.inner_margin_right_cm})', flush=True)
-        print(f'lshape.cut_w={lshape.cut_w} (px) lshape.cut_h={lshape.cut_h} (px)', flush=True)
-        if _dbg:
-            print(f'cut specs: {lshape.cut_specs()}', flush=True)
+        # [Fix 2026-09-24 P1-4] 移除 8 处无条件 `print(..., flush=True)`（原 L878-887）。
+        #   原为 2026-09-10 定位 cut 坐标用的临时打印，却在每次 L 形渲染热路径上
+        #   强制刷盘；打包为 --windowed 后 stdout 不可见，纯属性能损耗与死代码。
         cut_area_mask = cut_area_mask | (_extra & ~inner_mask)
         if cut_area_mask.any():
             # 预先采样素材底色——给 Step 3.6 border completion 当 bg_color 用
@@ -929,8 +915,18 @@ def _stale_decor_black_border_invalidation(canvas_arr, design, W, H, has_outer_p
                 and design.mode == 'rect_hole'
                 and not getattr(design, 'pool_is_multi_hole', False)
                 and not getattr(design, 'pool_hole_transparent', True)
-                and (getattr(design, 'lshape_cut_w', 0.0) or 0.0) == 0.0
-                and (getattr(design, 'lshape_cut_h', 0.0) or 0.0) == 0.0
+                # [Fix 2026-09-24 P0-3] 此处原有两条恒真死守卫，已删除：
+                #     (getattr(design,'lshape_cut_w',0.0) or 0.0) == 0.0
+                #     (getattr(design,'lshape_cut_h',0.0) or 0.0) == 0.0
+                # CropDesign 从无 lshape_cut_w/lshape_cut_h 字段（真名是
+                # l_cut_w_cm/l_cut_h_cm），故 getattr 恒取默认 0.0 → 条件恒真、等同不存在。
+                # 删除「恒真合取项」判定结果逐例等价，不改任何功能。
+                # ⚠️ 不可改用 l_cut_w_cm「恢复原意」：该字段默认值 15.0 / 10.0
+                # （core/geometry.py:175-176），且 main.py 的 rect_hole 预设保持默认非零
+                # → 改用它会让本清理块在单洞水池路径上永不触发（实测已复现为回归，
+                # 由 tests/core/test_stale_decor_guard_behavior.py 守护）。
+                # 「非 L 形」这一原意已由上方 design.mode == 'rect_hole' 完全覆盖
+                # （L 形仅在 mode == 'rect_lshape' 下渲染，image_ops.py:1113/1207）。
                 and has_outer_pool_material):
             _ot = float(_sd_orig[0] or 0.0)
             _ob = float(_sd_orig[1] or 0.0)
@@ -1203,7 +1199,7 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
         border_mask = inner_mask & ~eroded
     return border_mask
 
-def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB, _dbg):
+def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_material, BLACK_RGB):
     """[C-01] 统一黑框应用（原 L1153-1168）。"""
     if border_mask.any():
         # [Fix 2026-09-10] L 形 + 池素材：素材已拉伸到 inner_rect，其自身边框
@@ -1214,15 +1210,10 @@ def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_ma
         #   （V13 → Profile → 旧路径）全部失败（_completion_ok=False），
         #   会在 Step 3.6 末尾补画统一黑框兜底，保证切口至少有一条边框。
         _skip_unified = design.mode == 'rect_lshape' and is_pool_with_material
-        if _dbg:
-            logger.info(
-                f"[DEBUG-RD] STEP3.5 border_mask={border_mask.sum()}px "
-                f"skip_unified_black={_skip_unified} "
-                f"(mode={design.mode!r} is_pool={is_pool_with_material})")
         if not _skip_unified:
             canvas_arr[border_mask] = BLACK_RGB
 
-def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, _dbg, canvas, BLACK_RGB, lshape_cut_area_mask=None):
+def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, canvas, BLACK_RGB, lshape_cut_area_mask=None):
     """[C-01] L形挖角处素材边框补全（含三层失败兜底，原 L1170-1269）。"""
     # ===== [L-Shape Border Completion 2026-09-03] L 形挖角处的素材边框补全 =====
     # 当素材图自带边框（如克罗印花的棕色+黑色双层边框、安妮森林的细黑边框），
@@ -1233,10 +1224,6 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
     # 仅在 rect_lshape + 池素材 + 非 tile（tile 无边框）时触发。
     _is_tile = _looks_like_tile(design.pool_outer_material_image or '')
     _do_completion = design.mode == 'rect_lshape' and is_pool_with_material and not _is_tile
-    if _dbg:
-        logger.info(
-            f"[DEBUG-RD] STEP3.6 border_completion={_do_completion} "
-            f"(mode={design.mode!r} is_pool={is_pool_with_material} tile={_is_tile})")
     if _do_completion:
         _completion_ok = False  # 兜底初值；异常/失败时保持 False（三层失败掩盖修复）
         try:
@@ -1400,8 +1387,18 @@ def _stale_decor_residual_cleaner(canvas_arr, design, W, H, border_mask, inner_m
         if (design.mode == 'rect_hole'
                 and not getattr(design, 'pool_is_multi_hole', False)
                 and not getattr(design, 'pool_hole_transparent', True)
-                and (getattr(design, 'lshape_cut_w', 0.0) or 0.0) == 0.0
-                and (getattr(design, 'lshape_cut_h', 0.0) or 0.0) == 0.0
+                # [Fix 2026-09-24 P0-3] 此处原有两条恒真死守卫，已删除：
+                #     (getattr(design,'lshape_cut_w',0.0) or 0.0) == 0.0
+                #     (getattr(design,'lshape_cut_h',0.0) or 0.0) == 0.0
+                # CropDesign 从无 lshape_cut_w/lshape_cut_h 字段（真名是
+                # l_cut_w_cm/l_cut_h_cm），故 getattr 恒取默认 0.0 → 条件恒真、等同不存在。
+                # 删除「恒真合取项」判定结果逐例等价，不改任何功能。
+                # ⚠️ 不可改用 l_cut_w_cm「恢复原意」：该字段默认值 15.0 / 10.0
+                # （core/geometry.py:175-176），且 main.py 的 rect_hole 预设保持默认非零
+                # → 改用它会让本清理块在单洞水池路径上永不触发（实测已复现为回归，
+                # 由 tests/core/test_stale_decor_guard_behavior.py 守护）。
+                # 「非 L 形」这一原意已由上方 design.mode == 'rect_hole' 完全覆盖
+                # （L 形仅在 mode == 'rect_lshape' 下渲染，image_ops.py:1113/1207）。
                 and has_outer_pool_material):
             # [V2.1 Fix ②] 近黑阈值从 40 收紧到 20（避免深棕/深花被误纳入）
             _near_black = np.all(canvas_arr < 20, axis=2)  # (H, W) bool

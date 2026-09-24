@@ -100,7 +100,15 @@ def setup_logging(level: str | int | None = None, log_file: str | Path | None = 
     _logging_configured = True
 
     # 自己输出一条启动信息（用 root logger，避免模块 logger 名混乱）
-    root_logger.info(f'[log_setup] 日志系统已配置：级别={logging.getLevelName(level)}，'
+    # [Fix 2026-09-24 P1-1] 日志头带上 APP_VERSION（单一事实来源），
+    #   便于从用户回传的日志直接判定运行版本。纯文案追加，无逻辑变化。
+    _version_tag = ''
+    try:
+        from .config import APP_VERSION
+        _version_tag = f'SmartShapeCrop v{APP_VERSION} '
+    except Exception:
+        pass
+    root_logger.info(f'[log_setup] {_version_tag}日志系统已配置：级别={logging.getLevelName(level)}，'
                      f'控制台={console}，文件={log_file}')
 
 
