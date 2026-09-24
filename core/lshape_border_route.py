@@ -69,6 +69,10 @@ _TOTAL_DEPTH_RATIO = 0.50       # 边距+各层总厚 ≤ 短边 × 该比例（
 _GIANT_BAND_RATIO = 0.06        # 巨型 field 平段限厚收录厚度 = 短边 × 该比例
 _THICK_BLACK_MIN = 50           # 首层近黑且 ≥ 该厚度 → 交给 V13（已验证路径）
 _BLACK_MAX_CHANNEL = 90         # 近黑判定：max(r,g,b) < 该值
+# JPEG/扫描素材的黑色细框经常被压缩成 90~140 的中性灰。锚点仍要求
+# 低纹理且有实际厚度，放宽这一档不会把花纹线当作外框，却能避免某些
+# 素材四边中仅一边被识别为锚点而导致整条 Profile 路由放弃。
+_ANCHOR_GRAY_MAX_CHANNEL = 140
 _DARK_LINE_MAX_CHANNEL = 185    # 细线判定：低纹理段 max(rgb) < 该值视为"线"
                                 # （真实素材细框线跨边漂移 168~179，需放宽）
 _LINE_MAX_THICK = 32            # "线"的最大厚度（源像素）：真实素材细框线可达 24px
@@ -201,7 +205,7 @@ def _is_anchor_seg(s: _Seg) -> bool:
     仍要被锚点命中。
     """
     return (s.std < _LINE_STD_MAX
-            and max(s.color) < _BLACK_MAX_CHANNEL
+            and max(s.color) < _ANCHOR_GRAY_MAX_CHANNEL
             and s.thickness >= _ANCHOR_MIN_THICK)
 
 

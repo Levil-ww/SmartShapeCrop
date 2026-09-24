@@ -22,6 +22,8 @@ from core.lshape_border_route import (
     detect_border_profile,
     patch_lshape_cut_layers,
     profile_yields_to_v13,
+    _Seg,
+    _is_anchor_seg,
 )
 
 
@@ -123,6 +125,10 @@ def _make_zhuangyuanmiji_material(size=(800, 610)) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 class TestDetectBorderProfile:
+
+    def test_jpeg_gray_outer_frame_is_anchor(self):
+        """压缩后约 110 灰的连续外框仍应作为锚点，避免 Profile 整体放弃。"""
+        assert _is_anchor_seg(_Seg(0, 5, (108, 101, 100), 2.0))
 
     def test_keluo_two_layers(self):
         """克罗印花风格 → [黑细描边, 深色带] 2 层，路由层让位 V13（保护已认可效果）。"""
