@@ -1,8 +1,8 @@
 # SmartShapeCrop 项目全面审查报告
 
-**报告版本** V1.5 · **审查日期** 2026-09-24 · **修订记录** V1.0 → V1.1：当日完成 P0-2 修复并回填实测数据；V1.1 → V1.2：**当日完成 P0-3、P0-4 修复**（含纠正原报告对 P0-3 的错误修法建议）；V1.2 → V1.3：**当日完成 P1 批次（11.2 节 #9–#14）与 P2-3（`APP_VERSION` 单一来源）**，新建 `packageV2.2.3.py`，并更正本报告自身的 4 处事实/口径错误，详见附录 G；V1.3 → V1.4：**当日完成批次②「文档同步与低风险卫生」**（README 全篇同步至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6、迁移 P2-10、**P2-7 实测后严重度由 🟢 上调至 🟠**）；V1.4 → V1.5：**当日完成批次③「P2-7 junction 越界删除加固」**（`artifact_cleanup` 改为剪枝遍历，+8 条回归用例且经判别力自检），并更正本报告 V1.4 引入的 1 处表格口径错误（§2.2 目录小计）
-**审查对象** `F:\SmartShapeCrop` · **审查基线** `9c1937d`（`v2.2.3-综合可行性分析V2.0`，2026-09-23 15:55）
-**项目版本** V2.2.3 · **分支** `master`（累计 390 次提交）
+**报告版本** V1.7 · **审查日期** 2026-09-24 · **修订记录** V1.0 → V1.1：当日完成 P0-2 修复并回填实测数据；V1.1 → V1.2：**当日完成 P0-3、P0-4 修复**（含纠正原报告对 P0-3 的错误修法建议）；V1.2 → V1.3：**当日完成 P1 批次（11.2 节 #9–#14）与 P2-3（`APP_VERSION` 单一来源）**，新建 `packageV2.2.3.py`，并更正本报告自身的 4 处事实/口径错误，详见附录 G；V1.3 → V1.4：**当日完成批次②「文档同步与低风险卫生」**（README 全篇同步至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6、迁移 P2-10、**P2-7 实测后严重度由 🟢 上调至 🟠**）；V1.4 → V1.5：**当日完成批次③「P2-7 junction 越界删除加固」**（`artifact_cleanup` 改为剪枝遍历，+8 条回归用例且经判别力自检），并更正本报告 V1.4 引入的 1 处表格口径错误（§2.2 目录小计）；V1.5 → V1.6：**当日完成 P0-1 出包** —— 装 PyInstaller 6.22.3 → `packageV2.2.3.py` 产出 `dist/智能裁剪设计器V2.2.3.exe`（**218.4 MB**，内嵌 Tesseract），**时效铁律、exe 级启动冒烟、打包清单核验全部通过**，报告唯一阻塞项清零，详见附录 H；V1.6 → V1.7：**当日修复增量发现 #15（`_SketchDecodeWorker` 悬垂引用）** —— 两处调用点（`_start_sketch_decode_worker` L628「加载草图必经路径」/ `_pool_clear_sketch` L1033「清空草图」）加 `RuntimeError` 守卫，**+5 条回归用例**（**818 全绿**）并经「换回修复前重跑」的判别力自检；该缺陷**在真实使用中两度复现**（`crash.log` 2026-09-24 10:34:27 / 10:40:42，均为源码实例的 GUI 操作），详见附录 H.4 与 §9 **P1-9**
+**审查对象** `F:\SmartShapeCrop` · **审查基线** `bd2f9de`（`v2.2.3-修复草图解码 Worker 悬垂引用（#15）`，2026-09-24 10:50）
+**项目版本** V2.2.3 · **分支** `master`（累计 394 次提交）
 **审查方式** 全程只读：源码静态扫描 + 全量测试实跑 + Git 仓库取证 + 文档交叉核对
 **本报告定位** 取代 2026-09-16《项目全面审查报告》与 2026-09-19《上线前全检报告》的现状章节，作为 V2.2.3 基线的权威现状快照
 
@@ -12,13 +12,13 @@
 
 ### 一句话结论
 
-> **代码本身健康（813 测试全绿、无高危安全缺陷）**，V2.2.3 带入的三个正确性/安全缺陷（P0-2 / P0-3 / P0-4）、P1 批次六项整改（#9–#14）、版本号单一来源（P2-3）、文档与低风险卫生（P2-6 / P2-10 / P2-11）以及 **`artifact_cleanup` 的 junction 越界删除（P2-7）** 均已修复（2026-09-24）。**唯一剩余阻塞项是发布链本身** —— `dist/` 里的 exe 停留在 V2.2.2 且落后源码 **7 天**（P0-1，按用户指示「待全部问题修复后再出包」暂缓）。**代码侧已具备出包条件，出包动作待 P0-1 执行。**
+> **代码本身健康（818 测试全绿、无高危安全缺陷）**，V2.2.3 带入的三个正确性/安全缺陷（P0-2 / P0-3 / P0-4）、P1 批次六项整改（#9–#14）、版本号单一来源（P2-3）、文档与低风险卫生（P2-6 / P2-10 / P2-11）以及 **`artifact_cleanup` 的 junction 越界删除（P2-7）** 均已修复（2026-09-24）。**唯一阻塞项 P0-1（出包）已于 2026-09-24 10:34 闭环** —— `dist/智能裁剪设计器V2.2.3.exe`（218.4 MB）产出，时效铁律通过（exe mtime 10:34:11 ≥ 最新源码 10:15:32），exe 级启动冒烟与打包清单核验全通过。**V1.7 新增闭环 1 项**：`_SketchDecodeWorker` 悬垂引用（**P1-9**，本会话在真实运行日志中两度复现的 GUI 缺陷），两处调用点加 `RuntimeError` 守卫 + 5 条回归用例。**25 项问题中阻塞项已全部清零，剩余 6 项均为非阻塞的架构声明 / 覆盖缺口 / 文档卫生类改进。**
 
 ### 关键指标
 
 | 维度 | 结论 | 评级 |
 |---|---|---|
-| 测试基线 | **813 passed / 0 failed / 0 error / 0 skipped**（实跑；V1.2 为 732，V1.5 批次③ +8 条） | 🟢 优 |
+| 测试基线 | **818 passed / 0 failed / 0 error / 0 skipped**（实跑；V1.2 为 732，V1.5 批次③ +8 条，V1.7 批次⑤ +5 条） | 🟢 优 |
 | 代码语法 | 153 个 py 文件全量编译，**0 语法错误** | 🟢 优 |
 | 架构分层 | `workers`/`services` 无反向依赖 ✅；`core ↔ services` **双向依赖** ⚠️ | 🟡 良 |
 | 代码卫生 | 裸 `except:` **0 处** ✅；热路径 `print` 已清理（P1-4 ✅）；但 54 个超长函数、4 个 >1500 行巨型文件 | 🟡 良 |
@@ -26,13 +26,13 @@
 | 仓库卫生 | **71 个误跟踪文件已全部解除跟踪** ✅；`.gitignore` 已补 5 条规则；根目录 `crash.log` 已清、`debug.log` 受阻（被输入法占用） | 🟡 良（剩 1 项受阻） |
 | 版本一致性 | `core/config.APP_VERSION` **单一事实来源已建立** ✅，三处消费方实测引用 | 🟢 优 |
 | 文档一致性 | README 与 `scripts/README.md` **已同步至 V2.2.3 实测状态**（V1.4 完成，14 类失真逐条更正；含架构声明与实测偏差的如实改写） | 🟢 优 |
-| 发布链 | exe 落后源码 7 天；`packageV2.2.3.py` + V2.2.3 spec **已新建** ✅，但 PyInstaller 未装、未出包 | 🟡 良（待出包） |
+| 发布链 | **✅ 已出包**：`dist/智能裁剪设计器V2.2.3.exe`（218.4 MB，内嵌 Tesseract），PyInstaller 6.22.3；exe mtime **≥** 最新源码 mtime（时效铁律通过） | 🟢 优 |
 
-### 阻塞项（出包前必须清零）
+### 阻塞项（出包前必须清零）—— ✅ V1.6 已全部清零
 
 | # | 严重度 | 问题 | 位置 |
 |---|---|---|---|
-| **P0-1** | 🔴 | 打包产物落后最新源码 **7 天**，且标识仍为 V2.2.2（**唯一剩余阻塞项**）。V2.2.3 打包入口与 spec 已就绪，**待联网装 PyInstaller 后出包** | `dist/`、`packaging/packageV2.2.3.py` |
+| ~~**P0-1**~~ | ✅ | ~~打包产物落后最新源码 7 天，标识仍为 V2.2.2~~ → **2026-09-24 已出包**：PyInstaller 6.22.3 产出 `dist/智能裁剪设计器V2.2.3.exe`（**218.4 MB**，内嵌 Tesseract），时效铁律与冒烟全通过 | `dist/`、`packaging/packageV2.2.3.py` |
 | **P0-2** | ✅ | ~~LOD 预览未缩放几何字段~~ → **已修复**：**4 族**字段补齐缩放（含新发现的**多洞 `pool_holes_cm`**），实测掩膜 IoU 由 `[0.00, 0.29]` 升至 `[0.97, 0.99]` | `core/image_ops.py:_make_lod_design` |
 | **P0-3** | ✅ | ~~`lshape_cut_w/h` 死守卫恒真（字段名不存在）~~ → **已修复**：删除 2×2 条恒真合取项（**纯删除，判定逐例等价**）。⚠️ 原报告建议的「改用 `l_cut_w_cm`」**已实测证伪** | `core/image_ops.py`（两处守卫） |
 | **P0-4** | ✅ | ~~`pickle.load` 校验顺序倒置（本地反序列化面）~~ → **已修复**：改用**受限 Unpickler**（仅放行惰性内置类型），实测 119/119 存量缓存可加载、恶意载荷被阻断 | `services/parser/template_matcher.py` |
@@ -54,6 +54,33 @@
 | 编号 | 项 | 结果 |
 |---|---|---|
 | **P2-7** | `artifact_cleanup` **junction 越界删除**加固（🟠） | ✅ 新增 `_is_link_node()` + `_iter_tree()`：对 symlink 与 **junction** 双向剪枝（既不递归进入，也不把链接节点纳入 `candidates` / `empties`）；遍历顺序与 `Path.rglob('*')` **逐条一致**（下游 `sort(key=mtime)` 的稳定 tie-break 不变）；**+8 条回归用例**，并经「换回旧实现重跑」的判别力自检 |
+
+### 批次④整改结果（V1.6 新增）：P0-1 出包
+
+| 项 | 结果 |
+|---|---|
+| 装 PyInstaller | ✅ **6.22.3**（+ hooks-contrib 2026.7 / setuptools 84.0.0 / pefile / pywin32-ctypes / altgraph），**全部装进 `.venv`、系统 Python 未被污染** |
+| 出包 | ✅ `python packaging/packageV2.2.3.py` → **3 分 25 秒**（onefile + windowed）；产物 `dist/智能裁剪设计器V2.2.3.exe` **218.4 MB** |
+| 内嵌 Tesseract | ✅ `D:\Programs\Tesseract-OCR`（115.2 MB）；打包清单含 **161 个 `tesseract\*` 条目** + `chi_sim` / `eng` / `osd` 语言包 |
+| 时效铁律 | ✅ exe mtime **2026-09-24 10:34:11 ≥** 最新源码 **10:15:32**（提前 18.7 分钟） |
+| exe 级冒烟 | ✅ 两次离屏启动（`QT_QPA_PLATFORM=offscreen`）均存活 22–25 s 未被杀；bootloader + 应用进程（382 MB）双进程正常；**未产生 crash.log** |
+| 打包清单核验 | ✅ PYZ 内 **49 个项目模块全在**（含 `core.artifact_cleanup` / `services.psd.loader` / `gui.property_panel_poolbox` / `main`）；warn 中**项目自身模块缺失 = 0**（225 条告警全为第三方良性条件导入） |
+
+### 批次⑤整改结果（V1.7 新增）：修复增量发现 #15（`_SketchDecodeWorker` 悬垂引用）
+
+| 项 | 结果 |
+|---|---|
+| 缺陷定性 | ✅ **不是本次出包的产物缺陷，而是源码与 exe 共存的一条 GUI 生命周期缺陷** —— `crash.log` 两段均带 `sys.frozen: False` / `sys.executable=.venv\python.exe` / **无 `_MEIPASS`**，且现场无任何 `智能裁剪设计器*.exe` 进程；同源者只有一个 10:30:13 启动、`控制台=True` 的源码实例（10:40–10:42 有 252 行操作日志、**0 条 ERROR/WARNING**）→ 系**用户真实 GUI 操作**触发 |
+| 调用点①**加载草图必经路径** | ✅ `_start_sketch_decode_worker()` L628 `old.isRunning()` —— 经 `_on_lshape_action` → `_pool_load_sketch_from_path` 进入，**每次加载草图都走此路**；实测复现 10:40:42 |
+| 调用点②「清空草图」 | ✅ `_pool_clear_sketch()` L1033 `old_decode.isRunning()`；实测复现 10:34:27 |
+| 根因 | ✅ `worker.finished.connect(worker.deleteLater)`（L647）使解码线程退出即**销毁底层 C/C++ 对象**，而 `self._sketch_decode_worker` 的 Python 引用要到下一次退役才置 `None`（全文件仅 L627 / L1032 两处赋值）→ 常态序列「传草图 A（解码完成）→ 传草图 B」必然撞上悬垂引用。**间隔越久越易崩**（`deleteLater` 的实际销毁需事件循环跑到空闲），故表现为**偶发**而非必现 |
+| 修复 | ✅ 两处均为**纯新增守卫**（`gui/property_panel_poolbox.py` **+26 −4**）：`old.isRunning()` 与 `old.deleteLater()` 用 `try/except RuntimeError` 包住，把「包装器已失效」按**已停止**退役处理。**正常路径代码逐字未动**，功能语义零变化 |
+| 回归用例 | ✅ 新增 `tests/gui/test_poolbox_worker_retire.py`（**5 条**）：2 条**判别力自检**（证明「C++ 已销毁」确实使 `isRunning()` / `deleteLater()` 抛 `RuntimeError`）+ 3 条入口断言（两个入口 + 连续两次悬垂退役） |
+| 判别力自检 | ✅ 把 `gui/property_panel_poolbox.py` **临时回退到修复前**重跑：**3 failed / 2 passed**，失败栈精确命中 **`:628`** 与 **`:1033`** —— **与 `crash.log` 记录的真实崩溃行号完全一致**；恢复修复版后 **5/5 通过**。证明新增用例不是空护栏（附录 H.4） |
+| 测试基线 | ✅ **818 passed / 0 failed / 0 error / 0 skipped**（217.06s）；**+5 全落在 `tests/gui/`**（114 → **119**），其余 7 个目录逐项不变 |
+| 遗留（未修，仅记录） | ⚠️ 同一「`if old.isRunning()` + `deleteLater` 自毁」退役模式在工程内**至少 13 处**（`property_panel.py` / `cropper_panel.py` / `lshape_panel.py` / `property_panel_generate.py` / `canvas_widget.py` 等）。本次**仅修已确认复现的 `_sketch_decode_worker`**，其余**未逐一验证是否同样持有悬垂引用**，留待后续专项排查（见 §11.5） |
+
+> ⚠️ **唯一未能自动化的一项**：GUI 端到端「阶梯 L 形预览 = 导出」（P0-2 的修复面）需人工双击 exe 操作验证；源码级等价性已由 `tests/integration/test_lod_geometry_consistency.py`（24 条）在 818 全绿中覆盖。详见附录 H.3。
 
 ### 本次审查相较历史报告的增量发现
 
@@ -81,6 +108,13 @@
     **根因**：Python 3.13 的 `glob`/`rglob` 变更只覆盖 **symlink**，而 **junction 不是 symlink**（`os.path.islink()` 返回 `False`、`Path.is_dir()` 返回 `True`），故 `**` 仍会递归进入。本项目 `logs/` / `debug_output/` 若被用户以 junction 挂到其他盘（跨盘搬目录的常见做法），清理逻辑会删掉目标盘上的真实文件。
     **修复（V1.5）**：新增 `_is_link_node()` + `_iter_tree()`，遍历时对 symlink 与 junction **双向剪枝** —— 既不递归进入，也不把链接节点纳入 `candidates` / `empties`（后者会让 `rmdir` 断掉用户建立的联接）。**不得**改用 `os.walk(followlinks=False)`，它同样不拦 junction。
     **判别力自检**：把 `_iter_tree` 换回旧 `rglob` 实现重跑同一场景，目录外文件确实被删（`removed` 2 条 = `stale.txt` + `junc\keep.txt`）；修复后只删 1 条且目标完好 —— 证明新增的 8 条回归用例不是空护栏。详见 §9 P2-7 行与附录 G.5。
+15. **⚠️ `gui/property_panel_poolbox.py` 的 `_SketchDecodeWorker` 悬垂引用**（V1.6 发现 → **V1.7 已修复**，**非本次改动引入**）——
+    **现象**：`self._sketch_decode_worker` 只在本文件 L627 / L1032 两处被置 `None`，而 Worker 经 `worker.finished.connect(worker.deleteLater)`（L647）在解码线程退出后即**自毁 C/C++ 对象**；Python 包装器却保留到下一次退役。于是「传草图 A（解码完成）→ 传草图 B / 点清除草图」时访问 `old.isRunning()` 抛 `RuntimeError: wrapped C/C++ object of type _SketchDecodeWorker has been deleted`。
+    **两个调用点**：①`_start_sketch_decode_worker()` L628（**加载草图必经路径**，经 `_on_lshape_action` → `_pool_load_sketch_from_path`）；②`_pool_clear_sketch()` L1033。
+    **真实复现 ×2**：2026-09-24 `crash.log` 10:34:27（清空草图）/ **10:40:42**（加载 L 形草图）—— 均为当时正在运行的源码实例（`sys.frozen=False`）的用户 GUI 操作。**非致命**（全局 excepthook 记录后事件循环继续），但表现为「**点一下没反应、需再点一次**」的可感知功能失灵。
+    **V1.7 修复**：两处 `old.isRunning()` / `old.deleteLater()` 加 `try/except RuntimeError` 守卫（**+26 −4，纯新增，正常路径逐字未动**）；新增 `tests/gui/test_poolbox_worker_retire.py`（**5 条**）并经判别力自检（回退修复前 → 3 failed，失败栈命中 `:628` / `:1033`，**与真实崩溃行号一致**）。详见 §9 **P1-9** 与附录 H.4。
+    ⚠️ **同一退役模式在工程内至少 13 处**（`property_panel.py` / `cropper_panel.py` / `lshape_panel.py` / `property_panel_generate.py` / `canvas_widget.py` 等），本次**只修已确认复现的一处**。
+16. **⚠️ 本机 `.venv` 的隔离并不彻底，且镜像源存在出口 IP 风控**（V1.6 出包实测）——（a）`.venv/pyvenv.cfg` 中 `include-system-site-packages = true`，venv 能看见系统 site-packages；（b）venv 内**未安装 pip**，故 `python -m pip` 会解析到**系统 Python** 的那份（`C:\...\Python313\Lib\site-packages\pip`）。所幸系统 site-packages 当前**只有 pip**（无任何业务包），未造成依赖串味；装 PyInstaller 时实测落在 **venv**，系统目录**未被污染**。（c）本机环境变量注入了本地代理（`HTTPS_PROXY=http://127.0.0.1:50987`），pip 经该代理访问**清华镜像被 403 风控**，而**官方 PyPI 可正常经代理下载** —— 装包/出包统一走官方源。
 
 ---
 
@@ -158,7 +192,7 @@
 | psd-tools | 1.19.0 | >=1.9.28 | ✅ |
 | pytesseract | 0.3.13 | >=0.3.10 | ✅ |
 | pytest | 9.1.1 | >=7.0.0 | ✅ |
-| **PyInstaller** | **未安装** | 打包脚本自动检测/安装 | ⚠️ 出包前需联网安装 |
+| **PyInstaller** | **6.22.3（已装，2026-09-24）** | 打包脚本自动检测/安装 | ✅ 已装于 venv，系统 Python 未污染 |
 
 > ✅ 正向确认：`python-qt5`（历史恶意包）**未被引入**。
 
@@ -315,37 +349,37 @@ _dbg = False  # 临时开关，问题定位后改 False
 ### 5.1 实测基线（本次实跑，权威）
 
 ```
-813 passed / 0 failed / 0 error / 0 skipped  in 224.81s
+818 passed / 0 failed / 0 error / 0 skipped  in 217.06s
 ```
 
-> 演进：680（V1.0 审查）→ 704（P0-2 修复，+24）→ 732（P0-3/P0-4 修复，+28）→ 805（P1 批次 + P2-3，+73）→ **813（批次③ P2-7 加固，+8）**。**五轮均 0 failed / 0 error / 0 skipped。**
-> ⚠️ **耗时不可纵向比较**：V1.5 本次**未带 `--basetemp`**，临时目录落在 `%TEMP%`（224.81s）；V1.3 那次带 `--basetemp=.pytest_tmp/_bt`（103.45s）。**用例数与通过状态有效，耗时只在同口径内可比。**
+> 演进：680（V1.0 审查）→ 704（P0-2 修复，+24）→ 732（P0-3/P0-4 修复，+28）→ 805（P1 批次 + P2-3，+73）→ 813（批次③ P2-7 加固，+8）→ **818（批次⑤ #15 修复，+5）**。**六轮均 0 failed / 0 error / 0 skipped。**
+> ⚠️ **耗时不可纵向比较**：V1.5 那次**未带 `--basetemp`**（224.81s）；V1.3 带 `--basetemp=.pytest_tmp/_bt`（103.45s）；**V1.7 带 `--basetemp=.pytest_tmp/final_h15`**（217.06s）。**用例数与通过状态有效，耗时只在同口径内可比。**
 
 命令：`CODEBUDDY_SAFE_DELETE_ENABLED=0 python -m pytest tests/ -q -p no:cacheprovider --junitxml=...`
 
 > ⚠️ **环境伪失败的正确规避方式（V1.3 更正 V1.2 §5.1）**：
 > V1.2 记「必须使用 `--basetemp` 指向项目内目录即可规避」，**该结论不充分**。真正的拦截者是宿主注入的 `sitecustomize.py` **批量删除护栏**（`_check_bulk_delete_guard`），它按**单轮工具调用累计删除数**计数（阈值 50），命中即 `SystemExit(1)`，并级联出 `assert not self._finalizers` 之类的次生报错。
 > V1.3 实测：即使 `--basetemp=.pytest_tmp/_bt`，全量跑仍是 **36 errors + 1 failed**（`test_template_matcher` / `test_f15_f19_fixes` / `test_pool_lshape_flow` / `test_sketch_*` / `test_phase0_multihole` 等所有涉及删除临时文件的用例）；而**同一个文件单独跑 9/9 通过** —— 证明是累计计数而非目录位置所致。
-> **正解**：给测试进程设 `CODEBUDDY_SAFE_DELETE_ENABLED=0`（该垫片读此变量决定是否挂钩 `os.remove`），实测即 **805 全绿**；**V1.5 复验**：**不带** `--basetemp`、仅设该变量，**813 全绿** —— 故它是**充分**条件。`--basetemp` 仍建议保留（避免往用户临时目录写大量文件），但**不是必要条件**。
+> **正解**：给测试进程设 `CODEBUDDY_SAFE_DELETE_ENABLED=0`（该垫片读此变量决定是否挂钩 `os.remove`），实测即 **805 全绿**；**V1.5 复验**：**不带** `--basetemp`、仅设该变量，**813 全绿**；**V1.7 复验**：带 `--basetemp=.pytest_tmp/final_h15`、**未设**该变量，**818 全绿**（217.06s）—— 故该变量是**充分**条件，而 `--basetemp` 指向项目内目录在本次运行中亦独立有效。`--basetemp` 建议保留（避免往用户临时目录写大量文件）。
 
-### 5.2 分层覆盖分布（2026-09-24 V1.5 实跑解析）
+### 5.2 分层覆盖分布（2026-09-24 V1.7 实跑解析）
 
 | 目录 | 用例数 | 占比 | 内容 |
 |---|---:|---:|---|
-| `tests/core/` | 436 | 53.6% | 圆角 / 裁剪 / 解析 / 模板 / L 形 / G1 / 多角 / 校验 / Stale-Decor 守卫 / 缓存反序列化加固 / 锚定角分组 / 调试残留 / 版本单一来源 / Tesseract 探测 / **产物清理的链接剪枝** |
-| `tests/gui/` | 114 | 14.0% | 离屏 GUI（冒烟 / 主窗 / 信号契约 / 三面板 / 阶梯面板 / 写回路径） |
-| `tests/integration/` | 101 | 12.4% | F1-F19 修复验证 / 配置 / 水池-L 形流程 / LOD 几何一致性 |
-| `tests/sketch/` | 64 | 7.9% | 多洞 / 特征化 / 输入校验 / 逻辑函数 |
+| `tests/core/` | 436 | 53.3% | 圆角 / 裁剪 / 解析 / 模板 / L 形 / G1 / 多角 / 校验 / Stale-Decor 守卫 / 缓存反序列化加固 / 锚定角分组 / 调试残留 / 版本单一来源 / Tesseract 探测 / 产物清理的链接剪枝 |
+| `tests/gui/` | 119 | 14.5% | 离屏 GUI（冒烟 / 主窗 / 信号契约 / 三面板 / 阶梯面板 / 写回路径 / **草图解码 Worker 退役**） |
+| `tests/integration/` | 101 | 12.3% | F1-F19 修复验证 / 配置 / 水池-L 形流程 / LOD 几何一致性 |
+| `tests/sketch/` | 64 | 7.8% | 多洞 / 特征化 / 输入校验 / 逻辑函数 |
 | `tests/sketch_parser/` | 57 | 7.0% | 阶梯识别 / 多洞边界 |
 | `tests/models/` | 27 | 3.3% | DesignModel CutRect 路径 |
 | `tests/border/` | 10 | 1.2% | 边框修复 / 复杂花纹安全 |
 | `tests/`（根） | 4 | 0.5% | Phase 0 多洞管线 |
-| **合计** | **813** | 100% | — |
+| **合计** | **818** | 100% | — |
 
-**测试演进**：501（V2.2.2 文档）→ 672（09-19 基线）→ 680（V1.0 审查）→ 704（P0-2）→ 732（P0-3/P0-4）→ 805（P1 批次）→ **813（本批次）**。**较 V2.2.2 文档增长 62%，全绿。**
+**测试演进**：501（V2.2.2 文档）→ 672（09-19 基线）→ 680（V1.0 审查）→ 704（P0-2）→ 732（P0-3/P0-4）→ 805（P1 批次）→ **818（本批次）**。**较 V2.2.2 文档增长 63%，全绿。**
 
-> **批次③的 +8 条全部落在 `tests/core/`**（428 → **436**）。其余 7 个目录用例数**逐项不变**（gui 114 / integration 101 / sketch 64 / sketch_parser 57 / models 27 / border 10 / 根 4）—— 再次印证改动被限制在 `artifact_cleanup` 一处。
-> 新增文件：`tests/core/test_artifact_cleanup_links.py`（8 条）。
+> **批次③的 +8 条全部落在 `tests/core/`**（428 → **436**）；**批次⑤的 +5 条全部落在 `tests/gui/`**（114 → **119**）。其余 6 个目录用例数**逐项不变**（core 436 / integration 101 / sketch 64 / sketch_parser 57 / models 27 / border 10 / 根 4）—— 再次印证改动被严格限制在被修的那一处。
+> 新增文件（本报告周期内）：`tests/core/test_artifact_cleanup_links.py`（8 条）、`tests/gui/test_poolbox_worker_retire.py`（5 条）。
 > （V1.3 +73 条的分布留档：`tests/core/` 368 → 428（+60）、`tests/gui/` 101 → 114（+13），来源为 `test_lshape_cut_rect_anchor_limit.py`(28) + `test_debug_residue_removed.py`(12) + `test_app_version_single_source.py`(11) + `test_config_tesseract_probe_hardened.py`(9) + `test_property_panel_write_paths.py`(13)。）
 
 ### 5.3 ✅ 历史告警可正式关闭
@@ -354,7 +388,7 @@ _dbg = False  # 临时开关，问题定位后改 False
 |---|---|
 | `test_render_design_lshape_degenerate_no_crash` 失败（README 已知问题 #1） | ✅ **已修复** —— `core/geometry.py:349-352` 新增 `if edge_length_cm <= 0: continue` 退化守卫，本次全量实跑通过 |
 | 「626 passed / 45 errors」环境伪失败 | ✅ 已定因（`%TEMP%` 权限护栏），`--basetemp` 可稳定规避 |
-| 「501 项 / 1 failed」基线 | ✅ 已过时，现为 **813 全绿** |
+| 「501 项 / 1 failed」基线 | ✅ 已过时，现为 **818 全绿** |
 
 ### 5.4 覆盖薄弱区（沿用并复核 09-19 结论）
 
@@ -537,16 +571,19 @@ _langs_out = _proc.stdout or ''
 
 ## 8. 交付与发布链审查
 
-### 8.1 🔴 P0-1：产物落后源码 7 天（违反自定铁律）
+### 8.1 ✅ 已解决（V1.6）：P0-1 产物时效
 
-| 项 | 时间戳 |
+**V1.5 原状（已作废）**：`dist/智能裁剪设计器V2.2.2.exe` = 2026-09-16 14:44:05，落后当时最新源码（2026-09-23 15:34:27）**7 天 0 小时**，V2.2.3 全部功能（阶梯 L 形、多洞优化、黑大理石修复）均未进入任何产物 —— 明确违反项目自定的「**交付物时效铁律**：出包后必须确认 `dist/*.exe` 时间戳 ≥ 最新源码时间戳」。
+
+**V1.6 现状（2026-09-24 10:34 出包后）**：
+
+| 项 | 时间戳 / 值 |
 |---|---|
-| 最新源码 | `gui/property_panel_generate.py` → **2026-09-23 15:34:27** |
-| `dist/智能裁剪设计器V2.2.2.exe` | **2026-09-16 14:44:05** |
-| `build/` | 2026-09-16 14:41:49 |
-| **差距** | **exe 落后源码 7 天 0 小时** |
+| 最新源码 | `core/artifact_cleanup.py` → **2026-09-24 10:15:32** |
+| `dist/智能裁剪设计器V2.2.3.exe` | **2026-09-24 10:34:11**（**218.4 MB**） |
+| **判定** | ✅ **exe 不落后于源码（提前 18.7 分钟）—— 铁律通过** |
 
-项目自定「**交付物时效铁律**：出包后必须确认 `dist/*.exe` 时间戳 ≥ 最新源码时间戳」。**当前明确违反** —— V2.2.3 全部功能（阶梯 L 形、多洞优化、黑大理石修复）**均未进入任何产物**。
+产物由 `packaging/packageV2.2.3.py` 生成（onefile + windowed，耗时 3 分 25 秒），内嵌 `D:\Programs\Tesseract-OCR`（115.2 MB）。**P0-1 闭环**，详见附录 H。
 
 ### 8.2 ✅ 已修复：打包版本号错位（M-1 / P1-1）
 
@@ -556,11 +593,11 @@ _langs_out = _proc.stdout or ''
 | exe 名来源 | 硬编码 `APP_NAME = "智能裁剪设计器V2.2.2"` | ✅ **改为从 `core/config.APP_VERSION` 派生**（按文件路径加载，见 8.4） |
 | spec | 仅到 `V2.2.2.spec` | ✅ **新增 `packaging/specs/智能裁剪设计器V2.2.3.spec`**（81 行） |
 | `packaging/README.md` | 称唯一入口为 V2.2.2，且**仍称 `legacy/` 存在**（已于 09-17 删除） | ✅ 已重写：入口改 V2.2.3、补「版本号不再硬编码」说明、纠正 `legacy/` 状态 |
-| PyInstaller | **未安装** | ⏸ **仍未安装** —— 出包前需联网（脚本会自动装） |
+| PyInstaller | **6.22.3** | ✅ **已装于 venv 并完成出包**（2026-09-24），系统 Python 未污染，见 §8.1 |
 
 **实测验证**：`packageV2.2.3.py --help` 输出含 `SmartShapeCrop V2.2.3` 与 `智能裁剪设计器V2.2.3`；模块级 `APP_NAME == 智能裁剪设计器V2.2.3`；与 V2.2.2 的代码体差异**仅 4 处**（docstring / `APP_NAME` 取值块 / 打包横幅 / 注释），其余逐字节一致 —— 保证出包行为不变。
 
-**遗留**：`productVersion` 等 PyInstaller 侧元数据仍由 spec 决定，本次未改动；**出包动作（P0-1）仍未执行**。
+**遗留**：`productVersion` 等 PyInstaller 侧元数据仍由 spec 决定，本次未改动；**出包动作（P0-1）已执行** —— 见 §8.1 与附录 H。
 
 ### 8.3 ✅ 正向：历史归档清理已执行
 
@@ -598,7 +635,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 
 | # | 严重度 | 类别 | 问题 | 位置 | 状态 |
 |---|---|---|---|---|---|
-| **P0-1** | 🔴 | 发布链 | exe 落后源码 7 天，V2.2.3 功能未进产物（打包入口/spec **已就绪**，待装 PyInstaller 出包） | `dist/` | **⏳ 仍存在（唯一阻塞）** |
+| ~~**P0-1**~~ | ✅ | 发布链 | ~~exe 落后源码 7 天，V2.2.3 功能未进产物~~ → **2026-09-24 已出包**：`dist/智能裁剪设计器V2.2.3.exe`（218.4 MB，内嵌 Tesseract），时效铁律 + exe 冒烟 + 打包清单核验全通过 | `dist/` | **✅ 已修复** |
 | ~~**P0-2**~~ | ✅ | 正确性 | ~~LOD 未缩放几何字段 → 预览 ≠ 导出~~ → **2026-09-24 已修复**：4 族几何字段补齐 LOD 缩放（含新发现的**多洞 `pool_holes_cm`**），并新增 24 条回归用例 | `core/image_ops.py:_make_lod_design` | **✅ 已修复** |
 | ~~**P0-3**~~ | ✅ | 正确性 | ~~`lshape_cut_w/h` 死守卫恒真（字段不存在）~~ → **2026-09-24 已修复**：删除 2×2 条恒真合取项（纯删除，判定逐例等价）；⚠️ 原报告建议的「改用 `l_cut_w_cm`」已实测证伪 | `core/image_ops.py`（两处守卫） | **✅ 已修复** |
 | ~~**P0-4**~~ | ✅ | 反序列化 | ~~`pickle.load` 校验顺序倒置~~ → **2026-09-24 已修复**：受限 Unpickler（仅放行惰性内置类型） | `services/parser/template_matcher.py` | **✅ 已修复** |
@@ -609,7 +646,8 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | **P1-5** | 🟡 | 架构 | `core ↔ services` 双向依赖（循环） | `core/__init__.py` 等 | ⏳ 仍存在 |
 | **P1-6** | 🟡 | 架构 | `core/app_settings.py` 依赖 PyQt5，违反分层声明 | `core/app_settings.py:25` | ⏳ 仍存在 |
 | ~~**P1-7**~~ | 🟡 | 命令执行 | ~~`os.popen` 起 shell 且未 close~~ → **2026-09-24 已修复**：改 `subprocess.run(list)`，无 `shell=True`、stderr 合并、复用 `path_exe` | `core/config.py` | **✅ 已修复** |
-| **P1-8** | 🟡 | 文档 | README 停留在 V2.2.2，**至少 12 处与现状不符** | `README.md` | ⏳ 仍存在 |
+| ~~**P1-8**~~ | 🟡 | 文档 | ~~README 停留在 V2.2.2，**至少 12 处与现状不符**~~ → **2026-09-24 已修复**：README 全篇同步至 V2.2.3（1,247 行），14 类失真逐条更正 | `README.md` | **✅ 已修复** |
+| ~~**P1-9**~~ | 🟠 | 正确性 / 稳定性 | ~~`_SketchDecodeWorker` 悬垂引用 → `RuntimeError: wrapped C/C++ object ... has been deleted`~~（**真实复现 ×2**）→ **V1.7 已修复**：`_start_sketch_decode_worker()` L628（**加载草图必经路径**）与 `_pool_clear_sketch()` L1033 两处 `isRunning()` / `deleteLater()` 加 `try/except RuntimeError` 守卫（**+26 −4 纯新增**），+5 条回归用例并经判别力自检 | `gui/property_panel_poolbox.py:628,1033` | **✅ 已修复** |
 | ~~**P2-1**~~ | 🟡 | 隐性耦合 | ~~硬编码 mode 索引 `{'rect_hole':0,'rect_lshape':1,'ellipse_hole':2}`~~ → **2026-09-24 已修复**：改 `_cb_mode.findData(d.mode)`（未知 mode 回落 0） | `gui/property_panel.py` | **✅ 已修复** |
 | **P2-2** | 🟡 | 隐性耦合 | 历史源白名单 `if src not in (CROPPER, POOL, LSHAPE)` | `core/app_settings.py` | ⏳ 仍存在 |
 | ~~**P2-3**~~ | 🟡 | 版本一致性 | ~~项目无 `__version__` 常量，版本无单一事实来源~~ → **2026-09-24 已修复**：`core/config.APP_VERSION` 唯一定义点 + 三处消费方引用 | `core/config.py` | **✅ 已修复** |
@@ -623,22 +661,26 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | ~~**P2-11**~~ | 🟢 | 文档 | ~~`scripts/README.md` 清单与实际结构大面积不符~~ → **2026-09-24 已按实测重写**（更正 `_archive/` 位置、补齐各层计数） | `scripts/README.md` | **✅ 已修复** |
 | ~~**P2-12**~~ | 🟢 | 仓库卫生 | ~~`.pytest_tmp/`、`.pytest_cache/` 未 ignore（09-19 QA 遗留）~~ → **2026-09-24 已修复**：两条规则已补入 `.gitignore` | 根目录 | **✅ 已修复** |
 
-### 严重度分布（V1.5 重算）
+### 严重度分布（V1.7 重算）
 
 | 严重度 | 条目数 | 已闭环 | 部分处置 | 仍存在 |
 |---|---:|---:|---:|---:|
-| 🔴 阻塞 | 1 | 0 | 0 | 1 |
-| 🟠 高 | 4 | 3 | 0 | 1 |
-| 🟡 中 | 8 | 4 | 0 | 4 |
+| 🔴 阻塞 | 1 | 1 | 0 | 0 |
+| 🟠 高 | 5 | 4 | 0 | 1 |
+| 🟡 中 | 8 | 5 | 0 | 3 |
 | 🟢 低 | 8 | 6 | 1 | 1 |
-| **小计（V1.2 起跟踪的 21 项）** | **21** | **13** | **1** | **7** |
+| **小计（V1.2 起跟踪的 22 项）** | **22** | **16** | **1** | **5** |
 | P0 批次（V1.1/V1.2 引入，已闭环） | 3 | 3 | 0 | 0 |
-| **合计** | **24** | **16** | **1** | **7** |
+| **合计** | **25** | **19** | **1** | **5** |
 
 > ⚠️ **口径更正（V1.3）**：V1.2 的分布表记「🔴1 / 🟠6 / 🟡9 / 🟢11，合计 **27**」，但其上方的条目表实际只有 **24** 项（P0×4 + P1×8 + P2×12），**两者对不上**。V1.3 已按条目表逐项重算并统一。
 > **V1.3 → V1.4（2026-09-24 批次② 文档同步与低风险卫生）**：新闭环 **3 项**（P2-6 / P2-10 / P2-11）；**P2-7 严重度由 🟢 上调至 🟠**（junction 越界删除实测复现）。故 🟠 3→**4** 项、🟢 9→**8** 项。
 > **V1.4 → V1.5（2026-09-24 批次③ P2-7 加固）**：新闭环 **1 项**（P2-7）。故 🟠 已闭环 2→**3**、🟠 仍存在 2→**1**。
-> 累计闭环 **16 项**，占 24 项的 **66.7%**；仍存在 7 项、部分处置 1 项。剩余 7 项中 **P0-1 是唯一阻塞项**，其余 6 项均属「架构声明 / 覆盖缺口 / 文档 / 卫生」类非阻塞问题。
+> **V1.5 → V1.6（2026-09-24 批次④ P0-1 出包）**：新闭环 **1 项**（P0-1，**唯一阻塞项**）。故 🔴 已闭环 0→**1**、🔴 仍存在 1→**0**。
+> **V1.6 → V1.7（2026-09-24 批次⑤ 修复增量发现 #15）**：**新登记 1 项**（**P1-9**，🟠 高，`_SketchDecodeWorker` 悬垂引用，自 §0 增量发现 #15 转正）并**当日闭环**。故 🟠 条目数 4→**5**、🟠 已闭环 3→**4**、小计 21→**22**、合计 24→**25**，已闭环 18→**19**。P1-9 是**本报告周期内唯一在真实运行中复现过的 GUI 稳定性缺陷**。
+> ⚠️ **V1.6 自我更正（1 处）**：V1.4 完成批次②时，§0 关键指标表已写「README 已同步 🟢 优」，但 §9 清单里的 **P1-8 漏改**、仍标「⏳ 仍存在」，导致 🟡 项少计 1 个闭环。V1.6 已更正：🟡 已闭环 4→**5**、🟡 仍存在 4→**3**。
+> 累计闭环 **19 项**，占 25 项的 **76.0%**；仍存在 5 项、部分处置 1 项。**阻塞项已全部清零**，剩余 5 项均为非阻塞类：架构声明（P1-5 / P1-6）、覆盖缺口（P1-3）、隐性耦合（P2-2）、仓库卫生（P2-8 部分处置 / P2-9）。
+> ⚠️ **同模式未排查项（不计入上表）**：`if old.isRunning(): … else: old.deleteLater()` 这一退役写法在工程内**至少 13 处**，本次仅修**已确认复现**的 `_sketch_decode_worker` 一处；其余是否同样持有悬垂引用**未逐一验证**，列为后续专项（§11.5）。
 
 ---
 
@@ -653,14 +695,15 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | `scripts/_archive/`、`scripts/verify/_archive/` 堆积 | ✅ 已清理（2026-09-17） |
 | 死守卫之外的 F1-F19 修复 | ✅ 集成测试 101 项全绿 |
 | 配置魔法数字散落（边框检测阈值） | ✅ V2.2.3 集中到 `core/config.py`（8 个 `BORDER_*` 常量） |
-| 测试基线 501 | ✅ 增至 **813 全绿** |
+| 测试基线 501 | ✅ 增至 **818 全绿** |
 | 热路径 8 处 `print(flush=True)`（P1-4） | ✅ 已删除（本批次） |
 | 遗留 `_dbg = False` 调试开关（P2-5） | ✅ 已删除（本批次，`core/image_ops.py` 净 −61 行） |
 | `os.popen` 起 shell（P1-7） | ✅ 改 `subprocess.run(list)`（本批次） |
 | 硬编码 mode 索引表（P2-1） | ✅ 改 `findData`（本批次） |
 | `l_cut_rects` 按总数截断（P2-4） | ✅ 改按锚定角分组，与 `validate()` 共用上限（本批次） |
 | 版本号无单一事实来源（P2-3） | ✅ `core/config.APP_VERSION` + 三处消费方（本批次） |
-| 打包版本号错位（P1-1 / M-1） | ✅ `packageV2.2.3.py` + V2.2.3 spec（本批次，出包仍待 P0-1） |
+| 打包版本号错位（P1-1 / M-1） | ✅ `packageV2.2.3.py` + V2.2.3 spec，**并已完成出包**（V1.6：`dist/智能裁剪设计器V2.2.3.exe`，218.4 MB） |
+| 产物落后源码 7 天（P0-1） | ✅ **已出包**，时效铁律通过（V1.6） |
 | 71 个非源码文件被误跟踪（P1-2） | ✅ 已解除跟踪 71/71，`.gitignore` 补 5 条（本批次，待提交） |
 | `.pytest_tmp/` `.pytest_cache/` 未 ignore（P2-12） | ✅ 已 ignore（本批次） |
 
@@ -668,18 +711,18 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 
 ## 11. 改进建议与行动计划
 
-### 11.1 出包前必做（P0 批次）
+### 11.1 出包前必做（P0 批次）—— ✅ 已全部执行（V1.6）
 
 | # | 动作 | 位置 | 验收标准 |
 |---|---|---|---|
-| 1 | 冻结基线：先**提交**本批次改动（当前工作树有 102 条未提交改动，见 1.2），再以新提交为出包基线 | — | `git status` 无修改 |
+| 1 | ~~冻结基线：提交本批次改动~~ **✅ 已完成**：`9c4443a`（P0/P1 批次）→ `ea60af0`（文档同步）→ `40e4a86`（P2-7 加固） | — | ✅ `git status` 为空 |
 | 2 | ~~修 P0-2：`_make_lod_design` 补缩放几何字段~~ **✅ 已完成（2026-09-24）**：补缩放 **4 族** —— `l_cut_rects[].{w,h,offset_x,offset_y}_cm`、`corner_{tl,tr,bl,br}_cm`、`ellipse_diameter_{w,h}_cm`、`pool_holes_cm[].{x,y,w,h}_cm` | `core/image_ops.py:_make_lod_design` | ✅ 38 行纯新增；掩膜 IoU ≥ 0.9692（修复前最低 0.0000）；新增 24 条回归用例 |
 | 3 | ~~修 P0-3~~ **✅ 已完成（2026-09-24）**：**删除** 2×2 条恒真死守卫（`lshape_cut_w/h` 字段从不存在）。⚠️ **未采用**原报告建议的「改用 `l_cut_w_cm`」—— 实测证实那会导致两块清理永不触发（该字段默认非零，详见附录 D） | `core/image_ops.py`（两处守卫） | ✅ 纯删除 4 行 + 注释；判定逐例等价；新增 11 条行为锁用例 + AST 防回归断言 |
 | 4 | ~~修 P0-4~~ **✅ 已完成（2026-09-24）**：`DiskCache.load` 改用**受限 Unpickler**（仅放行惰性内置类型）。⚠️ **未采用**原报告建议的「JSON 优先 / 先校验后解包」—— 两条均不成立（详见附录 E） | `services/parser/template_matcher.py` | ✅ 119/119 存量缓存兼容；恶意载荷阻断（对照组证实载荷可执行）；新增 17 条用例 |
 | 5 | ~~修 P1-1：新建 `packaging/packageV2.2.3.py` + `specs/智能裁剪设计器V2.2.3.spec`；引入 `core/config.APP_VERSION` 单一来源~~ **✅ 已完成（2026-09-24）**：脚本 569 行、spec 81 行，`APP_NAME` 由 `APP_VERSION` 派生（按文件路径加载，避免 `core/__init__` 聚合导入） | `packaging/`、`core/config.py` | ✅ `--help` 实测输出 `SmartShapeCrop V2.2.3`；`module.APP_NAME == 智能裁剪设计器V2.2.3` |
-| 6 | 重跑全量测试 | — | ✅ 已完成：V1.3 **805 全绿**（103.5s）→ V1.5 **813 全绿**（224.8s，未带 `--basetemp`）。⚠️ 命令需加 **`CODEBUDDY_SAFE_DELETE_ENABLED=0`**，仅靠 `--basetemp` 不足（见 5.1） |
-| 7 | 重打包并核对时间戳 | `dist/` | **`dist/*.exe` mtime ≥ 最新源码 mtime** |
-| 8 | 冒烟：启动 exe 验证阶梯 L 形**预览与导出一致** | — | 目视 + 尺寸量测 |
+| 6 | 重跑全量测试 | — | ✅ 已完成：V1.3 **805 全绿**（103.5s）→ V1.5 **813 全绿**（224.8s，未带 `--basetemp`）→ **V1.7 818 全绿**（217.1s，带 `--basetemp`）。⚠️ 命令建议加 **`CODEBUDDY_SAFE_DELETE_ENABLED=0`**（见 5.1） |
+| 7 | ~~重打包并核对时间戳~~ **✅ 已完成（2026-09-24）** | `dist/` | ✅ `dist/智能裁剪设计器V2.2.3.exe` **10:34:11 ≥ 源码 10:15:32** |
+| 8 | 冒烟：启动 exe 验证阶梯 L 形**预览与导出一致** | — | 🟡 **exe 级启动冒烟已过**（两次离屏启动存活 22–25 s、无 crash.log）；**GUI 端到端仍待人工双击验证**（源码级 24 条 LOD 等价用例已全绿，见附录 H.3） |
 
 ### 11.2 同批处理（✅ 已于 2026-09-24 执行完毕）
 
@@ -700,7 +743,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 
 | # | 项目 | 说明 |
 |---|---|---|
-| 15 | **README / CHANGELOG 同步至 V2.2.3**（P1-8） | README 至少 12 处待改，见附录 B |
+| 15 | ~~**README / CHANGELOG 同步至 V2.2.3**（P1-8）~~ **✅ 已于 2026-09-24 执行** | README 已全篇同步（1,247 行，14 类失真逐条更正，见附录 B）；`scripts/README.md` 亦按实测重写 |
 | 16 | **拆分 `core/image_ops.py`**（1,833 行） | 与 P0-2/P0-3 同批做，拆出「素材适配」「L 形渲染」「边框补全集成」三个模块 |
 | 17 | **架构分层定策**（P1-5 + P1-6） | `core ↔ services` 循环与 `core→PyQt5` 需明确取舍：要么修正声明，要么拆出服务聚合层。**建议先改文档声明（成本 0），再评估是否真拆** |
 | 18 | **补 PSD / app_settings / workers 测试**（P1-3） | 优先 `services/psd/loader.py`（零覆盖的对外特性） |
@@ -728,6 +771,16 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 6. **替换标准库遍历时，必须验证产出顺序（防静默行为漂移）** —— ✅ **已落地（2026-09-24，批次③）**
    实测教训：`Path.rglob('*')` 是**逐层广度优先**（并非深度优先先序），最初按 DFS 自写遍历导致 `files` 顺序漂移。集合虽相同，但下游 `remaining.sort(key=mtime)` 是**稳定排序** —— mtime 相同的项删除次序会变，属行为变更（会打破「不改变程序功能」的硬约束）。**范本：凡把标准库遍历换成自写遍历，先写「与标准库逐条一致」的顺序断言。**
 
+7. **「异常被捕获的静默失灵」必须有回归用例（防 P1-9 类缺陷）** —— ✅ **已落地（2026-09-24，批次⑤）**
+   P1-9 之所以能潜伏到 V2.2.3，是因为它**不崩溃、不写 ERROR 日志**（全局 excepthook 只写 `crash.log`，滚动日志里**0 条 ERROR/WARNING**），用户感知仅剩「点一下没反应」。**范本**：对「`RuntimeError: wrapped C/C++ object … has been deleted`」这类 Qt 生命周期问题，必须**先写「判别力用例」证明该状态确实会抛异常**，再断言修复后不抛（`tests/gui/test_poolbox_worker_retire.py` 的 2 条 `TestDanglingWorkerDetection`）。**触发条件提示**：凡代码里出现「保留 Python 引用 + 对该引用调用 `deleteLater()`」的组合，都要检查下一次使用是否可能撞上已销毁的包装器。
+
+### 11.5 后续专项（V1.7 新增，尚未排期）
+
+| # | 项目 | 说明 |
+|---|---|---|
+| 22 | **同模式退役写法全量排查** | 工程内「`if old.isRunning(): … else: old.deleteLater()`」至少 **13 处**（`gui/property_panel.py` L975/L984/L993、`gui/cropper_panel.py` L903/L918、`gui/lshape_panel.py` L887/L1340、`gui/canvas_widget.py` L240、`gui/property_panel_generate.py` L156/L401、`gui/property_panel_poolbox.py` L632/L1058 等）。**本次只修已确认复现的 `_sketch_decode_worker`（2 处）**；其余需逐一判断「对应 Worker 是否也在 `finished` 时自毁」—— 只有「自毁 + Python 引用保留」同时成立才会踩同一个坑。**建议**：抽一个模块级 `_retire_worker(obj)` 统一处理（本次为守住「不改既有逻辑」未做重构），或接入 `sip.isdeleted()` 判定。 |
+| 23 | **`crash.log` 应写入 exe 同目录并区分运行时** | 本次 `crash.log` 落在**项目根**且不区分「源码实例 / 打包实例」，导致出包冒烟时被误读为「exe 崩了」。建议日志头固定输出 `sys.frozen` / `_MEIPASS` / 版本号（现已含前两者），并把打包版落点改到 `dist/` 或用户数据目录。 |
+
 ---
 
 ## 附录 A：审查证据（命令与输出）
@@ -735,17 +788,22 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | 检查项 | 命令 | 结果 |
 |---|---|---|
 | 仓库状态 | `git status --porcelain` | V1.3 审查时为 **102 条**（71 `D ` + 12 ` M` + 2 ` D` + 17 `??`，详见 1.2），已随 `9c4443a` + `ea60af0` 两笔提交全部落库 |
-| HEAD | `git log -1 --format='%H %ci %s'` | 本批次末为 `v2.2.3-修复产物清理的 junction 越界删除（P2-7）`（V1.3 审查基线：`9c1937d` 2026-09-23 15:55） |
-| 提交总数 | `git rev-list --count HEAD` | **393**（含本批次 3 笔；V1.3 审查基线 `9c1937d` 时为 390） |
+| HEAD | `git log -1 --format='%H %ci %s'` | **V1.7 基线**：`bd2f9de` `v2.2.3-修复草图解码 Worker 悬垂引用（#15）`（2026-09-24 10:50）；V1.6 基线为 `40e4a86` `v2.2.3-修复产物清理的 junction 越界删除（P2-7）`（V1.3 审查基线：`9c1937d` 2026-09-23 15:55） |
+| 提交总数 | `git rev-list --count HEAD` | **394**（含本报告周期 4 笔；V1.3 审查基线 `9c1937d` 时为 390） |
+| #15 崩溃日志归因 | 读 `crash.log` 运行时指纹 + `tasklist` + `logs/smartshapecrop.log` 启动头 | 两段崩溃均 `sys.frozen: False` / **无 `_MEIPASS`**；当时无任何 exe 进程；日志全文件仅 **26 次启动头**、末次 `10:30:13`（`控制台=True`）→ **源码实例的 GUI 操作**，与出包产物无关（附录 H.4） |
+| #15 判别力自检 | `git checkout -- gui/property_panel_poolbox.py` 回退后重跑 | **3 failed / 2 passed**，失败栈命中 **`:628`** 与 **`:1033`** —— **与 `crash.log` 真实崩溃行号一致**；恢复后 **5/5 passed** |
 | 代码规模 | `pathlib.rglob('*.py')` + `count('\n')` | **154 文件 / 48,098 行**（V1.3：153 / 47,743；+355 行） |
-| 全量测试 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 pytest tests/ -q -p no:cacheprovider --junitxml=…` | V1.0 **680 passed / 0 failed in 182.42s** → V1.2 **732 / 0 in 106.67s** → V1.3 **805 / 0 / 0 / 0 in 103.45s** → **V1.5 813 / 0 / 0 / 0（批次③ +8）** |
+| 全量测试 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 pytest tests/ -q -p no:cacheprovider --junitxml=…` | V1.0 **680 passed / 0 failed in 182.42s** → V1.2 **732 / 0 in 106.67s** → V1.3 **805 / 0 / 0 / 0 in 103.45s** → V1.5 **813 / 0 / 0 / 0（批次③ +8）**；V1.6（批次④）**未改任何源码**，故未重跑全量，仅跑 `test_f15_f19_fixes.py` + `test_config.py` 共 **26 passed** 确认无破坏；**V1.7 818 / 0 / 0 / 0 in 217.06s（批次⑤ #15 +5）** |
 | 环境伪失败交叉验证 | 单文件 `pytest tests/sketch/test_sketch_input_validation.py` | **9 passed**（同文件在全量跑中报 error → 证明为护栏累计计数所致） |
 | 语法检查 | `py_compile.compile(..., doraise=True)` ×153 | 0 错误（口径见 4.1） |
 | 依赖版本 | `importlib.metadata.version` | 见 2.3 |
 | 分层依赖 | 正则扫描 `^\s*(from\|import)\s+<layer>` | workers→gui 0 / services→gui\|workers 0 / core→19（V1.2 口径，本次未重扫） |
 | 误跟踪 | `git -c core.quotepath=false ls-files <dir>` | **`.workbuddy` 0 / `.dumate` 0 / `.trae-*` 0**（解除前：55 / 15 / 1） |
 | 目录重复 | `git ls-files "ProductSummary/2026-0*"` | 11（**仍未清理**） |
-| 产物时效 | `os.path.getmtime` 比对 | exe 落后源码 7 天（**未变**，P0-1 未执行） |
+| 产物时效 | `os.path.getmtime` 比对 | ✅ **exe 10:34:11 ≥ 源码 10:15:32**（P0-1 已闭环，提前 18.7 分钟） |
+| 出包 | `python packaging/packageV2.2.3.py` | ✅ rc=0，**3m25s**；`dist/智能裁剪设计器V2.2.3.exe` **218.4 MB**；PKG toc 含 **161** 个 `tesseract\*` 条目 + `chi_sim`/`eng`/`osd`；PYZ toc 项目模块 **49/49** 命中 |
+| exe 启动冒烟 | `subprocess.Popen` + `QT_QPA_PLATFORM=offscreen` | ✅ 两次启动分别存活 **25s / 22s** 后受控关闭；**crash.log 前后 sha 一致**（=`137a0894fec0fbaa`，未产生新崩溃日志） |
+| 打包告警筛查 | 解析 `build/…/warn-*.txt` | ✅ **项目自身模块缺失 = 0 条**；225 条 `missing module` 全为第三方良性条件导入（numpy 183 / PyQt5-Qt 4 / psd-PIL-cv2 12 / 其他 26） |
 | 补丁往返验证 | `git apply -p1 --reverse --directory=<副本> patch-06…` | ✅ rc=0；反向结果 10 文件 == HEAD、7 新文件被删、`image_ops.py` 与 HEAD 差异**恰为 3 个 hunk / +62 −4**（= P0-2/P0-3）；正向应用逐字节还原 18/18 |
 
 ## 附录 B：README 需同步的具体条目
@@ -754,7 +812,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 |---|---|---|---|
 | 1 | 标题 `V2.2.2` | V2.2.3 | 全篇版本号升 V2.2.3 |
 | 2 | 「最后验证 2026-09-16」 | 2026-09-24 已复验 | 更新日期 |
-| 3 | 测试基线「501 项 / 500 passed / 1 failed」 | **813 passed / 0 failed** | 更新基线，去掉失败告警 |
+| 3 | 测试基线「501 项 / 500 passed / 1 failed」 | **818 passed / 0 failed** | 更新基线，去掉失败告警 |
 | 4 | 已知问题 #1「1 个测试用例失败」 | 已修复 | 标记为已解决 |
 | 5 | 目录结构含 `packaging/legacy/` | 已于 09-17 删除 | 删除该行 |
 | 6 | 目录结构含 `scripts/_archive/`、`scripts/verify/_archive/` | 已删除 | 删除该行 |
@@ -831,12 +889,12 @@ LOD 渲染把画布按 `scale` 缩小，若几何长度量不随之缩放，其�
 
 ### C.7 测试基线变化
 
-| | V1.0 审查 | P0-2 修复后（V1.1） | P0-3/P0-4 修复后（V1.2） | P1 批次后（V1.3） | **批次③后（V1.5，当前）** |
-|---|---|---|---|---|---|
-| 总数 | 680 | 704 | 732 | 805 | **813** |
-| passed | 680 | 704 | 732 | 805 | **813** |
-| failed / error / skipped | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | **0 / 0 / 0** |
-| 耗时 | 182.4s | 175.4s | 106.7s | 103.5s | **224.8s**（未带 `--basetemp`，不可与 103.5s 直接比较） |
+| | V1.0 审查 | P0-2 修复后（V1.1） | P0-3/P0-4 修复后（V1.2） | P1 批次后（V1.3） | 批次③后（V1.5） | **批次⑤后（V1.7，当前）** |
+|---|---|---|---|---|---|---|
+| 总数 | 680 | 704 | 732 | 805 | 813 | **818** |
+| passed | 680 | 704 | 732 | 805 | 813 | **818** |
+| failed / error / skipped | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | **0 / 0 / 0** |
+| 耗时 | 182.4s | 175.4s | 106.7s | 103.5s | 224.8s（未带 `--basetemp`） | **217.1s**（带 `--basetemp=.pytest_tmp/final_h15`） |
 
 ---
 
@@ -1000,7 +1058,7 @@ class _RestrictedUnpickler(pickle.Unpickler):
 > 与 HEAD 的差异**恰好是被剔除的 3 个 P0 hunk**（+62 −4）；正向应用再逐字节还原工作区 **18/18**。
 > 即：**除 P0 批次内容外，本批次对仓库的全部影响都被这一份补丁精确描述，且可逆。**
 >
-> **测试基线**：680 → 704 → 732 → 805 → **813**（批次③ +8），**五轮**实跑均 0 failed / 0 error / 0 skipped。
+> **测试基线**：680 → 704 → 732 → 805 → 813（批次③ +8）→ **818（批次⑤ #15 +5）**，**六轮**实跑均 0 failed / 0 error / 0 skipped。
 
 ### F.3 批次②（文档与卫生）+ 批次③（P2-7 加固）（V1.5）
 
@@ -1142,5 +1200,65 @@ symlink 目录节点与文件节点被跳过。
 
 ---
 
-<sub>SmartShapeCrop 项目全面审查报告 · 报告版本 **V1.5** · 审查日期 2026-09-24 · 基线 `9c1937d`（V2.2.3） · 修订：V1.0 全面审查（全程只读）→ V1.1 修复 P0-2（4 族几何字段补齐 LOD 缩放，+24 用例）→ V1.2 修复 P0-3（删除恒真死守卫，+11 用例）与 P0-4（受限 Unpickler，+17 用例），并纠正原报告对二者修法的错误建议 → **V1.3 完成 P1 批次 #9–#14 与 P2-3（`APP_VERSION` 单一来源），新建 `packageV2.2.3.py` + V2.2.3 spec，留档 `patch-06`，并更正本报告自身 4 处事实/口径错误（附录 G.2）** → **V1.4 完成批次②文档同步与低风险卫生：README 全篇升至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6（O(n²)→O(n)）、迁移 P2-10、P2-7 实测后由 🟢 上调 🟠（junction 越界删除）** → **V1.5 完成批次③：`artifact_cleanup` 改为剪枝遍历（`_is_link_node()` + `_iter_tree()`），堵住 junction 越界删除，+8 条回归用例并经判别力自检，并更正 V1.4 的 §2.2 目录小计笔误（附录 G.5 / G.6）** · 测试基线 **813 全绿** · 源码零功能变更</sub>
+## 附录 H：P0-1 出包执行记录（V1.6 新增）
+
+### H.1 执行链与结果
+
+| 步 | 动作 | 结果 |
+|---|---|---|
+| 1 | 环境勘察 | Python **3.13.14**（`.venv`）；PyInstaller **未装**；⚠️ venv 内**无 pip**（`python -m pip` 解析到系统那份），见增量发现 #16 |
+| 2 | 装 PyInstaller | `python -m pip install --index-url https://pypi.org/simple pyinstaller` → **6.22.3** + hooks-contrib 2026.7 / setuptools 84.0.0 / pefile 2024.8.26 / pywin32-ctypes 0.2.3 / altgraph 0.17.5；**全部落在 `.venv\Lib\site-packages`**，系统 Python 未污染 |
+| 3 | 打包 | `python packaging/packageV2.2.3.py`（默认 onefile + windowed + 内嵌 Tesseract）→ **rc=0，3m25s** |
+| 4 | 时效核对 | `dist/智能裁剪设计器V2.2.3.exe` **218.4 MB**，mtime **10:34:11** ≥ 最新源码 **10:15:32** ✅ |
+| 5 | 内容核验 | PKG toc：**161** 个 `tesseract\*` + `chi_sim`/`eng`/`osd`；PYZ toc：**49** 个项目模块全在 |
+| 6 | 启动冒烟 | 两次离屏启动（25s / 22s）均存活；**未产生 crash.log**（前后 sha 相同） |
+
+### H.2 打包告警判读（全部良性，与 V2.2.2 同款策略一致）
+
+| 告警 | 条数 | 判读 |
+|---|---|---|
+| `Library not found: Qt53D* / Qt5WebEngine / LIBPQ` | 约 40 | 项目未使用 Qt3D / WebEngine / PostgreSQL 驱动；系 `--collect-submodules PyQt5` 连带收集的插件所致，**不影响运行** |
+| `Hidden import 'PyQt5.uic.port_v2.*' not found` | 4 | PyQt5 的 **Python 2 兼容**子模块，Py3 环境本就不存在 |
+| `WARNING: Hidden import "sip" not found!` | 1 | `sip` 已内置于 PyQt5（`PyQt5.sip`），无独立顶层包 |
+| `could not find translations with base name 'designer'` | 1 | Qt Designer 的翻译文件，运行时不需要 |
+| `missing module named …` | 225 | **项目自身模块缺失 0 条**；其余为第三方良性条件导入（numpy 183 / PyQt5-Qt 4 / psd-PIL-cv2 12 / 其他 26） |
+
+### H.3 冒烟覆盖边界（诚实声明）
+
+| 已自动覆盖 | 未覆盖（需人工） |
+|---|---|
+| exe 可启动、进入事件循环且不退出 | **GUI 端到端「阶梯 L 形预览 = 导出」** —— 需双击 exe 上传草图、生成、导出后目视/量测比对 |
+| bootloader + 应用进程双进程正常（onefile 特征） | 内嵌 Tesseract 的**实际 OCR 识别**（需真实草图输入） |
+| 不写 crash.log（无启动期异常） | 分发到**其他机器**的可用性（当前仅本机验证） |
+| 打包清单含全部项目模块与 Tesseract 资源 | — |
+
+> **源码级等价性佐证**：未覆盖的那条链路，其几何一致性已由 `tests/integration/test_lod_geometry_consistency.py`（**24 条**，含掩膜 IoU 断言）在 **818 全绿**中覆盖 —— 即「LOD 预览与导出渲染产出的几何一致」在源码层已被证明，exe 冒烟只需确认封装未破坏它。
+
+### H.4 出包期间的两段 `crash.log`（已定性：与产物无关，且是 P1-9 的真实复现）
+
+出包与冒烟期间，项目根目录的 `crash.log` **出现两段**，内容同型：
+
+| # | 时间 | 位置 | 触发动作 |
+|---|---|---|---|
+| 1 | **2026-09-24 10:34:27** | `gui/property_panel_poolbox.py:1033` `_pool_clear_sketch` | 点「清空草图」 |
+| 2 | **2026-09-24 10:40:42** | `gui/property_panel_poolbox.py:628` `_start_sketch_decode_worker` | 加载 L 形草图（经 `_on_lshape_action`） |
+
+两者均：`RuntimeError: wrapped C/C++ object of type _SketchDecodeWorker has been deleted`。
+
+**归因过程（四步，全只读）**：
+
+1. **运行时指纹**：两段日志均为 `sys.frozen: False`、`sys.executable: F:\SmartShapeCrop\.venv\Scripts\python.exe`，且**无 `sys._MEIPASS` 行** → **不是打包 exe 写的**；
+2. **进程现场**：比对期间 `tasklist` 中**无任何 `智能裁剪设计器*.exe` 进程** → exe 当时未运行；
+3. **日志源定位**：`logs/smartshapecrop.log` **全文件仅 26 次启动头**，末次为 `2026-09-24 10:30:13`（标记 **`控制台=True`**，符合源码运行特征；打包版为 `--windowed` 无控制台）。该实例在 10:40–10:42 有 **252 行**操作日志而 **0 条 ERROR/WARNING**，且 10:40:44 紧接一条 `L 形预检测 ✅ corner=br … → 自动触发 L 形识别`、10:40:56 渲染完成 → **是用户真实操作序列，崩在前、重试后成功**；
+4. **零破坏实验（V1.6 已做）**：启动 exe 前后 `crash.log` 的 sha256 **完全相同**（`137a0894fec0fbaa`）→ **exe 启动不产生崩溃日志**。
+
+**结论**：真凶是**用户 10:30:13 启动、当时仍在运行的源码实例**（进程实测占用 712 MB → 1,008 MB，活跃使用中）。**与出包产物无因果关系。**
+
+**V1.7 后续**：该缺陷已由增量发现 #15 **转正为 §9 P1-9 并当日修复**（两处调用点加 `RuntimeError` 守卫，+5 条回归用例）。判别力自检中把源码**回退到修复前**重跑，失败栈精确落在 `:628` 与 `:1033` —— **与上表真实崩溃位置逐字一致**，证明修复命中同一缺陷而非旁路。
+
+> 📌 **对冒烟流程的启示**（已写入技能的 crash.log 归因三步）：产物冒烟必须与「源码实例是否在跑」解耦 —— 本项目当时**同时存在一个活跃的源码实例**，若只看 `crash.log` 的 mtime/增长，极易误判为「exe 崩了」。**判据应始终以运行时指纹（`sys.frozen` / `sys.executable` / `_MEIPASS`）为准，而非文件是否变化。**
+
+---
+
+<sub>SmartShapeCrop 项目全面审查报告 · 报告版本 **V1.7** · 审查日期 2026-09-24 · 基线 `bd2f9de`（V2.2.3） · 修订：V1.0 全面审查（全程只读）→ V1.1 修复 P0-2（4 族几何字段补齐 LOD 缩放，+24 用例）→ V1.2 修复 P0-3（删除恒真死守卫，+11 用例）与 P0-4（受限 Unpickler，+17 用例），并纠正原报告对二者修法的错误建议 → **V1.3 完成 P1 批次 #9–#14 与 P2-3（`APP_VERSION` 单一来源），新建 `packageV2.2.3.py` + V2.2.3 spec，留档 `patch-06`，并更正本报告自身 4 处事实/口径错误（附录 G.2）** → **V1.4 完成批次②文档同步与低风险卫生：README 全篇升至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6（O(n²)→O(n)）、迁移 P2-10、P2-7 实测后由 🟢 上调 🟠（junction 越界删除）** → **V1.5 完成批次③：`artifact_cleanup` 改为剪枝遍历（`_is_link_node()` + `_iter_tree()`），堵住 junction 越界删除，+8 条回归用例并经判别力自检，并更正 V1.4 的 §2.2 目录小计笔误（附录 G.5 / G.6）** → **V1.6 完成批次④：P0-1 出包**（PyInstaller 6.22.3 → `dist/智能裁剪设计器V2.2.3.exe` 218.4 MB），**时效铁律 + exe 启动冒烟 + 打包清单核验全通过，24 项问题中阻塞项全部清零**（附录 H） → **V1.7 完成批次⑤：修复增量发现 #15 → §9 P1-9（`_SketchDecodeWorker` 悬垂引用）**，两处调用点加 `RuntimeError` 守卫（`gui/property_panel_poolbox.py` **+26 −4**，正常路径逐字未动）+ **5 条回归用例**并经判别力自检（回退后 3 failed 命中 `:628`/`:1033`，与真实崩溃行号一致），**25 项问题中阻塞项仍为零、累计闭环 19 项（76.0%）** · 测试基线 **818 全绿** · 源码零功能变更</sub>
 

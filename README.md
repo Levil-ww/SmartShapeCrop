@@ -2,7 +2,7 @@
 
 > 面向印刷行业定制尺寸成品图的桌面设计工具：等比缩放 + 圆角裁剪 + 多层边框处理 + 水池设计器草图 OCR 智能识别 + 多洞嵌套 + 椭圆挖洞 + L 形挖角（单角 / 多角并行 / 单边阶梯）独立设计 + L 形挖角素材边框自动补全。
 
-**最后验证**：2026-09-24（V2.2.3 单边阶梯 L 形、P0 批次正确性/安全修复、P1 批次代码卫生与 `APP_VERSION` 单一来源后复验）
+**最后验证**：2026-09-24（V2.2.3 单边阶梯 L 形、P0 批次正确性/安全修复、P1 批次代码卫生与 `APP_VERSION` 单一来源、P2-7 junction 越界加固，并**完成 V2.2.3 出包**后复验）
 **更新触发**：目录结构变更、模块迁移、依赖变更、测试基线变更、打包入口变更时须同步更新本文件
 **版本唯一来源**：`core/config.py` 的 `APP_VERSION`（由打包脚本 / 启动日志头 / 关于框三处引用，发版只改这一行）
 
@@ -187,7 +187,7 @@ SmartShapeCrop/
 │   ├── property_panel_layers.py    #   多层边框编辑 UI（_LayersMixin）
 │   └── property_panel_poolbox.py   #   多洞参数面板 + 空挖方式 + 草图识别与边距回填调度（_PoolBoxMixin）
 │
-├── tests/                          # 单元/集成测试（pytest；2026-09-24 实测 813 passed / 0 failed）
+├── tests/                          # 单元/集成测试（pytest；2026-09-24 实测 818 passed / 0 failed）
 │   ├── conftest.py                 #   全局 fixture + 防御性收集忽略
 │   ├── __init__.py
 │   ├── run_test.bat
@@ -253,7 +253,7 @@ SmartShapeCrop/
 │
 ├── _archive/                       # 归档备份（备份快照 / 调试输出 / 临时脚本，不进 Git）
 │
-├── dist/                           # 打包产物（智能裁剪设计器V2.2.2.exe，约 202 MB —— ⚠️ 待出 V2.2.3）
+├── dist/                           # 打包产物（智能裁剪设计器V2.2.3.exe，218.4 MB，2026-09-24 出包）
 ├── build/                          # PyInstaller 中间构建产物
 ├── images/                         # 应用图标（SmartShapeCrop.ico / logo.png）
 ├── logs/                           # 运行日志 + OCR 诊断截图（自动生成）
@@ -338,8 +338,8 @@ python main.py
   - **水池设计器**：参数化设计（矩形嵌套/椭圆挖孔 + 多层边框）或手绘草图上传 → QThread 后台异步解析 → 自动回填 → 生成预览
   - **L形挖角设计**：独立承载 L 形挖角参数设置（单角/多角）+ 草图上传 + 一键生成
 
-> V2.2.3 打包版（**待出包**）：双击 `dist/智能裁剪设计器V2.2.3.exe` 即可运行（首次启动需解压内嵌资源，等待 5-15 秒）。
-> 当前 `dist/` 仍是 V2.2.2 产物、落后源码 7 天，出包步骤见"快速开始 → 打包发布"。
+> V2.2.3 打包版（**已出包，2026-09-24**）：双击 `dist/智能裁剪设计器V2.2.3.exe`（218.4 MB）即可运行（首次启动需解压内嵌资源，等待 5-15 秒）。
+> 已通过「交付物时效铁律」核对：exe mtime 10:34:11 ≥ 最新源码 10:15:32。`dist/` 中仍保留 V2.2.2 产物备查。
 
 ### 命令行批处理
 
@@ -368,7 +368,7 @@ python process_image.py --src "D:\path\to\源图.jpg" --out-dir "D:\path\to\out"
 ### 运行测试
 
 ```bash
-# 全部测试（2026-09-24 实测 813 passed / 0 failed / 0 error，224.8 秒）
+# 全部测试（2026-09-24 实测 818 passed / 0 failed / 0 error，217.1 秒）
 python -m pytest tests/ -q
 
 # 仅圆角测试
@@ -411,7 +411,7 @@ python packaging/packageV2.2.3.py --no-tesseract
 
 打包要点（V2.2.3）：
 
-- 产物：`dist/智能裁剪设计器V2.2.3.exe`（单文件，约 202 MB，其中内嵌 Tesseract-OCR 约 115 MB）
+- 产物：`dist/智能裁剪设计器V2.2.3.exe`（单文件，**实测 218.4 MB**，其中内嵌 Tesseract-OCR 约 115 MB）
 - **exe 名与打包横幅由 `core/config.py` 的 `APP_VERSION` 派生**，脚本内不再硬编码版本号 —— 发版只需改 `APP_VERSION` 一行
 - 自动内嵌本机 Tesseract-OCR 到 exe 内部，用户机器免安装即可使用草图 OCR
 - hidden imports 声明 `services.*` / `workers.*` / `models.*` / `core.*`；
@@ -419,7 +419,7 @@ python packaging/packageV2.2.3.py --no-tesseract
   **不要**声明 `core.psd.loader` 之类子路径（该文件不存在，会报 `Hidden import not found`），应声明 `services.psd.loader`
 - 打包失败时 onefile 自动回退 onedir；崩溃时在 exe 同目录生成 `crash.log` 便于排障
 - **交付物时效铁律**：出包后须确认 `dist/*.exe` 时间戳 ≥ 最新源码时间戳
-  （⚠️ 当前 `dist/` 仍是 V2.2.2 产物、落后源码 7 天，V2.2.3 出包待执行；PyInstaller 需联网安装）
+  （✅ **2026-09-24 实测通过**：`智能裁剪设计器V2.2.3.exe` 10:34:11 ≥ 源码 10:15:32；打包工具 PyInstaller 6.22.3）
 
 ---
 
@@ -511,7 +511,7 @@ python packaging/packageV2.2.3.py --no-tesseract
 - `core/config.py` 新增 `APP_VERSION`，成为版本号**唯一事实来源**（P2-3）
 - 新增 `packaging/packageV2.2.3.py` + `specs/智能裁剪设计器V2.2.3.spec`，exe 名由 `APP_VERSION` 派生
 - `core/artifact_cleanup.py` 改为**剪枝遍历**（`_is_link_node()` + `_iter_tree()`）：清理调试产物时不再跟随符号链接与 **Windows junction** 越界删除目录外的真实文件（P2-7）
-- 实测基线 **813 passed / 0 failed / 0 error**（224.8s；未带 `--basetemp`，耗时不可与带 `--basetemp` 时的 ~103s 直接比较）
+- 实测基线 **818 passed / 0 failed / 0 error**（217.1s；带 `--basetemp=.pytest_tmp/final_h15`，耗时不可与 ~103s 的口径直接比较）
 
 > 完整审查与整改记录见 `ProductSummary/项目审查报告/SmartShapeCrop-项目全面审查报告-20260924.md`。
 
@@ -950,7 +950,7 @@ python main.py
 **实测基线（2026-09-24，`.venv` 实跑）**：
 
 ```
-813 passed / 0 failed / 0 error / 0 skipped，耗时 224.81s
+818 passed / 0 failed / 0 error / 0 skipped，耗时 217.06s
 ```
 
 各层用例分布（按 pytest 收集计数）：
@@ -958,7 +958,7 @@ python main.py
 | 目录 | 用例数 | 说明 |
 |---|---|---|
 | `tests/core/` | 436 | 圆角 / 裁剪 / 文件名解析 / 模板匹配 / L 形渲染与边框 / 草图解析 / G1 / 多角 / 阶梯 / 版本单一来源 / 产物清理链接剪枝 / CropDesign 校验 |
-| `tests/gui/` | 114 | 离屏 GUI（冒烟 / 主窗口 / 信号契约 / 三面板 / 校验文案 / 模式回填） |
+| `tests/gui/` | 119 | 离屏 GUI（冒烟 / 主窗口 / 信号契约 / 三面板 / 校验文案 / 模式回填 / 草图解码 Worker 退役） |
 | `tests/integration/` | 101 | F1-F19 修复验证 / 配置 / 水池-L 形数据流 / LOD 一致性 |
 | `tests/sketch/` | 64 | 多洞 / 特征化 / 输入校验 / 逻辑函数 |
 | `tests/sketch_parser/` | 57 | 阶梯识别 / 多洞边界 |
@@ -1182,8 +1182,8 @@ python -m pytest tests/integration/ -v
 |---|---|
 | 文档版本 | V2.2.3 |
 | 最后验证 | 2026-09-24 |
-| 验证方式 | 全量测试实跑（`.venv`，813 passed）+ 目录结构遍历 + 源码关键符号核对 + `dist` 产物时间戳比对 |
-| 生命周期阶段 | 维护期（V2.2.3 阶梯 L 形与 P0/P1 批次整改已落地；**V2.2.3 exe 待出包**） |
+| 验证方式 | 全量测试实跑（`.venv`，**818 passed**）+ 目录结构遍历 + 源码关键符号核对 + **`dist` 产物出包与时间戳比对**（exe 级启动冒烟 + 打包清单核验）+ **缺陷修复的判别力自检**（回退到修复前重跑，确认用例会红） |
+| 生命周期阶段 | 维护期（V2.2.3 阶梯 L 形与 P0/P1 批次整改已落地；**V2.2.3 exe 已于 2026-09-24 出包**；`_SketchDecodeWorker` 悬垂引用已修复） |
 
 ### 更新触发器
 
@@ -1218,9 +1218,10 @@ python -m pytest tests/integration/ -v
 
 > 状态核对：**2026-09-24**。完整清单（含严重度、位置与实测证据）见 `ProductSummary/项目审查报告/SmartShapeCrop-项目全面审查报告-20260924.md`。
 
-1. ✅ **已修复：原「1 个测试用例失败」** —— `tests/integration/test_f1_inner_rect_crash.py::test_render_design_lshape_degenerate_no_crash`，由 `core/geometry.py:349-352` 新增的退化守卫解决；2026-09-24 全量实跑 **813 passed / 0 failed / 0 error**。
-2. **⚠️ V2.2.3 exe 待出包**：`dist/` 仍是 `智能裁剪设计器V2.2.2.exe`（2026-09-16），**落后最新源码 7 天**，违反自定「交付物时效铁律」。打包入口 `packageV2.2.3.py` 与 spec 已就绪，需联网安装 PyInstaller 后出包。
-3. **worker 生命周期回归**：当前仅验证「线程可被停止」，未验证「取消后不回写 UI」。需补充 `CropWorker` / `PoolRenderWorker` / `_WarmupScanWorker` 的退役协议回归测试。
+1. ✅ **已修复：原「1 个测试用例失败」** —— `tests/integration/test_f1_inner_rect_crash.py::test_render_design_lshape_degenerate_no_crash`，由 `core/geometry.py:349-352` 新增的退化守卫解决；2026-09-24 全量实跑 **818 passed / 0 failed / 0 error**。
+2. **✅ V2.2.3 已出包（2026-09-24）**：`dist/智能裁剪设计器V2.2.3.exe`（218.4 MB，内嵌 Tesseract），exe mtime 10:34:11 ≥ 最新源码 10:15:32，**时效铁律通过**。已过 exe 级启动冒烟（离屏启动存活 22–25 s、无崩溃日志）与打包清单核验（PYZ 项目模块 **49/49**、PKG 含 **161** 个 Tesseract 条目）。
+    **遗留建议**：GUI 端到端「阶梯 L 形**预览 = 导出**」（P0-2 的修复面）建议人工双击 exe 复验一次 —— 源码级几何一致性已由 `tests/integration/test_lod_geometry_consistency.py`（24 条）覆盖。
+3. **worker 生命周期回归（部分已覆盖，2026-09-24）**：「线程可被停止」已有覆盖；**`_SketchDecodeWorker` 的退役协议**已由 `tests/gui/test_poolbox_worker_retire.py`（5 条，含 2 条判别力用例）覆盖「C++ 对象已销毁、Python 引用仍在」的悬垂引用场景。仍待补：`CropWorker` / `PoolRenderWorker` / `_WarmupScanWorker` 的「取消后不回写 UI」回归，以及**同模式退役写法全量排查**（见第 15 条）。
 4. ✅ **单边阶梯 L 形挖角已实施**（V2.2.3 六期）：`CutRect` + `CropDesign.l_cut_rects` + `_validate_l_cut_rects` + 统一掩膜 `_build_design_lshape_mask`（`_draw_staircase_union_layers`）；与多边 L 形共用同一面板，未新增 `shape_type` 字段。`scripts/diagnose/_diag_stair_*.py` 保留为历史 POC 参考。
 5. ✅ **`scripts/README.md` 已按实测重写**（2026-09-24）：更正了「`scripts/_archive/` 与 `scripts/verify/_archive/` 仍存在」等失真描述 —— 归档入口统一在 `scripts/diagnose/_archive/`（73 py）。
 6. ✅ **`gui/property_panel.py` 硬编码 mode 索引已修复**：改用 `_cb_mode.findData(mode)`（未知 mode 回落索引 0），由 `tests/gui/test_property_panel_write_paths.py` 守护逐例等价。
@@ -1234,6 +1235,9 @@ python -m pytest tests/integration/ -v
 13. **⚠️ Git 操作警示**：`git gc` / `git repack` 在本机曾导致 `.git` 被清空、历史全失，此类操作前请先 `cp -r .git .git.bak`。
 14. **✅ 已修复：`core/artifact_cleanup.py` 越界删除（2026-09-24）** —— 原用 `Path.rglob('*')` 收集候选：Python 3.13 的 `**` 只对**符号链接**停止递归，而 **Windows junction（目录联接）不是符号链接**（`os.path.islink()` 对它返回 `False`），故会进入其目标目录、联出目录外的**真实文件**并被 `os.remove` 删除（**已复现**）。符号链接（symlink）无此问题：目录链接不被进入、文件链接只删链接自身。
     修复：新增 `_is_link_node()`（`os.path.isjunction()`；Python < 3.12 退回按 `st_reparse_tag` 判定）+ `_iter_tree()` 剪枝遍历（产出与 `Path.rglob('*')` **逐条一致**，保持下游稳定排序的 tie-break 不变）；链接节点**既不递归、也不纳入** `candidates` / `empties`。配套 8 条回归用例见 `tests/core/test_artifact_cleanup_links.py`。
+15. **✅ 已修复：`_SketchDecodeWorker` 悬垂引用（2026-09-24）** —— `self._sketch_decode_worker` 只在两处置 `None`，而 Worker 经 `finished.connect(deleteLater)` 在解码线程退出后即销毁底层 C/C++ 对象，Python 包装器却被保留到下一次退役；于是「传草图 A（解码完成）→ 传草图 B / 点清除草图」时 `old.isRunning()` 抛 `RuntimeError: wrapped C/C++ object of type _SketchDecodeWorker has been deleted`。**两处调用点**：`_start_sketch_decode_worker()` L628（**加载草图必经路径**）与 `_pool_clear_sketch()` L1033。**真实复现 ×2**（`crash.log` 2026-09-24 10:34:27 / 10:40:42，均为当时运行的**源码实例**的用户操作，非打包产物）。**非致命**，但用户可感知为「点一下没反应、需再点一次」（间隔越久越易触发）。
+    修复：两处 `isRunning()` / `deleteLater()` 加 `try/except RuntimeError` 守卫（`gui/property_panel_poolbox.py` **+26 −4，纯新增，正常路径逐字未动**），把「包装器已失效」按已停止退役处理；配套 5 条回归用例见 `tests/gui/test_poolbox_worker_retire.py`，并做判别力自检（回退修复前 → 3 failed，失败栈命中 `:628`/`:1033`，**与真实崩溃行号一致**）。
+    ⚠️ **同模式退役写法在工程内至少 13 处**，本次只修已确认复现的这 2 处（详见第 3 条）。
 
 ---
 
