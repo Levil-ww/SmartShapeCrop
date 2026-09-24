@@ -25,6 +25,7 @@ import argparse
 import logging
 import os
 import time
+from collections import deque
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,91 @@ def _is_protected(path: Path) -> bool:
     return any(name.startswith(p) for p in PROTECTED_PREFIXES)
 
 
+# Windows 重解析点标签（Python < 3.12 无 os.path.isjunction 时的兜底判据）
+_IO_REPARSE_TAG_MOUNT_POINT = 0xA0000003
+_IO_REPARSE_TAG_SYMLINK = 0xA000000C
+
+
+def _is_link_node(entry: os.DirEntry) -> bool:
+    """判断 scandir 条目是否为「链接节点」（符号链接 / Windows junction）。
+
+    [Fix 2026-09-24 P2-7] junction（目录联接）与符号链接不同：``os.path.islink()``
+    对 junction 返回 **False**，因此必须额外用 ``os.path.isjunction()``（Python 3.12+）
+    识别；Python < 3.12 时退回按 ``st_reparse_tag`` 判定。
+
+    无法判定时按链接处理（宁可少清理，也不越界删除）。
+    """
+    try:
+        if entry.is_symlink():
+            return True
+    except OSError:
+        return True
+
+    isjunction = getattr(os.path, 'isjunction', None)
+    if isjunction is not None:
+        try:
+            return bool(isjunction(entry.path))
+        except OSError:
+            return True
+
+    try:
+        st = os.lstat(entry.path)
+    except OSError:
+        return True
+    return getattr(st, 'st_reparse_tag', 0) in (
+        _IO_REPARSE_TAG_MOUNT_POINT, _IO_REPARSE_TAG_SYMLINK)
+
+
+def _iter_tree(base: Path) -> tuple[list[Path], list[Path]]:
+    """遍历 base 下的真实文件与目录（**不跟随任何链接节点**），返回 (files, dirs)。
+
+    [Fix 2026-09-24 P2-7] 原实现用 ``base.rglob('*')``，会连同 **Windows junction**
+    的目标目录一起列出，随后的 ``os.remove()`` 便删掉了调试目录之外的**真实文件**。
+    实测（Python 3.13.14 / Windows）：
+
+        场景                rglob('*') 列出            os.remove 后果
+        符号链接（文件）     link.txt                   只删链接，目标存活
+        符号链接（目录）     不进入（仅列出链接本身）    —
+        junction（目录）     junc, junc\\keep.txt        **删掉目标内的真实文件**
+
+    根因：``**`` 只对「符号链接」停止递归，而 junction **不是**符号链接 ——
+    ``os.path.islink()`` 返回 False、``os.path.is_dir()`` 返回 True，于是照常进入。
+    ``os.walk(followlinks=False)`` 同样不拦 junction。
+
+    故这里自写遍历（**逐层广度优先，与 ``Path.rglob`` 的产出顺序逐条一致** ——
+    已由 ``tests/core/test_artifact_cleanup_links.py`` 断言锁定；顺序须保持一致，
+    否则下游 ``sort(key=mtime)`` 稳定排序的 tie-break 会漂移），对每个条目先判
+    「是否链接节点」，是则**既不递归、也不纳入治理范围**：
+
+    - 递归进去 → 会越界删除目标目录内的真实文件；
+    - 纳入 dirs → ``d.rmdir()`` 会删掉用户建立的联接/符号链接本身。
+
+    链接指向的内容属于本目录树之外，调试产物治理不应触碰。
+    """
+    files: list[Path] = []
+    dirs: list[Path] = []
+    queue: deque[str] = deque([str(base)])
+    while queue:
+        cur = queue.popleft()
+        try:
+            with os.scandir(cur) as it:
+                entries = list(it)
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if _is_link_node(entry):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    dirs.append(Path(entry.path))
+                    queue.append(entry.path)
+                elif entry.is_file(follow_symlinks=False):
+                    files.append(Path(entry.path))
+            except OSError:
+                continue
+    return files, dirs
+
+
 def cleanup_debug_artifacts(
     max_age_days: int = 30,
     max_files: int = 200,
@@ -67,13 +153,13 @@ def cleanup_debug_artifacts(
     for base in DEBUG_ARTIFACT_DIRS:
         if not base.is_dir():
             continue
+        # [Fix 2026-09-24 P2-7] 改用剪枝遍历（原 base.rglob('*') 会跟随 junction
+        # 越界删除目标目录内容，详见 _iter_tree 文档）
+        tree_files, tree_dirs = _iter_tree(base)
         # 收集所有"可清理"文件（跳过保护名单）
-        candidates = [
-            p for p in base.rglob('*')
-            if p.is_file() and not _is_protected(p)
-        ]
+        candidates = [p for p in tree_files if not _is_protected(p)]
         # 空目录顺手清掉（dry_run 除外）
-        empties = [d for d in base.rglob('*') if d.is_dir()]
+        empties = list(tree_dirs)
 
         # 第一步：按保留期删除
         expired = [p for p in candidates if p.stat().st_mtime < cutoff]

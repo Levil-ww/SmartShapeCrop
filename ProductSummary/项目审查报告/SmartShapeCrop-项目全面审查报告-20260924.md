@@ -1,6 +1,6 @@
 # SmartShapeCrop 项目全面审查报告
 
-**报告版本** V1.4 · **审查日期** 2026-09-24 · **修订记录** V1.0 → V1.1：当日完成 P0-2 修复并回填实测数据；V1.1 → V1.2：**当日完成 P0-3、P0-4 修复**（含纠正原报告对 P0-3 的错误修法建议）；V1.2 → V1.3：**当日完成 P1 批次（11.2 节 #9–#14）与 P2-3（`APP_VERSION` 单一来源）**，新建 `packageV2.2.3.py`，并更正本报告自身的 4 处事实/口径错误，详见附录 G；V1.3 → V1.4：**当日完成批次②「文档同步与低风险卫生」**（README 全篇同步至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6、迁移 P2-10、**P2-7 实测后严重度由 🟢 上调至 🟠**）
+**报告版本** V1.5 · **审查日期** 2026-09-24 · **修订记录** V1.0 → V1.1：当日完成 P0-2 修复并回填实测数据；V1.1 → V1.2：**当日完成 P0-3、P0-4 修复**（含纠正原报告对 P0-3 的错误修法建议）；V1.2 → V1.3：**当日完成 P1 批次（11.2 节 #9–#14）与 P2-3（`APP_VERSION` 单一来源）**，新建 `packageV2.2.3.py`，并更正本报告自身的 4 处事实/口径错误，详见附录 G；V1.3 → V1.4：**当日完成批次②「文档同步与低风险卫生」**（README 全篇同步至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6、迁移 P2-10、**P2-7 实测后严重度由 🟢 上调至 🟠**）；V1.4 → V1.5：**当日完成批次③「P2-7 junction 越界删除加固」**（`artifact_cleanup` 改为剪枝遍历，+8 条回归用例且经判别力自检），并更正本报告 V1.4 引入的 1 处表格口径错误（§2.2 目录小计）
 **审查对象** `F:\SmartShapeCrop` · **审查基线** `9c1937d`（`v2.2.3-综合可行性分析V2.0`，2026-09-23 15:55）
 **项目版本** V2.2.3 · **分支** `master`（累计 390 次提交）
 **审查方式** 全程只读：源码静态扫描 + 全量测试实跑 + Git 仓库取证 + 文档交叉核对
@@ -12,20 +12,20 @@
 
 ### 一句话结论
 
-> **代码本身健康（805 测试全绿、无高危安全缺陷）**，V2.2.3 带入的三个正确性/安全缺陷（P0-2 / P0-3 / P0-4）与 P1 批次六项整改（#9–#14）**均已修复**，P2-3 的「版本号无单一事实来源」也已落地为 `core/config.APP_VERSION`（2026-09-24）。**唯一剩余阻塞项是发布链本身** —— `dist/` 里的 exe 停留在 V2.2.2 且落后源码 **7 天**（P0-1，按用户指示「待全部问题修复后再出包」暂缓）。**代码侧已具备出包条件，出包动作待 P0-1 执行。**
+> **代码本身健康（813 测试全绿、无高危安全缺陷）**，V2.2.3 带入的三个正确性/安全缺陷（P0-2 / P0-3 / P0-4）、P1 批次六项整改（#9–#14）、版本号单一来源（P2-3）、文档与低风险卫生（P2-6 / P2-10 / P2-11）以及 **`artifact_cleanup` 的 junction 越界删除（P2-7）** 均已修复（2026-09-24）。**唯一剩余阻塞项是发布链本身** —— `dist/` 里的 exe 停留在 V2.2.2 且落后源码 **7 天**（P0-1，按用户指示「待全部问题修复后再出包」暂缓）。**代码侧已具备出包条件，出包动作待 P0-1 执行。**
 
 ### 关键指标
 
 | 维度 | 结论 | 评级 |
 |---|---|---|
-| 测试基线 | **805 passed / 0 failed / 0 error / 0 skipped**（103.5s 实跑；V1.2 为 732，本批次 +73 条） | 🟢 优 |
+| 测试基线 | **813 passed / 0 failed / 0 error / 0 skipped**（实跑；V1.2 为 732，V1.5 批次③ +8 条） | 🟢 优 |
 | 代码语法 | 153 个 py 文件全量编译，**0 语法错误** | 🟢 优 |
 | 架构分层 | `workers`/`services` 无反向依赖 ✅；`core ↔ services` **双向依赖** ⚠️ | 🟡 良 |
 | 代码卫生 | 裸 `except:` **0 处** ✅；热路径 `print` 已清理（P1-4 ✅）；但 54 个超长函数、4 个 >1500 行巨型文件 | 🟡 良 |
 | 安全 | 无远程可利用漏洞；1 项中危（pickle 反序列化）**已修复**；`os.popen` 起 shell **已消除**（P1-7 ✅） | 🟢 优 |
 | 仓库卫生 | **71 个误跟踪文件已全部解除跟踪** ✅；`.gitignore` 已补 5 条规则；根目录 `crash.log` 已清、`debug.log` 受阻（被输入法占用） | 🟡 良（剩 1 项受阻） |
 | 版本一致性 | `core/config.APP_VERSION` **单一事实来源已建立** ✅，三处消费方实测引用 | 🟢 优 |
-| 文档一致性 | README 停留在 V2.2.2，**至少 12 处与现状不符**（未动） | 🔴 差 |
+| 文档一致性 | README 与 `scripts/README.md` **已同步至 V2.2.3 实测状态**（V1.4 完成，14 类失真逐条更正；含架构声明与实测偏差的如实改写） | 🟢 优 |
 | 发布链 | exe 落后源码 7 天；`packageV2.2.3.py` + V2.2.3 spec **已新建** ✅，但 PyInstaller 未装、未出包 | 🟡 良（待出包） |
 
 ### 阻塞项（出包前必须清零）
@@ -49,6 +49,12 @@
 | **#14** | `cut_rects` 截断改为按锚定角分组（P2-4） | ✅ 新增 `MAX_L_CUT_RECTS_PER_ANCHOR` + `limit_l_cut_rects_per_anchor()`，两个写入端与 `validate()` 共用同一上限 |
 | **P2-3** | 版本号单一事实来源 | ✅ `core/config.APP_VERSION` 唯一定义点，打包脚本 / 日志头 / 关于框三处引用 |
 
+### 批次③整改结果（V1.5 新增）
+
+| 编号 | 项 | 结果 |
+|---|---|---|
+| **P2-7** | `artifact_cleanup` **junction 越界删除**加固（🟠） | ✅ 新增 `_is_link_node()` + `_iter_tree()`：对 symlink 与 **junction** 双向剪枝（既不递归进入，也不把链接节点纳入 `candidates` / `empties`）；遍历顺序与 `Path.rglob('*')` **逐条一致**（下游 `sort(key=mtime)` 的稳定 tie-break 不变）；**+8 条回归用例**，并经「换回旧实现重跑」的判别力自检 |
+
 ### 本次审查相较历史报告的增量发现
 
 1. **`core ↔ services` 是双向依赖**（历史报告仅记录单向 `core → services`）—— `services/parser/name_parser.py` 与 `services/sketch_parser/sketch_parser_vision.py` 反向导入 `core`，`core/__init__.py` 又导入 `services`，构成循环。
@@ -64,16 +70,17 @@
 11. **`#14` 的两种截断口径在现有可达路径上逐例等价**（V1.3 论证）——「按锚定角分组、每角 ≤3」与旧「按总数 `[:3]`」结果相同，因为 `LShapePanel.get_cut_rects_cm()` 与 `_convert_stepped_to_cut_rects()` 产出的条带 `anchor` **恒为同一个角**。等价的**前提**是输入单锚定；一旦未来开放多锚定 UI，旧口径会静默丢弃第 4 条，新口径不会。故本次改的是「未来可达」而非「今日行为」，功能零变化。
 12. **`APP_VERSION` 的唯一硬约束是「不得经由 `core/__init__.py` 加载」**（V1.3 实测）—— 打包脚本若 `import core.config`，会连带触发 `core/__init__.py` 对 `image_ops` / `psd_tools` / `PyQt5` 的聚合导入，使打包机在无 GUI 依赖时直接失败。正解是 `importlib.util.spec_from_file_location` **按文件路径加载** `core/config.py`。
 13. **本项目在 Windows 上「补丁留档」有两处必踩的坑**（V1.3 实测，已固化为方法）——（a）**必须按 LF 写出**：用 Python 默认文本模式写补丁会得到 CRLF，使每条内容行多带 `\r`，`git apply` 全部匹配失败；（b）**分类 hunk 不能用关键字**：本批次 `#9` 要删的 DEBUG 快照块内含有 `{getattr(design,'l_cut_w_cm',None)}`，用 `l_cut_w_cm` 做「P0 关键字」会把 `#9` 的 hunk 一起误剔，导致补丁**漏掉主体**。正解是按 `[Fix 2026-09-24 P0-x]` **标记**判定。详见附录 G.3。
-14. **⚠️ `artifact_cleanup` 的越界删除风险来自 junction，不是符号链接**（V1.4 实测更正，P2-7 严重度 🟢→🟠）—— 实跑三种链接于临时目录：
+14. **⚠️ `artifact_cleanup` 的越界删除风险来自 junction，不是符号链接**（V1.4 实测更正；**V1.5 已修复**）—— 实跑三种链接于临时目录，遍历与删除两阶段分别观察：
 
-    | 场景 | `rglob('*')` | `os.remove` 后果 |
-    |---|---|---|
-    | 符号链接（目录） | 不进入 ✅ | 安全 |
-    | 符号链接（文件） | 列出链接本身 | **只删链接，目标存活** ✅ |
-    | **junction（目录联接）** | **进入，列出 `junc\secret.txt`** | **删除了目录外的真实文件** ❌ |
+    | 场景 | `rglob('*')` 列出 | `os.remove(子项)` 后果 | `os.rmdir(节点)` 后果 |
+    |---|---|---|---|
+    | 符号链接（目录） | 仅链接本身（**不进入**） | — | 只删链接，**目标存活** ✅ |
+    | 符号链接（文件） | 链接本身 | **只删链接，目标存活** ✅ | — |
+    | **junction（目录联接）** | **进入，列出 `junc\keep.txt`** | **删掉目录外的真实文件** ❌ | 只断联接，目标存活 ✅ |
 
-    **根因**：Python 3.13 的 `glob`/`rglob` 变更只覆盖 **symlink**，而 **junction 不是 symlink**（`os.path.islink()` 返回 `False`），故 `**` 仍会递归进入。本项目 `logs/` / `debug_output/` 若被用户以 junction 挂到其他盘（跨盘搬目录的常见做法），清理逻辑会删掉目标盘上的真实文件。
-    **建议加固**：遍历时用 `os.path.isjunction()`（Python 3.12+）剪枝；不要改用 `os.walk(followlinks=False)` —— 它同样不拦 junction。详见 §9 P2-7 行。
+    **根因**：Python 3.13 的 `glob`/`rglob` 变更只覆盖 **symlink**，而 **junction 不是 symlink**（`os.path.islink()` 返回 `False`、`Path.is_dir()` 返回 `True`），故 `**` 仍会递归进入。本项目 `logs/` / `debug_output/` 若被用户以 junction 挂到其他盘（跨盘搬目录的常见做法），清理逻辑会删掉目标盘上的真实文件。
+    **修复（V1.5）**：新增 `_is_link_node()` + `_iter_tree()`，遍历时对 symlink 与 junction **双向剪枝** —— 既不递归进入，也不把链接节点纳入 `candidates` / `empties`（后者会让 `rmdir` 断掉用户建立的联接）。**不得**改用 `os.walk(followlinks=False)`，它同样不拦 junction。
+    **判别力自检**：把 `_iter_tree` 换回旧 `rglob` 实现重跑同一场景，目录外文件确实被删（`removed` 2 条 = `stale.txt` + `junc\keep.txt`）；修复后只删 1 条且目标完好 —— 证明新增的 8 条回归用例不是空护栏。详见 §9 P2-7 行与附录 G.5。
 
 ---
 
@@ -120,21 +127,23 @@
 
 | 层 | 文件数 | 行数 | 说明 |
 |---|---:|---:|---|
-| `core/` | 20 | 10,018 | 几何 / 渲染 / 圆角 / 裁剪 / 配置 |
+| `core/` | 20 | 10,107 | 几何 / 渲染 / 圆角 / 裁剪 / 配置 / 产物清理 |
 | `services/` | 16 | 10,073 | OCR / 模板匹配 / 草图解析 / PSD |
 | `gui/` | 12 | 6,631 | PyQt5 面板与画布 |
 | `workers/` | 4 | 1,250 | QThread 调度 |
 | `models/` | 2 | 432 | 数据模型 |
-| **生产代码小计** | **54** | **28,404** | — |
-| `tests/` | 56 | 13,678 | pytest（2026-09-24 迁出 `debug_lshape.py`） |
-| `scripts/` | 38 | 3,912 | 人工诊断（不进 CI，含 `diagnose/_archive/` 73 py） |
+| **生产代码小计** | **54** | **28,493** | — |
+| `tests/` | 57 | 13,944 | pytest（含 V1.5 新增 `test_artifact_cleanup_links.py` 257 行） |
+| `scripts/` | 38 | 3,912 | 人工诊断（不进 CI；另有 `diagnose/_archive/` 73 py 未计入本表） |
 | `packaging/` | 2 | 1,102 | 打包入口（V2.2.2 + 新增 V2.2.3） |
-| **目录小计** | **150** | **47,096** | — |
+| **目录小计** | **97** | **18,958** | — |
 | 根文件 | 3 | 647 | `main.py` 529 + `process_image.py` 76 + `conftest.py` 42 |
-| **全项目** | **153** | **47,743** | — |
+| **全项目** | **154** | **48,098** | — |
 
 > **V1.2 → V1.3 变化**：`tests/` 49 → 57 文件（新增 5 个本批次测试 + 3 个 P0 批次测试）、`packaging/` 1 → 2 文件（新增 `packageV2.2.3.py` 569 行）；全项目 141 → 153 文件、44,743 → 47,743 行（+6.7%）。
-> **V1.3 → V1.4 变化**：`tests/` 57 → **56**、`scripts/` 37 → **38**（`debug_lshape.py` 自 `tests/core/` 迁入 `scripts/diagnose/`，142 行随之转移）。**全项目仍 153 文件 / 47,743 行**（纯内部迁移，总量不变）。
+> **V1.3 → V1.4 变化**：`tests/` 57 → **56**、`scripts/` 37 → **38**（`debug_lshape.py` 自 `tests/core/` 迁入 `scripts/diagnose/`，142 行随之转移）。
+> **V1.4 → V1.5 变化**：`tests/` 56 → **57**（新增 `test_artifact_cleanup_links.py`，257 行）；`core/` +89 行（`artifact_cleanup.py` 146 → 231，含 P2-6 与 P2-7 两处修复）。**全项目 153 → 154 文件、47,743 → 48,098 行（+355）。**
+> ⚠️ **口径更正（V1.5）**：V1.4 表中「目录小计 **150** / **47,096**」与同表各分项相加不符（实为 96 / 18,692，见 V1.5 重算），系 V1.4 写入时的笔误；V1.5 已按分项逐项重算并自洽（54 + 97 + 3 = 154；28,493 + 18,958 + 647 = 48,098）。
 > 测试代码占比约 29%。
 
 ### 2.3 依赖实装版本
@@ -306,37 +315,38 @@ _dbg = False  # 临时开关，问题定位后改 False
 ### 5.1 实测基线（本次实跑，权威）
 
 ```
-805 passed / 0 failed / 0 error / 0 skipped  in 103.45s
+813 passed / 0 failed / 0 error / 0 skipped  in 224.81s
 ```
 
-> 演进：680（V1.0 审查）→ 704（P0-2 修复，+24）→ 732（P0-3/P0-4 修复，+28）→ **805（P1 批次 + P2-3，+73）**。四轮均 **0 failed / 0 error / 0 skipped**。
+> 演进：680（V1.0 审查）→ 704（P0-2 修复，+24）→ 732（P0-3/P0-4 修复，+28）→ 805（P1 批次 + P2-3，+73）→ **813（批次③ P2-7 加固，+8）**。**五轮均 0 failed / 0 error / 0 skipped。**
+> ⚠️ **耗时不可纵向比较**：V1.5 本次**未带 `--basetemp`**，临时目录落在 `%TEMP%`（224.81s）；V1.3 那次带 `--basetemp=.pytest_tmp/_bt`（103.45s）。**用例数与通过状态有效，耗时只在同口径内可比。**
 
-命令：`CODEBUDDY_SAFE_DELETE_ENABLED=0 python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp/_bt --junitxml=...`
+命令：`CODEBUDDY_SAFE_DELETE_ENABLED=0 python -m pytest tests/ -q -p no:cacheprovider --junitxml=...`
 
 > ⚠️ **环境伪失败的正确规避方式（V1.3 更正 V1.2 §5.1）**：
 > V1.2 记「必须使用 `--basetemp` 指向项目内目录即可规避」，**该结论不充分**。真正的拦截者是宿主注入的 `sitecustomize.py` **批量删除护栏**（`_check_bulk_delete_guard`），它按**单轮工具调用累计删除数**计数（阈值 50），命中即 `SystemExit(1)`，并级联出 `assert not self._finalizers` 之类的次生报错。
 > V1.3 实测：即使 `--basetemp=.pytest_tmp/_bt`，全量跑仍是 **36 errors + 1 failed**（`test_template_matcher` / `test_f15_f19_fixes` / `test_pool_lshape_flow` / `test_sketch_*` / `test_phase0_multihole` 等所有涉及删除临时文件的用例）；而**同一个文件单独跑 9/9 通过** —— 证明是累计计数而非目录位置所致。
-> **正解**：给测试进程设 `CODEBUDDY_SAFE_DELETE_ENABLED=0`（该垫片读此变量决定是否挂钩 `os.remove`），实测即 **805 全绿**。`--basetemp` 仍建议保留（避免写用户临时目录），但**不是充分条件**。
+> **正解**：给测试进程设 `CODEBUDDY_SAFE_DELETE_ENABLED=0`（该垫片读此变量决定是否挂钩 `os.remove`），实测即 **805 全绿**；**V1.5 复验**：**不带** `--basetemp`、仅设该变量，**813 全绿** —— 故它是**充分**条件。`--basetemp` 仍建议保留（避免往用户临时目录写大量文件），但**不是必要条件**。
 
-### 5.2 分层覆盖分布（2026-09-24 V1.3 实跑解析）
+### 5.2 分层覆盖分布（2026-09-24 V1.5 实跑解析）
 
 | 目录 | 用例数 | 占比 | 内容 |
 |---|---:|---:|---|
-| `tests/core/` | 428 | 53.2% | 圆角 / 裁剪 / 解析 / 模板 / L 形 / G1 / 多角 / 校验 / Stale-Decor 守卫 / 缓存反序列化加固 / **锚定角分组 / 调试残留 / 版本单一来源 / Tesseract 探测** |
-| `tests/gui/` | 114 | 14.2% | 离屏 GUI（冒烟 / 主窗 / 信号契约 / 三面板 / 阶梯面板 / **写回路径**） |
-| `tests/integration/` | 101 | 12.5% | F1-F19 修复验证 / 配置 / 水池-L 形流程 / LOD 几何一致性 |
-| `tests/sketch/` | 64 | 8.0% | 多洞 / 特征化 / 输入校验 / 逻辑函数 |
-| `tests/sketch_parser/` | 57 | 7.1% | 阶梯识别 / 多洞边界 |
-| `tests/models/` | 27 | 3.4% | DesignModel CutRect 路径 |
+| `tests/core/` | 436 | 53.6% | 圆角 / 裁剪 / 解析 / 模板 / L 形 / G1 / 多角 / 校验 / Stale-Decor 守卫 / 缓存反序列化加固 / 锚定角分组 / 调试残留 / 版本单一来源 / Tesseract 探测 / **产物清理的链接剪枝** |
+| `tests/gui/` | 114 | 14.0% | 离屏 GUI（冒烟 / 主窗 / 信号契约 / 三面板 / 阶梯面板 / 写回路径） |
+| `tests/integration/` | 101 | 12.4% | F1-F19 修复验证 / 配置 / 水池-L 形流程 / LOD 几何一致性 |
+| `tests/sketch/` | 64 | 7.9% | 多洞 / 特征化 / 输入校验 / 逻辑函数 |
+| `tests/sketch_parser/` | 57 | 7.0% | 阶梯识别 / 多洞边界 |
+| `tests/models/` | 27 | 3.3% | DesignModel CutRect 路径 |
 | `tests/border/` | 10 | 1.2% | 边框修复 / 复杂花纹安全 |
 | `tests/`（根） | 4 | 0.5% | Phase 0 多洞管线 |
-| **合计** | **805** | 100% | — |
+| **合计** | **813** | 100% | — |
 
-**测试演进**：501（V2.2.2 文档）→ 672（09-19 基线）→ 680（V1.0 审查）→ 704（P0-2）→ 732（P0-3/P0-4）→ **805（本批次）**。**较 V2.2.2 文档增长 61%，全绿。**
+**测试演进**：501（V2.2.2 文档）→ 672（09-19 基线）→ 680（V1.0 审查）→ 704（P0-2）→ 732（P0-3/P0-4）→ 805（P1 批次）→ **813（本批次）**。**较 V2.2.2 文档增长 62%，全绿。**
 
-> **本批次的 +73 条精确落在两处**：`tests/core/`（368 → **428**，+60）与 `tests/gui/`（101 → **114**，+13）。
-> 其余 6 个目录用例数**逐项不变**（integration 101 / sketch 64 / sketch_parser 57 / models 27 / border 10 / 根 4）—— 侧面印证本批次「清理 + 常量抽取」未触及其它模块行为。
-> 新增文件：`test_lshape_cut_rect_anchor_limit.py`(28) + `test_debug_residue_removed.py`(12) + `test_app_version_single_source.py`(11) + `test_config_tesseract_probe_hardened.py`(9) + `test_property_panel_write_paths.py`(13) = **73**。
+> **批次③的 +8 条全部落在 `tests/core/`**（428 → **436**）。其余 7 个目录用例数**逐项不变**（gui 114 / integration 101 / sketch 64 / sketch_parser 57 / models 27 / border 10 / 根 4）—— 再次印证改动被限制在 `artifact_cleanup` 一处。
+> 新增文件：`tests/core/test_artifact_cleanup_links.py`（8 条）。
+> （V1.3 +73 条的分布留档：`tests/core/` 368 → 428（+60）、`tests/gui/` 101 → 114（+13），来源为 `test_lshape_cut_rect_anchor_limit.py`(28) + `test_debug_residue_removed.py`(12) + `test_app_version_single_source.py`(11) + `test_config_tesseract_probe_hardened.py`(9) + `test_property_panel_write_paths.py`(13)。）
 
 ### 5.3 ✅ 历史告警可正式关闭
 
@@ -344,7 +354,7 @@ _dbg = False  # 临时开关，问题定位后改 False
 |---|---|
 | `test_render_design_lshape_degenerate_no_crash` 失败（README 已知问题 #1） | ✅ **已修复** —— `core/geometry.py:349-352` 新增 `if edge_length_cm <= 0: continue` 退化守卫，本次全量实跑通过 |
 | 「626 passed / 45 errors」环境伪失败 | ✅ 已定因（`%TEMP%` 权限护栏），`--basetemp` 可稳定规避 |
-| 「501 项 / 1 failed」基线 | ✅ 已过时，现为 **805 全绿** |
+| 「501 项 / 1 failed」基线 | ✅ 已过时，现为 **813 全绿** |
 
 ### 5.4 覆盖薄弱区（沿用并复核 09-19 结论）
 
@@ -606,28 +616,29 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | ~~**P2-4**~~ | 🟢 | 正确性 | ~~`l_cut_rects` 按**总数** `[:3]` 截断（`validate` 是**每锚定角** ≤3）→ 多锚定第 4 条静默丢弃~~ → **2026-09-24 已修复**：新增 `limit_l_cut_rects_per_anchor()`，与 `validate()` 共用 `MAX_L_CUT_RECTS_PER_ANCHOR` | `workers/property_panel_workers.py`、`models/design_model.py` | **✅ 已修复** |
 | ~~**P2-5**~~ | 🟢 | 代码异味 | ~~遗留 `_dbg = False` 开关 + 大段调试分支~~ → **2026-09-24 已修复**：开关、快照块、19 处引用与 5 个形参全删（净 −61 行） | `core/image_ops.py` | **✅ 已修复** |
 | ~~**P2-6**~~ | 🟢 | 性能 | ~~推导式内 `set(expired)` 每次重建 → O(n²)~~ → **2026-09-24 已修复**：`set` 提到循环外，O(n×m)→O(n)，语义等价 | `core/artifact_cleanup.py:91` | **✅ 已修复** |
-| **P2-7** | 🟠 | 加固 | 清理时**越界删除**：`Path.rglob('*')` 会进入 **junction（目录联接）** 并联出目录外文件后 `os.remove` 删掉（**已复现目录外真实文件被删**）。符号链接无此问题：目录链接不被进入、文件链接只删链接自身。旧描述「跟随符号链接」**不准确** | `core/artifact_cleanup.py:71-102` | **⚠️ 实测确认（🟢→🟠 上调），修复待确认** |
+| ~~**P2-7**~~ | 🟠 | 加固 | ~~清理时**越界删除**：`Path.rglob('*')` 进入 **junction（目录联接）** 并联出目录外文件后 `os.remove` 删掉（已复现真实文件被删）~~ → **2026-09-24 已修复**：新增 `_is_link_node()`（识别 symlink + junction）与 `_iter_tree()`（**逐条等价于 `rglob` 顺序**的剪枝遍历），链接节点既不递归、也不纳入 `candidates`/`empties`；+8 条回归用例 | `core/artifact_cleanup.py:53-132` | **✅ 已修复** |
 | **P2-8** | 🟢 | 仓库卫生 | 根目录残留：`crash.log` 已删 ✅、2 份报告 md 已归位 ✅、**`debug.log` 删除受阻**（搜狗输入法占用） | 根目录 | **🟡 部分处置** |
 | **P2-9** | 🟢 | 仓库卫生 | `ProductSummary/2026-08\|09/` 11 个文件与 `月度总结/` 重复 | `ProductSummary/` | ⏳ 仍存在 |
 | ~~**P2-10**~~ | 🟢 | 目录规范 | ~~`tests/core/debug_lshape.py` 调试脚本混入正式测试目录~~ → **2026-09-24 已迁移**至 `scripts/diagnose/`（`git mv`，rename 记录保留） | `tests/core/` | **✅ 已修复** |
 | ~~**P2-11**~~ | 🟢 | 文档 | ~~`scripts/README.md` 清单与实际结构大面积不符~~ → **2026-09-24 已按实测重写**（更正 `_archive/` 位置、补齐各层计数） | `scripts/README.md` | **✅ 已修复** |
 | ~~**P2-12**~~ | 🟢 | 仓库卫生 | ~~`.pytest_tmp/`、`.pytest_cache/` 未 ignore（09-19 QA 遗留）~~ → **2026-09-24 已修复**：两条规则已补入 `.gitignore` | 根目录 | **✅ 已修复** |
 
-### 严重度分布（V1.4 重算）
+### 严重度分布（V1.5 重算）
 
 | 严重度 | 条目数 | 已闭环 | 部分处置 | 仍存在 |
 |---|---:|---:|---:|---:|
 | 🔴 阻塞 | 1 | 0 | 0 | 1 |
-| 🟠 高 | 4 | 2 | 0 | 2 |
+| 🟠 高 | 4 | 3 | 0 | 1 |
 | 🟡 中 | 8 | 4 | 0 | 4 |
 | 🟢 低 | 8 | 6 | 1 | 1 |
-| **小计（V1.2 起跟踪的 21 项）** | **21** | **12** | **1** | **8** |
+| **小计（V1.2 起跟踪的 21 项）** | **21** | **13** | **1** | **7** |
 | P0 批次（V1.1/V1.2 引入，已闭环） | 3 | 3 | 0 | 0 |
-| **合计** | **24** | **15** | **1** | **8** |
+| **合计** | **24** | **16** | **1** | **7** |
 
 > ⚠️ **口径更正（V1.3）**：V1.2 的分布表记「🔴1 / 🟠6 / 🟡9 / 🟢11，合计 **27**」，但其上方的条目表实际只有 **24** 项（P0×4 + P1×8 + P2×12），**两者对不上**。V1.3 已按条目表逐项重算并统一。
 > **V1.3 → V1.4（2026-09-24 批次② 文档同步与低风险卫生）**：新闭环 **3 项**（P2-6 / P2-10 / P2-11）；**P2-7 严重度由 🟢 上调至 🟠**（junction 越界删除实测复现）。故 🟠 3→**4** 项、🟢 9→**8** 项。
-> 累计闭环 **15 项**（P0 批次 3 + P1/P2 共 12），占 24 项的 **62.5%**；仍存在 8 项、部分处置 1 项。
+> **V1.4 → V1.5（2026-09-24 批次③ P2-7 加固）**：新闭环 **1 项**（P2-7）。故 🟠 已闭环 2→**3**、🟠 仍存在 2→**1**。
+> 累计闭环 **16 项**，占 24 项的 **66.7%**；仍存在 7 项、部分处置 1 项。剩余 7 项中 **P0-1 是唯一阻塞项**，其余 6 项均属「架构声明 / 覆盖缺口 / 文档 / 卫生」类非阻塞问题。
 
 ---
 
@@ -642,7 +653,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | `scripts/_archive/`、`scripts/verify/_archive/` 堆积 | ✅ 已清理（2026-09-17） |
 | 死守卫之外的 F1-F19 修复 | ✅ 集成测试 101 项全绿 |
 | 配置魔法数字散落（边框检测阈值） | ✅ V2.2.3 集中到 `core/config.py`（8 个 `BORDER_*` 常量） |
-| 测试基线 501 | ✅ 增至 **805 全绿** |
+| 测试基线 501 | ✅ 增至 **813 全绿** |
 | 热路径 8 处 `print(flush=True)`（P1-4） | ✅ 已删除（本批次） |
 | 遗留 `_dbg = False` 调试开关（P2-5） | ✅ 已删除（本批次，`core/image_ops.py` 净 −61 行） |
 | `os.popen` 起 shell（P1-7） | ✅ 改 `subprocess.run(list)`（本批次） |
@@ -666,7 +677,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | 3 | ~~修 P0-3~~ **✅ 已完成（2026-09-24）**：**删除** 2×2 条恒真死守卫（`lshape_cut_w/h` 字段从不存在）。⚠️ **未采用**原报告建议的「改用 `l_cut_w_cm`」—— 实测证实那会导致两块清理永不触发（该字段默认非零，详见附录 D） | `core/image_ops.py`（两处守卫） | ✅ 纯删除 4 行 + 注释；判定逐例等价；新增 11 条行为锁用例 + AST 防回归断言 |
 | 4 | ~~修 P0-4~~ **✅ 已完成（2026-09-24）**：`DiskCache.load` 改用**受限 Unpickler**（仅放行惰性内置类型）。⚠️ **未采用**原报告建议的「JSON 优先 / 先校验后解包」—— 两条均不成立（详见附录 E） | `services/parser/template_matcher.py` | ✅ 119/119 存量缓存兼容；恶意载荷阻断（对照组证实载荷可执行）；新增 17 条用例 |
 | 5 | ~~修 P1-1：新建 `packaging/packageV2.2.3.py` + `specs/智能裁剪设计器V2.2.3.spec`；引入 `core/config.APP_VERSION` 单一来源~~ **✅ 已完成（2026-09-24）**：脚本 569 行、spec 81 行，`APP_NAME` 由 `APP_VERSION` 派生（按文件路径加载，避免 `core/__init__` 聚合导入） | `packaging/`、`core/config.py` | ✅ `--help` 实测输出 `SmartShapeCrop V2.2.3`；`module.APP_NAME == 智能裁剪设计器V2.2.3` |
-| 6 | 重跑全量测试 | — | ✅ 已完成：**805 全绿**（103.5s）。⚠️ 命令需加 **`CODEBUDDY_SAFE_DELETE_ENABLED=0`**，仅靠 `--basetemp` 不足（见 5.1） |
+| 6 | 重跑全量测试 | — | ✅ 已完成：V1.3 **805 全绿**（103.5s）→ V1.5 **813 全绿**（224.8s，未带 `--basetemp`）。⚠️ 命令需加 **`CODEBUDDY_SAFE_DELETE_ENABLED=0`**，仅靠 `--basetemp` 不足（见 5.1） |
 | 7 | 重打包并核对时间戳 | `dist/` | **`dist/*.exe` mtime ≥ 最新源码 mtime** |
 | 8 | 冒烟：启动 exe 验证阶梯 L 形**预览与导出一致** | — | 目视 + 尺寸量测 |
 
@@ -693,10 +704,11 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 | 16 | **拆分 `core/image_ops.py`**（1,833 行） | 与 P0-2/P0-3 同批做，拆出「素材适配」「L 形渲染」「边框补全集成」三个模块 |
 | 17 | **架构分层定策**（P1-5 + P1-6） | `core ↔ services` 循环与 `core→PyQt5` 需明确取舍：要么修正声明，要么拆出服务聚合层。**建议先改文档声明（成本 0），再评估是否真拆** |
 | 18 | **补 PSD / app_settings / workers 测试**（P1-3） | 优先 `services/psd/loader.py`（零覆盖的对外特性） |
-| 19 | ~~**`tests/core/debug_lshape.py` 移入 `scripts/diagnose/`**（P2-10）~~ **✅ 已于 2026-09-24 执行** | 已同步测试文件计数 57 → **56** |
-| 20 | **`ProductSummary/2026-08|09/` 去重**（P2-9） | 迁移 + `git rm --cached` + 提交，防 restore 复活 |
+| 19 | ~~**`tests/core/debug_lshape.py` 移入 `scripts/diagnose/`**（P2-10）~~ **✅ 已于 2026-09-24 执行** | 已同步测试文件计数 57 → **56**（V1.5 新增测试文件后复为 57） |
+| 20 | **`ProductSummary/2026-08\|09/` 去重**（P2-9） | 迁移 + `git rm --cached` + 提交，防 restore 复活 |
+| 21 | ~~**`artifact_cleanup` junction 越界删除加固**（P2-7）~~ **✅ 已于 2026-09-24 执行**（批次③） | 新增剪枝遍历 `_iter_tree()` + `_is_link_node()`；+8 条回归用例并经判别力自检（见附录 G.5） |
 
-### 11.4 建议引入的防复发机制（V1.3：2 条 → 4 条，其中 3 条已落地）
+### 11.4 建议引入的防复发机制（V1.3：2 条 → V1.5：6 条，全部已落地）
 
 1. **预览/导出一致性断言（防 P0-2 类缺陷）** —— ✅ **已落地**
    V2.2.3 的 `l_cut_rects` 引入后，LOD 降采样路径与新几何字段之间缺少「形状等价」校验。**2026-09-24 已补** `tests/integration/test_lod_geometry_consistency.py`（24 条），对 4 族几何字段强制断言「LOD vs 全分辨率」掩膜 IoU ≥ 0.95。**今后任何新增几何字段，务必同步 `_make_lod_design` 缩放清单并在此文件补断言。**
@@ -710,17 +722,23 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 4. **环境伪失败的可复现规避（防「测试基线不可信」）** —— ✅ **已定因（2026-09-24）**
    宿主的批量删除护栏会按「单轮累计删除数」拦截，表现为 36 errors + 1 failed 的**假红**。**固定口径**：`CODEBUDDY_SAFE_DELETE_ENABLED=0 python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp/_bt --junitxml=...`。**凡出现「与本次改动无因果关系的成批 error」，先怀疑环境护栏，用「单文件单独跑」交叉验证。**
 
+5. **「删除 / 遍历 / 清理」类修复必须配判别力自检（防 P2-7 类缺陷）** —— ✅ **已落地（2026-09-24，批次③）**
+   仅断言「修复后目标存活」是**弱证据** —— 可能本来就删不到。本批次额外做了**判别力自检**：把 `_iter_tree` 换回旧 `rglob` 实现重跑同一场景，确认目录外文件**确实被删**（`removed` 2 条 = `stale.txt` + `junc\keep.txt`；修复后 1 条）。**范本：凡涉及删除路径的修复，必须证明「旧实现会失败」，否则护栏形同虚设。**
+
+6. **替换标准库遍历时，必须验证产出顺序（防静默行为漂移）** —— ✅ **已落地（2026-09-24，批次③）**
+   实测教训：`Path.rglob('*')` 是**逐层广度优先**（并非深度优先先序），最初按 DFS 自写遍历导致 `files` 顺序漂移。集合虽相同，但下游 `remaining.sort(key=mtime)` 是**稳定排序** —— mtime 相同的项删除次序会变，属行为变更（会打破「不改变程序功能」的硬约束）。**范本：凡把标准库遍历换成自写遍历，先写「与标准库逐条一致」的顺序断言。**
+
 ---
 
 ## 附录 A：审查证据（命令与输出）
 
 | 检查项 | 命令 | 结果 |
 |---|---|---|
-| 仓库状态 | `git status --porcelain` | **102 条**（71 `D ` + 12 ` M` + 2 ` D` + 17 `??`，详见 1.2） |
-| HEAD | `git log -1 --format='%H %ci %s'` | `9c1937d…` 2026-09-23 15:55:10（本批次改动**未提交**） |
-| 提交总数 | `git rev-list --count HEAD` | 390 |
-| 代码规模 | `pathlib.rglob('*.py')` + `count('\n')` | **153 文件 / 47,743 行**（V1.2：141 / 44,743） |
-| 全量测试 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp/_bt --junitxml=…` | V1.0 **680 passed / 0 failed in 182.42s** → V1.2 **732 / 0 in 106.67s** → **V1.3 805 passed / 0 failed / 0 error / 0 skipped in 103.45s** |
+| 仓库状态 | `git status --porcelain` | V1.3 审查时为 **102 条**（71 `D ` + 12 ` M` + 2 ` D` + 17 `??`，详见 1.2），已随 `9c4443a` + `ea60af0` 两笔提交全部落库 |
+| HEAD | `git log -1 --format='%H %ci %s'` | 本批次末为 `v2.2.3-修复产物清理的 junction 越界删除（P2-7）`（V1.3 审查基线：`9c1937d` 2026-09-23 15:55） |
+| 提交总数 | `git rev-list --count HEAD` | **393**（含本批次 3 笔；V1.3 审查基线 `9c1937d` 时为 390） |
+| 代码规模 | `pathlib.rglob('*.py')` + `count('\n')` | **154 文件 / 48,098 行**（V1.3：153 / 47,743；+355 行） |
+| 全量测试 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 pytest tests/ -q -p no:cacheprovider --junitxml=…` | V1.0 **680 passed / 0 failed in 182.42s** → V1.2 **732 / 0 in 106.67s** → V1.3 **805 / 0 / 0 / 0 in 103.45s** → **V1.5 813 / 0 / 0 / 0（批次③ +8）** |
 | 环境伪失败交叉验证 | 单文件 `pytest tests/sketch/test_sketch_input_validation.py` | **9 passed**（同文件在全量跑中报 error → 证明为护栏累计计数所致） |
 | 语法检查 | `py_compile.compile(..., doraise=True)` ×153 | 0 错误（口径见 4.1） |
 | 依赖版本 | `importlib.metadata.version` | 见 2.3 |
@@ -736,7 +754,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 |---|---|---|---|
 | 1 | 标题 `V2.2.2` | V2.2.3 | 全篇版本号升 V2.2.3 |
 | 2 | 「最后验证 2026-09-16」 | 2026-09-24 已复验 | 更新日期 |
-| 3 | 测试基线「501 项 / 500 passed / 1 failed」 | **805 passed / 0 failed** | 更新基线，去掉失败告警 |
+| 3 | 测试基线「501 项 / 500 passed / 1 failed」 | **813 passed / 0 failed** | 更新基线，去掉失败告警 |
 | 4 | 已知问题 #1「1 个测试用例失败」 | 已修复 | 标记为已解决 |
 | 5 | 目录结构含 `packaging/legacy/` | 已于 09-17 删除 | 删除该行 |
 | 6 | 目录结构含 `scripts/_archive/`、`scripts/verify/_archive/` | 已删除 | 删除该行 |
@@ -813,12 +831,12 @@ LOD 渲染把画布按 `scale` 缩小，若几何长度量不随之缩放，其�
 
 ### C.7 测试基线变化
 
-| | V1.0 审查 | P0-2 修复后（V1.1） | P0-3/P0-4 修复后（V1.2） | P1 批次后（V1.3，当前） |
-|---|---|---|---|---|
-| 总数 | 680 | 704 | 732 | **805** |
-| passed | 680 | 704 | 732 | **805** |
-| failed / error / skipped | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | **0 / 0 / 0** |
-| 耗时 | 182.4s | 175.4s | 106.7s | **103.5s** |
+| | V1.0 审查 | P0-2 修复后（V1.1） | P0-3/P0-4 修复后（V1.2） | P1 批次后（V1.3） | **批次③后（V1.5，当前）** |
+|---|---|---|---|---|---|
+| 总数 | 680 | 704 | 732 | 805 | **813** |
+| passed | 680 | 704 | 732 | 805 | **813** |
+| failed / error / skipped | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | **0 / 0 / 0** |
+| 耗时 | 182.4s | 175.4s | 106.7s | 103.5s | **224.8s**（未带 `--basetemp`，不可与 103.5s 直接比较） |
 
 ---
 
@@ -982,7 +1000,29 @@ class _RestrictedUnpickler(pickle.Unpickler):
 > 与 HEAD 的差异**恰好是被剔除的 3 个 P0 hunk**（+62 −4）；正向应用再逐字节还原工作区 **18/18**。
 > 即：**除 P0 批次内容外，本批次对仓库的全部影响都被这一份补丁精确描述，且可逆。**
 >
-> **测试基线**：680 → 704 → 732 → **805**，四轮实跑均 0 failed / 0 error / 0 skipped。
+> **测试基线**：680 → 704 → 732 → 805 → **813**（批次③ +8），**五轮**实跑均 0 failed / 0 error / 0 skipped。
+
+### F.3 批次②（文档与卫生）+ 批次③（P2-7 加固）（V1.5）
+
+| 批次 | 项 | 编号 | 文件 | 新增 / 删除 |
+|---|---|---|---|---|
+| ② | README 全篇同步至 V2.2.3（1,246 行） | P1-8 | `README.md` | +188 / −111 |
+| ② | `scripts/README.md` 按实测重写（89 行） | P2-11 | `scripts/README.md` | +56 / −46 |
+| ② | `artifact_cleanup` O(n²) → O(n) | P2-6 | `core/artifact_cleanup.py` | +4 / −1 |
+| ② | 调试脚本迁出正式测试目录 | P2-10 | `tests/core/debug_lshape.py` → `scripts/diagnose/` | **rename 100%** |
+| ② | 报告升 V1.4 | — | 本报告 | +53 / −28 |
+| ③ | junction 越界删除加固 | P2-7 | `core/artifact_cleanup.py` | 146 → 231 行（净 +85） |
+| ③ | 配套回归测试（新） | — | `tests/core/test_artifact_cleanup_links.py` | +257（8 条） |
+| ③ | 报告升 V1.5 | — | 本报告 | 本版 |
+
+> **提交记录**：批次② = `ea60af0 v2.2.3-文档同步与低风险卫生`（**5 files changed, +301 / −186**，
+> 其中 `debug_lshape.py` 被 Git 识别为 **100% rename**）；批次③ 单独一提。
+>
+> **批次③「未改变程序功能」的证明**：`_iter_tree()` 在**无链接的普通目录树**上与
+> `Path.rglob('*')` 的产出**逐条且逐序一致**（含顺序断言 —— 下游 `remaining.sort(key=mtime)`
+> 是稳定排序，mtime 相同的项删除次序因此不变）；行为差异**仅存在于「链接节点」这一类
+> 原本就会造成越界删除的路径上**。清理逻辑的其余部分（保护名单、两阶段删除、空目录清理、
+> `dry_run` 语义）**一字未动**。
 
 ---
 
@@ -1050,7 +1090,57 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 python -m pytest tests/ -q -p no:cacheprovider \
 > 下的**临时副本**也当作「重复的 `APP_VERSION` 定义点」而误报。现已把 `.pytest_tmp` 等隐藏目录一并排除。
 > **凡「全仓库扫描」类断言，排除清单必须含 `.pytest_tmp`（本项目的验证脚本会在此建副本）。**
 
+### G.5 批次③：P2-7 junction 越界删除加固（V1.5 新增）
+
+**问题**：`cleanup_debug_artifacts()` 原用 `base.rglob('*')` 收集候选文件。Python 3.9+ 的 `**`
+只对**符号链接**停止递归，而 Windows **junction（目录联接）不是符号链接** ——
+`os.path.islink()` 对它是 `False`、`Path.is_dir()` 是 `True`，故 `rglob` 照常进入其目标目录，
+把其中的**真实文件**列入 `candidates`，随后 `os.remove()` 直接删除 —— **越界删除目录树之外的业务文件**。
+
+**实测矩阵**（Python 3.13.14 / Windows，三种链接分别隔离观察）：
+
+| 场景 | `rglob('*')` 列出 | `os.remove(子项)` | `os.rmdir(节点)` |
+|---|---|---|---|
+| 符号链接（目录） | 仅链接本身，**不进入** | — | 只删链接，目标存活 ✅ |
+| 符号链接（文件） | 链接本身 | 只删链接，目标存活 ✅ | — |
+| **junction（目录联接）** | **进入**，列出 `junc\keep.txt` | **删掉目录外的真实文件** ❌ | 只断联接，目标存活 ✅ |
+
+> 附测结论：`os.rmdir()` 对 junction 与 symlink **都只删链接本身**，与目标是否为空**无关** ——
+> 故**唯一真实的越界是文件删除**；但链接节点也不该由清理工具来断（会破坏用户建立的目录联接），
+> 修复对二者**一并剪枝**。
+
+**修复**（`core/artifact_cleanup.py`，纯新增 + 两行替换，146 → 231 行）：
+
+- 新增 `_is_link_node()`：判 `entry.is_symlink()` **或** `os.path.isjunction()`（Python 3.12+；
+  更低版本退回按 `st_reparse_tag` 判 `MOUNT_POINT` / `SYMLINK`）。**无法判定时按链接处理**
+  （宁可少清理，也不越界删除）。
+- 新增 `_iter_tree()`：逐层广度优先的自写遍历，产出与 `Path.rglob('*')` **逐条一致**；
+  遇链接节点**既不递归、也不纳入 `files` / `dirs`**。
+- `cleanup_debug_artifacts()` 的两行收集语句替换为 `_iter_tree()` 调用；**其余清理逻辑一字未动**
+  （保护名单、两阶段删除、空目录清理、`dry_run` 语义全部保持）。
+
+**判别力自检**（证明新用例不是空护栏）：把 `_iter_tree` 换回旧 `rglob` 实现重跑同一场景 ——
+`removed` 2 条（`stale.txt` + `junc\keep.txt`），**目录外的 `keep.txt` 确实被删**；
+换回新实现后 `removed` 1 条、目标完好。
+
+**回归用例**（`tests/core/test_artifact_cleanup_links.py`，8 条）：与 `rglob` 逐条等价（**含顺序**）、
+普通条目不被误判、junction 不递归、端到端不越界、junction 联接不被删、`dry_run` 同样不越界、
+symlink 目录节点与文件节点被跳过。
+
+**过程中踩到的坑**：最初按「DFS 先序」自写遍历，实测 `Path.rglob('*')` 实为**逐层广度优先** ——
+顺序漂移被那条「与 `rglob` 逐条一致」的断言当场抓出（已固化为 §11.4 第 6 条）。
+
 ---
 
-<sub>SmartShapeCrop 项目全面审查报告 · 报告版本 **V1.4** · 审查日期 2026-09-24 · 基线 `9c1937d`（V2.2.3） · 修订：V1.0 全面审查（全程只读）→ V1.1 修复 P0-2（4 族几何字段补齐 LOD 缩放，+24 用例）→ V1.2 修复 P0-3（删除恒真死守卫，+11 用例）与 P0-4（受限 Unpickler，+17 用例），并纠正原报告对二者修法的错误建议 → **V1.3 完成 P1 批次 #9–#14 与 P2-3（`APP_VERSION` 单一来源），新建 `packageV2.2.3.py` + V2.2.3 spec，留档 `patch-06`，并更正本报告自身 4 处事实/口径错误（附录 G.2）** → **V1.4 完成批次②文档同步与低风险卫生：README 全篇升至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6（O(n²)→O(n)）、迁移 P2-10、P2-7 实测后由 🟢 上调 🟠（junction 越界删除）** · 测试基线 **805 全绿** · 源码零功能变更</sub>
+### G.6 本报告 V1.4 引入的 1 处笔误（V1.5 更正）
+
+| # | 位置 | V1.4 写的 | 实际 | 更正 |
+|---|---|---|---|---|
+| 1 | §2.2 代码规模表 | 「目录小计 **150** / **47,096**」 | 与同表分项相加不符（应为 **96** / **18,692**） | V1.5 全表按分项重算：97 / 18,958，全项目 154 / 48,098 |
+
+> 该笔误不影响任何结论（V1.4 的「全项目 153 / 47,743」本身自洽），仅表格中间行写错。
+
+---
+
+<sub>SmartShapeCrop 项目全面审查报告 · 报告版本 **V1.5** · 审查日期 2026-09-24 · 基线 `9c1937d`（V2.2.3） · 修订：V1.0 全面审查（全程只读）→ V1.1 修复 P0-2（4 族几何字段补齐 LOD 缩放，+24 用例）→ V1.2 修复 P0-3（删除恒真死守卫，+11 用例）与 P0-4（受限 Unpickler，+17 用例），并纠正原报告对二者修法的错误建议 → **V1.3 完成 P1 批次 #9–#14 与 P2-3（`APP_VERSION` 单一来源），新建 `packageV2.2.3.py` + V2.2.3 spec，留档 `patch-06`，并更正本报告自身 4 处事实/口径错误（附录 G.2）** → **V1.4 完成批次②文档同步与低风险卫生：README 全篇升至 V2.2.3、`scripts/README.md` 按实测重写、修 P2-6（O(n²)→O(n)）、迁移 P2-10、P2-7 实测后由 🟢 上调 🟠（junction 越界删除）** → **V1.5 完成批次③：`artifact_cleanup` 改为剪枝遍历（`_is_link_node()` + `_iter_tree()`），堵住 junction 越界删除，+8 条回归用例并经判别力自检，并更正 V1.4 的 §2.2 目录小计笔误（附录 G.5 / G.6）** · 测试基线 **813 全绿** · 源码零功能变更</sub>
 

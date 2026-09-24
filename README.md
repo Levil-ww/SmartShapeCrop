@@ -87,16 +87,16 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具�
 
 | 层 | 文件数 | 行数 |
 |---|---|---|
-| `core/` | 20 py | 10,018 |
+| `core/` | 20 py | 10,107 |
 | `services/` | 16 py | 10,073 |
 | `gui/` | 12 py | 6,631 |
 | `workers/` | 4 py | 1,250 |
 | `models/` | 2 py | 432 |
-| `tests/` | 56 py | 13,678 |
-| `scripts/` | 38 py（含 `diagnose/_archive/`） | 3,912 |
+| `tests/` | 57 py | 13,944 |
+| `scripts/` | 38 py（另有 `diagnose/_archive/` 73 py 未计入本表） | 3,912 |
 | `packaging/` | 2 py | 1,102 |
 | 入口（`main.py` / `process_image.py` / `conftest.py`） | 3 py | 647 |
-| **合计** | **153 py** | **≈ 47,743** |
+| **合计** | **154 py** | **≈ 48,098** |
 
 > 口径：`rglob('*.py')` + `read_text().count('\n')`，排除 `.venv` / `_archive`（仓库根） / `.workbuddy` / `.dumate` / `__pycache__` / `build` / `dist`。
 
@@ -187,7 +187,7 @@ SmartShapeCrop/
 │   ├── property_panel_layers.py    #   多层边框编辑 UI（_LayersMixin）
 │   └── property_panel_poolbox.py   #   多洞参数面板 + 空挖方式 + 草图识别与边距回填调度（_PoolBoxMixin）
 │
-├── tests/                          # 单元/集成测试（pytest；2026-09-24 实测 805 passed / 0 failed）
+├── tests/                          # 单元/集成测试（pytest；2026-09-24 实测 813 passed / 0 failed）
 │   ├── conftest.py                 #   全局 fixture + 防御性收集忽略
 │   ├── __init__.py
 │   ├── run_test.bat
@@ -368,7 +368,7 @@ python process_image.py --src "D:\path\to\源图.jpg" --out-dir "D:\path\to\out"
 ### 运行测试
 
 ```bash
-# 全部测试（2026-09-24 实测 805 passed / 0 failed / 0 error，103.5 秒）
+# 全部测试（2026-09-24 实测 813 passed / 0 failed / 0 error，224.8 秒）
 python -m pytest tests/ -q
 
 # 仅圆角测试
@@ -504,13 +504,14 @@ python packaging/packageV2.2.3.py --no-tesseract
 - **删除恒真死守卫（P0-3）**：`lshape_cut_w/h` 字段从不存在，两处守卫共 2×2 条恒真合取项**纯删除**（判定逐例等价）
 - **受限 Unpickler（P0-4）**：模板缓存反序列化改用白名单受限 Unpickler，消除代码执行面，119/119 存量缓存兼容
 
-**代码卫生与工程化（P1 批次）**：
+**代码卫生与工程化（P1 批次 + 后续批次）**：
 
 - 删除热路径 8 处 `print(flush=True)` 与 `_dbg` 调试开关（`core/image_ops.py` 净 **−61 行**）
 - `os.popen` 起 shell → `subprocess.run(list)`（P1-7）
 - `core/config.py` 新增 `APP_VERSION`，成为版本号**唯一事实来源**（P2-3）
 - 新增 `packaging/packageV2.2.3.py` + `specs/智能裁剪设计器V2.2.3.spec`，exe 名由 `APP_VERSION` 派生
-- 实测基线 **805 passed / 0 failed / 0 error**（103.5s）
+- `core/artifact_cleanup.py` 改为**剪枝遍历**（`_is_link_node()` + `_iter_tree()`）：清理调试产物时不再跟随符号链接与 **Windows junction** 越界删除目录外的真实文件（P2-7）
+- 实测基线 **813 passed / 0 failed / 0 error**（224.8s；未带 `--basetemp`，耗时不可与带 `--basetemp` 时的 ~103s 直接比较）
 
 > 完整审查与整改记录见 `ProductSummary/项目审查报告/SmartShapeCrop-项目全面审查报告-20260924.md`。
 
@@ -949,14 +950,14 @@ python main.py
 **实测基线（2026-09-24，`.venv` 实跑）**：
 
 ```
-805 passed / 0 failed / 0 error / 0 skipped，耗时 103.45s
+813 passed / 0 failed / 0 error / 0 skipped，耗时 224.81s
 ```
 
 各层用例分布（按 pytest 收集计数）：
 
 | 目录 | 用例数 | 说明 |
 |---|---|---|
-| `tests/core/` | 428 | 圆角 / 裁剪 / 文件名解析 / 模板匹配 / L 形渲染与边框 / 草图解析 / G1 / 多角 / 阶梯 / 版本单一来源 / CropDesign 校验 |
+| `tests/core/` | 436 | 圆角 / 裁剪 / 文件名解析 / 模板匹配 / L 形渲染与边框 / 草图解析 / G1 / 多角 / 阶梯 / 版本单一来源 / 产物清理链接剪枝 / CropDesign 校验 |
 | `tests/gui/` | 114 | 离屏 GUI（冒烟 / 主窗口 / 信号契约 / 三面板 / 校验文案 / 模式回填） |
 | `tests/integration/` | 101 | F1-F19 修复验证 / 配置 / 水池-L 形数据流 / LOD 一致性 |
 | `tests/sketch/` | 64 | 多洞 / 特征化 / 输入校验 / 逻辑函数 |
@@ -1181,7 +1182,7 @@ python -m pytest tests/integration/ -v
 |---|---|
 | 文档版本 | V2.2.3 |
 | 最后验证 | 2026-09-24 |
-| 验证方式 | 全量测试实跑（`.venv`，805 passed）+ 目录结构遍历 + 源码关键符号核对 + `dist` 产物时间戳比对 |
+| 验证方式 | 全量测试实跑（`.venv`，813 passed）+ 目录结构遍历 + 源码关键符号核对 + `dist` 产物时间戳比对 |
 | 生命周期阶段 | 维护期（V2.2.3 阶梯 L 形与 P0/P1 批次整改已落地；**V2.2.3 exe 待出包**） |
 
 ### 更新触发器
@@ -1217,7 +1218,7 @@ python -m pytest tests/integration/ -v
 
 > 状态核对：**2026-09-24**。完整清单（含严重度、位置与实测证据）见 `ProductSummary/项目审查报告/SmartShapeCrop-项目全面审查报告-20260924.md`。
 
-1. ✅ **已修复：原「1 个测试用例失败」** —— `tests/integration/test_f1_inner_rect_crash.py::test_render_design_lshape_degenerate_no_crash`，由 `core/geometry.py:349-352` 新增的退化守卫解决；2026-09-24 全量实跑 **805 passed / 0 failed / 0 error**。
+1. ✅ **已修复：原「1 个测试用例失败」** —— `tests/integration/test_f1_inner_rect_crash.py::test_render_design_lshape_degenerate_no_crash`，由 `core/geometry.py:349-352` 新增的退化守卫解决；2026-09-24 全量实跑 **813 passed / 0 failed / 0 error**。
 2. **⚠️ V2.2.3 exe 待出包**：`dist/` 仍是 `智能裁剪设计器V2.2.2.exe`（2026-09-16），**落后最新源码 7 天**，违反自定「交付物时效铁律」。打包入口 `packageV2.2.3.py` 与 spec 已就绪，需联网安装 PyInstaller 后出包。
 3. **worker 生命周期回归**：当前仅验证「线程可被停止」，未验证「取消后不回写 UI」。需补充 `CropWorker` / `PoolRenderWorker` / `_WarmupScanWorker` 的退役协议回归测试。
 4. ✅ **单边阶梯 L 形挖角已实施**（V2.2.3 六期）：`CutRect` + `CropDesign.l_cut_rects` + `_validate_l_cut_rects` + 统一掩膜 `_build_design_lshape_mask`（`_draw_staircase_union_layers`）；与多边 L 形共用同一面板，未新增 `shape_type` 字段。`scripts/diagnose/_diag_stair_*.py` 保留为历史 POC 参考。
@@ -1231,8 +1232,8 @@ python -m pytest tests/integration/ -v
     ⚠️ 在 shim 仍存在期间，打包的 hidden-import **只能声明 `services.psd.loader`**，不可声明 `core.psd.loader`（该文件不存在，会报 `Hidden import not found`）。
 12. **历史脚本归档**：`packaging/legacy/` 已于 **2026-09-17 整目录删除**（原含 `package*.py` 6 个 + `build_exe.bat`）。当前唯一入口为 `packaging/packageV2.2.3.py`（`packageV2.2.2.py` 保留备查，其 exe 名硬编码为 V2.2.2，**勿再用于出包**）。
 13. **⚠️ Git 操作警示**：`git gc` / `git repack` 在本机曾导致 `.git` 被清空、历史全失，此类操作前请先 `cp -r .git .git.bak`。
-14. **⚠️ `core/artifact_cleanup.py` 可能越界删除（待确认后修复）**：2026-09-24 实测 —— 若 `logs/` 或 `debug_output/` 下存在 **Windows junction（目录联接）**，`Path.rglob('*')` **会进入**并联出目录外文件，随后被 `os.remove` 删除（**已复现目录外真实文件被删**）。符号链接（symlink）无此问题：目录链接不被进入、文件链接只删链接自身。
-    建议加固：遍历时用 `os.path.isjunction()` 剪枝。**该项涉及删除逻辑，需确认后再改。**
+14. **✅ 已修复：`core/artifact_cleanup.py` 越界删除（2026-09-24）** —— 原用 `Path.rglob('*')` 收集候选：Python 3.13 的 `**` 只对**符号链接**停止递归，而 **Windows junction（目录联接）不是符号链接**（`os.path.islink()` 对它返回 `False`），故会进入其目标目录、联出目录外的**真实文件**并被 `os.remove` 删除（**已复现**）。符号链接（symlink）无此问题：目录链接不被进入、文件链接只删链接自身。
+    修复：新增 `_is_link_node()`（`os.path.isjunction()`；Python < 3.12 退回按 `st_reparse_tag` 判定）+ `_iter_tree()` 剪枝遍历（产出与 `Path.rglob('*')` **逐条一致**，保持下游稳定排序的 tie-break 不变）；链接节点**既不递归、也不纳入** `candidates` / `empties`。配套 8 条回归用例见 `tests/core/test_artifact_cleanup_links.py`。
 
 ---
 
