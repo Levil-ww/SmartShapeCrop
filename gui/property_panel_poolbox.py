@@ -625,7 +625,16 @@ class _PoolBoxMixin:
         old = getattr(self, '_sketch_decode_worker', None)
         if old is not None:
             self._sketch_decode_worker = None
-            if old.isRunning():
+            # [Fix 2026-09-24 #15] old 可能只剩 Python 包装器：本函数末尾的
+            # worker.finished.connect(worker.deleteLater) 会在解码线程退出后销毁底层
+            # C/C++ 对象，而 Python 侧引用要保留到下一次退役，此时调用 isRunning()
+            # 抛 "RuntimeError: wrapped C/C++ object ... has been deleted"。
+            # 该情形语义上等价于「已不在运行」，按退役处理；正常路径行为不变。
+            try:
+                old_running = old.isRunning()
+            except RuntimeError:
+                old_running = False
+            if old_running:
                 try:
                     old.requestInterruption()
                     try:
@@ -638,7 +647,10 @@ class _PoolBoxMixin:
                     except TypeError:
                         old.deleteLater()
             else:
-                old.deleteLater()
+                try:
+                    old.deleteLater()
+                except RuntimeError:
+                    pass
         self._sketch_decode_source = source
         worker = _SketchDecodeWorker(p, parent=self)
         worker.decoded.connect(self._on_sketch_decoded)
@@ -1030,7 +1042,14 @@ class _PoolBoxMixin:
         old_decode = getattr(self, '_sketch_decode_worker', None)
         if old_decode is not None:
             self._sketch_decode_worker = None
-            if old_decode.isRunning():
+            # [Fix 2026-09-24 #15] 同 _start_sketch_decode_worker：解码线程退出时
+            # worker.finished → deleteLater() 已销毁 C/C++ 对象，Python 包装器仍在，
+            # isRunning() 会抛 RuntimeError。按「已不在运行」退役；正常路径行为不变。
+            try:
+                old_decode_running = old_decode.isRunning()
+            except RuntimeError:
+                old_decode_running = False
+            if old_decode_running:
                 try:
                     old_decode.requestInterruption()
                     try:
@@ -1043,7 +1062,10 @@ class _PoolBoxMixin:
                     except TypeError:
                         old_decode.deleteLater()
             else:
-                old_decode.deleteLater()
+                try:
+                    old_decode.deleteLater()
+                except RuntimeError:
+                    pass
 
         # [Perf-Opt P1-08] 退役进行中的内挖素材匹配 Worker：
         # 清除草图/重新生成时，旧的 scan_library+find_best_match 结果作废，
