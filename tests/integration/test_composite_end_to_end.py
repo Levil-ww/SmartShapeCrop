@@ -33,3 +33,4 @@ def test_composite_history_source_isolated():
     source = settings.TARGET_SRC_COMPOSITE
     assert source in settings.TARGET_SRC_LABEL
     assert settings._target_name_key(source) != settings._target_name_key(settings.TARGET_SRC_LSHAPE)
+

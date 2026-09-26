@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QDoubleSpinBox, QFormLayout, QGroupBox, QPushButton, QCheckBox
+from PyQt5.QtWidgets import QDoubleSpinBox, QFormLayout, QGroupBox, QPushButton, QCheckBox, QFileDialog
 
 from workers.property_panel_workers import _CompositeParseWorker
 from core.geometry import CropDesign
@@ -22,7 +22,24 @@ class CompositePanel(LShapePanel):
         self._composite_parse_result = None
         self._composite_parse_worker = None
         super().__init__(parent)
+        # 综合面板不展示 L 形专用识别区，避免误导用户；使用下方综合识别按钮。
+        self._gb_lshape_recog.setVisible(False)
+        self.sketch_pick_requested.connect(self._pick_composite_sketch)
+        self.sketch_load_requested.connect(self._load_composite_sketch)
         self._build_composite_controls()
+
+    def _pick_composite_sketch(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择综合形状草图", "",
+            "图片文件 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff);;所有文件 (*)")
+        if path:
+            self._load_composite_sketch(path)
+
+    def _load_composite_sketch(self, path: str):
+        if not path:
+            return
+        self.set_sketch_path_for_view(path)
+        self.sync_sketch_preview(path)
 
     def _build_composite_controls(self):
         self._gb_composite = QGroupBox("中心矩形洞（综合形状）", self)
@@ -45,6 +62,10 @@ class CompositePanel(LShapePanel):
         self._btn_composite_recognize.clicked.connect(self._recognize_composite_sketch)
         form.addRow(self._btn_composite_recognize)
         self._inner_layout.addWidget(self._gb_composite)
+        # 生成预览与导出按钮固定放在综合参数之后，作为面板底部主操作。
+        if hasattr(self, '_action_layout'):
+            self._inner_layout.removeItem(self._action_layout)
+            self._inner_layout.addLayout(self._action_layout)
 
     @staticmethod
     def _make_spin(value):

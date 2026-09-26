@@ -316,6 +316,7 @@ class LShapePanel(QWidget):
         self._btn_save.clicked.connect(self.save_requested.emit)
         row_action.addWidget(self._btn_generate, 1)
         row_action.addWidget(self._btn_save, 1)
+        self._action_layout = row_action
         self._inner_layout.addLayout(row_action)
 
         self._inner_layout.addStretch(1)
