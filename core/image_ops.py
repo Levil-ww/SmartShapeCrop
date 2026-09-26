@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # 改为 2 亿像素上限（约 14142 × 14142），既能覆盖最大印刷图，又能防御恶意超大图。
 Image.MAX_IMAGE_PIXELS = 200_000_000
 
-from .geometry import CropDesign, compute_border_bands
+from .geometry import CropDesign, compute_border_bands, COMPOSITE_MODE, is_lshape_layout
 from .config import px_to_cm  # [N-P2-08] 集中换算函数
 
 
@@ -758,7 +758,7 @@ def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, ha
     """[C-01] L形模式 + 花型图：非L形区域填充 outer_bg_color（原 L679-700）。"""
     # 1.1 L形模式 + 花型图：只在outer_rect的L形区域内显示花型图
     # 非L形区域（outer_rect外部 + cut区域）填充为outer_bg_color
-    if design.mode == 'rect_lshape' and not is_pool_with_material:
+    if is_lshape_layout(design.mode) and not is_pool_with_material:
         from .geometry import _build_design_lshape_mask
         has_outer_img = design.outer_bg_image and os.path.isfile(design.outer_bg_image)
         if has_outer_img:
@@ -774,7 +774,7 @@ def _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material
     """[C-01] 渲染边框 band（原 L702-715）。"""
     # 2. 渲染边框 band（水池模式且有素材图时跳过——素材本身就是外框）
     # [Fix 2026-08-26] L 形 + 外背景图：边框带应保持外背景图，故跳过着色。
-    if not is_pool_with_material and not (design.mode == 'rect_lshape' and has_outer_img):
+    if not is_pool_with_material and not (is_lshape_layout(design.mode) and has_outer_img):
         bands = compute_border_bands(design)
         for band_mask, layer in bands:
             # 该层的填充颜色/图像
@@ -794,6 +794,14 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
     #   伪边框层，避免把底色当成边框画到 cut 边缘）。与下面的 cut_area 填充颜色无关——
     #   cut_area 始终填纯白(255,255,255)（用户明确要求 L 形挖空区保持白色）。
     _lshape_cut_bg_color = None
+    if design.mode == COMPOSITE_MODE and is_pool_with_material:
+        from .geometry import _build_design_lshape_mask
+        outer_mask = _build_design_lshape_mask(design, use_outer=True)
+        cut_area_mask = ~outer_mask
+        if cut_area_mask.any():
+            fill = (255, 255, 255) if design.pool_hole_transparent else design.hole_bg_color
+            canvas_arr[cut_area_mask] = np.asarray(fill, dtype=np.uint8)
+        return True, _lshape_cut_bg_color, cut_area_mask
     if design.mode == 'rect_lshape' and is_pool_with_material:
         from .geometry import build_lshape_mask, compute_inner_corner_radii
         lshape = design.l_shapes_px()
@@ -1095,7 +1103,7 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
     # rect_hole / rect_lshape 模式：用几何差集替代形态学腐蚀（精确等价，加速）
     # ellipse_hole 模式：降级为形态学腐蚀
 
-    if design.mode in ('rect_hole', 'rect_lshape'):
+    if design.mode in ('rect_hole', 'rect_lshape', COMPOSITE_MODE):
         from .geometry import (make_mask, fill_rect_mask, apply_rounded_corners_to_mask,
                                compute_inner_corner_radii, RectShape,
                                build_lshape_mask)
@@ -1554,6 +1562,14 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     elif design.mode == 'rect_lshape':
         from .geometry import _build_design_lshape_mask
         return _build_design_lshape_mask(design, use_outer=False)
+
+    elif design.mode == COMPOSITE_MODE:
+        # 复合模式的中心洞沿用单洞填充语义；角部挖角由独立的
+        # L 形 cut 路径处理，避免把洞与 cut 混成一个填充区域。
+        fill_rect_mask(m, inner_rect, 255)
+        if any(r > 0 for r in inner_corners.values()):
+            apply_rounded_corners_to_mask(m, inner_rect, inner_corners)
+        return np.array(m, dtype=bool)
 
     else:  # ellipse_hole
         fill_ellipse_mask(m, design.ellipse_px(), 255)
