@@ -19,6 +19,27 @@ from .composite_sketch_parser import (
     CompositeSketchParseResult,
     parse_composite_sketch,
 )
+
+
+def parse_shape_sketch(image_path: str, *, mode: str = 'rect_hole',
+                       target_outer_w_cm: float = 0.0,
+                       target_outer_h_cm: float = 0.0, **kwargs):
+    """按形状模式分派草图解析；旧模式保持原有入口和行为。"""
+    if mode == 'rect_lshape_hole':
+        return parse_composite_sketch(
+            image_path,
+            target_outer_w_cm=target_outer_w_cm,
+            target_outer_h_cm=target_outer_h_cm,
+            **kwargs,
+        )
+    if mode == 'rect_lshape':
+        return parse_lshape_sketch(
+            image_path,
+            target_outer_w_cm=target_outer_w_cm,
+            target_outer_h_cm=target_outer_h_cm,
+            **kwargs,
+        )
+    return parse_sketch(image_path, **kwargs)
 # [2026-08-29 新增] 多洞解析公开符号（可选导入；对外主入口仍是 parse_sketch 自动分流）
 from .sketch_parser_multihole import (
     HoleInfo,
@@ -34,6 +55,7 @@ __all__ = [
     "parse_lshape_sketch",
     "CompositeSketchParseResult",
     "parse_composite_sketch",
+    "parse_shape_sketch",
     # 多洞扩展
     "HoleInfo",
     "MultiHoleParseResult",
