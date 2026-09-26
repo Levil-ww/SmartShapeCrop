@@ -1,0 +1,14 @@
+合成草图: F:\SmartShapeCrop\diag_output\_syn_composite_sketch.png  画布185x88cm / 挖角tr 35x10 / 洞80x60 / 边距L45 R60 T10 B18
+
+--- A. target=185x88（草图标注真值，识别正确）
+    success=True  self_consistency=1.0  msg=识别成功
+    outer=186.00 x 89.00 | hole=81.40 x 61.40 | 边距 L/R/T/B=44.80/59.80/9.80/17.80
+    cuts=[{'corner': 'tr', 'cut_w_cm': 34.64, 'cut_h_cm': 10.02, 'source': 'pixel_ratio', 'ocr_cut_w': None, 'ocr_cut_h': None}]
+    横自洽: ml+hole+mr = 44.80+81.40+59.80 = 186.00  (期望 outer_w=186.00)
+
+--- B. target=4.0（面板默认: SpinBox 5.0 - 1cm 损耗）
+    success=True  self_consistency=1.0  msg=识别成功
+    outer=5.00 x 5.00 | hole=2.74 x 3.75 | 边距 L/R/T/B=0.97/1.29/0.45/0.81
+    cuts=[{'corner': 'tr', 'cut_w_cm': 0.75, 'cut_h_cm': 0.46, 'source': 'pixel_ratio', 'ocr_cut_w': None, 'ocr_cut_h': None}]
+    横自洽: ml+hole+mr = 0.97+2.74+1.29 = 5.00  (期望 outer_w=5.00)
+

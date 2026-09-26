@@ -1,0 +1,7 @@
+exists True
+load err = None size = 1221000
+gray dtype uint8 shape (440, 925) min/max 0 255 uniq [  0 255]
+binary uniq [  0 255]
+n contours 1
+  bbox=(0,0,925,440) w*h=407000 area=247837.5 fill=0.609
+rects = [(407000, (0, 0, 925, 440), 0.6089373464373464)]

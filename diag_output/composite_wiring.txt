@@ -1,0 +1,42 @@
+=== [1] CompositePanel 信号连接数 ===
+  generate_requested           receivers=0
+  save_requested               receivers=0
+  sketch_pick_requested        receivers=1
+  sketch_clear_requested       receivers=0
+  sketch_view_requested        receivers=0
+  sketch_load_requested        receivers=1
+  target_changed               receivers=0
+  target_pick_requested        receivers=0
+  target_clear_requested       receivers=0
+  composite_params_changed     receivers=0
+  composite_recognize_finished receivers=0
+  lshape_applied               receivers=0
+  lshape_recognize_started     receivers=0
+
+=== [2] 主画布是否收到设计 ===
+  canvas._design = None
+
+=== [3] 点击【生成预览】后画布设计 ===
+  before = None
+  after  = None
+  变化 = False
+
+=== [4] 面板初始（未上传草图）点击【识别综合形状草图】 ===
+  _sk_preview.property('sketch_path') = None
+  _btn_composite_recognize.isEnabled() = True
+
+=== [5] to_crop_design 快照自检 ===
+  mode=rect_lshape_hole canvas=4.0x4.0 inner=10.0/18.0/45.0/60.0
+  cut=br 15.0x10.0
+  validate() 抛错: L 形挖角在下边上的尺寸和 15cm 必须小于外边长度 4cm 减 0.5cm 余量
+
+=== [6] 面板可见性 / 尺寸 ===
+  composite tab index = 3 / count=4
+  cp.isVisible() = False
+  cp sizeHint = PyQt5.QtCore.QSize(628, 424)
+  中心洞 GroupBox visible = False
+  L形识别区 visible = False
+
+=== [7] PropertyPanel 是否持有 composite 引用 ===
+  panel._lshape_panel is cp = False
+  panel._lshape_panel is w.lshape_panel = True
