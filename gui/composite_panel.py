@@ -56,7 +56,7 @@ class CompositePanel(LShapePanel):
 
     def get_composite_params(self) -> dict:
         """返回可直接映射到 CropDesign 的复合参数。"""
-        params = super().get_lshape_params()
+        params = super().get_lshape_params() or {}
         params.update({
             'mode': 'rect_lshape_hole',
             'hole_w_cm': self._hole_w.value(),

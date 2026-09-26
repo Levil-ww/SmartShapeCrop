@@ -18,15 +18,16 @@ from gui.canvas_widget import PreviewCanvas
 from gui.property_panel import PropertyPanel
 from gui.cropper_panel import CropperPanel
 from gui.lshape_panel import LShapePanel
+from gui.composite_panel import CompositePanel
 from core.geometry import CropDesign
 
-EXPECTED_TABS = ['圆角裁剪工具', '水池设计器', 'L形挖角设计']
+EXPECTED_TABS = ['圆角裁剪工具', '水池设计器', 'L形挖角设计', '综合形状设计']
 
 
 class TestMainWindowAssembly:
     """主窗口的部件装配。"""
 
-    def test_three_tabs_present_in_order(self, main_window):
+    def test_four_tabs_present_in_order(self, main_window):
         tabs = main_window._tabs
         assert isinstance(tabs, QTabWidget), '主窗口缺少 QTabWidget'
         actual = [tabs.tabText(i) for i in range(tabs.count())]
@@ -40,6 +41,7 @@ class TestMainWindowAssembly:
         assert isinstance(main_window.panel, PropertyPanel)
         assert isinstance(main_window.cropper, CropperPanel)
         assert isinstance(main_window.lshape_panel, LShapePanel)
+        assert isinstance(main_window.composite_panel, CompositePanel)
 
     def test_tabs_hold_the_expected_widgets(self, main_window):
         """标签页里的部件应当就是 MainWindow 上挂的那几个（防止挂错/重复构造）。"""
@@ -48,6 +50,7 @@ class TestMainWindowAssembly:
         assert widgets[0] is main_window.cropper, '第一个标签页应为圆角裁剪工具'
         assert widgets[1] is main_window.panel, '第二个标签页应为水池设计器'
         assert widgets[2] is main_window.lshape_panel, '第三个标签页应为 L形挖角设计'
+        assert widgets[3] is main_window.composite_panel, '第四个标签页应为综合形状设计'
 
     def test_lshape_panel_is_injected_into_property_panel(self, main_window):
         """main.py 调用 set_lshape_panel 注入引用，两个面板靠它协同。"""
