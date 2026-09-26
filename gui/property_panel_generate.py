@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from PIL import Image
 
-from core.geometry import CropDesign, BorderLayer, BorderText
+from core.geometry import CropDesign, BorderLayer, BorderText, COMPOSITE_MODE
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
@@ -50,6 +50,9 @@ class _GenerateMixin:
                 目标文件名文本。None 表示回退到 Pool 面板 _pool_target。
                 这保证了 LShape 面板即使持有与 Pool 面板不同的 target 文本，
                 生成逻辑仍用来源面板的有效值（Safety 1 不变式）。
+
+        [D6] 模式下拉框选中「综合形状」时（source='pool' 且存在 CompositePanel），
+        直接委派 _composite_run_generate()，不启动模板匹配 Worker。
         """
         # [防御性加固] 规范 source 参数类型。
         # 某些 Qt 信号（如 QPushButton.clicked(bool checked)）的第一个参数会被
@@ -57,6 +60,19 @@ class _GenerateMixin:
         # 类型统一回退到 'pool'，保证下游 _last_generate_source 永远是合法值。
         if not isinstance(source, str) or source not in ('pool', 'lshape'):
             source = 'pool'
+
+        # ===== [D6 复合分支] 综合形状走专用生成链路 =====
+        # 复合的挖角 / 中心洞 / 外框真值只存在于 CompositePanel 控件里，而
+        # PoolRenderWorker 只认识前 3 种模式（把 rect_lshape_hole 当池 / L 形渲染会
+        # 丢掉中心洞）。仅拦 source='pool'（水池设计器的「生成预览」按钮），
+        # L 形面板链路（source='lshape'）行为不变。
+        # 与本分支并列的入口：CompositePanel 自己的「生成预览」经
+        # _on_composite_action → _composite_run_generate()（不经本方法）。
+        if (source == 'pool'
+                and getattr(self, '_composite_panel', None) is not None
+                and self._cb_mode.currentData() == COMPOSITE_MODE):
+            self._composite_run_generate()
+            return
 
         if self._pool_worker is not None and self._pool_worker.isRunning():
             self._set_pool_status("⏳ 正在处理中，请稍候…", is_error=True)

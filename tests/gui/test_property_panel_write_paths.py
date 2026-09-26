@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.geometry import CropDesign, CutRect
+from core.geometry import COMPOSITE_MODE, CropDesign, CutRect
 
 MODE_TABLE = [('rect_hole', 0), ('rect_lshape', 1), ('ellipse_hole', 2)]
 
@@ -46,10 +46,11 @@ class TestModeBackfillByUserData:
         qapp.processEvents()
         assert property_panel._cb_mode.currentIndex() == legacy_idx == expected
 
-    def test_combo_userdata_covers_all_three_modes(self, property_panel):
+    def test_combo_userdata_covers_all_modes(self, property_panel):
+        """[D6] 前三项与 MODE_TABLE 逐项一致，综合形状作为第 4 项追加在末尾。"""
         combo = property_panel._cb_mode
         assert [combo.itemData(i) for i in range(combo.count())] == [
-            m for m, _ in MODE_TABLE]
+            m for m, _ in MODE_TABLE] + [COMPOSITE_MODE]
 
     def test_unknown_mode_falls_back_to_index_zero(self, property_panel, qapp):
         """反查失败（-1）时必须保留原「回落索引 0」语义，不得变成 -1 / 空选。"""

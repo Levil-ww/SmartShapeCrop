@@ -14,7 +14,10 @@ from __future__ import annotations
 import copy
 import os
 
-from core.geometry import CropDesign, BorderText, CutRect, limit_l_cut_rects_per_anchor
+from core.geometry import (
+    CropDesign, BorderText, CutRect, limit_l_cut_rects_per_anchor,
+    COMPOSITE_MODE, is_lshape_layout,
+)
 
 
 class DesignModel:
@@ -152,18 +155,26 @@ class DesignModel:
           } 或 None
         """
         d = self._design
-        d.canvas_w_cm = snap['canvas_w_cm']
-        d.canvas_h_cm = snap['canvas_h_cm']
         d.dpi = snap['dpi']
         d.mode = snap['mode']
+        # ===== [D6 复合守卫] rect_lshape_hole 的几何真值由 CompositePanel 经
+        # apply_composite_params() 独占写入：画布（外框真值 + CUT_LOSS_CM）、中心洞四边距、
+        # 挖角（l_*）、洞填充方式都不来自水池 / L 形控件快照。不跳过的话，一次
+        # 图层对话框 OK 或 apply() 就会把复合设计改写成水池 / L 形几何。
+        _is_composite = d.mode == COMPOSITE_MODE
+        if not _is_composite:
+            d.canvas_w_cm = snap['canvas_w_cm']
+            d.canvas_h_cm = snap['canvas_h_cm']
         # outer_margin: rect_lshape 和 rect_hole 都由 Worker 强制设为 0.0（水池花纹素材
         #   本身就是外框，不需要额外留白），不从 SpinBox 覆盖。仅 ellipse_hole 模式
         #   从 SpinBox 读取（Worker 未对椭圆模式设 outer_margin）。
         if d.mode == 'ellipse_hole':
             d.outer_margin_cm = snap['outer_margin_cm']
-        # inner_margins: 仅 rect_lshape 由 Worker 固定为 0.0（L 形语义），
-        # 其他模式允许 SpinBox 覆盖（property_panel_generate.py:204 也有同样的保护）
-        if d.mode != 'rect_lshape':
+        # inner_margins: L 布局模式（rect_lshape / rect_lshape_hole）的边距是形状语义，
+        # 由 Worker / CompositePanel 独占写入；其他模式允许 SpinBox 覆盖
+        # （property_panel_generate.py:204 也有同样的保护）。
+        # [D6] 复合模式下这四个值就是中心洞的四边距，被水池 SpinBox 覆盖会移动/改变洞。
+        if not is_lshape_layout(d.mode):
             d.inner_margin_top_cm = snap['inner']['top']
             d.inner_margin_bottom_cm = snap['inner']['bottom']
             d.inner_margin_left_cm = snap['inner']['left']
@@ -172,7 +183,11 @@ class DesignModel:
         # 原 self._cb_lcorner / _sp_lw / _sp_lh 已迁移到 LShapePanel；
         # UI 层提取 get_corner()/get_cut_w_cm()/get_cut_h_cm() 为纯值传入。
         _lp = snap.get('lshape')
-        if _lp is not None:
+        if _is_composite:
+            # [D6 复合守卫] 复合挖角真值由 CompositePanel 独占写入：读 L 面板快照会用
+            # L 形挖角覆盖，走 else 分支则会把 l_cuts_cm 清空（复合设计退化为无挖角矩形）。
+            pass
+        elif _lp is not None:
             d.l_corner = _lp.get('corner', 'br')
             # 挖角值直接取草图识别的成品真值，不做额外损耗补偿
             d.l_cut_w_cm = _lp.get('cut_w_cm', 0.0)
@@ -237,6 +252,11 @@ class DesignModel:
             # 导致 cut 区域显示米色 hole_bg_color(250,245,230) 而非纯白。
             if d.mode == 'rect_lshape':
                 d.pool_hole_transparent = True
+            elif _is_composite:
+                # [D6 复合守卫] 中心洞的素材 / 空白由 CompositePanel 的 hole_fill_mode 决定
+                # （apply_composite_params 已写入 pool_hole_transparent），水池面板的
+                # 「挖空方式」下拉框对复合设计不适用。
+                pass
             else:
                 hm = snap['hole_mode']
                 if hm == "blank":

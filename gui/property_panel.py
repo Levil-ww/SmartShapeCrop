@@ -18,7 +18,7 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from PIL import Image
 
-from core.geometry import CropDesign, BorderLayer, BorderText
+from core.geometry import CropDesign, BorderLayer, BorderText, COMPOSITE_MODE
 from core.config import CUT_LOSS_CM
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
@@ -142,6 +142,11 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._cb_mode.addItem("矩形嵌套挖洞", "rect_hole")
         self._cb_mode.addItem("L形挖角", "rect_lshape")
         self._cb_mode.addItem("椭圆挖洞", "ellipse_hole")
+        # [D6] 第 4 项：综合形状（L形挖角 + 中心洞）。此前 combo 只有 3 项，
+        # 复合设计的 mode='rect_lshape_hole' 在回填时 findData 返回 -1 → 静默回落到
+        # 索引 0（矩形嵌套挖洞），下拉框显示与画布设计不一致。参数编辑仍在独立的
+        # 「综合形状设计」面板，本项负责模式往返与生成路由。
+        self._cb_mode.addItem("综合形状(挖角+中心洞)", COMPOSITE_MODE)
         fm.addWidget(self._cb_mode)
 
         self._sp_outer_margin = self._dspin(0, 20, self.design.outer_margin_cm)
@@ -803,8 +808,10 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def _composite_run_generate(self):
         """综合面板「生成预览」：面板参数 → 复合 CropDesign → 共享画布渲染。
 
-        不复用 _pool_run_generate：那条链路会做模板匹配 + 池/L 形状态写入，
-        且 _collect() / sync_from_design() 只认识前 3 种模式（会把 mode 重置为 rect_hole）。
+        不复用 PoolRenderWorker：那条链路做模板匹配 + 池/L 形状态写入，且 Worker
+        本身不认识 rect_lshape_hole（[D6] 仅把 _pool_run_generate 的路由指向本方法，
+        Worker 侧的复合支持另行评估）。参数组装由 DesignModel.apply_composite_params()
+        独占，不经 _collect()（复合模式在 apply_ui_snapshot 中有守卫）。
         """
         panel = self._composite_panel
         if panel is None:
@@ -842,6 +849,18 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
 
         self.design = design
         self._last_generate_source = 'composite'
+        # [D6 模式往返] 下拉框与画布 SpinBox 跟随设计，避免"画布是综合形状、下拉框
+        # 还写矩形嵌套挖洞"的显示错位（回填路径 sync_from_design 亦按 findData 反查）。
+        idx = self._cb_mode.findData(COMPOSITE_MODE)
+        if idx >= 0 and self._cb_mode.currentIndex() != idx:
+            self._cb_mode.setCurrentIndex(idx)
+        self._on_mode_change()
+        gui_w = max(5.0, min(500.0, design.canvas_w_cm))
+        gui_h = max(5.0, min(500.0, design.canvas_h_cm))
+        if abs(self._sp_w.value() - gui_w) > 0.01:
+            self._sp_w.setValue(gui_w)
+        if abs(self._sp_h.value() - gui_h) > 0.01:
+            self._sp_h.setValue(gui_h)
         self.design_changed.emit(design)
         cut_note = f"{len(params['cuts_cm'])} 处挖角" if params['cuts_cm'] else "无挖角"
         panel.set_composite_status(
@@ -1121,8 +1140,11 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._sp_mt.setValue(d.inner_margin_top_cm); self._sp_mb.setValue(d.inner_margin_bottom_cm)
         self._sp_ml.setValue(d.inner_margin_left_cm); self._sp_mr.setValue(d.inner_margin_right_cm)
         if self._lshape_panel is not None:
-            self._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
-            self._lshape_panel.set_lshape_cuts(getattr(d, 'l_cuts_cm', None))
+            # [D6 复合隔离] 复合设计的挖角真值属于 CompositePanel 自持状态：
+            # 回填进 L 面板会把 L 形面板上用户正在编辑的挖角覆盖掉（两条独立状态线）。
+            if d.mode != COMPOSITE_MODE:
+                self._lshape_panel.set_lshape_params(d.l_corner, d.l_cut_w_cm, d.l_cut_h_cm)
+                self._lshape_panel.set_lshape_cuts(getattr(d, 'l_cuts_cm', None))
             self._sp_edw.setValue(d.ellipse_diameter_w_cm or
                           d.inner_rect_px().w / d.cm2px(1.0))
             self._sp_edh.setValue(d.ellipse_diameter_h_cm or
