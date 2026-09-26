@@ -21,6 +21,7 @@ from gui.canvas_widget import PreviewCanvas, ExportSaveWorker
 from gui.property_panel import PropertyPanel
 from gui.cropper_panel import CropperPanel
 from gui.lshape_panel import LShapePanel
+from gui.composite_panel import CompositePanel
 
 
 def resource_path(relative_path: str) -> str:
@@ -147,10 +148,12 @@ class MainWindow(QMainWindow):
         # 把 L 形挖角功能从【水池设计器】拆出，单开一个面板放在【水池设计器】右侧，
         # 名称"L形挖角设计"，承载所有 L 形挖角相关 UI 与识别逻辑。
         self.lshape_panel = LShapePanel()
+        self.composite_panel = CompositePanel()
         self.panel.set_lshape_panel(self.lshape_panel)  # 注入引用 + 连接信号
         self._tabs.addTab(self.cropper, "圆角裁剪工具")
         self._tabs.addTab(self.panel, "水池设计器")
         self._tabs.addTab(self.lshape_panel, "L形挖角设计")
+        self._tabs.addTab(self.composite_panel, "综合形状设计")
         
         splitter.addWidget(self.canvas)
         splitter.addWidget(self._tabs)
@@ -455,6 +458,7 @@ class MainWindow(QMainWindow):
         # [Fix N-P0-02] 退役 PropertyPanel 与 LShapePanel 后台线程，避免关窗时 running QThread 被析构
         self.panel.shutdown()
         self.lshape_panel.shutdown()
+        self.composite_panel.shutdown()
         self.cropper.shutdown()
         self.canvas.shutdown()
         super().closeEvent(event)
@@ -522,6 +526,7 @@ def main():
     #   覆盖非 closeEvent 退出路径（如系统注销/崩溃恢复），彻底关闭 N-P0-02。
     app.aboutToQuit.connect(w.panel.shutdown)
     app.aboutToQuit.connect(w.lshape_panel.shutdown)
+    app.aboutToQuit.connect(w.composite_panel.shutdown)
     sys.exit(app.exec_())
 
 

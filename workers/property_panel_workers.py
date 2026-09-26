@@ -1040,3 +1040,34 @@ class _LShapeParseWorker(QThread):
                 return
             self.finished_err.emit(str(e))
 
+
+class _CompositeParseWorker(QThread):
+    """综合形状草图异步解析 Worker，独立于旧 L 形解析线程。"""
+
+    finished_ok = pyqtSignal(object)
+    finished_err = pyqtSignal(str)
+
+    def __init__(self, sketch_path: str, target_w: float, target_h: float, parent=None):
+        super().__init__(parent)
+        self._sketch_path = sketch_path
+        self._target_w = target_w
+        self._target_h = target_h
+
+    def run(self):
+        try:
+            from services.sketch_parser import parse_shape_sketch
+            result = parse_shape_sketch(
+                self._sketch_path,
+                mode='rect_lshape_hole',
+                target_outer_w_cm=self._target_w,
+                target_outer_h_cm=self._target_h,
+                external_cancel_check=self.isInterruptionRequested,
+            )
+            if self.isInterruptionRequested():
+                logger.info('[CompositeParseWorker] 已取消，丢弃旧解析结果')
+                return
+            self.finished_ok.emit(result)
+        except Exception as e:
+            logger.exception('综合形状草图后台解析异常')
+            if not self.isInterruptionRequested():
+                self.finished_err.emit(str(e))

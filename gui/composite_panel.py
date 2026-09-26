@@ -5,7 +5,7 @@ import logging
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QDoubleSpinBox, QFormLayout, QGroupBox, QPushButton, QCheckBox
 
-from services.sketch_parser import parse_shape_sketch
+from workers.property_panel_workers import _CompositeParseWorker
 from .lshape_panel import LShapePanel
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,7 @@ class CompositePanel(LShapePanel):
 
     def __init__(self, parent=None):
         self._composite_parse_result = None
+        self._composite_parse_worker = None
         super().__init__(parent)
         self._build_composite_controls()
 
@@ -69,26 +70,43 @@ class CompositePanel(LShapePanel):
 
     def _recognize_composite_sketch(self):
         """调用统一解析入口并回填控件；失败时保留用户当前值。"""
-        sketch_path = getattr(self, '_sketch_path', None)
+        sketch_path = self._sk_preview.property('sketch_path')
         if not sketch_path:
             return
         try:
-            result = parse_shape_sketch(
-                sketch_path,
-                mode='rect_lshape_hole',
-                target_outer_w_cm=self.get_outer_w_cm(),
-                target_outer_h_cm=self.get_outer_h_cm(),
-            )
-            self._composite_parse_result = result
-            if result.success:
-                self._hole_w.setValue(result.hole_w_cm)
-                self._hole_h.setValue(result.hole_h_cm)
-                self._hole_mt.setValue(result.margin_top_cm)
-                self._hole_mb.setValue(result.margin_bottom_cm)
-                self._hole_ml.setValue(result.margin_left_cm)
-                self._hole_mr.setValue(result.margin_right_cm)
-                self.composite_params_changed.emit(self.get_composite_params())
-            self.composite_recognize_finished.emit(result)
+            if self._composite_parse_worker is not None and self._composite_parse_worker.isRunning():
+                self._composite_parse_worker.requestInterruption()
+                self._composite_parse_worker.wait(2000)
+            worker = _CompositeParseWorker(
+                sketch_path, self.get_outer_w_cm(), self.get_outer_h_cm(), self)
+            worker.finished_ok.connect(self._on_composite_parsed)
+            worker.finished_err.connect(self._on_composite_parse_error)
+            worker.finished.connect(lambda: self._btn_composite_recognize.setEnabled(True))
+            self._composite_parse_worker = worker
+            self._btn_composite_recognize.setEnabled(False)
+            worker.start()
         except Exception:
             logger.exception("[CompositePanel] 综合形状草图识别失败")
 
+    def _on_composite_parsed(self, result):
+        self._composite_parse_result = result
+        if result.success:
+            for widget, value in ((self._hole_w, result.hole_w_cm),
+                                  (self._hole_h, result.hole_h_cm),
+                                  (self._hole_mt, result.margin_top_cm),
+                                  (self._hole_mb, result.margin_bottom_cm),
+                                  (self._hole_ml, result.margin_left_cm),
+                                  (self._hole_mr, result.margin_right_cm)):
+                widget.setValue(value)
+            self.composite_params_changed.emit(self.get_composite_params())
+        self.composite_recognize_finished.emit(result)
+
+    def _on_composite_parse_error(self, message):
+        logger.warning('[CompositePanel] 识别异常：%s', message)
+
+    def shutdown(self):
+        worker = self._composite_parse_worker
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+            worker.wait(2000)
+        super().shutdown()
