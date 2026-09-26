@@ -658,6 +658,9 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
         else:
             _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr)
+    elif design.mode == COMPOSITE_MODE and inner_mask.any():
+        # 复合模式的 L 形 cut 已单独处理；中心洞仍需按洞掩膜填充素材。
+        canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
     # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
     _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, has_outer_img, lshape_cut_done)
     # 3.5 在挖空区域边缘绘制统一的黑色边框线（border_mask 计算）
@@ -1201,6 +1204,19 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
         if _mh_border_mask is not None:
             border_mask = _mh_border_mask
         # ===== [END ADD-ON APPLY] =====
+
+        if design.mode == COMPOSITE_MODE:
+            # 中心洞环带沿用上面的单洞结果；再为角部 cut 增加四邻域边界，
+            # 避免把洞和挖角做成一个整体后产生错误的联合内缩。
+            from .geometry import _build_design_lshape_mask
+            lshape_keep = _build_design_lshape_mask(design, use_outer=True)
+            cut_area = ~lshape_keep
+            cut_edge = np.zeros_like(cut_area)
+            cut_edge[1:, :] |= cut_area[:-1, :]
+            cut_edge[:-1, :] |= cut_area[1:, :]
+            cut_edge[:, 1:] |= cut_area[:, :-1]
+            cut_edge[:, :-1] |= cut_area[:, 1:]
+            border_mask |= lshape_keep & cut_edge
     else:
         from .geometry import _erode_mask
         eroded = _erode_mask(inner_mask, border_width_px)
