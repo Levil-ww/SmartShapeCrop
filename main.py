@@ -150,6 +150,7 @@ class MainWindow(QMainWindow):
         self.lshape_panel = LShapePanel()
         self.composite_panel = CompositePanel()
         self.panel.set_lshape_panel(self.lshape_panel)  # 注入引用 + 连接信号
+        self.panel.set_composite_panel(self.composite_panel)  # 注入引用 + 连接信号（综合形状）
         self._tabs.addTab(self.cropper, "圆角裁剪工具")
         self._tabs.addTab(self.panel, "水池设计器")
         self._tabs.addTab(self.lshape_panel, "L形挖角设计")

@@ -50,11 +50,16 @@ class DesignModel:
         self._design = d
 
     def apply_composite_params(self, params: dict) -> None:
-        """应用 CompositePanel 的纯参数快照，不影响旧模式快照路径。"""
+        """应用 CompositePanel 的纯参数快照，不影响旧模式快照路径。
+
+        canvas_*_cm 由调用方给出画布值（外框设计真值 + CUT_LOSS_CM）；
+        cuts_cm 非空时是挖角的唯一几何真值，并同步首个挖角到单角字段。
+        """
         d = copy.deepcopy(self._design)
         d.mode = 'rect_lshape_hole'
         d.canvas_w_cm = float(params.get('canvas_w_cm', d.canvas_w_cm))
         d.canvas_h_cm = float(params.get('canvas_h_cm', d.canvas_h_cm))
+        d.outer_margin_cm = float(params.get('outer_margin_cm', d.outer_margin_cm))
         d.inner_margin_top_cm = float(params.get('hole_margin_top_cm', d.inner_margin_top_cm))
         d.inner_margin_bottom_cm = float(params.get('hole_margin_bottom_cm', d.inner_margin_bottom_cm))
         d.inner_margin_left_cm = float(params.get('hole_margin_left_cm', d.inner_margin_left_cm))
@@ -62,8 +67,39 @@ class DesignModel:
         d.l_corner = params.get('corner', d.l_corner)
         d.l_cut_w_cm = float(params.get('cut_w_cm', d.l_cut_w_cm))
         d.l_cut_h_cm = float(params.get('cut_h_cm', d.l_cut_h_cm))
+        cuts = self._normalize_l_cuts(params.get('cuts_cm'))
+        if cuts:
+            d.l_cuts_cm = cuts
+            d.l_corner = cuts[0]['corner']
+            d.l_cut_w_cm = cuts[0]['cut_w_cm']
+            d.l_cut_h_cm = cuts[0]['cut_h_cm']
+        # 清理从旧模式继承的几何：l_cut_rects 优先级高于 l_cuts_cm（阶梯矩形会静默覆盖
+        # 综合挖角），多洞分支也未按 mode 守卫（会被误当作多洞设计渲染）
+        d.l_cut_rects = []
+        d.pool_is_multi_hole = False
+        d.pool_holes_cm = []
+        d.pool_holes_gaps_cm = []
         d.pool_hole_transparent = params.get('hole_fill_mode', 'blank') != 'image'
         self._design = d
+
+    @staticmethod
+    def _normalize_l_cuts(cuts) -> list[dict]:
+        """规整面板挖角列表：最多 4 个，宽高转 float。
+
+        重复角位 / 非法尺寸原样保留，交由 CropDesign.validate() 拒绝（与 L 形口径一致）。
+        """
+        picked: list[dict] = []
+        for cut in cuts or []:
+            if not isinstance(cut, dict):
+                continue
+            picked.append({
+                'corner': cut.get('corner'),
+                'cut_w_cm': float(cut.get('cut_w_cm', 0) or 0),
+                'cut_h_cm': float(cut.get('cut_h_cm', 0) or 0),
+            })
+            if len(picked) >= 4:
+                break
+        return picked
 
     def to_design(self) -> CropDesign:
         """返回 design 的深拷贝快照（防竞态：Worker 拿到的快照不会被后续 UI 改动影响）。"""

@@ -19,6 +19,7 @@ from PyQt5.QtCore import QMimeData  # noqa: E402  (拖拽支持)
 from PIL import Image
 
 from core.geometry import CropDesign, BorderLayer, BorderText
+from core.config import CUT_LOSS_CM
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
 from core.app_settings import get_app_settings
@@ -56,6 +57,11 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         lp = getattr(self, '_lshape_panel', None)
         if source == 'lshape' and lp is not None:
             s = lp.get_output_filename()
+            if s:
+                return s
+        cp = getattr(self, '_composite_panel', None)
+        if source == 'composite' and cp is not None:
+            s = cp.get_output_filename()
             if s:
                 return s
 
@@ -675,6 +681,186 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             return
         # 触发统一处理（解析尺寸 + 回填画布 + 跳过矩形草图解析）
         self._on_pool_target_changed(text, source='lshape')
+
+
+    # ==================== CompositePanel 桥接（综合形状：L 形挖角 + 中心矩形洞） ====================
+    # CompositePanel 继承自 LShapePanel，13 条细粒度信号同构，故复用 LShapePanelBridge
+    # 收敛为 lshape_action_requested 后由 _on_composite_action 分派；另两条复合专有信号单独连接。
+    # 隔离原则：复合面板的草图 / 目标 / 挖角状态全部自持，生成走独立的 _composite_run_generate()，
+    # 不进入 _pool_run_generate / _collect / sync_from_design（这三条都会丢掉 rect_lshape_hole 模式）。
+    def set_composite_panel(self, panel) -> None:
+        """main.py 在创建 CompositePanel 后调用，注入引用并连接信号。"""
+        self._composite_panel = panel
+
+        from gui.lshape_panel_bridge import LShapePanelBridge
+        self._composite_bridge = LShapePanelBridge(panel, self)
+        self._composite_bridge.lshape_action_requested.connect(self._on_composite_action)
+
+        # —— 复合专有信号（Bridge 不覆盖）——
+        panel.composite_params_changed.connect(self._on_composite_params_changed)
+        panel.composite_recognize_finished.connect(self._on_composite_recognize_finished)
+
+        # —— 草图同步：仅回填显示，目标文件名保持独立（与 L 形面板策略一致）——
+        panel.sync_sketch_preview(getattr(self, '_sketch_path', ''))
+        panel.set_sketch_path_for_view(getattr(self, '_sketch_path', ''))
+
+    def _on_composite_action(self, action: str, params):
+        """分派综合面板的合并 action 信号。
+
+        与 L 形分支的关键差异：
+          - sketch_pick/load 不在 __init__ 之外再委托：CompositePanel 已自连（含自动识别），
+            这里只把草图投到共享画布显示，避免二次文件对话框与 _sketch_path 状态污染；
+          - target_* 全部本地处理，不写 _pool_mode / _pool_raw_outer_* / _sp_w/_sp_h；
+          - generate_requested 走 _composite_run_generate()，不经素材匹配 Worker。
+        """
+        if action in ('sketch_pick_requested', 'sketch_load_requested'):
+            if action == 'sketch_load_requested':
+                self._composite_show_sketch(params)
+            return
+        if action == 'sketch_clear_requested':
+            if self._composite_panel is not None:
+                self._composite_panel.clear_composite_sketch()
+            # 清空主画布上的草图 overlay，回到设计渲染（若有）
+            self.sketch_loaded.emit(None)
+        elif action == 'sketch_view_requested':
+            if self._composite_panel is not None:
+                self._composite_panel.view_composite_sketch()
+        elif action == 'target_changed':
+            self._on_composite_target_changed(params)
+        elif action == 'target_pick_requested':
+            self._composite_pick_target_file()
+        elif action == 'target_clear_requested':
+            self._composite_clear_target_file()
+        elif action == 'generate_requested':
+            self._composite_run_generate()
+        elif action == 'save_requested':
+            self.save_requested.emit()
+        else:
+            # lshape_params_changed / lshape_applied / lshape_recognize_started /
+            # lshape_recognize_finished 属 L 形专用（确认框 / 阶梯模式），复合面板不发出
+            logger.debug(f"[PropertyPanel] 综合面板忽略 L 形专用 action: {action}")
+
+    def _composite_show_sketch(self, path: str):
+        """把综合面板的草图投到共享画布显示（只读显示，不改 _sketch_path）。"""
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            img = Image.open(path)
+            img.load()
+            self.sketch_loaded.emit(img)
+        except Exception as e:
+            logger.warning(f"[PropertyPanel] 综合面板草图显示失败: {e}")
+
+    def _on_composite_target_changed(self, text: str):
+        """综合面板目标文件名变更 → 只解析尺寸并回填本面板外框，不动水池/L 形状态。
+
+        [D2] 文件名里的尺寸是草图标注真值，正是综合识别的基准来源；
+        解析失败时不报错（用户可能只填了花型名），识别时会给出可见提示。
+        """
+        panel = self._composite_panel
+        if panel is None or not text:
+            return
+        try:
+            parsed = parse_filename(text)
+        except Exception as e:
+            logger.warning(f"[PropertyPanel] 综合面板文件名解析异常: {e}")
+            return
+        if not parsed:
+            return
+        w = float(getattr(parsed, 'width_cm', 0.0) or 0.0)
+        h = float(getattr(parsed, 'height_cm', 0.0) or 0.0)
+        if w <= 0 or h <= 0:
+            return
+        # 文件名尺寸 = 设计外框真值（与水池面板同语义：SpinBox 画布值 = 文件名 + 1cm 损耗）
+        panel.set_outer_dims(w, h)
+        panel.mark_composite_basis_from_target(w, h)
+        panel.set_composite_status(
+            f"已从目标文件名解析画布尺寸 {w:.1f} × {h:.1f} cm，"
+            "识别综合形状时将以此为基准")
+
+    def _composite_pick_target_file(self):
+        """综合面板「选文件」：写自己的 LineEdit（状态隔离）。"""
+        panel = self._composite_panel
+        if panel is None:
+            return
+        p, _ = QFileDialog.getOpenFileName(
+            self, "选择目标文件（或任意文件，程序只用文件名解析）",
+            "", "所有文件 (*.*);;JPG 图片 (*.jpg *.jpeg);;PNG 图片 (*.png)"
+        )
+        if p:
+            basename = os.path.basename(p)
+            panel.sync_target_from_panel(basename)
+            panel.target_changed.emit(basename)
+
+    def _composite_clear_target_file(self):
+        """综合面板「清空」：写自己的 LineEdit（状态隔离）。"""
+        panel = self._composite_panel
+        if panel is None:
+            return
+        panel.sync_target_from_panel("")
+        panel.target_changed.emit("")
+
+    def _composite_run_generate(self):
+        """综合面板「生成预览」：面板参数 → 复合 CropDesign → 共享画布渲染。
+
+        不复用 _pool_run_generate：那条链路会做模板匹配 + 池/L 形状态写入，
+        且 _collect() / sync_from_design() 只认识前 3 种模式（会把 mode 重置为 rect_hole）。
+        """
+        panel = self._composite_panel
+        if panel is None:
+            return
+        outer_w = panel.get_outer_w_cm()
+        outer_h = panel.get_outer_h_cm()
+        if outer_w <= 0 or outer_h <= 0:
+            panel.set_composite_status(
+                "请先填写目标文件名（含宽高尺寸）或在【外框尺寸】手动设置外框大小", is_error=True)
+            return
+
+        params = dict(panel.get_composite_params() or {})
+        # 画布 = 外框设计真值 + 1cm 裁剪损耗；挖角真值以面板控件为准（不依赖 _lshape_params 是否已初始化）
+        params['canvas_w_cm'] = outer_w + CUT_LOSS_CM
+        params['canvas_h_cm'] = outer_h + CUT_LOSS_CM
+        params['outer_margin_cm'] = 0.0
+        params['corner'] = panel.get_corner()
+        params['cut_w_cm'] = panel.get_cut_w_cm()
+        params['cut_h_cm'] = panel.get_cut_h_cm()
+        params['cuts_cm'] = panel.get_cuts_cm()
+        try:
+            from models.design_model import DesignModel
+            model = DesignModel(self.design)
+            model.apply_composite_params(params)
+            design = model.to_design()
+            design.validate()
+        except ValueError as e:
+            # 非法几何（如挖角尺寸和超过外框边长）拒绝送到画布，避免渲染层抛异常
+            panel.set_composite_status(f"当前参数无法生成综合形状：{e}", is_error=True)
+            return
+        except Exception as e:
+            logger.exception(f"[PropertyPanel] 综合形状参数组装异常: {e}")
+            panel.set_composite_status(f"综合形状参数组装异常：{e}", is_error=True)
+            return
+
+        self.design = design
+        self._last_generate_source = 'composite'
+        self.design_changed.emit(design)
+        cut_note = f"{len(params['cuts_cm'])} 处挖角" if params['cuts_cm'] else "无挖角"
+        panel.set_composite_status(
+            f"✅ 已生成预览：画布 {design.canvas_w_cm:.1f} × {design.canvas_h_cm:.1f} cm，"
+            f"中心洞 {params.get('hole_w_cm', 0):.1f} × {params.get('hole_h_cm', 0):.1f} cm，"
+            f"{cut_note}")
+
+    def _on_composite_params_changed(self, params):
+        """综合面板参数变化（识别回填后发出）→ 仅提示，不自动渲染。
+
+        渲染由「生成预览」显式驱动，与水池 / L 形面板的交互范式保持一致。
+        """
+        logger.debug(f"[PropertyPanel] 综合面板参数已更新: {sorted((params or {}).keys())}")
+
+    def _on_composite_recognize_finished(self, result):
+        """综合识别结束 → 主画布保持草图 overlay，等待用户点「生成预览」。"""
+        logger.info(
+            f"[PropertyPanel] 综合形状识别结束: success={getattr(result, 'success', None)} "
+            f"message={getattr(result, 'message', '')!r}")
 
 
     # ===== [MULTI-HOLE Add-On 2026-08-29] 多洞 UI 辅助函数 =====
