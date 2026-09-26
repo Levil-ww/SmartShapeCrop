@@ -49,6 +49,22 @@ class DesignModel:
         """用外部 design 更新内部数据源（直接替换引用，不逐字段复制）。"""
         self._design = d
 
+    def apply_composite_params(self, params: dict) -> None:
+        """应用 CompositePanel 的纯参数快照，不影响旧模式快照路径。"""
+        d = copy.deepcopy(self._design)
+        d.mode = 'rect_lshape_hole'
+        d.canvas_w_cm = float(params.get('canvas_w_cm', d.canvas_w_cm))
+        d.canvas_h_cm = float(params.get('canvas_h_cm', d.canvas_h_cm))
+        d.inner_margin_top_cm = float(params.get('hole_margin_top_cm', d.inner_margin_top_cm))
+        d.inner_margin_bottom_cm = float(params.get('hole_margin_bottom_cm', d.inner_margin_bottom_cm))
+        d.inner_margin_left_cm = float(params.get('hole_margin_left_cm', d.inner_margin_left_cm))
+        d.inner_margin_right_cm = float(params.get('hole_margin_right_cm', d.inner_margin_right_cm))
+        d.l_corner = params.get('corner', d.l_corner)
+        d.l_cut_w_cm = float(params.get('cut_w_cm', d.l_cut_w_cm))
+        d.l_cut_h_cm = float(params.get('cut_h_cm', d.l_cut_h_cm))
+        d.pool_hole_transparent = params.get('hole_fill_mode', 'blank') != 'image'
+        self._design = d
+
     def to_design(self) -> CropDesign:
         """返回 design 的深拷贝快照（防竞态：Worker 拿到的快照不会被后续 UI 改动影响）。"""
         return copy.deepcopy(self._design)

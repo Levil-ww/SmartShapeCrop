@@ -6,6 +6,7 @@ from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QDoubleSpinBox, QFormLayout, QGroupBox, QPushButton, QCheckBox
 
 from workers.property_panel_workers import _CompositeParseWorker
+from core.geometry import CropDesign
 from .lshape_panel import LShapePanel
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,21 @@ class CompositePanel(LShapePanel):
             'hole_fill_mode': 'image' if self._hole_material.isChecked() else 'blank',
         })
         return params
+
+    def to_crop_design(self, *, dpi: int = 150) -> CropDesign:
+        """将面板参数转换为独立的复合 CropDesign 快照。"""
+        params = self.get_composite_params()
+        return CropDesign(
+            mode='rect_lshape_hole', dpi=dpi,
+            canvas_w_cm=self.get_outer_w_cm(), canvas_h_cm=self.get_outer_h_cm(),
+            inner_margin_top_cm=params['hole_margin_top_cm'],
+            inner_margin_bottom_cm=params['hole_margin_bottom_cm'],
+            inner_margin_left_cm=params['hole_margin_left_cm'],
+            inner_margin_right_cm=params['hole_margin_right_cm'],
+            l_corner=params.get('corner', 'br'),
+            l_cut_w_cm=params.get('cut_w_cm', 15.0),
+            l_cut_h_cm=params.get('cut_h_cm', 10.0),
+        )
 
     def _recognize_composite_sketch(self):
         """调用统一解析入口并回填控件；失败时保留用户当前值。"""
