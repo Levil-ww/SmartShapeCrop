@@ -38,18 +38,20 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
 
 - 按改动范围跑针对性测试（日常改动用这条，别每次都跑全量）：
 
-  全量 820 条、耗时约 4 分钟；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
+  全量 842 条、耗时约 1.5–4 分钟（随机器负载波动）；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
   有疑虑再退回全量。**
 
   | 改动位置 | 建议跑的测试 | 用例数 |
   |---|---|---|
-  | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 438 + 10 |
+  | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 445 + 10 |
   | `core/lshape_border*.py` | `tests/core/test_lshape_border*.py` | 59 |
-  | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 57 + 64 |
-  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 101 |
-  | `models/design_model.py` | `tests/models/` + `tests/core/` | 27 + 438 |
-  | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 119 |
-  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 820 |
+  | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 59 + 64 |
+  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 103 |
+  | `models/design_model.py` | `tests/models/` + `tests/core/` | 28 + 445 |
+  | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 129 |
+  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 842 |
+
+  （另 `tests/` 根目录下 `test_phase0_multihole.py` 4 条，只在全量里跑到。）
 
   用法：把表里的路径直接替换命令中的 `tests/`，例如
 
@@ -57,7 +59,7 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
   python -m pytest tests/core tests/border -q -p no:cacheprovider --basetemp=.pytest_tmp
   ```
 
-  注意：`tests/core/` 体量最大（438 条），改 `core/` 公共逻辑时它才是主战场；
+  注意：`tests/core/` 体量最大（445 条），改 `core/` 公共逻辑时它才是主战场；
   只改单个功能模块时优先按文件名精确选取（如 `tests/core/test_lshape_border*.py`），
   比整个 `tests/core/` 快一个量级。
 
@@ -88,8 +90,9 @@ python packaging/packageV2.2.3.py
 
 - 基线时间：2026-09-26，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
 - 测试命令：日常按上文「按改动范围跑针对性测试」选目录；发版前或跨层改动跑全量。
-- **当前基线：`820 passed`，0 failed / 0 error / 0 skipped**（2026-09-26 实跑，耗时 3m58s）。
-  演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → **820**。
+- **当前基线：`842 passed`，0 failed / 0 error**（2026-09-26 晚实跑，耗时 99s）。
+  演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → 820 → 832（当日提交自然增长）
+  → **842**（综合形状阶段 0 新增 `tests/gui/test_composite_panel_wiring.py` 10 条）。
 - 不带 `--basetemp` 时临时目录落 `%TEMP%`，耗时约 225s 且更易受权限影响；两次数字**不可纵向比**。
 - 当前没有已确认的功能性测试失败。
 - 当前未发现项目级 lint 命令或配置，未运行 lint。
