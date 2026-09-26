@@ -15,6 +15,9 @@ from .config import CM_PER_INCH  # [N-P2-08] 集中换算常量
 
 logger = logging.getLogger(__name__)
 
+COMPOSITE_MODE = 'rect_lshape_hole'
+LSHAPE_LAYOUT_MODES = frozenset({'rect_lshape', COMPOSITE_MODE})
+
 
 # ---------- 基础形状 ----------
 
@@ -199,8 +202,9 @@ class CropDesign:
     canvas_h_cm: float = 70.0
     dpi: int = 150
 
-    # 模式：'rect_hole' 矩形嵌套(图1/5) | 'rect_lshape' L形(图2/4) | 'ellipse_hole' 椭圆(图3)
-    mode: Literal['rect_hole', 'rect_lshape', 'ellipse_hole'] = 'rect_hole'
+    # 模式：'rect_hole' 矩形嵌套 | 'rect_lshape' L形 |
+    # 'ellipse_hole' 椭圆 | 'rect_lshape_hole' 综合形状
+    mode: Literal['rect_hole', 'rect_lshape', 'ellipse_hole', 'rect_lshape_hole'] = 'rect_hole'
 
     # 外轮廓（模式都用）
     outer_margin_cm: float = 0.0   # 外框留白边（水池模式默认不额外留白，花纹素材本身就是外框）
@@ -312,7 +316,7 @@ class CropDesign:
     def cm2px(self, cm: float) -> float:
         return cm * self.dpi / CM_PER_INCH
 
-    _VALID_MODES = frozenset({'rect_hole', 'rect_lshape', 'ellipse_hole'})
+    _VALID_MODES = frozenset({'rect_hole', 'rect_lshape', 'ellipse_hole', COMPOSITE_MODE})
     _VALID_CORNERS = frozenset({'tl', 'tr', 'bl', 'br'})
 
     def validate(self) -> None:
@@ -346,7 +350,7 @@ class CropDesign:
             half = min(self.canvas_w_cm, self.canvas_h_cm) / 2.0
             if v > half:
                 raise ValueError(f"{name}={v}cm 超过画布尺寸的一半 ({half:.1f}cm)")
-        if self.mode == 'rect_lshape':
+        if self.mode in ('rect_lshape', 'rect_lshape_hole'):
             if self.l_corner not in self._VALID_CORNERS:
                 raise ValueError(f"l_corner 无效: {self.l_corner!r}，有效值: {sorted(self._VALID_CORNERS)}")
             if self.l_cut_w_cm <= 0:
@@ -375,10 +379,15 @@ class CropDesign:
                     'cut_h_cm': self.l_cut_h_cm,
                 }]
                 cut_by_corner = {cut['corner']: cut for cut in cuts}
-                inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
-                    - self.inner_margin_left_cm - self.inner_margin_right_cm
-                inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
-                    - self.inner_margin_top_cm - self.inner_margin_bottom_cm
+                if self.mode == 'rect_lshape_hole':
+                    # 综合模式的角部挖角以完整外框为基准；内边距描述中心洞。
+                    inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm
+                    inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm
+                else:
+                    inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
+                        - self.inner_margin_left_cm - self.inner_margin_right_cm
+                    inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
+                        - self.inner_margin_top_cm - self.inner_margin_bottom_cm
                 edge_clearance_cm = 0.5
                 edge_limits = (
                     ('上边', ('tl', 'tr'), 'cut_w_cm', inner_w_cm),
@@ -422,10 +431,14 @@ class CropDesign:
             if cut.offset_x_cm < 0 or cut.offset_y_cm < 0:
                 raise ValueError(f"l_cut_rects[{i}] offset 不能为负数")
 
-        inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
-            - self.inner_margin_left_cm - self.inner_margin_right_cm
-        inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
-            - self.inner_margin_top_cm - self.inner_margin_bottom_cm
+        if self.mode == 'rect_lshape_hole':
+            inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm
+            inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm
+        else:
+            inner_w_cm = self.canvas_w_cm - 2 * self.outer_margin_cm \
+                - self.inner_margin_left_cm - self.inner_margin_right_cm
+            inner_h_cm = self.canvas_h_cm - 2 * self.outer_margin_cm \
+                - self.inner_margin_top_cm - self.inner_margin_bottom_cm
         edge_clearance_cm = 0.5
         # F1 守卫同款：内矩形退化（边长 ≤ 0）时跳过越界/重叠校验，交给渲染层退化守卫
         if inner_w_cm <= 0 or inner_h_cm <= 0:
@@ -512,7 +525,7 @@ class CropDesign:
 
     def l_shape_px(self) -> LShape:
         return LShape(
-            outer=self.inner_rect_px(),
+            outer=self.outer_rect_px() if self.mode == 'rect_lshape_hole' else self.inner_rect_px(),
             corner=self.l_corner,
             cut_w=self.cm2px(self.l_cut_w_cm),
             cut_h=self.cm2px(self.l_cut_h_cm),
@@ -719,6 +732,8 @@ def compute_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLay
     if design.mode == 'ellipse_hole' and design.borders:
         # F9：椭圆模式不支持多层边框 —— 渲染层告警，行为保持不变
         logger.warning('[geometry] 椭圆模式不支持多层边框，仅按现有逻辑产出边框带（行为不变）')
+    if design.mode == COMPOSITE_MODE:
+        return compute_composite_border_bands(design)
     if design.mode == 'rect_lshape':
         return compute_lshape_border_bands(design)
     # —— 以下为 rect_hole 原有逻辑 ——
@@ -1027,6 +1042,35 @@ def build_lshape_mask(size: tuple[int, int],
     return m
 
 
+def build_composite_mask(size: tuple[int, int], outer_rect: RectShape,
+                         cuts: list[tuple[str, float, float] | dict],
+                         hole_rect: RectShape,
+                         hole_corners: dict[str, float] | None = None,
+                         outer_corners: dict[str, float] | None = None) -> np.ndarray:
+    """构建「外框 - 多角挖角 - 单中心洞」的保留区域 mask。
+
+    角部挖角和中心洞分别绘制，中心洞不会混入 ``cuts``。返回 numpy bool
+    数组，True 表示保留区域，False 表示挖空区域。
+    """
+    outer_corners = outer_corners or {}
+    hole_corners = hole_corners or {}
+    lmask = build_lshape_mask(
+        size, outer_rect,
+        cuts[0]['corner'] if cuts and isinstance(cuts[0], dict) else (cuts[0][0] if cuts else 'br'),
+        0.0, 0.0, outer_corners, fill_value=255, cuts=cuts,
+    )
+    hole_mask = make_mask(size)
+    fill_rect_mask(hole_mask, hole_rect, 255)
+    if any(radius > 0 for radius in hole_corners.values()):
+        apply_rounded_corners_to_mask(hole_mask, hole_rect, hole_corners, fill_value=255)
+    return np.array(lmask, dtype=bool) & ~np.array(hole_mask, dtype=bool)
+
+
+def is_lshape_layout(mode: str) -> bool:
+    """判断是否使用 L 形外框渲染语义。"""
+    return mode in LSHAPE_LAYOUT_MODES
+
+
 def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLayer]]:
     """
     L 形边框带计算：每层边框 = 两个同心 L 形 mask 的差集。
@@ -1103,4 +1147,49 @@ def compute_lshape_border_bands(design: CropDesign) -> list[tuple[np.ndarray, Bo
         extra = BorderLayer(fill_type='solid', color=design.hole_bg_color)
         bands.append((remaining, extra))
 
+    return bands
+
+
+def compute_composite_border_bands(design: CropDesign) -> list[tuple[np.ndarray, BorderLayer]]:
+    """计算综合形状边框带：L 形切边环带与洞环带分别生成后合并。"""
+    w, h = design.canvas_w_px, design.canvas_h_px
+    outer = design.outer_rect_px()
+    lshape = design.l_shapes_px()
+    corners = design.corners_px
+    hole = design.inner_rect_px()
+    hole_radii = {ck: max(0.0, getattr(design, f'corner_{ck}_cm') * design.dpi / CM_PER_INCH)
+                  for ck in ('tl', 'tr', 'bl', 'br')}
+    outer_mask = np.array(build_lshape_mask(
+        (w, h), outer, lshape.corner, lshape.cut_w, lshape.cut_h,
+        corners, fill_value=255, cuts=lshape.cut_rect_specs()), dtype=bool)
+    hole_img = make_mask((w, h))
+    fill_rect_mask(hole_img, RectShape(hole.x, hole.y, hole.w, hole.h,
+                                      max(hole_radii.values(), default=0.0)), 255)
+    hole_mask = np.array(hole_img, dtype=bool)
+    frame_mask = outer_mask & ~hole_mask
+
+    bands: list[tuple[np.ndarray, BorderLayer]] = []
+    cumulative = 0
+    prev = outer_mask.copy()
+    for layer in design.borders:
+        layer.offset_px = design.cm2px(layer.offset_cm)
+        cumulative += int(round(max(1, layer.offset_px)))
+        inner = RectShape(outer.x + cumulative, outer.y + cumulative,
+                          max(1, outer.w - 2 * cumulative),
+                          max(1, outer.h - 2 * cumulative))
+        inner_l = np.array(build_lshape_mask(
+            (w, h), inner, lshape.corner, lshape.cut_w, lshape.cut_h,
+            corners, fill_value=255, cuts=lshape.cut_rect_specs()), dtype=bool)
+        inner_hole = make_mask((w, h))
+        fill_rect_mask(inner_hole, RectShape(hole.x + cumulative, hole.y + cumulative,
+                                             max(1, hole.w - 2 * cumulative),
+                                             max(1, hole.h - 2 * cumulative)), 255)
+        current = inner_l & ~np.array(inner_hole, dtype=bool)
+        bands.append((prev & ~current, layer))
+        prev = current
+    remaining = frame_mask.copy()
+    for band, _ in bands:
+        remaining &= ~band
+    if remaining.any():
+        bands.append((remaining, BorderLayer(fill_type='solid', color=design.hole_bg_color)))
     return bands
