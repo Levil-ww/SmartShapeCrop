@@ -568,19 +568,22 @@ def _draw_staircase_union_layers(
         touches_left = (x0 == 0) and cut_mask[:, 0].any()
         touches_right = (x1 == W) and cut_mask[:, -1].any()
         if touches_top or touches_bottom or touches_left or touches_right:
+            # Use absolute canvas coordinates here.  The working crop is expanded
+            # by ``total_t`` around the cut, so its local border is not the
+            # material/canvas border.  Measuring from the crop edge lets an inner
+            # layer continue into the existing frame when a cut touches a canvas
+            # edge, producing a short extra segment or a gap at the corner.
+            yy = (y0 + np.arange(h_crop, dtype=np.float32))[:, None]
+            xx = (x0 + np.arange(w_crop, dtype=np.float32))[None, :]
             edge_dist = np.full((h_crop, w_crop), np.inf, dtype=np.float32)
             if touches_top:
-                edge_dist = np.minimum(
-                    edge_dist, np.arange(h_crop, dtype=np.float32)[:, None])
+                edge_dist = np.minimum(edge_dist, yy)
             if touches_bottom:
-                edge_dist = np.minimum(
-                    edge_dist, (h_crop - 1 - np.arange(h_crop, dtype=np.float32))[:, None])
+                edge_dist = np.minimum(edge_dist, (H - 1) - yy)
             if touches_left:
-                edge_dist = np.minimum(
-                    edge_dist, np.arange(w_crop, dtype=np.float32)[None, :])
+                edge_dist = np.minimum(edge_dist, xx)
             if touches_right:
-                edge_dist = np.minimum(
-                    edge_dist, (w_crop - 1 - np.arange(w_crop, dtype=np.float32))[None, :])
+                edge_dist = np.minimum(edge_dist, (W - 1) - xx)
             # 距边缘 edge_dist 落在层 j 深度区 (T_{j-1}, T_j] 内 → 只允许层 ≤ j
             max_allowed_layer = np.searchsorted(thresholds, edge_dist, side='right')
             final_mask = paint_mask & (layer_idx <= max_allowed_layer)
@@ -781,8 +784,12 @@ def apply_lshape_border_completion(
         # 会被后一个角的回退路径覆盖。
         completion_ok = False
         claimed = np.zeros(canvas_arr.shape[:2], dtype=bool)
+        # 每个角必须基于同一份补边前画布计算；否则前一个角写入的边框
+        # 会成为后一个角的输入，令角点的层裁剪依赖输入顺序，出现一角
+        # 有短横线、镜像角没有的情况。
+        base_canvas = canvas_arr.copy()
         for corner, cut_w, cut_h in cuts:
-            trial = canvas_arr.copy()
+            trial = base_canvas.copy()
             cut_ok = apply_lshape_border_completion(
                 canvas_arr=trial,
                 material_img=material_img,
@@ -799,7 +806,7 @@ def apply_lshape_border_completion(
                 manual_band_px=manual_band_px,
                 manual_band_color=manual_band_color,
             )
-            changed = np.any(trial != canvas_arr, axis=2)
+            changed = np.any(trial != base_canvas, axis=2)
             write_mask = changed & ~claimed
             canvas_arr[write_mask] = trial[write_mask]
             claimed |= write_mask

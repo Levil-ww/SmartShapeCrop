@@ -552,7 +552,8 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     # **同一行内**颜色跳变（dx 小 → 黑描边，dx 大 → band），翻回后每行从黑渐变
     # 到 band，就是用户看到的"多出一截线段"。
     #
-    # dx ∈ [edge+1, T] 远离垂直切边，用 max(dx, dy) L 形分层填充。
+    # 远离垂直切边的区域继续按 max(dx, dy) 做几何分层；仅靠近垂直
+    # 切边的黑描边宽度范围使用 dy，避免黑边内部出现横向跳层。
     xs = np.arange(max(0, xc - T), xc)
     if xs.size == 0:
         return

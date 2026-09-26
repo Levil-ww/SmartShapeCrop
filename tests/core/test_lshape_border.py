@@ -372,6 +372,23 @@ class TestApplyLshapeBorderCompletion:
         # 第二级外包矩形左侧的远离区域不能被错误补成整条边。
         np.testing.assert_array_equal(canvas[55, 65], [255, 255, 255])
 
+    def test_staircase_union_clips_inner_layers_to_canvas_edge(self):
+        """切区贴画布边缘时，内层细线不能溢入素材自身边框区域。"""
+        canvas = self._canvas(120, 100)
+        ok = apply_lshape_border_completion(
+            canvas_arr=canvas,
+            material_img=_make_plain_material(size=(120, 100)),
+            src_material_img=_make_plain_material(size=(120, 100)),
+            outer_rect=RectShape(0, 0, 120, 100),
+            cut_corner='tr', cut_w_px=0.0, cut_h_px=0.0,
+            manual_edge_px=3, manual_band_px=4,
+            manual_band_color=(220, 180, 120),
+            staircase_cut_rects=[(80, 0, 120, 35)],
+        )
+        assert ok is True
+        # 右侧画布边缘只允许最外层黑描边；色带/细线不得延伸到边框内侧。
+        np.testing.assert_array_equal(canvas[45, 116], [255, 255, 255])
+
     def test_multiple_cuts_paint_each_cut_edges(self):
         """多角入口应逐角补边，且不把边框画回任一缺口内部。"""
         canvas = self._canvas()
