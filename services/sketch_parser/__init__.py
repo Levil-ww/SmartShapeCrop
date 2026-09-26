@@ -15,6 +15,10 @@ from .lshape_sketch_parser import (
     LSketchParseResult,
     parse_lshape_sketch,
 )
+from .composite_sketch_parser import (
+    CompositeSketchParseResult,
+    parse_composite_sketch,
+)
 # [2026-08-29 新增] 多洞解析公开符号（可选导入；对外主入口仍是 parse_sketch 自动分流）
 from .sketch_parser_multihole import (
     HoleInfo,
@@ -28,6 +32,8 @@ __all__ = [
     "validate_sketch_file",
     "LSketchParseResult",
     "parse_lshape_sketch",
+    "CompositeSketchParseResult",
+    "parse_composite_sketch",
     # 多洞扩展
     "HoleInfo",
     "MultiHoleParseResult",
