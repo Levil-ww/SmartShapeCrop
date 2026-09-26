@@ -10,5 +10,6 @@ from .canvas_widget import PreviewCanvas
 from .property_panel import PropertyPanel
 from .cropper_panel import CropperPanel
 from .lshape_panel import LShapePanel
+from .composite_panel import CompositePanel
 
 __all__ = ['PreviewCanvas', 'PropertyPanel', 'CropperPanel', 'LShapePanel']
