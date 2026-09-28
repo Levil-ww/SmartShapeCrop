@@ -13,6 +13,9 @@ from PIL import Image
 
 from core.geometry import CropDesign, CutRect, limit_l_cut_rects_per_anchor
 from core.config import CUT_LOSS_CM
+from workers.design_builders import (
+    BUILDERS, DesignBuildRequest, LegacyRequestAdapter,
+)
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
 
@@ -508,38 +511,59 @@ class PoolRenderWorker(QThread):
             if changed:
                 self._log(f"应用用户手动修改的边距：{', '.join(changed)}")
     def _build_design(self, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape):
-        """步骤4：构建 CropDesign（L 形挖角 / 矩形+多洞 两条路径）。"""
-        # 4) 构建 CropDesign
-        TRIM_CM = CUT_LOSS_CM  # config.py 中 CUT_LOSS_CM=1.0，裁剪损耗补偿
-        self.progress.emit(85, "构建设计参数…")
-        design = CropDesign()
-        design.canvas_w_cm = canvas_w_cm + TRIM_CM
-        design.canvas_h_cm = canvas_h_cm + TRIM_CM
-        design.dpi = 150
-        design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
+        """Build a design through the mode-specific builder boundary.
 
-        if self._composite_params is not None:
-            from models.design_model import DesignModel
-            params = dict(self._composite_params)
-            params['canvas_w_cm'] = float(params['outer_w_cm']) + TRIM_CM
-            params['canvas_h_cm'] = float(params['outer_h_cm']) + TRIM_CM
-            params['outer_margin_cm'] = 0.0
-            if not params.get('cuts_cm'):
-                raise ValueError("综合形状至少需要 1 处挖角")
-            model = DesignModel(design)
-            model.apply_composite_params(params)
-            design = model.to_design()
-            design.validate()
-            design.pool_outer_material_image = best.path
-            design.outer_bg_image = best.path
-            self._log("综合形状：外框挖角 + 单中心洞（参数来自综合面板）")
-        elif is_lshape:
-            self._apply_lshape_params(design, best, canvas_w_cm, canvas_h_cm, TRIM_CM)
-        else:
-            # 矩形/水池模式：边距 → 多洞 → 外框素材
-            self._apply_rect_hole_params(design, best, sketch_result,
-                                       canvas_w_cm, canvas_h_cm, is_lshape, TRIM_CM)
+        The callbacks intentionally point at the existing implementations in
+        this first migration step.  This preserves every legacy field write
+        while giving each mode an independent construction seam.
+        """
+        request = LegacyRequestAdapter.from_worker(
+            self, best, sketch_result, canvas_w_cm, canvas_h_cm,
+            is_lshape, CUT_LOSS_CM)
+        self.progress.emit(85, "构建设计参数…")
+        builder = BUILDERS[request.mode]
+
+        def _new_design(w_cm, h_cm, trim_cm):
+            design = CropDesign()
+            design.canvas_w_cm = w_cm + trim_cm
+            design.canvas_h_cm = h_cm + trim_cm
+            design.dpi = 150
+            design.outer_margin_cm = 0.0
+            return design
+
+        def _composite(req):
+            return self._build_composite_design_legacy(req)
+
+        return builder.build(request, {
+            "new_design": _new_design,
+            "lshape": self._apply_lshape_params,
+            "pool": self._apply_rect_hole_params,
+            "composite": _composite,
+        })
+
+    def _build_composite_design_legacy(self, request: DesignBuildRequest):
+        """Compatibility implementation for the composite branch."""
+        design = CropDesign()
+        design.canvas_w_cm = request.canvas_w_cm + request.trim_cm
+        design.canvas_h_cm = request.canvas_h_cm + request.trim_cm
+        design.dpi = 150
+        design.outer_margin_cm = 0.0
+        from models.design_model import DesignModel
+        params = dict(request.composite_params or {})
+        params['canvas_w_cm'] = float(params['outer_w_cm']) + request.trim_cm
+        params['canvas_h_cm'] = float(params['outer_h_cm']) + request.trim_cm
+        params['outer_margin_cm'] = 0.0
+        if not params.get('cuts_cm'):
+            raise ValueError("综合形状至少需要 1 处挖角")
+        model = DesignModel(design)
+        model.apply_composite_params(params)
+        design = model.to_design()
+        design.validate()
+        design.pool_outer_material_image = request.best.path
+        design.outer_bg_image = request.best.path
+        self._log("综合形状：外框挖角 + 单中心洞（参数来自综合面板）")
         return design
+
     def _apply_lshape_params(self, design, best, canvas_w_cm, canvas_h_cm, TRIM_CM):
         """L 形挖角（裁剪有图）模式：保留外框素材、切角显示洞色；TRIM 不作用于挖角。"""
         # —— L 形挖角（裁剪有图）模式 ——
