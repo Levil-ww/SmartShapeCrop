@@ -802,7 +802,19 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
         outer_mask = _build_design_lshape_mask(design, use_outer=True)
         cut_area_mask = ~outer_mask
         if cut_area_mask.any():
-            fill = (255, 255, 255) if (design.pool_hole_transparent or design.mode == COMPOSITE_MODE) else design.hole_bg_color
+            # 复合模式的挖角边框补全需要素材原有浅色带作为检测基准；
+            # 从外框四边内侧环带采样，避免把花纹主体颜色当成色带。
+            rect = design.outer_rect_px()
+            x0, y0 = max(0, int(round(rect.x))), max(0, int(round(rect.y)))
+            x1, y1 = min(W, int(round(rect.right))), min(H, int(round(rect.bottom)))
+            depth = max(2, int(round(min(max(1, x1-x0), max(1, y1-y0)) * 0.04)))
+            samples = [canvas_arr[y0:y0+depth, x0:x1], canvas_arr[max(y0, y1-depth):y1, x0:x1],
+                       canvas_arr[y0:y1, x0:x0+depth], canvas_arr[y0:y1, max(x0, x1-depth):x1]]
+            pixels = np.vstack([a.reshape(-1, 3) for a in samples if a.size])
+            light = pixels[pixels.mean(axis=1) > 128]
+            if light.size:
+                _lshape_cut_bg_color = tuple(int(v) for v in np.median(light, axis=0))
+            fill = (255, 255, 255)
             canvas_arr[cut_area_mask] = np.asarray(fill, dtype=np.uint8)
         return True, _lshape_cut_bg_color, cut_area_mask
     if design.mode == 'rect_lshape' and is_pool_with_material:
@@ -893,7 +905,7 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
                     design.hole_bg_color, dtype=np.uint8).reshape(1, 3)
         # L 形区域（inner_mask）保持 step 1 的外框素材，不覆盖
         lshape_cut_done = True
-    return lshape_cut_done, _lshape_cut_bg_color, (cut_area_mask if design.mode == 'rect_lshape' and is_pool_with_material else None)
+    return lshape_cut_done, _lshape_cut_bg_color, (cut_area_mask if design.mode in ('rect_lshape', COMPOSITE_MODE) and is_pool_with_material else None)
 
 def _stale_decor_black_border_invalidation(canvas_arr, design, W, H, has_outer_pool_material):
     """[C-01] 单洞 Stale-Decor 黑边框失效清理 Add-On V1（原 L847-951）。"""
@@ -1247,7 +1259,8 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
     #
     # 仅在 rect_lshape + 池素材 + 非 tile（tile 无边框）时触发。
     _is_tile = _looks_like_tile(design.pool_outer_material_image or '')
-    _do_completion = design.mode in ('rect_lshape', COMPOSITE_MODE) and is_pool_with_material and not _is_tile
+    _do_completion = (design.mode == COMPOSITE_MODE and is_pool_with_material) or (
+        design.mode == 'rect_lshape' and is_pool_with_material and not _is_tile)
     if _do_completion:
         _completion_ok = False  # 兜底初值；异常/失败时保持 False（三层失败掩盖修复）
         try:
