@@ -1353,6 +1353,10 @@ class LShapePanel(QWidget):
     # ====================================================================
     # 目标文件名历史记录（独立于水池设计器，使用 TARGET_SRC_LSHAPE）
     # ====================================================================
+    def _target_history_source(self):
+        """返回当前面板独立的目标历史 source。子面板可覆盖。"""
+        return self._app_settings.TARGET_SRC_LSHAPE
+
     def _refresh_target_history_ui(self):
         """刷新本面板目标文件名历史菜单：按日期分组显示最近 3 天记录。
 
@@ -1360,7 +1364,7 @@ class LShapePanel(QWidget):
         实现物理隔离：L 形挖角面板只显示在本面板输入过的文件名历史。
         """
         self._target_history_menu.clear()
-        history = self._app_settings.get_target_name_history(self._app_settings.TARGET_SRC_LSHAPE)
+        history = self._app_settings.get_target_name_history(self._target_history_source())
         if not history:
             a_empty = QAction("（暂无历史记录）", self._target_history_menu)
             a_empty.setEnabled(False)
@@ -1416,12 +1420,12 @@ class LShapePanel(QWidget):
 
     def _clear_target_history(self):
         """清空全部目标文件名历史记录（仅 L 形挖角设计面板）"""
-        self._app_settings.clear_target_name_history(self._app_settings.TARGET_SRC_LSHAPE)
+        self._app_settings.clear_target_name_history(self._target_history_source())
         self._refresh_target_history_ui()
 
     def _clear_target_history_by_date(self, date_str: str):
         """清空指定日期的目标文件名历史记录（仅 L 形挖角设计面板）"""
-        self._app_settings.clear_target_name_history_by_date(self._app_settings.TARGET_SRC_LSHAPE, date_str)
+        self._app_settings.clear_target_name_history_by_date(self._target_history_source(), date_str)
         self._refresh_target_history_ui()
 
     def _record_target_name_history(self):
@@ -1432,7 +1436,7 @@ class LShapePanel(QWidget):
         """
         name = self._target_edit.text().strip()
         if name:
-            self._app_settings.add_target_name_history(name, self._app_settings.TARGET_SRC_LSHAPE)
+            self._app_settings.add_target_name_history(name, self._target_history_source())
             self._refresh_target_history_ui()
 
     # ====================================================================

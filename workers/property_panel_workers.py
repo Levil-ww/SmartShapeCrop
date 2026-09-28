@@ -423,6 +423,16 @@ class PoolRenderWorker(QThread):
             self._matcher.set_template_dir(os.path.abspath(self._template_dir))
         self._matcher.scan_library(force=False)
         best, candidates = self._matcher.find_best_match(self._target)
+        # 综合面板常使用“产品-花型-宽x高CM裁剪有图”长文件名；
+        # 若完整名未命中，按解析后的花型名 + 标准尺寸查询一次，兼容模板库命名差异。
+        if best is None and self._composite_params is not None:
+            pattern = parsed.pool_pattern_name or parsed.pattern_name or ""
+            if pattern:
+                _qw, _qh = parsed.oriented_outer_w_h_cm()
+                query = f"{pattern}-裁剪有图-{_qw:.1f}x{_qh:.1f}CM"
+                best, candidates = self._matcher.find_best_match(query)
+                if best is not None:
+                    self._log(f"复合形状模板使用标准查询名匹配：{query}")
         if best is None:
             self.finished_err.emit(
                 f"在模板库中未找到匹配的花型（目标花型={parsed.pool_pattern_name or parsed.pattern_name}）。\n"

@@ -24,6 +24,9 @@ class CompositePanel(LShapePanel):
     composite_params_changed = pyqtSignal(dict)
     composite_recognize_finished = pyqtSignal(object)
 
+    def _target_history_source(self):
+        return self._app_settings.TARGET_SRC_COMPOSITE
+
     def __init__(self, parent=None):
         self._composite_parse_result = None
         self._composite_parse_worker = None
