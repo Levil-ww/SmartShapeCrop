@@ -1259,6 +1259,9 @@ class LShapePanel(QWidget):
             self._cb_lcorner.blockSignals(False)
             self._sp_lw.blockSignals(False)
             self._sp_lh.blockSignals(False)
+        # [D8 修复] 懒初始化守卫：模板菜单回填可能在面板从未交互时到达（fresh panel 时 _lshape_params 为 None）
+        if self._lshape_params is None:
+            self._lshape_params = {}
         self._lshape_params['corner'] = corner
         self._lshape_params['cut_w_cm'] = max(0.0, float(cut_w_cm))
         self._lshape_params['cut_h_cm'] = max(0.0, float(cut_h_cm))
@@ -1282,6 +1285,9 @@ class LShapePanel(QWidget):
             finally:
                 enabled.blockSignals(False); combo.blockSignals(False)
                 width.blockSignals(False); height.blockSignals(False)
+        # [D8 修复] 懒初始化守卫：同 set_lshape_params
+        if self._lshape_params is None:
+            self._lshape_params = {}
         self._lshape_params['cuts_cm'] = self.get_cuts_cm()
 
     def set_outer_dims(self, outer_w_cm: float, outer_h_cm: float):
