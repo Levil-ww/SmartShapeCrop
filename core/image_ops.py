@@ -1373,6 +1373,11 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 manual_band_color=getattr(design, 'lshape_manual_band_color', None),
                 staircase_cut_rects=staircase_cut_rects or None,
                 cut_area_mask=lshape_cut_area_mask,
+                # [Fix 2026-09-28 非等比缩放] 综合形状把素材非等比拉伸到
+                # 整张画布（sx≠sy），Profile 补边必须按方向分开缩放层厚
+                # 才能与素材自身的左右/上下边距带对齐。其他模式保持
+                # 几何均值单网格的历史行为（逐像素不变）。
+                directional_scale=(design.mode == COMPOSITE_MODE),
             )
             # [Fix N-P1-01] 补全返回值接入真值（仅日志记录，不改变渲染逻辑）
             if not _completion_ok:

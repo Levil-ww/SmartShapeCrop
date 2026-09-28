@@ -730,6 +730,10 @@ def apply_lshape_border_completion(
     cuts: list[tuple[str, float, float]] | None = None,
     staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
     cut_area_mask: np.ndarray | None = None,
+    # [Fix 2026-09-28 非等比缩放] True 时 Profile 路径按方向分别缩放层厚
+    # （x 向 scale_x / y 向 scale_y）。综合形状把素材非等比拉伸到整张画布
+    # 才需要；默认 False → 几何均值单网格，所有历史路径逐像素不变。
+    directional_scale: bool = False,
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
@@ -754,6 +758,10 @@ def apply_lshape_border_completion(
         cut_area_mask: 实际 cut 区域的布尔掩膜 (H, W)，与 canvas_arr 同尺寸。
                        优先级高于 staircase_cut_rects（对角线阶梯时矩形并集会
                        错误地把阶梯间的保留区也包含进来，造成边框画到色带内部）。
+        directional_scale: [Fix 2026-09-28] True → Profile 路径按方向分别缩放
+                       层厚（x 向 scale_x、y 向 scale_y），用于素材被非等比
+                       拉伸到整张画布的综合形状模式；False（默认）保持
+                       几何均值单网格的历史行为。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
@@ -805,6 +813,7 @@ def apply_lshape_border_completion(
                 manual_edge_px=manual_edge_px,
                 manual_band_px=manual_band_px,
                 manual_band_color=manual_band_color,
+                directional_scale=directional_scale,
             )
             changed = np.any(trial != base_canvas, axis=2)
             write_mask = changed & ~claimed
@@ -900,6 +909,7 @@ def apply_lshape_border_completion(
             bg_color=bg_color,
             staircase_cut_rects=staircase_cut_rects,
             cut_area_mask=cut_area_mask,
+            directional_scale=directional_scale,
         ):
             return True
         logger.info("[LShapeBorder] Profile 路径绘制失败，回退 V13/旧路径")

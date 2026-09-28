@@ -508,34 +508,54 @@ def _detect_top_border_y_offset(src_img: Image.Image, scale_avg: float) -> int:
 
 def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
                                      layers: list[tuple[tuple[int, int, int], int]],
-                                     offs: list[int]) -> None:
+                                     offs: list[int],
+                                     layers_y: list[tuple[tuple[int, int, int], int]] | None = None,
+                                     offs_y: list[int] | None = None) -> None:
     """在"缺口贴右上角"的画布 b 上按层补齐切边边框。
 
     坐标语义与 lshape_border._fill_vertical_horizontal 完全一致：
       xc = 垂直切边 x（缺口左边界）；yc = 水平切边 y（缺口下边界）；
       产品位于 x<xc 与 y>yc。层 k 铺在深度 [offs[k], offs[k+1])，
       内凹角按 max(dx, dy) 几何分层。
+
+    [Fix 2026-09-28 非等比缩放] offs/layers = x 向层厚网格（源自素材左边距带），
+    offs_y/layers_y = y 向层厚网格（源自素材上边距带）。画布被非等比拉伸时
+    （综合形状 186×89cm 场景：sx=2.33 / sy=1.59）两者不可互换：
+      - 垂直切边拷贝的 x 深度、水平切边拷贝的 x 截断 → 用 x 向网格；
+      - 水平切边拷贝的 y 深度、垂直切边拷贝的 y 截断 → 用 y 向网格。
+    单网格会把两向厚度折中（几何均值），导致补边带宽比素材真实边框窄/宽 20%+，
+    且与素材自身边距带的接头错位（米色带变窄、褐色细线整段消失）。
+    offs_y=None 时退化为单网格，与历史行为逐像素一致（L 形/水池路径不受影响）。
     """
     H, W = b.shape[:2]
+    if offs_y is None:
+        offs_y = offs
+    if layers_y is None:
+        layers_y = layers
     T = offs[-1]
+    T_y = offs_y[-1]
 
     # 垂直切边（保留区在左）：y 从画布顶端向交汇点 yc 递减。
     # 层 k 的 dx 范围 = xc - x，其中 x ∈ [xc-offs[k+1], xc-offs[k]) → dx ∈ [offs[k], offs[k+1])
     # 垂直边框紧贴 cut 区左边界 xc 的左侧（保留区侧），y 覆盖 [0, yc] 整个切边高度。
     # 关键：y_hi = yc+1（包含交汇点行），垂直边框覆盖 [0, yc] 整个切边高度。
+    # y 起点用 y 向网格 offs_y[k] 截断：其上方是素材自身"上边距带"的层区
+    # （如黑描边行），不能被垂直拷贝覆盖，否则顶边线在接头处断裂。
     for k, (color, _t) in enumerate(layers):
         x_lo, x_hi = max(0, xc - offs[k + 1]), min(W, xc - offs[k])
-        y_lo = offs[k] if offs[k] < yc else 0
+        y_lo = offs_y[k] if offs_y[k] < yc else 0
         y_hi = min(yc + 1, H)
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
     # 水平切边（保留区在下）：层 k 从交汇点 yc 向下延伸，x 严格从 xc 开始向右。
     # 水平边框紧贴 cut 区下边界 yc 的下侧（保留区侧），不能画到 y<=yc 的 cut 区里。
-    # 关键：y 从 yc 起算，与 V13 路径口径一致（消除 1px 亮缝）。
-    for k, (color, _t) in enumerate(layers):
-        y_lo = max(0, yc + offs[k])
-        y_hi = min(H, yc + offs[k + 1])
+    # 关键：y 从 yc 起算，与 V13 路径口径一致（消除 1px 亮缝）；y 向深度用
+    # 上边距带网格 offs_y，x 终点用 x 向网格 offs[k] 截断（其以左是素材自身
+    # "左边距带"的层区，需保留原像素）。
+    for k, (color, _t) in enumerate(layers_y):
+        y_lo = max(0, yc + offs_y[k])
+        y_hi = min(H, yc + offs_y[k + 1])
         x_lo, x_hi = max(0, xc), max(0, min(W - offs[k], W))
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
@@ -558,10 +578,11 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
     if xs.size == 0:
         return
     offs_arr = np.array(offs, dtype=np.int64)
+    offs_y_arr = np.array(offs_y, dtype=np.int64)
     colors_arr = np.array([c for c, _t in layers], dtype=np.uint8)
     edge_t = offs[1] if len(offs) > 1 else 0
     y_start = max(0, yc)  # 包含 yc（与 V13 路径一致）
-    y_end = min(H, yc + T)
+    y_end = min(H, yc + T_y)
     dx_arr = xc - xs  # 预计算水平距离，dx ∈ [1, T]
     mask_edge = dx_arr <= edge_t   # dx ∈ [1, edge]: 用 dy 分层（和水平切边一致）
     mask_layers = dx_arr > edge_t  # dx ∈ [edge+1, T]: max(dx, dy) L 形分层
@@ -569,21 +590,22 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
         dy = yy - yc
         # dx<=edge 组: 用 dy 决定层（和水平切边一致，忽略 dx）
         if mask_edge.any():
-            k_edge = np.searchsorted(offs_arr, dy, side='right') - 1
+            k_edge = np.searchsorted(offs_y_arr, dy, side='right') - 1
             k_edge = np.clip(k_edge, 0, len(layers) - 1)
             b[yy, xs[mask_edge]] = colors_arr[k_edge]
-        # dx>edge 组: max(dx, dy) L 形分层
+        # dx>edge 组: max(dx, dy) L 形分层（两向网格各自取层后取较大层）
         if mask_layers.any():
             dx_lay = dx_arr[mask_layers]
-            d = np.maximum(dx_lay, dy)
-            k = np.searchsorted(offs_arr, d, side='right') - 1
-            k = np.clip(k, 0, len(layers) - 1)
+            kx = np.searchsorted(offs_arr, dx_lay, side='right') - 1
+            ky = np.searchsorted(offs_y_arr, dy, side='right') - 1
+            k = np.clip(np.maximum(kx, ky), 0, len(layers) - 1)
             b[yy, xs[mask_layers]] = colors_arr[k]
 
 
 def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
                             x0: int, y0: int, cw: int, ch: int,
                             layers: list[tuple[tuple[int, int, int], int]],
+                            layers_y: list[tuple[tuple[int, int, int], int]] | None = None,
                             ) -> np.ndarray:
     """在最终画布上沿缺口切边按层结构补边（不修改入参，返回新数组）。
 
@@ -591,7 +613,10 @@ def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
         canvas: (H, W, 3) uint8 最终渲染结果（缺口区已是洞色）
         corner: 'tl'|'tr'|'bl'|'br'
         x0, y0, cw, ch: 缺口矩形（画布像素，与渲染 mask 同源）
-        layers: [(color, thickness_px), ...] 外→内（画布像素单位，厚度 ≥1）
+        layers: [(color, thickness_px), ...] 外→内（画布像素单位，厚度 ≥1），
+                x 向层厚网格（用于垂直切边拷贝深度 / 水平切边拷贝 x 截断）
+        layers_y: 可选，y 向层厚网格（与 layers 逐层同色，厚度按 y 缩放）。
+                  非等比拉伸（综合形状）时必传；None → 与 layers 同一网格。
 
     契约与 patch_lshape_cut 一致：翻转后缺口必须贴画布右上角，
     否则抛 ValueError。
@@ -607,6 +632,11 @@ def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
         offs.append(offs[-1] + t_i)
     if offs[-1] <= 0:
         raise ValueError('层厚合计为 0')
+    offs_y = None
+    if layers_y is not None:
+        offs_y = [0]
+        for _c, t in layers_y:
+            offs_y.append(offs_y[-1] + max(1, int(round(t))))
 
     H, W = a.shape[:2]
     flipx = corner in ('tl', 'bl')
@@ -622,7 +652,8 @@ def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
     ny1 = ny0 + ch
     if not (nx1 == b.shape[1] and ny0 == 0):
         raise ValueError('缺口矩形不在画布角落, 请检查 x0/y0/cw/ch 与翻转角的一致性')
-    _fill_layers_vertical_horizontal(b, nx0, ny1, layers, offs)
+    _fill_layers_vertical_horizontal(b, nx0, ny1, layers, offs,
+                                     layers_y=layers_y, offs_y=offs_y)
     if flipy:
         b = np.flipud(b)
     if flipx:
@@ -646,11 +677,18 @@ def _apply_profile_path(*,
                         bg_color: tuple[int, int, int] = (255, 255, 255),
                         staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
                         cut_area_mask: np.ndarray | None = None,
+                        directional_scale: bool = False,
                         ) -> bool:
     """Profile 路径：源图层结构 → 画布坐标 → patch_lshape_cut_layers。
 
     与 _apply_v13_path 相同的子图/贴角机制；任何几何异常返回 False，
     由调用方回退到 V13 / 旧路径。
+
+    directional_scale: [Fix 2026-09-28] True 时按方向分别缩放层厚
+    （x 向用 scale_x、y 向用 scale_y）。综合形状把素材非等比拉伸到
+    整张画布（186×89cm：sx=2.33 / sy=1.59），只有分向缩放才能让补边
+    与素材自身的左右/上下边距带对齐。False（默认）→ 单网格几何均值，
+    与历史行为逐像素一致。
     """
     if not layers_src:
         return False
@@ -674,11 +712,8 @@ def _apply_profile_path(*,
     # bg_color 为白色（上游采样失败 fallback）时回退到原 d<30 模糊匹配。
     bg = tuple(int(c) for c in bg_color)
     bg_is_default_white = tuple(bg_color) == (255, 255, 255)
-    layers_canvas: list[tuple[tuple[int, int, int], int]] = []
+    layers_colored: list[tuple[tuple[int, int, int], float]] = []
     for color, t in layers_src:
-        t_canvas = int(round(float(t) * scale_avg))
-        if t_canvas < 1:
-            t_canvas = 1
         c = tuple(int(x) for x in color)
         _max_c = max(c)
         _is_anchor = (_max_c < _BLACK_MAX_CHANNEL and t > _LINE_MAX_THICK)
@@ -693,10 +728,23 @@ def _apply_profile_path(*,
             if d < 30.0:
                 c = bg
         # 锚点/线段层：不替换，保持 Profile 检测值
-        layers_canvas.append((c, t_canvas))
+        layers_colored.append((c, float(t)))
 
+    def _to_canvas(scale: float) -> list[tuple[tuple[int, int, int], int]]:
+        return [(c, max(1, int(round(t * scale)))) for c, t in layers_colored]
+
+    layers_canvas = _to_canvas(scale_avg)
     if not layers_canvas:
         return False
+
+    # [Fix 2026-09-28] 非等比画布：额外准备 y 向网格（同色、按 scale_y 缩放）。
+    # union 抽屉（staircase）仍用 layers_canvas（各向同性距离变换），不受影响。
+    layers_x = layers_y = None
+    if directional_scale:
+        _sx = scale_x if scale_x > 0 else scale_avg
+        _sy = scale_y if scale_y > 0 else scale_avg
+        layers_x = _to_canvas(_sx)
+        layers_y = _to_canvas(_sy)
 
     if cut_area_mask is not None or staircase_cut_rects:
         from .lshape_border import _draw_staircase_union_layers
@@ -732,14 +780,22 @@ def _apply_profile_path(*,
     sub = canvas_arr[oy:obottom, ox:oright, :]
     try:
         patched = patch_lshape_cut_layers(
-            sub, cut_corner, bx0, by0, cw_r, ch_r, layers_canvas,
+            sub, cut_corner, bx0, by0, cw_r, ch_r,
+            layers_x if layers_x is not None else layers_canvas,
+            layers_y=layers_y,
         )
     except ValueError as e:
         logger.info("[LShapeRoute] patch 跳过: %s", e)
         return False
     canvas_arr[oy:obottom, ox:oright, :] = patched
-    logger.info(
-        "[LShapeRoute] 补边完成: %d 层 (scale=%.2f×) %s",
-        len(layers_canvas), scale_avg, layers_canvas,
-    )
+    if layers_x is not None:
+        logger.info(
+            "[LShapeRoute] 补边完成(分向): x=%s y=%s",
+            layers_x, layers_y,
+        )
+    else:
+        logger.info(
+            "[LShapeRoute] 补边完成: %d 层 (scale=%.2f×) %s",
+            len(layers_canvas), scale_avg, layers_canvas,
+        )
     return True
