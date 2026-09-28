@@ -565,93 +565,12 @@ class PoolRenderWorker(QThread):
         return design
 
     def _apply_lshape_params(self, design, best, canvas_w_cm, canvas_h_cm, TRIM_CM):
-        """L 形挖角（裁剪有图）模式：保留外框素材、切角显示洞色；TRIM 不作用于挖角。"""
-        # —— L 形挖角（裁剪有图）模式 ——
-        # 语义：L 形区域保留外框素材花纹，被切掉的角显示洞色。
-        # 配置：outer_margin=0, inner_margin 全 0（cut 定位直接基于 canvas 边缘）。
-        # 关键不变量：挖角尺寸 = 用户输入值（草图/手动），完全不受 TRIM 影响。
-        # TRIM 只是画布比外框多出的余量，cut 自然延伸到 canvas 边缘。
-        design.outer_margin_cm = 0.0
-        lp = self._lshape_params
-        # 外框尺寸优先用 L 形解析结果（已与文件名校验），否则用文件名解析值
-        lw = float(lp.get('outer_w_cm') or 0)
-        lh = float(lp.get('outer_h_cm') or 0)
-        if lw > 0 and lh > 0:
-            canvas_w_cm, canvas_h_cm = lw, lh
-            design.canvas_w_cm = canvas_w_cm + TRIM_CM
-            design.canvas_h_cm = canvas_h_cm + TRIM_CM
-        design.mode = 'rect_lshape'
-        design.l_corner = lp.get('corner', 'tr')
-        # 挖角值直接用草图识别的成品真值，不做额外损耗补偿
-        design.l_cut_w_cm = max(0.0, float(lp.get('cut_w_cm', 0)))
-        design.l_cut_h_cm = max(0.0, float(lp.get('cut_h_cm', 0)))
-        # 阶梯路径：cut_rects 非空时是唯一几何来源（同角位多级 CutRect），
-        # 旧格式 cuts_cm 不允许同角位重复，必须保持为空
-        cut_rects = lp.get('cut_rects') or []
-        if cut_rects:
-            # [Fix 2026-09-24 P2-4] 原为 [:3]（按总数截断）——与 validate() 的
-            #   「同角位 ≤3」口径不一致，会把多锚定输入的第 4 条静默丢弃。
-            #   改用按锚定角分组截断；单锚定输入（全部可达路径）逐例等价。
-            design.l_cut_rects = limit_l_cut_rects_per_anchor([
-                CutRect(
-                    anchor=str(r['anchor']),
-                    offset_x_cm=max(0.0, float(r.get('offset_x_cm', 0))),
-                    offset_y_cm=max(0.0, float(r.get('offset_y_cm', 0))),
-                    w_cm=max(0.0, float(r.get('w_cm', 0))),
-                    h_cm=max(0.0, float(r.get('h_cm', 0))),
-                )
-                for r in cut_rects
-                if isinstance(r, dict) and r.get('anchor') in {'tl', 'tr', 'bl', 'br'}
-                and float(r.get('w_cm', 0) or 0) > 0
-                and float(r.get('h_cm', 0) or 0) > 0
-            ])
-            self._log(
-                f"L 形阶梯挖角：corner={design.l_corner}, "
-                f"{len(design.l_cut_rects)} 级 CutRect（同角位条带）")
-        else:
-            cuts_cm = lp.get('cuts_cm') or []
-            if cuts_cm:
-                design.l_cuts_cm = [
-                    {
-                        'corner': str(cut['corner']),
-                        'cut_w_cm': max(0.0, float(cut['cut_w_cm'])),
-                        'cut_h_cm': max(0.0, float(cut['cut_h_cm'])),
-                    }
-                    for cut in cuts_cm
-                    if isinstance(cut, dict)
-                    and cut.get('corner') in {'tl', 'tr', 'bl', 'br'}
-                    and float(cut.get('cut_w_cm', 0) or 0) > 0
-                    and float(cut.get('cut_h_cm', 0) or 0) > 0
-                ][:4]
-        design.inner_margin_top_cm = 0.0
-        design.inner_margin_bottom_cm = 0.0
-        design.inner_margin_left_cm = 0.0
-        design.inner_margin_right_cm = 0.0
-        # 挖掉的角 = 洞（白色；JPG 不支持透明）
-        design.pool_hole_transparent = True
-        # 外框素材 = 匹配到的完整矩形花纹图（铺满画布，L 形区域保留）
-        design.pool_outer_material_image = best.path
-        design.outer_bg_image = best.path
-        design.pool_inner_material_image = best.path
-        # [V13 集成 2026-09-04] 手动边框覆盖参数透传到 design
-        # 缺失字段（None）→ design 字段保留默认 None → 走原有自动检测路径
-        # 已设值（int / tuple）→ design 字段写入 → 走 V13 路径
-        _me = lp.get('manual_edge_px', None)
-        _mb = lp.get('manual_band_px', None)
-        _mc = lp.get('manual_band_color', None)
-        design.lshape_manual_edge_px = (
-            int(_me) if _me is not None else None)
-        design.lshape_manual_band_px = (
-            int(_mb) if _mb is not None else None)
-        if _mc is not None:
-            design.lshape_manual_band_color = tuple(int(c) for c in _mc)
-        else:
-            design.lshape_manual_band_color = None
-        self._log(
-            f"L 形挖角模式：corner={design.l_corner}, "
-            f"挖角 {design.l_cut_w_cm:.1f}x{design.l_cut_h_cm:.1f} cm, "
-            f"外框 {canvas_w_cm:.1f}x{canvas_h_cm:.1f} cm（画布含1cm损耗）"
-        )
+        """Compatibility wrapper around the pure L-shape geometry mapper."""
+        from workers.design_builders import apply_lshape_geometry
+        apply_lshape_geometry(
+            design, self._lshape_params or {}, best.path, canvas_w_cm,
+            canvas_h_cm, TRIM_CM, self._log)
+
     def _apply_rect_hole_params(self, design, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape, TRIM_CM):
         """矩形/水池模式：边距（草图 + 用户覆盖）→ 多洞 Add-On → 外框素材。"""
         # 目标名中的“椭圆”是当前水池流程识别椭圆内洞的稳定业务标记。
