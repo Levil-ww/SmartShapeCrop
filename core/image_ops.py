@@ -802,7 +802,7 @@ def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_materi
         outer_mask = _build_design_lshape_mask(design, use_outer=True)
         cut_area_mask = ~outer_mask
         if cut_area_mask.any():
-            fill = (255, 255, 255) if design.pool_hole_transparent else design.hole_bg_color
+            fill = (255, 255, 255) if (design.pool_hole_transparent or design.mode == COMPOSITE_MODE) else design.hole_bg_color
             canvas_arr[cut_area_mask] = np.asarray(fill, dtype=np.uint8)
         return True, _lshape_cut_bg_color, cut_area_mask
     if design.mode == 'rect_lshape' and is_pool_with_material:
@@ -1247,13 +1247,14 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
     #
     # 仅在 rect_lshape + 池素材 + 非 tile（tile 无边框）时触发。
     _is_tile = _looks_like_tile(design.pool_outer_material_image or '')
-    _do_completion = design.mode == 'rect_lshape' and is_pool_with_material and not _is_tile
+    _do_completion = design.mode in ('rect_lshape', COMPOSITE_MODE) and is_pool_with_material and not _is_tile
     if _do_completion:
         _completion_ok = False  # 兜底初值；异常/失败时保持 False（三层失败掩盖修复）
         try:
             from .lshape_border import apply_lshape_border_completion
 
-            inner_rect = design.inner_rect_px()
+            inner_rect = (design.outer_rect_px() if design.mode == COMPOSITE_MODE
+                          else design.inner_rect_px())
             lshape = design.l_shapes_px()
             # cut 扩展到 canvas 边缘后的绝对尺寸（border completion 需要这个
             # 来正确在 outer_margin 区域补边）
