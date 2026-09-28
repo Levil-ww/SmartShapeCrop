@@ -716,7 +716,7 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
           - sketch_pick/load 不在 __init__ 之外再委托：CompositePanel 已自连（含自动识别），
             这里只把草图投到共享画布显示，避免二次文件对话框与 _sketch_path 状态污染；
           - target_* 全部本地处理，不写 _pool_mode / _pool_raw_outer_* / _sp_w/_sp_h；
-          - generate_requested 走 _composite_run_generate()，不经素材匹配 Worker。
+          - generate_requested 走 _composite_run_generate()，配置模板库时启动匹配 Worker。
         """
         if action in ('sketch_pick_requested', 'sketch_load_requested'):
             if action == 'sketch_load_requested':
@@ -808,10 +808,8 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
     def _composite_run_generate(self):
         """综合面板「生成预览」：面板参数 → 复合 CropDesign → 共享画布渲染。
 
-        不复用 PoolRenderWorker：那条链路做模板匹配 + 池/L 形状态写入，且 Worker
-        本身不认识 rect_lshape_hole（[D6] 仅把 _pool_run_generate 的路由指向本方法，
-        Worker 侧的复合支持另行评估）。参数组装由 DesignModel.apply_composite_params()
-        独占，不经 _collect()（复合模式在 apply_ui_snapshot 中有守卫）。
+        配置模板库时走 PoolRenderWorker 和内挖自动匹配；未配置时保留参数预览。
+        参数组装由 DesignModel.apply_composite_params() 独占。
         """
         panel = self._composite_panel
         if panel is None:
@@ -845,6 +843,11 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         except Exception as e:
             logger.exception(f"[PropertyPanel] 综合形状参数组装异常: {e}")
             panel.set_composite_status(f"综合形状参数组装异常：{e}", is_error=True)
+            return
+
+        if self._pool_tpl_dir.lineEdit().text().strip():
+            self._pool_run_generate(source='composite',
+                                    target_name_override=panel.get_target_text().strip())
             return
 
         self.design = design

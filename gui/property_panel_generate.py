@@ -52,35 +52,33 @@ class _GenerateMixin:
                 生成逻辑仍用来源面板的有效值（Safety 1 不变式）。
 
         [D6] 模式下拉框选中「综合形状」时（source='pool' 且存在 CompositePanel），
-        直接委派 _composite_run_generate()，不启动模板匹配 Worker。
+        委派 _composite_run_generate()，由模板库配置决定匹配或参数预览。
         """
         # [防御性加固] 规范 source 参数类型。
         # 某些 Qt 信号（如 QPushButton.clicked(bool checked)）的第一个参数会被
         # 作为 source 传入，导致 bool=False 覆盖默认值 'pool'。这里把非字符串
         # 类型统一回退到 'pool'，保证下游 _last_generate_source 永远是合法值。
-        if not isinstance(source, str) or source not in ('pool', 'lshape'):
+        if not isinstance(source, str) or source not in ('pool', 'lshape', 'composite'):
             source = 'pool'
 
-        # ===== [D6 复合分支] 综合形状走专用生成链路 =====
-        # 复合的挖角 / 中心洞 / 外框真值只存在于 CompositePanel 控件里，而
-        # PoolRenderWorker 只认识前 3 种模式（把 rect_lshape_hole 当池 / L 形渲染会
-        # 丢掉中心洞）。仅拦 source='pool'（水池设计器的「生成预览」按钮），
-        # L 形面板链路（source='lshape'）行为不变。
-        # 与本分支并列的入口：CompositePanel 自己的「生成预览」经
-        # _on_composite_action → _composite_run_generate()（不经本方法）。
+        # 综合入口负责校验并选择模板匹配或参数预览；旧 L 形入口保持独立。
         if (source == 'pool'
                 and getattr(self, '_composite_panel', None) is not None
                 and self._cb_mode.currentData() == COMPOSITE_MODE):
             self._composite_run_generate()
             return
 
-        if self._pool_worker is not None and self._pool_worker.isRunning():
+        if (self._pool_worker is not None and self._pool_worker.isRunning()) or (
+                source == 'composite' and getattr(self, '_inner_match_worker', None) is not None
+                and self._inner_match_worker.isRunning()):
             self._set_pool_status("⏳ 正在处理中，请稍候…", is_error=True)
             return
 
         # ===== [2026-09-03 状态隔离] 统一 target 名：优先 override，回退 pool 面板 =====
         # 本函数后续所有 self._pool_target.text().strip() 读取都替换为该变量。
-        if target_name_override is not None and target_name_override.strip():
+        if source == 'composite':
+            effective_target_name = (target_name_override or '').strip()
+        elif target_name_override is not None and target_name_override.strip():
             effective_target_name = target_name_override.strip()
         else:
             effective_target_name = self._pool_target.text().strip()
@@ -124,7 +122,7 @@ class _GenerateMixin:
         """实际启动 PoolRenderWorker 的逻辑（预热等待结束后或无预热时调用）。"""
         # V2.0 修复：EXE 模式下用户机器可能未安装 Tesseract-OCR，在执行草图解析前
         # 先主动检查引擎状态，给出明确的安装指引，而不是解析后模糊提示"未识别"
-        if self._sketch_path and os.path.isfile(self._sketch_path):
+        if source != 'composite' and self._sketch_path and os.path.isfile(self._sketch_path):
             try:
                 status = get_tesseract_status()
                 if not status.get("available"):
@@ -148,10 +146,10 @@ class _GenerateMixin:
             return
 
         # [Fix 2026-08-28] 检测用户手动修改的边距值
-        user_margins = self._detect_user_margin_edits()
+        user_margins = self._detect_user_margin_edits() if source != 'composite' else None
 
         # ===== [MULTI-HOLE Add-On 2026-08-29] UI 多洞改动 → 传入 Worker =====
-        user_multihole_params = self._detect_multihole_edits()
+        user_multihole_params = self._detect_multihole_edits() if source != 'composite' else None
 
         # ===== [2026-09-03 状态隔离 Safety 2] 记录来源面板 =====
         self._last_generate_source = source
@@ -178,8 +176,10 @@ class _GenerateMixin:
                 old.deleteLater()
             self._pool_worker = None
         worker = PoolRenderWorker(
-            self._matcher, tpl_dir, target_name, self._sketch_path,
-            pre_parsed_result=self._sketch_parse_result,
+            self._matcher, tpl_dir, target_name, self._sketch_path if source != 'composite' else '',
+            pre_parsed_result=self._sketch_parse_result if source != 'composite' else None,
+            composite_params=(self._composite_panel.get_composite_params()
+                              if source == 'composite' else None),
             user_margins=user_margins,
             user_multihole_params=user_multihole_params,
             lshape_params=(self._get_lshape_params() if source == 'lshape' else None),
@@ -200,16 +200,23 @@ class _GenerateMixin:
     def _on_pool_progress(self, pct: int, msg: str):
         # 简单显示在 status 里，避免 QProgressDialog 抢焦点；另外写 debug log
         self._set_pool_status(f"[{pct}%] {msg}")
+        if getattr(self, '_last_generate_source', '') == 'composite':
+            self._composite_panel.set_composite_status(f"[{pct}%] {msg}")
 
 
     def _on_pool_finished_err(self, msg: str):
         self._set_pool_status(msg, is_error=True)
+        if getattr(self, '_last_generate_source', '') == 'composite':
+            self._composite_panel.set_composite_status(msg, is_error=True)
         if self.design is not None:
             self.design_changed.emit(self.design)
         QMessageBox.critical(self, "智能水池：失败", msg)
 
 
     def _on_pool_finished_ok(self, design: CropDesign, sketch_result, log_text: str):
+        if design.mode == COMPOSITE_MODE:
+            self._on_composite_worker_finished_ok(design)
+            return
         logger.info(f"[PropertyPanel] _on_pool_finished_ok 被调用: sketch_result.success={getattr(sketch_result, 'success', 'N/A')}")
         try:
             # ===== [2026-09-03 修复 NameError] 重建来源面板的 target 名
@@ -403,6 +410,18 @@ class _GenerateMixin:
             except Exception:
                 pass
 
+    def _on_composite_worker_finished_ok(self, design):
+        """复合快照只回填共用显示控件，不读取水池几何或填充选项。"""
+        self.design = design
+        self.sync_from_design(design)
+        self._ed_outer_img.setText(design.outer_bg_image or '')
+        self._ed_hole_img.setText('')
+        if not design.pool_hole_transparent:
+            self._start_inner_match_worker(
+                self._composite_panel.get_target_text().strip(), None)
+        else:
+            self._pool_finish_tail('', None)
+
     # ===== [Perf-Opt P1-08] 内挖素材自动匹配移入后台线程 =====
     def _start_inner_match_worker(self, target_name: str, sketch_result):
         """启动 _InnerMatchWorker：在后台执行 scan_library + find_best_match（多洞/单洞）。
@@ -511,6 +530,17 @@ class _GenerateMixin:
         原逻辑位于 _on_pool_finished_ok 步骤 4/5；拆出后既支持
         "无内挖匹配"直接调用，也支持 _InnerMatchWorker 完成后回填再调用。
         """
+        if self.design.mode == COMPOSITE_MODE:
+            self.design_changed.emit(self.design)
+            panel = self._composite_panel
+            panel._record_target_name_history()
+            panel.set_composite_status(
+                f"✅ 已生成综合形状：画布 {self.design.canvas_w_cm:.1f} × "
+                f"{self.design.canvas_h_cm:.1f} cm\n"
+                f"外框素材：{os.path.basename(self.design.pool_outer_material_image or '')}\n"
+                + inner_match_info)
+            self.pool_generate_succeeded.emit()
+            return
         # 4) 触发预览（先于复杂状态消息，确保即使消息失败也能预览）
         self._set_pool_status("正在生成预览图…", is_error=False)
         QApplication.processEvents()

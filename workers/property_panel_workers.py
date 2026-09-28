@@ -286,8 +286,11 @@ class PoolRenderWorker(QThread):
                  user_margins: dict = None,
                  user_multihole_params: dict = None,
                  lshape_params: dict = None,
-                 parent=None):
+                 parent=None,
+                 composite_params: dict = None):
         """
+        composite_params: 综合面板纯数据快照；独立于 L 形及多洞参数。
+
         user_margins: 可选 dict，包含用户手动修改的边距值。
             键: 'top', 'bottom', 'left', 'right'
             值: float (cm)
@@ -323,6 +326,8 @@ class PoolRenderWorker(QThread):
         # 单洞（None 或 active_count<2）→ 零行为影响，旧分支不变。
         self._user_multihole = user_multihole_params or None
         self._lshape_params = lshape_params or None  # L 形挖角参数（None = 矩形/普通水池模式）
+        from copy import deepcopy
+        self._composite_params = deepcopy(composite_params)
         self._log_lines: list[str] = []
 
     def _log(self, msg: str):
@@ -434,6 +439,8 @@ class PoolRenderWorker(QThread):
         # 3) 解析草图（如果提供了）
         #    L 形模式：草图已在 UI 层由 _LShapeParseWorker 解析并经用户确认，
         #    参数已传入 lshape_params，此处不再跑矩形草图解析。
+        if self._composite_params is not None:
+            return False, None, file_w, file_h
         is_lshape = self._lshape_params is not None
         sketch_result = None
         canvas_w_cm = file_w   # 原始文件名外框宽（横边）
@@ -501,7 +508,22 @@ class PoolRenderWorker(QThread):
         design.dpi = 150
         design.outer_margin_cm = 0.0   # 水池默认不额外留白（花纹图本身就是外框）
 
-        if is_lshape:
+        if self._composite_params is not None:
+            from models.design_model import DesignModel
+            params = dict(self._composite_params)
+            params['canvas_w_cm'] = float(params['outer_w_cm']) + TRIM_CM
+            params['canvas_h_cm'] = float(params['outer_h_cm']) + TRIM_CM
+            params['outer_margin_cm'] = 0.0
+            if not params.get('cuts_cm'):
+                raise ValueError("综合形状至少需要 1 处挖角")
+            model = DesignModel(design)
+            model.apply_composite_params(params)
+            design = model.to_design()
+            design.validate()
+            design.pool_outer_material_image = best.path
+            design.outer_bg_image = best.path
+            self._log("综合形状：外框挖角 + 单中心洞（参数来自综合面板）")
+        elif is_lshape:
             self._apply_lshape_params(design, best, canvas_w_cm, canvas_h_cm, TRIM_CM)
         else:
             # 矩形/水池模式：边距 → 多洞 → 外框素材
