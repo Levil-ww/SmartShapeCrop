@@ -38,7 +38,7 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
 
 - 按改动范围跑针对性测试（日常改动用这条，别每次都跑全量）：
 
-  全量 872 条、耗时约 1.5–4 分钟（随机器负载波动）；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
+  全量 889 条、耗时约 1.5–5 分钟（随机器负载波动）；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
   有疑虑再退回全量。**
 
   | 改动位置 | 建议跑的测试 | 用例数 |
@@ -46,10 +46,10 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
   | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 445 + 10 |
   | `core/lshape_border*.py` | `tests/core/test_lshape_border*.py` | 59 |
   | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 68 + 64 |
-  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 107 |
+  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 114 |
   | `models/design_model.py` | `tests/models/` + `tests/core/` | 28 + 445 |
-  | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 146 |
-  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 872 |
+  | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 156 |
+  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 889 |
 
   （另 `tests/` 根目录下 `test_phase0_multihole.py` 4 条，只在全量里跑到。）
 
@@ -90,13 +90,16 @@ python packaging/packageV2.2.3.py
 
 - 基线时间：2026-09-28，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
 - 测试命令：日常按上文「按改动范围跑针对性测试」选目录；发版前或跨层改动跑全量。
-- **当前基线：`872 passed`，0 failed / 0 error**（2026-09-28 实跑，耗时 125.47s）。
+- **当前基线：`889 passed`，0 failed / 0 error**（2026-09-28 实跑，耗时 294.18s）。
   演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → 820 → 832（当日提交自然增长）
   → 842（综合形状阶段 0 新增 `tests/gui/test_composite_panel_wiring.py` 10 条）
   → 852（综合形状 D6 新增 `tests/gui/test_composite_d6_mode_roundtrip.py` 10 条）
   → 859（D8 修复新增 `tests/gui/test_lshape_panel_lazy_guard.py` 7 条）
   → 868（综合形状阶段 3 新增 `tests/sketch_parser/test_composite_ocr_roles.py` 9 条）
-  → **872**（综合形状 P1 Worker 侧支持新增 `tests/integration/test_composite_worker_p1.py` 4 条）。
+  → 872（综合形状 P1 Worker 侧支持新增 `tests/integration/test_composite_worker_p1.py` 4 条）
+  → 879（综合形状 A①② 新增 `tests/integration/test_composite_real_material_samples.py` 3 条
+  + `tests/integration/test_legacy_mode_pixel_goldens.py` 4 条）
+  → **889**（综合形状 A③ 新增 `tests/gui/test_composite_close_retire.py` 10 条，全量实跑确认）。
 - 不带 `--basetemp` 时临时目录落 `%TEMP%`，耗时约 225s 且更易受权限影响；两次数字**不可纵向比**。
 - 当前没有已确认的功能性测试失败。
 - 当前未发现项目级 lint 命令或配置，未运行 lint。
@@ -137,3 +140,13 @@ python packaging/packageV2.2.3.py
 - `scripts/`: 人工诊断和验证脚本，不进 CI。
 - `packaging/`: PyInstaller 打包入口与 spec。
 - `ProductSummary/`: 历史和产品文档。
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+This is a single-context repository; read root `CONTEXT.md` and `docs/adr/` when present. See `docs/agents/domain.md`.
