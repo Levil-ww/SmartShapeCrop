@@ -38,18 +38,18 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
 
 - 按改动范围跑针对性测试（日常改动用这条，别每次都跑全量）：
 
-  全量 852 条、耗时约 1.5–4 分钟（随机器负载波动）；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
+  全量 868 条、耗时约 1.5–4 分钟（随机器负载波动）；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
   有疑虑再退回全量。**
 
   | 改动位置 | 建议跑的测试 | 用例数 |
   |---|---|---|
   | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 445 + 10 |
   | `core/lshape_border*.py` | `tests/core/test_lshape_border*.py` | 59 |
-  | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 59 + 64 |
+  | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 68 + 64 |
   | `services/psd/**`、`services/parser/**` | `tests/integration/` | 103 |
   | `models/design_model.py` | `tests/models/` + `tests/core/` | 28 + 445 |
-  | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 139 |
-  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 852 |
+  | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 146 |
+  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 868 |
 
   （另 `tests/` 根目录下 `test_phase0_multihole.py` 4 条，只在全量里跑到。）
 
@@ -88,12 +88,14 @@ python packaging/packageV2.2.3.py
 
 ## 当前状态
 
-- 基线时间：2026-09-26，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
+- 基线时间：2026-09-28，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
 - 测试命令：日常按上文「按改动范围跑针对性测试」选目录；发版前或跨层改动跑全量。
-- **当前基线：`852 passed`，0 failed / 0 error**（2026-09-26 晚实跑，耗时 104.55s）。
+- **当前基线：`868 passed`，0 failed / 0 error**（2026-09-28 实跑，耗时 120.95s）。
   演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → 820 → 832（当日提交自然增长）
   → 842（综合形状阶段 0 新增 `tests/gui/test_composite_panel_wiring.py` 10 条）
-  → **852**（综合形状 D6 新增 `tests/gui/test_composite_d6_mode_roundtrip.py` 10 条）。
+  → 852（综合形状 D6 新增 `tests/gui/test_composite_d6_mode_roundtrip.py` 10 条）
+  → 859（D8 修复新增 `tests/gui/test_lshape_panel_lazy_guard.py` 7 条）
+  → **868**（综合形状阶段 3 新增 `tests/sketch_parser/test_composite_ocr_roles.py` 9 条）。
 - 不带 `--basetemp` 时临时目录落 `%TEMP%`，耗时约 225s 且更易受权限影响；两次数字**不可纵向比**。
 - 当前没有已确认的功能性测试失败。
 - 当前未发现项目级 lint 命令或配置，未运行 lint。
