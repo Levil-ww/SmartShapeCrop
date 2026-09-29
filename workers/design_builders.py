@@ -314,110 +314,133 @@ def build_multihole_geometry(
                 f"size={hc['w_cm']:.1f}x{hc['h_cm']:.1f} cm"
             )
 
-        # ===== [MULTI-HOLE UI OVERRIDE Add-On 2026-08-29] =====
-        # 用户在多洞参数面板上改动后：UI → _detect_multihole_edits() →
-        # user_multihole → 覆盖每洞 w/h/间距并重算 x/y，保证
-        # 后续每洞素材匹配 (_on_pool_finished_ok) 和预览都使用 UI 最新值。
-        # 单洞（_user_multihole 为 None 或 active_count<2）→ 直接跳过。
-        _ump = user_multihole
-        if isinstance(_ump, dict):
-            _n = int(_ump.get('active_count', 0) or 0)
-            _wh = _ump.get('holes_wh', []) or []
-            _gs = _ump.get('gaps_cm', []) or []
-            if _n >= 2 and len(_wh) >= _n and len(_gs) >= (_n - 1):
-                # layout 优先级：UI 传入 > sketch_result > design.pool_layout_type
-                _lo = (_ump.get('layout_type')
-                       or getattr(sketch_result, 'layout_type', None)
-                       or getattr(design, 'pool_layout_type', None)
-                       or 'horizontal')
-                design.pool_layout_type = _lo
-                # 截取严格 == _n 段数据（避免 UI 传长了误写）
-                _new_wh = [(max(0.0, float(w)), max(0.0, float(h)))
-                           for (w, h) in list(_wh)[:_n]]
-                _new_gaps = [max(0.0, float(g)) for g in list(_gs)[:(_n - 1)]]
-                # 保留原 per-hole 边距 (mt/mb/ml/mr) 作为 y/x 起点的真值
-                # —— 这些来自 sketch 方向锁定，用户没改就不变。
-                _old = list(design.pool_holes_cm or [])
-                def _mt_i(i):
-                    if 0 <= i < len(_old):
-                        v = _old[i].get('mt_cm', 0.0)
-                        if v and v > 0:
-                            return float(v)
-                    return design.inner_margin_top_cm
-                def _mb_i(i):
-                    if 0 <= i < len(_old):
-                        v = _old[i].get('mb_cm', 0.0)
-                        if v and v > 0:
-                            return float(v)
-                    return design.inner_margin_bottom_cm
-                def _ml_i(i, shared_ml):
-                    if 0 <= i < len(_old):
-                        v = _old[i].get('ml_cm', 0.0)
-                        if v and v > 0:
-                            return float(v)
-                    return shared_ml if i == 0 else 0.0
-                def _mr_i(i, shared_mr):
-                    if 0 <= i < len(_old):
-                        v = _old[i].get('mr_cm', 0.0)
-                        if v and v > 0:
-                            return float(v)
-                    return shared_mr if i == _n - 1 else 0.0
-                _ox = design.outer_margin_cm
-                _oy = design.outer_margin_cm
-                _s_ml = design.inner_margin_left_cm
-                _s_mt = design.inner_margin_top_cm
-                _s_mr = design.inner_margin_right_cm
-                _new_holes = []
-                if _lo == 'vertical':
-                    cursor_y = _oy + _mt_i(0)
-                    for i, (_w, _h) in enumerate(_new_wh):
-                        if i > 0:
-                            cursor_y += _new_gaps[i - 1]
-                        hmt = _mt_i(i)
-                        hmb = _mb_i(i)
-                        hml = _ml_i(i, _s_ml)
-                        hmr = _mr_i(i, _s_mr)
-                        _new_holes.append({
-                            'x_cm': _ox + hml,
-                            'y_cm': cursor_y,
-                            'w_cm': _w, 'h_cm': _h,
-                            'mt_cm': hmt, 'mb_cm': hmb,
-                            'ml_cm': hml, 'mr_cm': hmr,
-                        })
-                        cursor_y += _h
-                else:  # horizontal / mixed → 横排语义（占 90% 业务）
-                    cursor_x = _ox + _ml_i(0, _s_ml)
-                    for i, (_w, _h) in enumerate(_new_wh):
-                        if i > 0:
-                            cursor_x += _new_gaps[i - 1]
-                        hmt = _mt_i(i)
-                        hmb = _mb_i(i)
-                        hml = _ml_i(i, _s_ml)
-                        hmr = _mr_i(i, _s_mr)
-                        _new_holes.append({
-                            'x_cm': cursor_x,
-                            'y_cm': _oy + hmt,
-                            'w_cm': _w, 'h_cm': _h,
-                            'mt_cm': hmt, 'mb_cm': hmb,
-                            'ml_cm': hml, 'mr_cm': hmr,
-                        })
-                        cursor_x += _w
-                design.pool_holes_cm = _new_holes
-                design.pool_holes_gaps_cm = _new_gaps
-                design.pool_is_multi_hole = True
+        # ===== [END ADD-ON] =====
+
+    # ===== [MULTI-HOLE UI OVERRIDE Add-On 2026-08-29] =====
+    # 用户在多洞参数面板上改动后：UI → _detect_multihole_edits() →
+    # user_multihole → 覆盖每洞 w/h/间距并重算 x/y，保证
+    # 后续每洞素材匹配 (_on_pool_finished_ok) 和预览都使用 UI 最新值。
+    # 单洞（_user_multihole 为 None 或 active_count<2）→ 直接跳过。
+    # **关键修复**：此段必须在 sketch gate 之外独立运行，确保即使 sketch
+    # 未识别出多洞，用户手动配置的多洞参数仍能生效，使 pool_holes_cm
+    # 被正确填充，从而触发下游的逐洞素材匹配逻辑。
+    _ump = user_multihole
+    if isinstance(_ump, dict):
+        _n = int(_ump.get('active_count', 0) or 0)
+        _wh = _ump.get('holes_wh', []) or []
+        _gs = _ump.get('gaps_cm', []) or []
+        if _n >= 2 and len(_wh) >= _n and len(_gs) >= (_n - 1):
+            # layout 优先级：UI 传入 > sketch_result > design.pool_layout_type
+            _lo = (_ump.get('layout_type')
+                   or getattr(sketch_result, 'layout_type', None)
+                   or getattr(design, 'pool_layout_type', None)
+                   or 'horizontal')
+            design.pool_layout_type = _lo
+            # 截取严格 == _n 段数据（避免 UI 传长了误写）
+            _new_wh = [(max(0.0, float(w)), max(0.0, float(h)))
+                       for (w, h) in list(_wh)[:_n]]
+            _new_gaps = [max(0.0, float(g)) for g in list(_gs)[:(_n - 1)]]
+            # ===== [MULTI-HOLE PER-HOLE MARGIN FIX 2026-09-29] =====
+            # 优先级：UI 传入的每洞边距 > sketch gate 的 pool_holes_cm > 共享 margin。
+            # _detect_multihole_edits() 收集了用户手动修改的 mt/mb/ml/mr，
+            # 此前这些值被 silently discarded，现正确使用。
+            _ui_mt = _ump.get('mt') or []
+            _ui_mb = _ump.get('mb') or []
+            _ui_ml = _ump.get('ml') or []
+            _ui_mr = _ump.get('mr') or []
+            _old = list(design.pool_holes_cm or [])
+
+            def _ui_margin(ui_list, i):
+                """从 UI 传入的每洞边距列表取值，无效则返回 None。"""
+                if 0 <= i < len(ui_list):
+                    v = ui_list[i]
+                    if v is not None and float(v) > 0:
+                        return float(v)
+                return None
+
+            def _old_margin(old_list, i, key):
+                """从 sketch gate 的 pool_holes_cm 取值，无效则返回 None。"""
+                if 0 <= i < len(old_list):
+                    v = old_list[i].get(key, 0.0)
+                    if v and float(v) > 0:
+                        return float(v)
+                return None
+
+            def _mt_i(i):
+                return (_ui_margin(_ui_mt, i)
+                        or _old_margin(_old, i, 'mt_cm')
+                        or design.inner_margin_top_cm)
+
+            def _mb_i(i):
+                return (_ui_margin(_ui_mb, i)
+                        or _old_margin(_old, i, 'mb_cm')
+                        or design.inner_margin_bottom_cm)
+
+            def _ml_i(i, shared_ml):
+                return (_ui_margin(_ui_ml, i)
+                        or _old_margin(_old, i, 'ml_cm')
+                        or (shared_ml if i == 0 else 0.0))
+
+            def _mr_i(i, shared_mr):
+                return (_ui_margin(_ui_mr, i)
+                        or _old_margin(_old, i, 'mr_cm')
+                        or (shared_mr if i == _n - 1 else 0.0))
+            # ===== [END PER-HOLE MARGIN FIX] =====
+            _ox = design.outer_margin_cm
+            _oy = design.outer_margin_cm
+            _s_ml = design.inner_margin_left_cm
+            _s_mt = design.inner_margin_top_cm
+            _s_mr = design.inner_margin_right_cm
+            _new_holes = []
+            if _lo == 'vertical':
+                cursor_y = _oy + _mt_i(0)
+                for i, (_w, _h) in enumerate(_new_wh):
+                    if i > 0:
+                        cursor_y += _new_gaps[i - 1]
+                    hmt = _mt_i(i)
+                    hmb = _mb_i(i)
+                    hml = _ml_i(i, _s_ml)
+                    hmr = _mr_i(i, _s_mr)
+                    _new_holes.append({
+                        'x_cm': _ox + hml,
+                        'y_cm': cursor_y,
+                        'w_cm': _w, 'h_cm': _h,
+                        'mt_cm': hmt, 'mb_cm': hmb,
+                        'ml_cm': hml, 'mr_cm': hmr,
+                    })
+                    cursor_y += _h
+            else:  # horizontal / mixed → 横排语义（占 90% 业务）
+                cursor_x = _ox + _ml_i(0, _s_ml)
+                for i, (_w, _h) in enumerate(_new_wh):
+                    if i > 0:
+                        cursor_x += _new_gaps[i - 1]
+                    hmt = _mt_i(i)
+                    hmb = _mb_i(i)
+                    hml = _ml_i(i, _s_ml)
+                    hmr = _mr_i(i, _s_mr)
+                    _new_holes.append({
+                        'x_cm': cursor_x,
+                        'y_cm': _oy + hmt,
+                        'w_cm': _w, 'h_cm': _h,
+                        'mt_cm': hmt, 'mb_cm': hmb,
+                        'ml_cm': hml, 'mr_cm': hmr,
+                    })
+                    cursor_x += _w
+            design.pool_holes_cm = _new_holes
+            design.pool_holes_gaps_cm = _new_gaps
+            design.pool_is_multi_hole = True
+            log(
+                f"[多洞UI覆盖] 应用用户手动修改的多洞参数: "
+                f"N={_n} layout={_lo} "
+                f"wh={[(round(w,1),round(h,1)) for w,h in _new_wh]} "
+                f"gaps={[round(g,1) for g in _new_gaps]}"
+            )
+            for i, hc in enumerate(_new_holes):
                 log(
-                    f"[多洞UI覆盖] 应用用户手动修改的多洞参数: "
-                    f"N={_n} layout={_lo} "
-                    f"wh={[(round(w,1),round(h,1)) for w,h in _new_wh]} "
-                    f"gaps={[round(g,1) for g in _new_gaps]}"
+                    f"  Hole[{i}] UI覆盖后 x={hc['x_cm']:.1f} y={hc['y_cm']:.1f} "
+                    f"size={hc['w_cm']:.1f}x{hc['h_cm']:.1f} cm"
                 )
-                for i, hc in enumerate(_new_holes):
-                    log(
-                        f"  Hole[{i}] UI覆盖后 x={hc['x_cm']:.1f} y={hc['y_cm']:.1f} "
-                        f"size={hc['w_cm']:.1f}x{hc['h_cm']:.1f} cm"
-                    )
-        # ===== [END UI OVERRIDE Add-On] =====
-    # ===== [END ADD-ON] =====
+    # ===== [END UI OVERRIDE Add-On] =====
 
 
 def apply_pool_geometry(

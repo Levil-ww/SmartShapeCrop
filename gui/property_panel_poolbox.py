@@ -208,6 +208,9 @@ class _PoolBoxMixin:
             # 没有识别结果时仍提供可编辑的最小多洞配置。
             if int(getattr(self, '_mh_active_count', 0) or 0) < 2:
                 self._mh_active_count = 0
+                # ===== [MULTI-HOLE USER-EDIT GUARD 2026-09-29] =====
+                # 首次进入多洞模式：清除编辑标记，允许后续草图解析填充默认值。
+                self._mh_user_edited = False
                 self._mh_add_hole()
                 self._mh_add_hole()
                 # _mh_add_hole 复制“前一个间距”时，第二个洞对应间距索引为 0。
@@ -224,6 +227,8 @@ class _PoolBoxMixin:
             if hasattr(self, '_gb_multihole'):
                 self._gb_multihole.hide()
             self._set_multi_hole_row_visibility(0)
+            # ===== [MULTI-HOLE USER-EDIT GUARD 2026-09-29] 切换单洞时清除编辑标记 =====
+            self._mh_user_edited = False
             self._set_pool_status("已切换为单洞模式。")
 
 

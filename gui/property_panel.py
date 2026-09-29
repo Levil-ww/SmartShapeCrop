@@ -398,6 +398,22 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 self._mh_sp_gaps.append(spg)
                 self._mh_rows_widgets.append((lab_gap, spg))
 
+        # ===== [MULTI-HOLE USER-EDIT GUARD 2026-09-29] =====
+        # 标记用户是否手动修改过多洞 SpinBox。草图解析回调在回填 UI 时检查此标记，
+        # 若用户已手动编辑则不覆盖，避免异步解析结果吞掉用户输入。
+        self._mh_user_edited = False
+
+        def _on_mh_spinbox_changed(_value):
+            self._mh_user_edited = True
+
+        for _sp_list in (self._mh_sp_hole_w, self._mh_sp_hole_h,
+                         self._mh_sp_mt, self._mh_sp_mb,
+                         self._mh_sp_ml, self._mh_sp_mr,
+                         self._mh_sp_gaps):
+            for _sp in _sp_list:
+                _sp.valueChanged.connect(_on_mh_spinbox_changed)
+        # ===== [END USER-EDIT GUARD] =====
+
         self._set_multi_hole_row_visibility(0)
         self._gb_multihole.hide()
         self._inner_layout.addWidget(self._gb_multihole)
@@ -905,10 +921,16 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             lab.setVisible(show)
             wgt.setVisible(show)
 
-    def _fill_multi_hole_ui(self, holes_cm: list, gaps_cm: list, layout: str = 'horizontal'):
+    def _fill_multi_hole_ui(self, holes_cm: list, gaps_cm: list, layout: str = 'horizontal',
+                            force: bool = False):
         """PoolWorker 结束后：把 design.pool_holes_cm/gaps 填到多洞 SpinBox。
 
         同时：(1) 显示 GroupBox + 对应行；(2) 写 layout 标记到 design 供 _collect 读取。
+
+        force=True 时（来自 PoolWorker 结果回调）：始终覆盖 SpinBox 值，因为
+        此时 design.pool_holes_cm 已经融合了用户手动编辑（UI override block）。
+        force=False 时（来自草图解析回调）：若用户已手动编辑过 SpinBox，
+        则跳过值覆盖，仅更新可见性/标题等结构信息，保护用户输入不被异步解析吞掉。
         """
         try:
             n = len(holes_cm) if holes_cm else 0
@@ -941,6 +963,11 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 self.design.pool_layout_type = (layout or 'horizontal')
             except Exception:
                 pass
+            # ===== [MULTI-HOLE USER-EDIT GUARD 2026-09-29] =====
+            # 草图解析回调（force=False）：若用户已手动编辑，跳过值覆盖保护输入。
+            # Worker 结果回调（force=True）：始终覆盖，因为 design 已融合用户编辑。
+            if not force and getattr(self, '_mh_user_edited', False):
+                return
             # 批量填值：blockSignals 避免无谓的预览重算
             signals_blocked = []
             def _blk(sp):
@@ -961,6 +988,9 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
                 _blk(self._mh_sp_gaps[i]); self._mh_sp_gaps[i].setValue(max(0.0, float(gaps_cm[i])))
             for sp in signals_blocked:
                 sp.blockSignals(False)
+            # 草图解析回填完成后，清除编辑标记（允许后续解析正常更新）
+            if not force:
+                self._mh_user_edited = False
         except Exception as e:
             import logging as _logging
             _logging.getLogger(__name__).warning(f"[Multi-hole UI] 回填多洞参数失败: {e}")
@@ -972,6 +1002,8 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             # 保证：隐藏后再点"应用"时 _collect 多洞分支完全跳过，不再把 8 个 SpinBox
             # 写回 design，避免状态栏出现 洞3..洞8 (0x0) 等冗余。
             self._mh_active_count = 0
+            # ===== [MULTI-HOLE USER-EDIT GUARD 2026-09-29] 清除编辑标记 =====
+            self._mh_user_edited = False
             if hasattr(self, '_gb_multihole'):
                 self._gb_multihole.hide()
             self._set_multi_hole_row_visibility(0)

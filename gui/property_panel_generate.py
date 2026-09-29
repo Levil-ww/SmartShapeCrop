@@ -372,6 +372,7 @@ class _GenerateMixin:
                         design.pool_holes_cm,
                         list(getattr(design, 'pool_holes_gaps_cm', []) or []),
                         layout_m,
+                        force=True,
                     )
                 else:
                     # 用户主动选择多洞时保留入口和参数；自动识别失败不应
