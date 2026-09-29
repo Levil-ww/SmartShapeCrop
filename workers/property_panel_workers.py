@@ -520,9 +520,7 @@ class PoolRenderWorker(QThread):
             return d
         return BUILDERS[request.mode].build(request, {
             "new_design": new_design,
-            "lshape": self._apply_lshape_params,
-            "pool": self._apply_rect_hole_params,
-            "composite": lambda req: apply_composite_geometry(req, self._log),
+            "log": self._log,
         })
 
     def _apply_lshape_params(self, design, best, canvas_w_cm, canvas_h_cm, TRIM_CM):
