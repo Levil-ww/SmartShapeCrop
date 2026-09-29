@@ -316,13 +316,30 @@ class DesignModel:
             max(0.0, float(_mh['gaps'][i])) for i in range(n_gaps)
         ]
         old_holes = getattr(d, 'pool_holes_cm', []) or []
-        shared_mt = d.inner_margin_top_cm
-        shared_mb = d.inner_margin_bottom_cm
-        shared_ml = d.inner_margin_left_cm
-        shared_mr = d.inner_margin_right_cm
-        _MATERIAL_KEYS = ('inner_material_path', '_cached_inner_image',
-                          '_src_design_w_cm', '_src_design_h_cm')
+        mt_i, mb_i, ml_i, mr_i = self._read_hole_margins(
+            _mh, old_holes, d, n_holes,
+        )
+        d.pool_holes_cm = self._layout_holes(
+            layout, ox_cm, oy_cm, new_wh, new_gaps,
+            mt_i, mb_i, ml_i, mr_i,
+            d.inner_margin_top_cm, d.inner_margin_bottom_cm,
+            d.inner_margin_left_cm, d.inner_margin_right_cm,
+            old_holes,
+        )
+        d.pool_holes_gaps_cm = new_gaps
 
+    @staticmethod
+    def _read_hole_margins(
+        _mh: dict, old_holes: list, d: CropDesign, n_holes: int,
+    ) -> tuple:
+        """返回 (mt_i, mb_i, ml_i, mr_i) 四个逐洞边距读取闭包。
+
+        每个闭包签名 ``(i, default) -> float``，按优先级回退：
+          mt_i: UI 值 → old_holes → d._mh_hole_margins → default（三级）
+          mb_i: UI 值 → old_holes → default（二级）
+          ml_i: UI 值 → old_holes → (default if 首洞 else 0.0)
+          mr_i: UI 值 → old_holes → (default if 末洞 else 0.0)
+        """
         def _mt_i(i, default):
             vals = _mh.get('mt') or []
             if 0 <= i < len(vals) and vals[i]:
@@ -376,48 +393,68 @@ class DesignModel:
                     return v
             return default if i == n_holes - 1 else 0.0
 
-        def _inherit_material(i):
-            src = (old_holes[i]
-                   if 0 <= i < len(old_holes) and isinstance(old_holes[i], dict)
-                   else {})
-            return {k: src[k] for k in _MATERIAL_KEYS if k in src}
+        return _mt_i, _mb_i, _ml_i, _mr_i
 
-        def _build_hole(x_cm, y_cm, wv, hv, hmt, hmb, hml, hmr, i):
-            hole = {
-                'x_cm': x_cm, 'y_cm': y_cm,
-                'w_cm': wv, 'h_cm': hv,
-                'mt_cm': hmt, 'mb_cm': hmb,
-                'ml_cm': hml, 'mr_cm': hmr,
-            }
-            hole.update(_inherit_material(i))
-            return hole
+    @staticmethod
+    def _build_hole_dict(
+        x_cm: float, y_cm: float, wv: float, hv: float,
+        hmt: float, hmb: float, hml: float, hmr: float,
+        i: int, old_holes: list,
+    ) -> dict:
+        """构建单洞字典，从 old_holes 继承素材键。"""
+        hole = {
+            'x_cm': x_cm, 'y_cm': y_cm,
+            'w_cm': wv, 'h_cm': hv,
+            'mt_cm': hmt, 'mb_cm': hmb,
+            'ml_cm': hml, 'mr_cm': hmr,
+        }
+        _MATERIAL_KEYS = ('inner_material_path', '_cached_inner_image',
+                          '_src_design_w_cm', '_src_design_h_cm')
+        src = (old_holes[i]
+               if 0 <= i < len(old_holes) and isinstance(old_holes[i], dict)
+               else {})
+        hole.update({k: src[k] for k in _MATERIAL_KEYS if k in src})
+        return hole
 
+    @staticmethod
+    def _layout_holes(
+        layout: str, ox_cm: float, oy_cm: float,
+        new_wh: list, new_gaps: list,
+        mt_i, mb_i, ml_i, mr_i,
+        shared_mt: float, shared_mb: float,
+        shared_ml: float, shared_mr: float,
+        old_holes: list,
+    ) -> list:
+        """按布局方向排列洞位，返回 hole dict 列表。"""
         new_holes_cm = []
         if layout == 'vertical':
-            cursor_y = oy_cm + _mt_i(0, shared_mt)
+            cursor_y = oy_cm + mt_i(0, shared_mt)
             for i, (wv, hv) in enumerate(new_wh):
                 if i > 0 and i - 1 < len(new_gaps):
                     cursor_y += new_gaps[i - 1]
-                hmt = _mt_i(i, shared_mt)
-                hmb = _mb_i(i, shared_mb)
-                hml = _ml_i(i, shared_ml)
-                hmr = _mr_i(i, shared_mr)
+                hmt = mt_i(i, shared_mt)
+                hmb = mb_i(i, shared_mb)
+                hml = ml_i(i, shared_ml)
+                hmr = mr_i(i, shared_mr)
                 new_holes_cm.append(
-                    _build_hole(ox_cm + hml, cursor_y, wv, hv, hmt, hmb, hml, hmr, i)
+                    DesignModel._build_hole_dict(
+                        ox_cm + hml, cursor_y, wv, hv, hmt, hmb, hml, hmr, i, old_holes,
+                    )
                 )
                 cursor_y += hv
         else:
-            cursor_x = ox_cm + _ml_i(0, shared_ml)
+            cursor_x = ox_cm + ml_i(0, shared_ml)
             for i, (wv, hv) in enumerate(new_wh):
                 if i > 0 and i - 1 < len(new_gaps):
                     cursor_x += new_gaps[i - 1]
-                hmt = _mt_i(i, shared_mt)
-                hmb = _mb_i(i, shared_mb)
-                hml = _ml_i(i, shared_ml)
-                hmr = _mr_i(i, shared_mr)
+                hmt = mt_i(i, shared_mt)
+                hmb = mb_i(i, shared_mb)
+                hml = ml_i(i, shared_ml)
+                hmr = mr_i(i, shared_mr)
                 new_holes_cm.append(
-                    _build_hole(cursor_x, oy_cm + hmt, wv, hv, hmt, hmb, hml, hmr, i)
+                    DesignModel._build_hole_dict(
+                        cursor_x, oy_cm + hmt, wv, hv, hmt, hmb, hml, hmr, i, old_holes,
+                    )
                 )
                 cursor_x += wv
-        d.pool_holes_cm = new_holes_cm
-        d.pool_holes_gaps_cm = new_gaps
+        return new_holes_cm
