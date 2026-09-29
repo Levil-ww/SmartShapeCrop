@@ -151,44 +151,27 @@ class MultiHoleParseResult:
 # ======================================================================
 
 
-def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.0):
-    """从候选矩形中分类出 1 外框 + N 内框，返回 (outer, inners, layout)。
+def _strictly_contains(a, b):
+    """a 是否严格包含 b（四边全包含且至少一条严格不同）。"""
+    ax, ay, aw, ah = a[:4]
+    bx, by, bw, bh = b[:4]
+    if not (ax <= bx and ay <= by and ax + aw >= bx + bw and ay + ah >= by + bh):
+        return False
+    return not (ax == bx and ay == by and aw == bw and ah == bh)
 
-    三阶段算法（抗「联合包围盒/双洞 hull」误识别）：
-      Phase A. 选外框：面积最大的矩形
-      Phase B. 收集全部满足「严格嵌套 + 面积比例合理」的候选为 pool
-      Phase C. 从 pool 中剔除「包含 ≥2 个其他 pool 成员」的 hull（联合包围盒）
-      Phase D. 从去 hull 的 pool 中贪心地选一组「互不重叠」的真实洞，
-               优先选面积接近的（真实洞间面积差通常 ≤50%）
-      Phase D.5 面积预过滤 + 同洞分割否决
-      Phase D.6 洞数一致性验证（剔除远小于真实洞的噪点矩形）
 
-    Args:
-        all_rects: _find_all_rectangles 返回的列表，每项 (x,y,w,h,score,area)
-        target_outer_w_cm: 目标外框宽度（cm），可选，用于 Phase D.6 几何否决
-        target_outer_h_cm: 目标外框高度（cm），可选，用于 Phase D.6 几何否决
+def _collect_candidate_pool(all_rects, best_outer_idx):
+    """Phase A+B：选外框 + 收集严格嵌套且面积比例合理的候选池。
 
     Returns:
-        (outer_rect or None, list[inner_rect], layout_str)
-        其中 outer_rect / inner_rect 均为 (x,y,w,h) 四元组
-        当无法满足多洞（≥2 个内框）时，返回 (None, [], '')，上层走单洞路径
+        (ox, oy, ow, oh, area_outer, pool)
+        pool 每项: (ix, iy, iw, ih, area, ratio, src_idx)
     """
-    if len(all_rects) < 3:
-        # 至少需要 1 外框 + 2 内框；不够则标记为单洞，交给现有 7 步法
-        logger.debug(f"[MH Step1-2] quick_fail: all_rects={len(all_rects)} < 3")
-        return None, [], ''
-
-    # ========== Phase A: 选外框 ==========
-    # all_rects 已按面积降序排序 → 面积最大者作为首选外框
-    best_outer = all_rects[0]
-    best_outer_idx = 0
+    best_outer = all_rects[best_outer_idx]
     ox, oy, ow, oh = best_outer[:4]
     area_outer = ow * oh
 
-    # ========== Phase B: 收集 pool ==========
-    # 所有严格嵌套 + 面积比例合理的候选，不管是否互相重叠（先攒入池）
-    # 保留原始 idx 以便诊断日志
-    pool = []            # list[(ix, iy, iw, ih, area, ratio, src_idx)]
+    pool = []
     n_show = min(len(all_rects), 10)
     for idx in range(len(all_rects)):
         if idx == best_outer_idx:
@@ -198,48 +181,29 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
         area_inner = iw * ih
         ratio = area_inner / max(1, area_outer)
         nested_ok = (ox < ix and oy < iy and ix + iw < ox + ow and iy + ih < oy + oh)
-        ratio_ok = (0.01 <= ratio <= 0.85)  # 放宽：1%~85%（真实洞 ~10%，hull ~30% 均在此区间）
+        ratio_ok = 0.01 <= ratio <= 0.85
         if idx < n_show:
             logger.debug(f"[MH Step1-2] 候选[{idx}] xywh={(ix,iy,iw,ih)} "
                          f"area={area_inner} ratio={ratio:.3f} "
                          f"nested={nested_ok} ratio_ok={ratio_ok}")
-        if not nested_ok:
-            continue
-        if not ratio_ok:
-            continue
-        pool.append((ix, iy, iw, ih, area_inner, ratio, idx))
+        if nested_ok and ratio_ok:
+            pool.append((ix, iy, iw, ih, area_inner, ratio, idx))
 
     logger.debug(f"[MH Step1-2] PhaseB pool 规模: {len(pool)} / 总候选 {len(all_rects)}")
+    return ox, oy, ow, oh, area_outer, pool
 
-    if len(pool) < 2:
-        logger.info(f"[MH Step1-2] 非多洞：pool 仅 {len(pool)} 项（<2）→ 回退单洞")
-        return None, [], ''
 
-    # ========== Phase C: 剔除 hull ==========
-    # 定义：若矩形 A **严格包含** 矩形 B 且 A≠B，则称 A「含」B。
-    # 若某候选 pool[i] 含 ≥2 个其他 pool 成员 → 判定为双洞(或多洞)的联合包围盒 → 剔除。
-    # 「严格包含」判定：A.x ≤ B.x ∧ A.y ≤ B.y ∧ A.x+A.w ≥ B.x+B.w ∧ A.y+A.h ≥ B.y+B.h
-    #   且 4 条边至少有 1 条是严格不同（防止自包含/全等）。
-    def _strictly_contains(a, b):
-        ax, ay, aw, ah = a[:4]
-        bx, by, bw, bh = b[:4]
-        edges = (ax <= bx, ay <= by, ax + aw >= bx + bw, ay + ah >= by + bh)
-        if not all(edges):
-            return False
-        # 四条边全相等 → 是同一个/重合矩形，不算包含
-        if ax == bx and ay == by and aw == bw and ah == bh:
-            return False
-        return True
+def _remove_hull_candidates(pool):
+    """Phase C：剔除包含 ≥2 个其他 pool 成员的联合包围盒。
 
+    若去 hull 后不足 2 项，回退保留原始 pool（容忍 1 个包含）。
+    """
     hull_mask = [False] * len(pool)
     for i in range(len(pool)):
-        a = pool[i]
-        contains_count = 0
-        for j in range(len(pool)):
-            if i == j:
-                continue
-            if _strictly_contains(a, pool[j]):
-                contains_count += 1
+        contains_count = sum(
+            1 for j in range(len(pool))
+            if i != j and _strictly_contains(pool[i], pool[j])
+        )
         if contains_count >= 2:
             hull_mask[i] = True
             logger.info(f"[MH Step1-2] 剔除 hull 候选[{pool[i][6]}] xywh={pool[i][:4]} "
@@ -248,79 +212,59 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
     pool_filtered = [pool[i] for i in range(len(pool)) if not hull_mask[i]]
     logger.debug(f"[MH Step1-2] PhaseC 去 hull 后 pool: {len(pool_filtered)} 项")
 
-    # 若去 hull 后成员不足 2，回退一次：容忍 1 个包含（两洞之一+少许标注box重合情形）
     if len(pool_filtered) < 2:
         pool_filtered = pool[:]
         logger.debug(f"[MH Step1-2] PhaseC 回退：保留 hull 并改用面积相似度优先选洞")
+    return pool_filtered
 
-    # ========== Phase D: 贪心选互不重叠的真实洞 ==========
-    # 排序策略：优先 area_ratio 在 [0.05, 0.50] 的真实洞区间（联合 hull 一般在 ~30%
-    #   但单洞在 ~10%）→ 若都在此区间，则按「面积最接近平均值」排序，让真正的多洞
-    #   （等大）优先被选；再依次做 overlap 剔除。
+
+def _select_non_overlapping_holes(pool_filtered):
+    """Phase D：贪心选互不重叠的真实洞（最多 6 个）。
+
+    排序优先级：sweet_spot 区间 → 面积接近均值 → 面积降序。
+    """
     area_avg = sum(p[4] for p in pool_filtered) / max(1, len(pool_filtered))
 
     def _pick_key(p):
-        ix, iy, iw, ih, area, ratio, src = p
-        sweet_spot = 1.0 if SWEET_SPOT_MIN_RATIO <= ratio <= SWEET_SPOT_MAX_RATIO else 0.0
-        sim_to_avg = -abs(area - area_avg) / max(1.0, area_avg)   # 越接近 avg 越大
-        return (sweet_spot, sim_to_avg, -area)   # sweet_spot 是最高优先级
+        sweet_spot = 1.0 if SWEET_SPOT_MIN_RATIO <= p[5] <= SWEET_SPOT_MAX_RATIO else 0.0
+        sim_to_avg = -abs(p[4] - area_avg) / max(1.0, area_avg)
+        return (sweet_spot, sim_to_avg, -p[4])
 
     ordered = sorted(pool_filtered, key=_pick_key, reverse=True)
 
-    inners4 = []
+    inners = []
     used_keys = set()
     for p in ordered:
         ix, iy, iw, ih = p[:4]
         overlap = False
         for ek in used_keys:
             ex, ey, ew, eh = ek
-            x_overlap = max(0, min(ix + iw, ex + ew) - max(ix, ex))
-            y_overlap = max(0, min(iy + ih, ey + eh) - max(iy, ey))
-            # 允许 25px² 的浮点误差；真实洞应该完全不相交
-            if x_overlap * y_overlap > 25:
+            x_ov = max(0, min(ix + iw, ex + ew) - max(ix, ex))
+            y_ov = max(0, min(iy + ih, ey + eh) - max(iy, ey))
+            if x_ov * y_ov > 25:
                 overlap = True
                 break
         if overlap:
             continue
-        inners4.append((ix, iy, iw, ih))
+        inners.append((ix, iy, iw, ih))
         used_keys.add((ix, iy, iw, ih))
-        if len(inners4) >= 6:
+        if len(inners) >= 6:
             break
+    return inners
 
-    if len(inners4) < 2:
-        logger.info(f"[MH Step1-2] 非多洞：最终选出内框 {len(inners4)} 个（<2）→ 回退单洞")
-        return None, [], ''
 
-    # ========== Phase D.5: 简化单洞否决层 [FIX 2026-08-31] ==========
-    #
-    # 背景：前版 VETO 逻辑在"真实多洞 + OCR噪点矩形共存"时会误否决。
-    # 真实草图有 11 个矩形候选，Phase D 选出 3+ 个，其中 OCR 文本框/标注框
-    # 与真实洞在几何上重叠，导致 gap=0 的 pair 被错误检测。
-    #
-    # 新方案（2步，更简单更鲁棒）：
-    #
-    # Step 1 - 面积预过滤（核心洞察）:
-    #   对 Phase D 选出的 inners4 按面积降序排列，只保留面积比 ≥ 3% 的矩形。
-    #   理由：真实洞的面积比通常在 5%~30% 之间；OCR 文本框、箭头端点、
-    #   装饰矩形等噪点几乎都 < 2%。这一层直接消除 99% 的噪点干扰。
-    #
-    # Step 2 - 最大两洞间距检查:
-    #   取过滤后最大的两个矩形（即真实洞），在它们的主轴上计算 gap。
-    #   若 gap < min(洞尺寸)×3% AND gap < 外框主轴×0.5% → 它们是同一个洞
-    #   被分割（单洞草图）→ 否决；否则确认为真实多洞 → 通过。
-    #
-    # 为什么只用"最大两洞"：
-    #   - 真实多洞的每个洞面积都是显著的
-    #   - 噪点矩形即使通过了 Step 1 也不会比真实洞大
-    #   - 只需检查最大的两个，足以区分"单洞分割"vs"真实多洞"
-    # =================================================================
+def _apply_area_pre_filter(inners, ow, oh):
+    """Phase D.5：面积预过滤 + 最大两洞间距否决。
 
+    Step 1: 剔除面积比 < MIN_HOLE_AREA_RATIO 的噪点候选。
+    Step 2: 最大两洞主轴 gap < 阈值 → 判定同洞分割 → 否决。
+
+    Returns:
+        (filtered_inners, passed: bool)
+    """
     _outer_area = ow * oh
+    inners_by_area = sorted(inners, key=lambda r: r[2] * r[3], reverse=True)
 
-    # Step 1: 按面积降序排列 inners4
-    inners_by_area = sorted(inners4, key=lambda r: r[2] * r[3], reverse=True)
-
-    # Step 2: 面积预过滤，只保留面积比 ≥ 3% 的候选
     substantial = []
     for r in inners_by_area:
         area = r[2] * r[3]
@@ -334,24 +278,20 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
             )
 
     logger.info(
-        f"[MH Step1-2 PhaseD.5] 面积预过滤: {len(inners4)} → {len(substantial)} 个"
+        f"[MH Step1-2 PhaseD.5] 面积预过滤: {len(inners)} → {len(substantial)} 个"
         f"（阈值 {MIN_HOLE_AREA_RATIO*100:.0f}%）"
     )
 
-    # 过滤后不足 2 个 → 肯定不是多洞
     if len(substantial) < 2:
         logger.info("[MH Step1-2 PhaseD.5 ⇒ 回退单洞] 面积预过滤后 < 2 个有效候选")
-        return None, [], ''
+        return substantial, False
 
-    # Step 3: 取最大的两个候选，计算主轴间距
-    rA = substantial[0]   # 最大
-    rB = substantial[1]   # 次大
+    rA, rB = substantial[0], substantial[1]
     ax, ay, aw2, ah2 = rA
     bx, by, bw2, bh2 = rB
     ca_x, ca_y = ax + aw2 / 2, ay + ah2 / 2
     cb_x, cb_y = bx + bw2 / 2, by + bh2 / 2
 
-    # 中心距判定主轴
     dx_abs = abs(cb_x - ca_x)
     dy_abs = abs(cb_y - ca_y)
     if dx_abs >= dy_abs:
@@ -370,9 +310,6 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
         f"hole_dim={hole_dim_main:.1f}px outer_span={outer_span_main:.1f}px"
     )
 
-    # Step 4: 间距否决
-    # 若两洞在主轴上几乎贴着（gap 远小于洞尺寸）→ 判定为同洞分割
-    # 条件：gap < min(洞尺寸)×5% AND gap < 外框主轴×2%（需同时满足）
     if (gap_main < hole_dim_main * GAP_VETO_HOLE_RATIO and
             gap_main < outer_span_main * GAP_VETO_OUTER_RATIO):
         logger.warning(
@@ -380,123 +317,169 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
             f"gap_{main_axis}={gap_main:.1f} < hole_dim×3%={hole_dim_main*GAP_VETO_HOLE_RATIO:.1f} "
             f"AND < outer×0.5%={outer_span_main*GAP_VETO_OUTER_RATIO:.1f} → 同洞被分割"
         )
-        return None, [], ''
+        return substantial, False
 
-    # Step 5: 否决通过 → 确认真多洞，用过滤后的 substantial 列表替换 inners4
-    # 但要保持原来的排序结构，让 Phase E 自己再做布局排序
-    inners4 = substantial
     logger.info(
         f"[MH Step1-2 PhaseD.5 通过] 面积过滤 {len(substantial)} 个 + "
         f"最大两洞 gap={gap_main:.1f}px → 确认真多洞"
     )
+    return substantial, True
 
-    # ========== Phase D.6: 洞数一致性验证 [FIX 2026-09-05] ==========
-    #
-    # 背景：草图明明只有 2 个洞却识别出 3 个（额外矩形是 OCR 标注框、
-    # 装饰线框等噪点）。Phase D.5 面积过滤阈值 3% 无法完全区分。
-    #
-    # 新方案（纯 ADD-ON，不修改 Phase A-E 任何逻辑）：
-    #
-    # Step 1 - 面积差距否决:
-    #   当 substantial 列表 >= 3 时，按面积降序排列，计算最大候选的面积比
-    #   ratio_max。如果某候选面积比 < ratio_max × 0.25 → 它相对最大洞太小，
-    #   高度疑似噪点（真实洞面积差通常 ≤ 50%）→ 剔除。
-    #
-    # Step 2 - 目标尺寸几何否决（可选，有 target 时启用）:
-    #   若提供了 target_outer_w_cm/h_cm，用像素→cm 换算比估算每个洞的 cm 尺寸。
-    #   横排：mt + Σh_w + Σgap + ml + mr ≈ outer_w
-    #   若最大可能的 N 洞总宽（洞宽和 × 1.1 + gap × (N-1)）超出 outer_w 120%
-    #   → 洞数 N 减 1 并重试（但只做一次，避免过度削减）。
-    # =================================================================
-    if len(inners4) >= 3:
-        _outer_area_check = ow * oh
-        _inners_by_area = sorted(inners4, key=lambda r: r[2] * r[3], reverse=True)
-        _ratio_max = (_inners_by_area[0][2] * _inners_by_area[0][3]) / max(1, _outer_area_check)
 
-        _pruned = []
-        for _r in _inners_by_area:
-            _a = _r[2] * _r[3]
-            _ratio = _a / max(1, _outer_area_check)
-            if _ratio >= _ratio_max * D6_MIN_RATIO_RATIO:
-                _pruned.append(_r)
-            else:
-                logger.info(
-                    f"[MH Step1-2 PhaseD.6 面积差距否决] 剔除候选 rect={_r} "
-                    f"ratio={_ratio:.4f} < max_ratio×0.25={_ratio_max * D6_MIN_RATIO_RATIO:.4f}"
-                )
+def _apply_consistency_check(inners, ow, oh, target_outer_w_cm, target_outer_h_cm):
+    """Phase D.6：洞数一致性验证（面积差距否决 + 目标尺寸几何否决）。
 
-        if len(_pruned) >= 2:
-            if len(_pruned) < len(inners4):
-                logger.info(
-                    f"[MH Step1-2 PhaseD.6 后] {len(inners4)} → {len(_pruned)} 个"
-                )
-                inners4 = _pruned
-            # 目标尺寸几何否决（仅当 target 有值且削减后仍 >= 3 时，再尝试进一步削减）
-            if len(inners4) >= 3 and target_outer_w_cm > 0 and target_outer_h_cm > 0:
-                # 像素→cm 换算比
-                _px_per_cm_w = ow / max(1.0, target_outer_w_cm)
-                _px_per_cm_h = oh / max(1.0, target_outer_h_cm)
-                _px_per_cm = (_px_per_cm_w + _px_per_cm_h) / 2.0
+    Step 1: 面积比 < max_ratio × D6_MIN_RATIO_RATIO → 疑似噪点 → 剔除。
+    Step 2: 有 target 时，像素→cm 换算估算总宽/高是否超出外框 120% → 削减。
 
-                # 判断主轴（用中心坐标）
-                _cxs_d6 = [r[0] + r[2] / 2 for r in inners4]
-                _cys_d6 = [r[1] + r[3] / 2 for r in inners4]
-                _cx_span = max(_cxs_d6) - min(_cxs_d6)
-                _cy_span = max(_cys_d6) - min(_cys_d6)
+    Returns:
+        (checked_inners, passed: bool)
+    """
+    if len(inners) < 3:
+        return inners, True
 
-                _N = len(inners4)
-                _total_hw_cm = sum(r[2] / _px_per_cm for r in inners4)
-                # 假设 gap 平均 10cm（保守估计，实际 gap 通常在 5~20cm）
-                _total_gap_cm = EST_AVG_GAP_CM * (_N - 1)
+    _outer_area = ow * oh
+    _inners_by_area = sorted(inners, key=lambda r: r[2] * r[3], reverse=True)
+    _ratio_max = (_inners_by_area[0][2] * _inners_by_area[0][3]) / max(1, _outer_area)
 
-                if _cx_span > _cy_span:  # 横排
-                    _cm_span_check = _total_hw_cm + _total_gap_cm
-                    _outer_w_cm = ow / _px_per_cm_w
-                    _cap = _outer_w_cm * 1.20
-                    if _cm_span_check > _cap:
-                        logger.warning(
-                            f"[MH Step1-2 PhaseD.6 几何否决] 横排 {_N} 洞: "
-                            f"洞宽总和 {_total_hw_cm:.1f} + gap估计 {_total_gap_cm:.1f} "
-                            f"= {_cm_span_check:.1f} > 外框宽 {_outer_w_cm:.1f}×1.2={_cap:.1f} "
-                            f"→ 削减为 {_N - 1} 洞"
-                        )
-                        inners4 = inners4[:-1]  # 去掉最小的那个（已按面积降序排序）
-                else:  # 竖排
-                    _total_hh_cm = sum(r[3] / _px_per_cm for r in inners4)
-                    _cm_span_check = _total_hh_cm + _total_gap_cm
-                    _outer_h_cm = oh / _px_per_cm_h
-                    _cap = _outer_h_cm * 1.20
-                    if _cm_span_check > _cap:
-                        logger.warning(
-                            f"[MH Step1-2 PhaseD.6 几何否决] 竖排 {_N} 洞: "
-                            f"洞高总和 {_total_hh_cm:.1f} + gap估计 {_total_gap_cm:.1f} "
-                            f"= {_cm_span_check:.1f} > 外框高 {_outer_h_cm:.1f}×1.2={_cap:.1f} "
-                            f"→ 削减为 {_N - 1} 洞"
-                        )
-                        inners4 = inners4[:-1]
-
-        # 削减后不足 2 → 回退单洞
-        if len(inners4) < 2:
-            logger.warning(
-                f"[MH Step1-2 PhaseD.6 ⇒ 回退单洞] 洞数削减后 < 2 个"
+    _pruned = []
+    for _r in _inners_by_area:
+        _ratio = (_r[2] * _r[3]) / max(1, _outer_area)
+        if _ratio >= _ratio_max * D6_MIN_RATIO_RATIO:
+            _pruned.append(_r)
+        else:
+            logger.info(
+                f"[MH Step1-2 PhaseD.6 面积差距否决] 剔除候选 rect={_r} "
+                f"ratio={_ratio:.4f} < max_ratio×0.25={_ratio_max * D6_MIN_RATIO_RATIO:.4f}"
             )
-            return None, [], ''
 
-    # ========== Phase E: 布局分类 + 排序 ==========
-    cxs = [ix + iw / 2 for ix, iy, iw, ih in inners4]
-    cys = [iy + ih / 2 for ix, iy, iw, ih in inners4]
+    if len(_pruned) < 2:
+        return inners, True
+
+    if len(_pruned) < len(inners):
+        logger.info(f"[MH Step1-2 PhaseD.6 后] {len(inners)} → {len(_pruned)} 个")
+    inners = _pruned
+
+    if len(inners) >= 3 and target_outer_w_cm > 0 and target_outer_h_cm > 0:
+        inners = _geometric_veto(inners, ow, oh, target_outer_w_cm, target_outer_h_cm)
+
+    if len(inners) < 2:
+        logger.warning("[MH Step1-2 PhaseD.6 ⇒ 回退单洞] 洞数削减后 < 2 个")
+        return inners, False
+    return inners, True
+
+
+def _geometric_veto(inners, ow, oh, target_outer_w_cm, target_outer_h_cm):
+    """Phase D.6 Step 2：目标尺寸几何否决——估算 N 洞总尺寸是否超出外框 120%。"""
+    _px_per_cm_w = ow / max(1.0, target_outer_w_cm)
+    _px_per_cm_h = oh / max(1.0, target_outer_h_cm)
+    _px_per_cm = (_px_per_cm_w + _px_per_cm_h) / 2.0
+
+    _cxs = [r[0] + r[2] / 2 for r in inners]
+    _cys = [r[1] + r[3] / 2 for r in inners]
+    _cx_span = max(_cxs) - min(_cxs)
+    _cy_span = max(_cys) - min(_cys)
+
+    _N = len(inners)
+    _total_gap_cm = EST_AVG_GAP_CM * (_N - 1)
+
+    if _cx_span > _cy_span:
+        _total_hw_cm = sum(r[2] / _px_per_cm for r in inners)
+        _cm_span = _total_hw_cm + _total_gap_cm
+        _outer_w_cm = ow / _px_per_cm_w
+        _cap = _outer_w_cm * 1.20
+        if _cm_span > _cap:
+            logger.warning(
+                f"[MH Step1-2 PhaseD.6 几何否决] 横排 {_N} 洞: "
+                f"洞宽总和 {_total_hw_cm:.1f} + gap估计 {_total_gap_cm:.1f} "
+                f"= {_cm_span:.1f} > 外框宽 {_outer_w_cm:.1f}×1.2={_cap:.1f} "
+                f"→ 削减为 {_N - 1} 洞"
+            )
+            return inners[:-1]
+    else:
+        _total_hh_cm = sum(r[3] / _px_per_cm for r in inners)
+        _cm_span = _total_hh_cm + _total_gap_cm
+        _outer_h_cm = oh / _px_per_cm_h
+        _cap = _outer_h_cm * 1.20
+        if _cm_span > _cap:
+            logger.warning(
+                f"[MH Step1-2 PhaseD.6 几何否决] 竖排 {_N} 洞: "
+                f"洞高总和 {_total_hh_cm:.1f} + gap估计 {_total_gap_cm:.1f} "
+                f"= {_cm_span:.1f} > 外框高 {_outer_h_cm:.1f}×1.2={_cap:.1f} "
+                f"→ 削减为 {_N - 1} 洞"
+            )
+            return inners[:-1]
+    return inners
+
+
+def _classify_layout(inners):
+    """Phase E：按中心坐标跨度判定 horizontal / vertical / mixed，并排序。"""
+    cxs = [ix + iw / 2 for ix, iy, iw, ih in inners]
+    cys = [iy + ih / 2 for ix, iy, iw, ih in inners]
     cx_range = max(cxs) - min(cxs) if len(cxs) >= 2 else 0
     cy_range = max(cys) - min(cys) if len(cys) >= 2 else 0
 
     if cx_range > cy_range * 1.5:
         layout = 'horizontal'
-        inners4.sort(key=lambda r: r[0] + r[2] / 2)
+        inners.sort(key=lambda r: r[0] + r[2] / 2)
     elif cy_range > cx_range * 1.5:
         layout = 'vertical'
-        inners4.sort(key=lambda r: r[1] + r[3] / 2)
+        inners.sort(key=lambda r: r[1] + r[3] / 2)
     else:
         layout = 'mixed'
-        inners4.sort(key=lambda r: r[0] + r[2] / 2)
+        inners.sort(key=lambda r: r[0] + r[2] / 2)
+    return layout
+
+
+def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.0):
+    """从候选矩形中分类出 1 外框 + N 内框，返回 (outer, inners, layout)。
+
+    六阶段流水线：
+      Phase A.   选外框（面积最大）
+      Phase B.   收集严格嵌套 + 面积比例合理的候选池
+      Phase C.   剔除联合包围盒（hull）
+      Phase D.   贪心选互不重叠的真实洞
+      Phase D.5  面积预过滤 + 最大两洞间距否决
+      Phase D.6  洞数一致性验证（面积差距 + 几何否决）
+      Phase E.   布局分类 + 排序
+
+    Returns:
+        (outer_rect or None, list[inner_rect], layout_str)
+        当无法满足多洞（≥2 个内框）时返回 (None, [], '')，上层走单洞路径。
+    """
+    if len(all_rects) < 3:
+        logger.debug(f"[MH Step1-2] quick_fail: all_rects={len(all_rects)} < 3")
+        return None, [], ''
+
+    # Phase A+B
+    ox, oy, ow, oh, area_outer, pool = _collect_candidate_pool(all_rects, 0)
+    if len(pool) < 2:
+        logger.info(f"[MH Step1-2] 非多洞：pool 仅 {len(pool)} 项（<2）→ 回退单洞")
+        return None, [], ''
+
+    # Phase C
+    pool_filtered = _remove_hull_candidates(pool)
+
+    # Phase D
+    inners4 = _select_non_overlapping_holes(pool_filtered)
+    if len(inners4) < 2:
+        logger.info(f"[MH Step1-2] 非多洞：最终选出内框 {len(inners4)} 个（<2）→ 回退单洞")
+        return None, [], ''
+
+    # Phase D.5
+    inners4, d5_ok = _apply_area_pre_filter(inners4, ow, oh)
+    if not d5_ok:
+        return None, [], ''
+
+    # Phase D.6
+    inners4, d6_ok = _apply_consistency_check(
+        inners4, ow, oh, target_outer_w_cm, target_outer_h_cm,
+    )
+    if not d6_ok:
+        return None, [], ''
+
+    # Phase E
+    layout = _classify_layout(inners4)
 
     logger.info(f"[MH Step1-2] 多洞布局: {layout} 外框=({ox},{oy},{ow},{oh}) 内框数={len(inners4)}")
     for i, inner in enumerate(inners4):
