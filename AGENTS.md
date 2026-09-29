@@ -38,7 +38,7 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
 
 - 按改动范围跑针对性测试（日常改动用这条，别每次都跑全量）：
 
-  全量 889 条、耗时约 1.5–5 分钟（随机器负载波动）；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
+  全量 899 条、耗时约 1.5–5 分钟（随机器负载波动）；针对性跑通常几秒到几十秒。**先按下方映射选目录/文件，
   有疑虑再退回全量。**
 
   | 改动位置 | 建议跑的测试 | 用例数 |
@@ -46,10 +46,10 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
   | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 445 + 10 |
   | `core/lshape_border*.py` | `tests/core/test_lshape_border*.py` | 59 |
   | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 68 + 64 |
-  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 114 |
+  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 124 |
   | `models/design_model.py` | `tests/models/` + `tests/core/` | 28 + 445 |
   | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 156 |
-  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 889 |
+  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 899 |
 
   （另 `tests/` 根目录下 `test_phase0_multihole.py` 4 条，只在全量里跑到。）
 
@@ -88,9 +88,12 @@ python packaging/packageV2.2.3.py
 
 ## 当前状态
 
-- 基线时间：2026-09-28，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
+- 基线时间：2026-09-29，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
 - 测试命令：日常按上文「按改动范围跑针对性测试」选目录；发版前或跨层改动跑全量。
-- **当前基线：`889 passed`，0 failed / 0 error**（2026-09-28 实跑，耗时 294.18s）。
+- **当前基线：`899 passed`，0 failed / 0 error**（2026-09-29 经用户确认同步：889 + 10 新增
+  `tests/integration/test_design_builders_contract.py`；本环境全量实跑 `886 passed in 114.08s`，
+  0 failed / 0 error —— 本环境采集 876 = 889 − 13，差异为已记录环境采集差异，
+  详见 `ProductSummary/项目审查报告/SmartShapeCrop-V2.2.5-全面审查报告-20260929.md` 测试注）。
   演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → 820 → 832（当日提交自然增长）
   → 842（综合形状阶段 0 新增 `tests/gui/test_composite_panel_wiring.py` 10 条）
   → 852（综合形状 D6 新增 `tests/gui/test_composite_d6_mode_roundtrip.py` 10 条）
@@ -99,7 +102,9 @@ python packaging/packageV2.2.3.py
   → 872（综合形状 P1 Worker 侧支持新增 `tests/integration/test_composite_worker_p1.py` 4 条）
   → 879（综合形状 A①② 新增 `tests/integration/test_composite_real_material_samples.py` 3 条
   + `tests/integration/test_legacy_mode_pixel_goldens.py` 4 条）
-  → **889**（综合形状 A③ 新增 `tests/gui/test_composite_close_retire.py` 10 条，全量实跑确认）。
+  → 889（综合形状 A③ 新增 `tests/gui/test_composite_close_retire.py` 10 条，全量实跑确认）
+  → **899**（九次更新 Builder 契约测试新增 `tests/integration/test_design_builders_contract.py`
+  10 条；本环境全量实跑 886 passed，0 failed / 0 error）。
 - 不带 `--basetemp` 时临时目录落 `%TEMP%`，耗时约 225s 且更易受权限影响；两次数字**不可纵向比**。
 - 当前没有已确认的功能性测试失败。
 - 当前未发现项目级 lint 命令或配置，未运行 lint。
