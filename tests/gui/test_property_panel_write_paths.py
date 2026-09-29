@@ -11,7 +11,7 @@ P2-1 —— 模式回填硬编码索引
     ``findData('rect_lshape')`` 及 ``_on_mode_change`` 的 ``currentData()`` 对称。
 
 P2-4 —— CutRect 截断口径
-    ``workers.property_panel_workers.PoolRenderWorker._apply_lshape_params`` 原按
+    ``workers.design_builders.apply_lshape_geometry`` 原按
     **总数** ``[:3]`` 截断，与 ``validate()`` 的「同角位 ≤3」不一致。
     改为 ``limit_l_cut_rects_per_anchor()``；对单锚定输入逐例等价。
 

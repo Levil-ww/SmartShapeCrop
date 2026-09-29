@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable, Protocol
 
 def apply_lshape_geometry(design, params, best_path, canvas_w_cm, canvas_h_cm, trim_cm, log=None):
     from core.geometry import CutRect, limit_l_cut_rects_per_anchor
@@ -315,37 +315,66 @@ def apply_composite_geometry(request, log=None):
     return design
 @dataclass(frozen=True)
 class DesignBuildRequest:
-    mode:str; best:Any; sketch_result:Any; canvas_w_cm:float; canvas_h_cm:float; trim_cm:float; target:str=''; user_margins:dict|None=None; user_multihole_params:dict|None=None; lshape_params:dict|None=None; composite_params:dict|None=None
+    mode: str
+    best: Any
+    sketch_result: Any
+    canvas_w_cm: float
+    canvas_h_cm: float
+    trim_cm: float
+    target: str = ""
+    user_margins: dict | None = None
+    user_multihole_params: dict | None = None
+    lshape_params: dict | None = None
+    composite_params: dict | None = None
+
+
+@dataclass(frozen=True)
+class DesignBuildContext:
+    new_design: Callable[[float, float, float], Any]
+    log: Callable[[str], None]
+
+
+class DesignBuilder(Protocol):
+    def build(self, request: DesignBuildRequest,
+              context: DesignBuildContext) -> Any: ...
+
+
 class LegacyRequestAdapter:
     @staticmethod
     def from_worker(w,b,s,cw,ch,isl,t):
         mode='composite' if w._composite_params is not None else ('lshape' if isl else 'pool')
         return DesignBuildRequest(mode,b,s,float(cw),float(ch),float(t),str(w._target or ''),w._user_margins,w._user_multihole,w._lshape_params,w._composite_params)
 class _B:
-    def build(self, r, c):
+    def build(self, r: DesignBuildRequest, c: DesignBuildContext):
         raise NotImplementedError
 
 
 class PoolDesignBuilder(_B):
     def build(self, r, c):
-        d = c['new_design'](r.canvas_w_cm, r.canvas_h_cm, r.trim_cm)
+        d = c.new_design(r.canvas_w_cm, r.canvas_h_cm, r.trim_cm)
         apply_pool_geometry(
             d, r.target, r.sketch_result, r.canvas_w_cm, r.canvas_h_cm,
             r.user_margins, r.trim_cm, r.best.path,
-            r.user_multihole_params, c.get('log'))
+            r.user_multihole_params, c.log)
         return d
 
 
 class LShapeDesignBuilder(_B):
     def build(self, r, c):
-        d = c['new_design'](r.canvas_w_cm, r.canvas_h_cm, r.trim_cm)
+        d = c.new_design(r.canvas_w_cm, r.canvas_h_cm, r.trim_cm)
         apply_lshape_geometry(
             d, r.lshape_params or {}, r.best.path, r.canvas_w_cm,
-            r.canvas_h_cm, r.trim_cm, c.get('log'))
+            r.canvas_h_cm, r.trim_cm, c.log)
         return d
 
 
 class CompositeDesignBuilder(_B):
     def build(self, r, c):
-        return apply_composite_geometry(r, c.get('log'))
-BUILDERS={'pool':PoolDesignBuilder(),'lshape':LShapeDesignBuilder(),'composite':CompositeDesignBuilder()}
+        return apply_composite_geometry(r, c.log)
+
+
+BUILDERS: dict[str, DesignBuilder] = {
+    "pool": PoolDesignBuilder(),
+    "lshape": LShapeDesignBuilder(),
+    "composite": CompositeDesignBuilder(),
+}

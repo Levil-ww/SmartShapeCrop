@@ -10,7 +10,7 @@ Covers:
   - get_corner()/get_cut_w_cm()/get_cut_h_cm() staircase mode delegation
   - get_cuts_cm() 阶梯模式恒返 []（同角位重复由旧格式校验拒绝）
   - DesignModel.apply_ui_snapshot() l_cut_rects 写入 + l_cuts_cm 互斥守卫
-  - PoolRenderWorker._apply_lshape_params() cut_rects 路径 + 旧 cuts_cm 路径
+  - apply_lshape_geometry() cut_rects 路径 + 旧 cuts_cm 路径
   - clear_lshape_params() staircase mode reset
   - add/remove level row button behavior
 """
@@ -437,7 +437,7 @@ class TestDesignModelCutRects:
 
 
 class TestWorkerCutRectsPath:
-    """PoolRenderWorker._apply_lshape_params 的 cut_rects 路径（用户报错链路根因）：
+    """apply_lshape_geometry 的 cut_rects 路径（用户报错链路根因）：
 
     修复前 worker 只读 lp['cuts_cm']，阶梯场景 cut_rects 被丢弃 →
     l_cuts_cm 同角位重复 → validate 抛

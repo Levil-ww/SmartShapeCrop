@@ -13,7 +13,11 @@ from PIL import Image
 
 from core.geometry import CropDesign, CutRect, limit_l_cut_rects_per_anchor
 from core.config import CUT_LOSS_CM
-from workers.design_builders import BUILDERS, DesignBuildRequest, LegacyRequestAdapter, apply_composite_geometry
+from workers.design_builders import (
+    BUILDERS,
+    DesignBuildContext,
+    LegacyRequestAdapter,
+)
 from workers.design_builders import (
     BUILDERS, DesignBuildRequest, LegacyRequestAdapter,
 )
@@ -518,10 +522,8 @@ class PoolRenderWorker(QThread):
             d = CropDesign(canvas_w_cm=w + trim, canvas_h_cm=h + trim, dpi=150)
             d.outer_margin_cm = 0.0
             return d
-        return BUILDERS[request.mode].build(request, {
-            "new_design": new_design,
-            "log": self._log,
-        })
+        return BUILDERS[request.mode].build(
+            request, DesignBuildContext(new_design=new_design, log=self._log))
 
     def _step_write_material_design_size(self, best, design):
         """素材设计方向尺寸（文件名原始方向），供渲染判断旋转/缩放。"""

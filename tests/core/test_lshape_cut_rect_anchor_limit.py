@@ -7,7 +7,7 @@ tests/core/test_lshape_cut_rect_anchor_limit.py
 ``CropDesign._validate_l_cut_rects()`` 的约束是「**同一锚定角** ≤ 3 级」，
 而两个写入端
   - ``models.design_model.DesignModel.apply_ui_snapshot``
-  - ``workers.property_panel_workers.PoolRenderWorker._apply_lshape_params``
+  - ``workers.design_builders.apply_lshape_geometry``
 却按**总数** ``[:3]`` 截断 —— 两套口径不一致。对 validate() 允许的
 「tr×3 + tl×1」（合计 4 条）输入，第 4 条会被**静默丢弃**，用户看不到任何报错。
 
