@@ -1075,6 +1075,58 @@ def _extract_arrow_direction_numbers(cv2, tesseract, gray_img,
 # ======================================================================
 
 
+def _mh_dedup_contained_reads(buckets):
+    """Post A：桶内 bbox 几何包含去重（拆读剔除）。
+
+    规则：若 bbox A 在 x、y 两轴上都完全包含 bbox B（±1px 容差），
+    且数值不同 → B 是 A 的拆读残片（如「11.5」整段 vs 「5」尾位），丢弃 B。
+    """
+    for f, cands in buckets.items():
+        if len(cands) < 2:
+            continue
+        drop_idx = set()
+        n_c = len(cands)
+        for i in range(n_c):
+            if i in drop_idx:
+                continue
+            _, _, (axi, ayi, awi, ahi) = cands[i]
+            ax1, ax2 = axi, axi + awi
+            ay1, ay2 = ayi, ayi + ahi
+            for j in range(n_c):
+                if j == i or j in drop_idx:
+                    continue
+                vj, cj, (bxj, byj, bwj, bhj) = cands[j]
+                bx1, bx2 = bxj, bxj + bwj
+                by1, by2 = byj, byj + bhj
+                x_contain = (bx1 >= ax1 - 1) and (bx2 <= ax2 + 1)
+                y_contain = (by1 >= ay1 - 1) and (by2 <= ay2 + 1)
+                if x_contain and y_contain:
+                    if abs(cands[i][0] - vj) > 0.01:
+                        drop_idx.add(j)
+        if drop_idx:
+            buckets[f] = [cands[k] for k in range(n_c) if k not in drop_idx]
+            logger.debug(f"[MH Step6-PostA] {f}: 剔除拆读残片 {len(drop_idx)} 项")
+
+
+def _mh_sort_by_weighted_mode(buckets):
+    """Post B：桶内按加权众数排序（sum-of-confidence-vote）。
+
+    按 round(v,1) 分组累加 conf，按累加 conf 降序；同组内部再按 conf 降序。
+    好处：11.5@81 + 11.5@86 (=sum 167) 排在 5.0@96 前面。
+    """
+    for f, cands in buckets.items():
+        if len(cands) < 2:
+            continue
+        grp_sum = {}
+        for (v, c, bb) in cands:
+            k = round(v, 1)
+            grp_sum[k] = grp_sum.get(k, 0.0) + c
+        buckets[f] = sorted(
+            cands,
+            key=lambda r: (-grp_sum.get(round(r[0], 1), 0.0), -r[1])
+        )
+
+
 def _multi_hole_spatial_bind(ocr_results, zone_func, excluded_fields, excluded_values,
                               n_holes, layout):
     """将 OCR 数值按 (cx, cy) 坐标归入多洞语义区域。
@@ -1115,53 +1167,10 @@ def _multi_hole_spatial_bind(ocr_results, zone_func, excluded_fields, excluded_v
         buckets.setdefault(field, []).append((val, conf, bbox))
 
     # ===== Post A. 桶内几何包含去重（拆读剔除） =====
-    # 规则：若 bbox A 在 x、y 两个轴上都完全/100% 包含 bbox B，且两者数值不同
-    #       → B 是 A 的拆读（如「11.5」整段 vs 「5」尾位），丢弃 B。
-    for f, cands in buckets.items():
-        if len(cands) < 2:
-            continue
-        drop_idx = set()
-        n_c = len(cands)
-        for i in range(n_c):
-            if i in drop_idx:
-                continue
-            _, _, (axi, ayi, awi, ahi) = cands[i]
-            ax1, ax2 = axi, axi + awi
-            ay1, ay2 = ayi, ayi + ahi
-            for j in range(n_c):
-                if j == i or j in drop_idx:
-                    continue
-                vj, cj, (bxj, byj, bwj, bhj) = cands[j]
-                bx1, bx2 = bxj, bxj + bwj
-                by1, by2 = byj, byj + bhj
-                # j 是否被 i 完全包含？（允许 ±1px 浮点误差）
-                x_contain = (bx1 >= ax1 - 1) and (bx2 <= ax2 + 1)
-                y_contain = (by1 >= ay1 - 1) and (by2 <= ay2 + 1)
-                if x_contain and y_contain:
-                    # 但值相同的不丢（两个独立标签，如 margin_bottom: 12×2）
-                    if abs(cands[i][0] - vj) > 0.01:
-                        drop_idx.add(j)
-        if drop_idx:
-            buckets[f] = [cands[k] for k in range(n_c) if k not in drop_idx]
-            logger.debug(f"[MH Step6-PostA] {f}: 剔除拆读残片 {len(drop_idx)} 项")
+    _mh_dedup_contained_reads(buckets)
 
     # ===== Post B. 加权众数排序（sum-of-confidence-vote） =====
-    # 按 round(v,1) 分组累加 conf，按累加 conf 降序；同组内部再按 conf 降序。
-    # 好处：11.5@81 + 11.5@86 (=sum 167) 排在 5.0@96 前面。
-    for f, cands in buckets.items():
-        if len(cands) < 2:
-            continue
-        # 1) 分组：key=round(v,1), value=sum_conf
-        grp_sum = {}
-        for (v, c, bb) in cands:
-            k = round(v, 1)
-            grp_sum[k] = grp_sum.get(k, 0.0) + c
-        # 2) 排序：主=grp_sum[v] desc, 副=c desc
-        cands_sorted = sorted(
-            cands,
-            key=lambda r: (-grp_sum.get(round(r[0], 1), 0.0), -r[1])
-        )
-        buckets[f] = cands_sorted
+    _mh_sort_by_weighted_mode(buckets)
 
     logger.info(f"[MH Step6] 空间归属桶: {len(buckets)} 个字段")
     for f, cands in buckets.items():
