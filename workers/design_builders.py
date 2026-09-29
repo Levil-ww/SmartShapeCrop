@@ -30,6 +30,29 @@ def apply_pool_geometry(design,target,sketch_result,canvas_w_cm,canvas_h_cm,user
         m=min(canvas_w_cm,canvas_h_cm)*.10; design.inner_margin_top_cm=design.inner_margin_bottom_cm=design.inner_margin_left_cm=design.inner_margin_right_cm=m
     build_multihole_geometry(design,sketch_result,trim_cm,user_multihole,log)
     design.pool_hole_transparent=True; design.pool_outer_material_image=best_path; design.outer_bg_image=best_path
+
+def apply_composite_geometry(request, log=None):
+    """Build the composite shape from its pure parameter snapshot."""
+    from core.geometry import CropDesign
+    from models.design_model import DesignModel
+    log = log or (lambda _msg: None)
+    design = CropDesign(canvas_w_cm=request.canvas_w_cm + request.trim_cm,
+                        canvas_h_cm=request.canvas_h_cm + request.trim_cm,
+                        dpi=150)
+    params = dict(request.composite_params or {})
+    params['canvas_w_cm'] = float(params['outer_w_cm']) + request.trim_cm
+    params['canvas_h_cm'] = float(params['outer_h_cm']) + request.trim_cm
+    params['outer_margin_cm'] = 0.0
+    if not params.get('cuts_cm'):
+        raise ValueError("综合形状至少需要 1 处挖角")
+    model = DesignModel(design)
+    model.apply_composite_params(params)
+    design = model.to_design()
+    design.validate()
+    design.pool_outer_material_image = request.best.path
+    design.outer_bg_image = request.best.path
+    log("综合形状：外框挖角 + 单中心洞（参数来自综合面板）")
+    return design
 @dataclass(frozen=True)
 class DesignBuildRequest:
     mode:str; best:Any; sketch_result:Any; canvas_w_cm:float; canvas_h_cm:float; trim_cm:float; target:str=''; user_margins:dict|None=None; user_multihole_params:dict|None=None; lshape_params:dict|None=None; composite_params:dict|None=None

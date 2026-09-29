@@ -13,7 +13,7 @@ from PIL import Image
 
 from core.geometry import CropDesign, CutRect, limit_l_cut_rects_per_anchor
 from core.config import CUT_LOSS_CM
-from workers.design_builders import BUILDERS, DesignBuildRequest, LegacyRequestAdapter
+from workers.design_builders import BUILDERS, DesignBuildRequest, LegacyRequestAdapter, apply_composite_geometry
 from workers.design_builders import (
     BUILDERS, DesignBuildRequest, LegacyRequestAdapter,
 )
@@ -522,77 +522,8 @@ class PoolRenderWorker(QThread):
             "new_design": new_design,
             "lshape": self._apply_lshape_params,
             "pool": self._apply_rect_hole_params,
-            "composite": self._build_composite_design_legacy,
+            "composite": lambda req: apply_composite_geometry(req, self._log),
         })
-
-    def _build_composite_design_legacy(self, request):
-        from models.design_model import DesignModel
-        d = CropDesign(canvas_w_cm=request.canvas_w_cm + request.trim_cm,
-                       canvas_h_cm=request.canvas_h_cm + request.trim_cm, dpi=150)
-        p = dict(request.composite_params or {})
-        p['canvas_w_cm'] = float(p['outer_w_cm']) + request.trim_cm
-        p['canvas_h_cm'] = float(p['outer_h_cm']) + request.trim_cm
-        p['outer_margin_cm'] = 0.0
-        if not p.get('cuts_cm'):
-            raise ValueError("综合形状至少需要 1 处挖角")
-        m = DesignModel(d); m.apply_composite_params(p); d = m.to_design(); d.validate()
-        d.pool_outer_material_image = request.best.path; d.outer_bg_image = request.best.path
-        self._log("综合形状：外框挖角 + 单中心洞（参数来自综合面板）")
-        return d
-
-    def _build_design_legacy(self, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape):
-        """Build a design through the mode-specific builder boundary.
-
-        The callbacks intentionally point at the existing implementations in
-        this first migration step.  This preserves every legacy field write
-        while giving each mode an independent construction seam.
-        """
-        request = LegacyRequestAdapter.from_worker(
-            self, best, sketch_result, canvas_w_cm, canvas_h_cm,
-            is_lshape, CUT_LOSS_CM)
-        self.progress.emit(85, "构建设计参数…")
-        builder = BUILDERS[request.mode]
-
-        def _new_design(w_cm, h_cm, trim_cm):
-            design = CropDesign()
-            design.canvas_w_cm = w_cm + trim_cm
-            design.canvas_h_cm = h_cm + trim_cm
-            design.dpi = 150
-            design.outer_margin_cm = 0.0
-            return design
-
-        def _composite(req):
-            return self._build_composite_design_legacy(req)
-
-        return builder.build(request, {
-            "new_design": _new_design,
-            "lshape": self._apply_lshape_params,
-            "pool": self._apply_rect_hole_params,
-            "composite": _composite,
-        })
-
-    def _build_composite_design_legacy(self, request: DesignBuildRequest):
-        """Compatibility implementation for the composite branch."""
-        design = CropDesign()
-        design.canvas_w_cm = request.canvas_w_cm + request.trim_cm
-        design.canvas_h_cm = request.canvas_h_cm + request.trim_cm
-        design.dpi = 150
-        design.outer_margin_cm = 0.0
-        from models.design_model import DesignModel
-        params = dict(request.composite_params or {})
-        params['canvas_w_cm'] = float(params['outer_w_cm']) + request.trim_cm
-        params['canvas_h_cm'] = float(params['outer_h_cm']) + request.trim_cm
-        params['outer_margin_cm'] = 0.0
-        if not params.get('cuts_cm'):
-            raise ValueError("综合形状至少需要 1 处挖角")
-        model = DesignModel(design)
-        model.apply_composite_params(params)
-        design = model.to_design()
-        design.validate()
-        design.pool_outer_material_image = request.best.path
-        design.outer_bg_image = request.best.path
-        self._log("综合形状：外框挖角 + 单中心洞（参数来自综合面板）")
-        return design
 
     def _apply_lshape_params(self, design, best, canvas_w_cm, canvas_h_cm, TRIM_CM):
         """Compatibility wrapper around the pure L-shape geometry mapper."""
