@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from core.geometry import CropDesign
 from workers.design_builders import (
+    CompositeBuildParams,
     DesignBuildRequest,
     apply_composite_geometry,
     apply_lshape_geometry,
@@ -71,14 +72,14 @@ def test_composite_builder_preserves_hole_and_cut_parameters():
     request = DesignBuildRequest(
         mode="composite", best=_Best(), sketch_result=None,
         canvas_w_cm=101.0, canvas_h_cm=81.0, trim_cm=1.0,
-        composite_params={
+        composite_params=CompositeBuildParams({
             "outer_w_cm": 100.0, "outer_h_cm": 80.0,
             "corner": "br", "cut_w_cm": 20.0, "cut_h_cm": 15.0,
             "cuts_cm": [{"corner": "br", "cut_w_cm": 20.0, "cut_h_cm": 15.0}],
             "hole_margin_top_cm": 10.0, "hole_margin_bottom_cm": 11.0,
             "hole_margin_left_cm": 12.0, "hole_margin_right_cm": 13.0,
             "hole_fill_mode": "blank",
-        })
+        }))
     d = apply_composite_geometry(request)
     assert d.mode == "rect_lshape_hole"
     assert d.l_corner == "br"

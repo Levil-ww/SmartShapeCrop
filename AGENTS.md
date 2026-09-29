@@ -90,10 +90,11 @@ python packaging/packageV2.2.5.py
 
 - 基线时间：2026-09-29，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
 - 测试命令：日常按上文「按改动范围跑针对性测试」选目录；发版前或跨层改动跑全量。
-- **当前基线：`899 passed`，0 failed / 0 error**（2026-09-29 经用户确认同步：889 + 10 新增
-  `tests/integration/test_design_builders_contract.py`；本环境全量实跑 `886 passed in 114.08s`，
-  0 failed / 0 error —— 本环境采集 876 = 889 − 13，差异为已记录环境采集差异，
-  详见 `ProductSummary/项目审查报告/SmartShapeCrop-V2.2.5-全面审查报告-20260929.md` 测试注）。
+- **当前基线：`886 passed`，0 failed / 0 error**（2026-09-29 修正：原记录 899 含 3 个
+  未提交测试文件共 13 条 —— `test_composite_close_retire.py`(10)、
+  `test_composite_real_material_samples.py`(3)、`test_legacy_mode_pixel_goldens.py`(4,
+  推导基线已吸收)；实际仓库采集 886。原 899 = 889 + 10 契约测试，889 本身含未提交文件。
+  本环境全量实跑 886 passed in 114.08s，0 failed / 0 error）。
   演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → 820 → 832（当日提交自然增长）
   → 842（综合形状阶段 0 新增 `tests/gui/test_composite_panel_wiring.py` 10 条）
   → 852（综合形状 D6 新增 `tests/gui/test_composite_d6_mode_roundtrip.py` 10 条）

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import TYPE_CHECKING, Callable, Mapping, Protocol, runtime_checkable
 
 from services.parser.template_matcher import TemplateEntry
@@ -9,12 +9,48 @@ if TYPE_CHECKING:
     from core.geometry import CropDesign
 
 
+class DesignBuildError(ValueError):
+    """Base error for invalid design-build inputs."""
+
+
+class DesignBuildValidationError(DesignBuildError):
+    """Raised when a design cannot satisfy geometric validation."""
+
+
+@dataclass(frozen=True)
+class PoolBuildParams:
+    target: str = ""
+    user_margins: dict | None = None
+    user_multihole_params: dict | None = None
+
+
+@dataclass(frozen=True)
+class LShapeBuildParams:
+    values: dict
+
+
+@dataclass(frozen=True)
+class CompositeBuildParams:
+    values: dict
+
+
+@dataclass(frozen=True)
+class LegacyBuildSnapshot:
+    target: str = ""
+    user_margins: dict | None = None
+    user_multihole_params: dict | None = None
+    lshape_params: dict | None = None
+    composite_params: dict | None = None
+
+
 def apply_lshape_geometry(
     design: CropDesign,
     params: dict,
     best_path: str,
 ) -> None:
     from core.geometry import CutRect, limit_l_cut_rects_per_anchor
+    if isinstance(params, LShapeBuildParams):
+        params = params.values
     design.mode = 'rect_lshape'
     design.outer_margin_cm = 0.0
     design.l_corner = params.get('corner', 'tr')
@@ -376,12 +412,12 @@ def apply_composite_geometry(
     design = CropDesign(canvas_w_cm=request.canvas_w_cm + request.trim_cm,
                         canvas_h_cm=request.canvas_h_cm + request.trim_cm,
                         dpi=150)
-    params = dict(request.composite_params or {})
+    params = dict(request.composite_params.values or {})
     params['canvas_w_cm'] = float(params['outer_w_cm']) + request.trim_cm
     params['canvas_h_cm'] = float(params['outer_h_cm']) + request.trim_cm
     params['outer_margin_cm'] = 0.0
     if not params.get('cuts_cm'):
-        raise ValueError("综合形状至少需要 1 处挖角")
+        raise DesignBuildValidationError("综合形状至少需要 1 处挖角")
     model = DesignModel(design)
     model.apply_composite_params(params)
     design = model.to_design()
@@ -400,11 +436,19 @@ class DesignBuildRequest:
     canvas_w_cm: float
     canvas_h_cm: float
     trim_cm: float
-    target: str = ""
-    user_margins: dict | None = None
-    user_multihole_params: dict | None = None
-    lshape_params: dict | None = None
-    composite_params: dict | None = None
+    pool_params: PoolBuildParams = PoolBuildParams()
+    lshape_params: LShapeBuildParams | None = None
+    composite_params: CompositeBuildParams | None = None
+
+    def validate(self) -> None:
+        if self.mode not in ("pool", "lshape", "composite"):
+            raise DesignBuildValidationError(f"未知构建模式: {self.mode!r}")
+        if self.trim_cm < 0:
+            raise DesignBuildValidationError(f"trim_cm 不能为负: {self.trim_cm}")
+        if self.mode == "lshape" and self.lshape_params is None:
+            raise DesignBuildValidationError("L 形模式需要 lshape_params")
+        if self.mode == "composite" and self.composite_params is None:
+            raise DesignBuildValidationError("综合形状模式需要 composite_params")
 
 
 @dataclass(frozen=True)
@@ -422,7 +466,7 @@ class DesignBuilder(Protocol):
 class LegacyRequestAdapter:
     @staticmethod
     def from_snapshot(
-        snapshot: Mapping[str, object],
+        snapshot: LegacyBuildSnapshot,
         best: TemplateEntry,
         sketch_result: object | None,
         canvas_w_cm: float,
@@ -430,7 +474,7 @@ class LegacyRequestAdapter:
         is_lshape: bool,
         trim_cm: float,
     ) -> DesignBuildRequest:
-        composite_params = snapshot.get('composite_params')
+        composite_params = snapshot.composite_params
         mode = ('composite' if composite_params is not None
                 else 'lshape' if is_lshape
                 else 'pool')
@@ -441,11 +485,14 @@ class LegacyRequestAdapter:
             canvas_w_cm=float(canvas_w_cm),
             canvas_h_cm=float(canvas_h_cm),
             trim_cm=float(trim_cm),
-            target=str(snapshot.get('target') or ''),
-            user_margins=snapshot.get('user_margins'),
-            user_multihole_params=snapshot.get('user_multihole_params'),
-            lshape_params=snapshot.get('lshape_params'),
-            composite_params=composite_params,
+            pool_params=PoolBuildParams(
+                target=snapshot.target or "",
+                user_margins=snapshot.user_margins,
+                user_multihole_params=snapshot.user_multihole_params),
+            lshape_params=(LShapeBuildParams(snapshot.lshape_params)
+                           if snapshot.lshape_params is not None else None),
+            composite_params=(CompositeBuildParams(composite_params)
+                              if composite_params is not None else None),
         )
 
 
@@ -455,10 +502,11 @@ class PoolDesignBuilder:
         design = context.new_design(
             request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_pool_geometry(
-            design, request.target, request.sketch_result,
+            design, request.pool_params.target, request.sketch_result,
             request.canvas_w_cm, request.canvas_h_cm,
-            request.user_margins, request.trim_cm, request.best.path,
-            request.user_multihole_params, context.log)
+            request.pool_params.user_margins, request.trim_cm,
+            request.best.path,
+            request.pool_params.user_multihole_params, context.log)
         return design
 
 
@@ -468,7 +516,8 @@ class LShapeDesignBuilder:
         design = context.new_design(
             request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_lshape_geometry(
-            design, request.lshape_params or {}, request.best.path)
+            design, request.lshape_params.values if request.lshape_params else {},
+            request.best.path)
         return design
 
 
