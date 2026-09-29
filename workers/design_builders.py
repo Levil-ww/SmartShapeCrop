@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Callable, Mapping, Protocol, runtime_checkable
 
 from services.parser.template_matcher import TemplateEntry
 
@@ -421,8 +421,8 @@ class DesignBuilder(Protocol):
 
 class LegacyRequestAdapter:
     @staticmethod
-    def from_worker(
-        worker: object,
+    def from_snapshot(
+        snapshot: Mapping[str, object],
         best: TemplateEntry,
         sketch_result: object | None,
         canvas_w_cm: float,
@@ -430,7 +430,8 @@ class LegacyRequestAdapter:
         is_lshape: bool,
         trim_cm: float,
     ) -> DesignBuildRequest:
-        mode = ('composite' if worker._composite_params is not None
+        composite_params = snapshot.get('composite_params')
+        mode = ('composite' if composite_params is not None
                 else 'lshape' if is_lshape
                 else 'pool')
         return DesignBuildRequest(
@@ -440,11 +441,11 @@ class LegacyRequestAdapter:
             canvas_w_cm=float(canvas_w_cm),
             canvas_h_cm=float(canvas_h_cm),
             trim_cm=float(trim_cm),
-            target=str(worker._target or ''),
-            user_margins=worker._user_margins,
-            user_multihole_params=worker._user_multihole,
-            lshape_params=worker._lshape_params,
-            composite_params=worker._composite_params,
+            target=str(snapshot.get('target') or ''),
+            user_margins=snapshot.get('user_margins'),
+            user_multihole_params=snapshot.get('user_multihole_params'),
+            lshape_params=snapshot.get('lshape_params'),
+            composite_params=composite_params,
         )
 
 

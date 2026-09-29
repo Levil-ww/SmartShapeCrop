@@ -513,7 +513,16 @@ class PoolRenderWorker(QThread):
             if changed:
                 self._log(f"应用用户手动修改的边距：{', '.join(changed)}")
     def _build_design(self, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape):
-        request = LegacyRequestAdapter.from_worker(self, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape, CUT_LOSS_CM)
+        legacy_snapshot = {
+            "target": self._target,
+            "user_margins": self._user_margins,
+            "user_multihole_params": self._user_multihole,
+            "lshape_params": self._lshape_params,
+            "composite_params": self._composite_params,
+        }
+        request = LegacyRequestAdapter.from_snapshot(
+            legacy_snapshot, best, sketch_result, canvas_w_cm,
+            canvas_h_cm, is_lshape, CUT_LOSS_CM)
         self.progress.emit(85, "构建设计参数…")
         def new_design(w, h, trim):
             d = CropDesign(canvas_w_cm=w + trim, canvas_h_cm=h + trim, dpi=150)

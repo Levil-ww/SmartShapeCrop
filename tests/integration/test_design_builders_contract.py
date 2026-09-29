@@ -43,6 +43,16 @@ def _worker(**overrides):
     return SimpleNamespace(**values)
 
 
+def _snapshot(worker):
+    return {
+        "target": worker._target,
+        "user_margins": worker._user_margins,
+        "user_multihole_params": worker._user_multihole,
+        "lshape_params": worker._lshape_params,
+        "composite_params": worker._composite_params,
+    }
+
+
 def _spy_context():
     calls, logs = [], []
     context = DesignBuildContext(
@@ -102,16 +112,19 @@ def test_request_is_frozen_and_positional_order_is_stable():
 
 
 def test_adapter_mode_priority_composite_beats_lshape_beats_pool():
-    pool = LegacyRequestAdapter.from_worker(
-        _worker(), _Best(), _sketch(), 100, 80, False, 1)
+    pool_worker = _worker()
+    pool = LegacyRequestAdapter.from_snapshot(
+        _snapshot(pool_worker), _Best(), _sketch(), 100, 80, False, 1)
     assert pool.mode == "pool"
-    lshape = LegacyRequestAdapter.from_worker(
-        _worker(_lshape_params={"corner": "tr"}), _Best(), _sketch(),
+    lshape_worker = _worker(_lshape_params={"corner": "tr"})
+    lshape = LegacyRequestAdapter.from_snapshot(
+        _snapshot(lshape_worker), _Best(), _sketch(),
         100, 80, True, 1)
     assert lshape.mode == "lshape"
-    composite = LegacyRequestAdapter.from_worker(
-        _worker(_composite_params={"cuts_cm": [{"corner": "br"}]},
-                _lshape_params={"corner": "tr"}),
+    composite_worker = _worker(_composite_params={"cuts_cm": [{"corner": "br"}]},
+                               _lshape_params={"corner": "tr"})
+    composite = LegacyRequestAdapter.from_snapshot(
+        _snapshot(composite_worker),
         _Best(), _sketch(), 100, 80, True, 1)
     assert composite.mode == "composite"
 
@@ -122,7 +135,7 @@ def test_adapter_maps_fields_with_type_coercion():
                      _lshape_params={"corner": "tr"},
                      _composite_params=None)
     best = _Best()
-    request = LegacyRequestAdapter.from_worker(worker, best, _sketch(),
+    request = LegacyRequestAdapter.from_snapshot(_snapshot(worker), best, _sketch(),
                                                100, 80, 1, 1)
     assert request.canvas_w_cm == 100.0 and isinstance(request.canvas_w_cm, float)
     assert request.canvas_h_cm == 80.0 and isinstance(request.canvas_h_cm, float)
