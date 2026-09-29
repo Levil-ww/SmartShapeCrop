@@ -493,6 +493,92 @@ def _classify_hole_layout(all_rects, target_outer_w_cm=0.0, target_outer_h_cm=0.
 # ======================================================================
 
 
+def _mh_gap_idx_between(cx, cy, inners, layout):
+    """若点在相邻两洞之间的 gap 区，返回 gap 索引；否则 -1。"""
+    n = len(inners)
+    if layout == 'horizontal':
+        for idx in range(n - 1):
+            h0_right = inners[idx][0] + inners[idx][2]
+            h1_left = inners[idx + 1][0]
+            gap_top = max(inners[idx][1], inners[idx + 1][1])
+            gap_bot = min(inners[idx][1] + inners[idx][3],
+                          inners[idx + 1][1] + inners[idx + 1][3])
+            if h0_right <= cx <= h1_left and gap_top <= cy <= gap_bot:
+                return idx
+    elif layout == 'vertical':
+        for idx in range(n - 1):
+            h0_bot = inners[idx][1] + inners[idx][3]
+            h1_top = inners[idx + 1][1]
+            gap_left = max(inners[idx][0], inners[idx + 1][0])
+            gap_right = min(inners[idx][0] + inners[idx][2],
+                            inners[idx + 1][0] + inners[idx + 1][2])
+            if h0_bot <= cy <= h1_top and gap_left <= cx <= gap_right:
+                return idx
+    else:
+        for idx in range(n - 1):
+            h0 = inners[idx]
+            h1 = inners[idx + 1]
+            mid_xl = min(h0[0] + h0[2], h1[0] + h1[2])
+            mid_xr = max(h0[0], h1[0])
+            mid_yt = min(h0[1] + h0[3], h1[1] + h1[3])
+            mid_yb = max(h0[1], h1[1])
+            if mid_xl <= cx <= mid_xr and mid_yt <= cy <= mid_yb:
+                return idx
+    return -1
+
+
+def _mh_per_hole_margin_zone(cx, cy, ox, oy, ow, oh, inners, layout):
+    """per-hole 独立上下/左右边距区归属；命中返回字段名，否则 None。"""
+    if layout in ('horizontal', 'mixed'):
+        for i, (hx, hy, hw, hh) in enumerate(inners):
+            if hx <= cx <= hx + hw and oy <= cy < hy:
+                return f'margin_top_{i}'
+            if hx <= cx <= hx + hw and hy + hh < cy <= oy + oh:
+                return f'margin_bottom_{i}'
+    if layout == 'vertical':
+        for i, (hx, hy, hw, hh) in enumerate(inners):
+            if ox <= cx < hx and hy <= cy <= hy + hh:
+                return f'margin_left_{i}'
+            if hx + hw < cx <= ox + ow and hy <= cy <= hy + hh:
+                return f'margin_right_{i}'
+    return None
+
+
+def _mh_corner_fallback_zone(cx, cy, inners, layout,
+                              min_top_iy, max_bot_iy,
+                              min_left_ix, max_right_ix):
+    """角落区域按最近洞边距归属；返回字段名。"""
+    n = len(inners)
+    if layout in ('horizontal', 'mixed'):
+        d_top = abs(cy - min_top_iy)
+        d_bot = abs(cy - max_bot_iy)
+        d_left_h0 = abs(cx - inners[0][0])
+        d_right_hN = abs(cx - (inners[-1][0] + inners[-1][2]))
+        min_d = min(d_top, d_bot, d_left_h0, d_right_hN)
+        if min_d == d_top:
+            return 'margin_top'
+        elif min_d == d_bot:
+            return 'margin_bottom'
+        elif min_d == d_left_h0:
+            return 'margin_left_0'
+        else:
+            return f'margin_right_{n - 1}'
+    else:
+        d_left = abs(cx - min_left_ix)
+        d_right = abs(cx - max_right_ix)
+        d_top_h0 = abs(cy - inners[0][1])
+        d_bot_hN = abs(cy - (inners[-1][1] + inners[-1][3]))
+        min_d = min(d_left, d_right, d_top_h0, d_bot_hN)
+        if min_d == d_left:
+            return 'margin_left'
+        elif min_d == d_right:
+            return 'margin_right'
+        elif min_d == d_top_h0:
+            return 'margin_top'
+        else:
+            return 'margin_bottom'
+
+
 def _divide_multi_hole_zones(outer, inners, layout, img_w, img_h):
     """基于 1 外框 + N 内框，构建 zone_of(cx, cy) → field_name 判定函数。
 
@@ -543,39 +629,7 @@ def _divide_multi_hole_zones(outer, inners, layout, img_w, img_h):
 
     def gap_idx_between_holes(cx, cy):
         """若点在相邻两洞之间的 gap 区，返回 gap 索引；否则 -1。"""
-        if layout == 'horizontal':
-            for idx in range(n - 1):
-                h0_right = inners[idx][0] + inners[idx][2]
-                h1_left = inners[idx + 1][0]
-                # gap 的 y 范围 = 两个洞 y 范围的交集（即最小的共同 y 段）
-                gap_top = max(inners[idx][1], inners[idx + 1][1])
-                gap_bot = min(inners[idx][1] + inners[idx][3],
-                              inners[idx + 1][1] + inners[idx + 1][3])
-                if h0_right <= cx <= h1_left and gap_top <= cy <= gap_bot:
-                    return idx
-            return -1
-        elif layout == 'vertical':
-            for idx in range(n - 1):
-                h0_bot = inners[idx][1] + inners[idx][3]
-                h1_top = inners[idx + 1][1]
-                gap_left = max(inners[idx][0], inners[idx + 1][0])
-                gap_right = min(inners[idx][0] + inners[idx][2],
-                                inners[idx + 1][0] + inners[idx + 1][2])
-                if h0_bot <= cy <= h1_top and gap_left <= cx <= gap_right:
-                    return idx
-            return -1
-        else:  # mixed
-            for idx in range(n - 1):
-                # 简化版 mixed：矩形包围盒间隙
-                h0 = inners[idx]
-                h1 = inners[idx + 1]
-                mid_xl = min(h0[0] + h0[2], h1[0] + h1[2])
-                mid_xr = max(h0[0], h1[0])
-                mid_yt = min(h0[1] + h0[3], h1[1] + h1[3])
-                mid_yb = max(h0[1], h1[1])
-                if mid_xl <= cx <= mid_xr and mid_yt <= cy <= mid_yb:
-                    return idx
-            return -1
+        return _mh_gap_idx_between(cx, cy, inners, layout)
 
     def zone_of(cx, cy):
         # --- 外框外部的 outer_w / outer_h 标注区 ---
@@ -624,29 +678,9 @@ def _divide_multi_hole_zones(outer, inners, layout, img_w, img_h):
             return f'gap_{gidx}_{gidx + 1}'
 
         # ===== [MULTI-HOLE PER-HOLE Add-On 2026-08-29] per-hole mt_i/mb_i zone 归属 =====
-        # 当异尺寸异边距的多洞草图上，每个洞的上下边距是独立标注的
-        # （如 Case A 洞1 mt=20.5 / 洞2 mt=21.7）。共享 margin_top 桶只取一个 top 值，
-        # 会把两个标注混在一起丢信息。
-        # 解决方案：在共享 margin_top/bottom 桶逻辑（下面 3/4/5 段）之前，
-        # 先尝试把该点归属到「某洞正上方 / 正下方」的专属区 → 返回 per-hole 桶名。
-        # 早 return；没命中再 fall through 到原共享逻辑 → 同尺寸同边距的旧场景零影响。
-        # 保留的原则：(1) per-hole 桶名与全局桶名不同 → 不会互相污染；
-        #             (2) fallback 策略：所有 per-hole 桶全空 → 自然回退全局桶。
-        if layout in ('horizontal', 'mixed'):
-            for i, (hx, hy, hw, hh) in enumerate(inners):
-                # 正上方：点在该洞的 x 范围内 AND cy 在 0..洞顶之间
-                if hx <= cx <= hx + hw and oy <= cy < hy:
-                    return f'margin_top_{i}'
-                # 正下方：点在该洞的 x 范围内 AND cy 在 洞底..外框底之间
-                if hx <= cx <= hx + hw and hy + hh < cy <= oy + oh:
-                    return f'margin_bottom_{i}'
-        if layout == 'vertical':
-            for i, (hx, hy, hw, hh) in enumerate(inners):
-                # 竖排：每洞独立 left / right 归属（同理横向场景的 mt/mb）
-                if ox <= cx < hx and hy <= cy <= hy + hh:
-                    return f'margin_left_{i}'
-                if hx + hw < cx <= ox + ow and hy <= cy <= hy + hh:
-                    return f'margin_right_{i}'
+        ph = _mh_per_hole_margin_zone(cx, cy, ox, oy, ow, oh, inners, layout)
+        if ph is not None:
+            return ph
 
         # 3) 共享的 top / bottom 区域（横排和 mixed）
         if layout in ('horizontal', 'mixed'):
@@ -685,36 +719,9 @@ def _divide_multi_hole_zones(outer, inners, layout, img_w, img_h):
                 return 'margin_bottom'
 
         # 5) 角落区域（未明确分配）：按最近的洞外边距归属
-        #    计算到每个洞 4 条边的距离，取最近的字段
-        if layout in ('horizontal', 'mixed'):
-            # 角落：按最近的边距
-            d_top = abs(cy - min_top_iy)
-            d_bot = abs(cy - max_bot_iy)
-            d_left_h0 = abs(cx - inners[0][0])
-            d_right_hN = abs(cx - (inners[-1][0] + inners[-1][2]))
-            min_d = min(d_top, d_bot, d_left_h0, d_right_hN)
-            if min_d == d_top:
-                return 'margin_top'
-            elif min_d == d_bot:
-                return 'margin_bottom'
-            elif min_d == d_left_h0:
-                return 'margin_left_0'
-            else:
-                return f'margin_right_{n - 1}'
-        else:  # vertical
-            d_left = abs(cx - min_left_ix)
-            d_right = abs(cx - max_right_ix)
-            d_top_h0 = abs(cy - inners[0][1])
-            d_bot_hN = abs(cy - (inners[-1][1] + inners[-1][3]))
-            min_d = min(d_left, d_right, d_top_h0, d_bot_hN)
-            if min_d == d_left:
-                return 'margin_left'
-            elif min_d == d_right:
-                return 'margin_right'
-            elif min_d == d_top_h0:
-                return 'margin_top'
-            else:
-                return 'margin_bottom'
+        return _mh_corner_fallback_zone(cx, cy, inners, layout,
+                                        min_top_iy, max_bot_iy,
+                                        min_left_ix, max_right_ix)
 
     return zone_of
 
