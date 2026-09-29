@@ -1,22 +1,73 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 
-def apply_lshape_geometry(design, params, best_path, canvas_w_cm, canvas_h_cm, trim_cm, log=None):
+if TYPE_CHECKING:
+    from core.geometry import CropDesign
+
+
+def apply_lshape_geometry(
+    design: CropDesign,
+    params: dict,
+    best_path: str,
+    canvas_w_cm: float,
+    canvas_h_cm: float,
+    trim_cm: float,
+    log: Callable[[str], None] | None = None,
+) -> None:
     from core.geometry import CutRect, limit_l_cut_rects_per_anchor
-    design.mode='rect_lshape'; design.outer_margin_cm=0.0
-    design.l_corner=params.get('corner','tr'); design.l_cut_w_cm=float(params.get('cut_w_cm',0)); design.l_cut_h_cm=float(params.get('cut_h_cm',0))
-    rects=params.get('cut_rects') or []
+    design.mode = 'rect_lshape'
+    design.outer_margin_cm = 0.0
+    design.l_corner = params.get('corner', 'tr')
+    design.l_cut_w_cm = float(params.get('cut_w_cm', 0))
+    design.l_cut_h_cm = float(params.get('cut_h_cm', 0))
+    rects = params.get('cut_rects') or []
     if rects:
-        design.l_cut_rects=limit_l_cut_rects_per_anchor([CutRect(anchor=str(r['anchor']),offset_x_cm=float(r.get('offset_x_cm',0)),offset_y_cm=float(r.get('offset_y_cm',0)),w_cm=float(r.get('w_cm',0)),h_cm=float(r.get('h_cm',0))) for r in rects if isinstance(r,dict) and r.get('anchor') in {'tl','tr','bl','br'} and float(r.get('w_cm',0) or 0)>0 and float(r.get('h_cm',0) or 0)])
+        design.l_cut_rects = limit_l_cut_rects_per_anchor([
+            CutRect(
+                anchor=str(r['anchor']),
+                offset_x_cm=float(r.get('offset_x_cm', 0)),
+                offset_y_cm=float(r.get('offset_y_cm', 0)),
+                w_cm=float(r.get('w_cm', 0)),
+                h_cm=float(r.get('h_cm', 0)),
+            )
+            for r in rects
+            if isinstance(r, dict)
+            and r.get('anchor') in {'tl', 'tr', 'bl', 'br'}
+            and float(r.get('w_cm', 0) or 0) > 0
+            and float(r.get('h_cm', 0) or 0) > 0
+        ])
     else:
-        design.l_cuts_cm=[{'corner':str(c['corner']),'cut_w_cm':float(c['cut_w_cm']),'cut_h_cm':float(c['cut_h_cm'])} for c in (params.get('cuts_cm') or []) if isinstance(c,dict) and c.get('corner') in {'tl','tr','bl','br'}][:4]
-    design.inner_margin_top_cm=design.inner_margin_bottom_cm=design.inner_margin_left_cm=design.inner_margin_right_cm=0.0
-    design.pool_hole_transparent=True; design.pool_outer_material_image=best_path; design.outer_bg_image=best_path; design.pool_inner_material_image=best_path
+        design.l_cuts_cm = [
+            {
+                'corner': str(c['corner']),
+                'cut_w_cm': float(c['cut_w_cm']),
+                'cut_h_cm': float(c['cut_h_cm']),
+            }
+            for c in (params.get('cuts_cm') or [])
+            if isinstance(c, dict) and c.get('corner') in {'tl', 'tr', 'bl', 'br'}
+        ][:4]
+    design.inner_margin_top_cm = 0.0
+    design.inner_margin_bottom_cm = 0.0
+    design.inner_margin_left_cm = 0.0
+    design.inner_margin_right_cm = 0.0
+    design.pool_hole_transparent = True
+    design.pool_outer_material_image = best_path
+    design.outer_bg_image = best_path
+    design.pool_inner_material_image = best_path
 
-def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None, log=None):
-    if log is None: log=lambda _msg: None
+
+def build_multihole_geometry(
+    design: CropDesign,
+    sketch_result: Any,
+    trim_cm: float,
+    user_multihole: dict | None = None,
+    log: Callable[[str], None] | None = None,
+) -> None:
     """[MULTI-HOLE Add-On] 仅当 is_multi_hole 且 holes>=2 时生效；单洞零影响。"""
+    if log is None:
+        log = lambda _msg: None
     if (sketch_result
             and sketch_result.success
             and getattr(sketch_result, 'is_multi_hole', False)
@@ -30,7 +81,7 @@ def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None
         # 不变量：ml + Σ(w_i+1) + Σ(gap_j-1) + mr = outer + 1 = canvas_w
         # 单洞已自动 +1（inner=canvas-margins）；多洞需显式扩 + 间距补偿
         gaps = [max(0.0, g - trim_cm) for g in gaps]
-    
+
         # ===== [MULTI-HOLE SANITY Add-On 2026-08-29] 全局 mt/mb/ml/mr 覆盖 =====
         # Bug fix (2026-08-29): 优先使用 sketch_result 的全局已方向锁定值，
         # 不再从 per-hole HoleInfo 取 min。根因：per-hole margin_left_0
@@ -76,7 +127,7 @@ def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None
             f"ml={design.inner_margin_left_cm:.1f} "
             f"mr={design.inner_margin_right_cm:.1f}"
         )
-    
+
         # 画布坐标原点 = (outer_margin_cm, outer_margin_cm)。水池模式下通常=0。
         ox_cm = design.outer_margin_cm
         oy_cm = design.outer_margin_cm
@@ -88,7 +139,7 @@ def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None
         shared_mt = design.inner_margin_top_cm
         shared_ml = holes[0].margin_left_cm if holes else design.inner_margin_left_cm
         shared_mr = holes[-1].margin_right_cm if holes else design.inner_margin_right_cm
-    
+
         def _mt_of(h):
             v = getattr(h, 'margin_top_cm', 0.0)
             return v if v > 0 else shared_mt
@@ -98,7 +149,7 @@ def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None
         def _ml_of(h):
             v = getattr(h, 'margin_left_cm', 0.0)
             return v if v > 0 else shared_ml
-    
+
         if layout == 'horizontal':
             # ===== [PER-HOLE] y 轴：每洞独立 mt_i；x 轴连续（ml→w→gap→w→mr）=====
             cursor_x = ox_cm + _ml_of(holes[0])
@@ -156,11 +207,11 @@ def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None
                     'mr_cm': max(0.0, getattr(h, 'margin_right_cm', 0.0)),
                 })
                 cursor_x += _w_exp
-    
+
         # 标记：image_ops Add-On 检查该标记和 holes>=2 才触发
         design.pool_is_multi_hole = True
         design.pool_holes_gaps_cm = gaps
-    
+
         log(
             f"多洞模式写入: N={len(holes)} layout={layout} "
             f"gaps={[round(g,1) for g in gaps]}"
@@ -174,7 +225,7 @@ def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None
                 f"  Hole[{i}] 画布位置 x={hc['x_cm']:.1f} y={hc['y_cm']:.1f} "
                 f"size={hc['w_cm']:.1f}x{hc['h_cm']:.1f} cm"
             )
-    
+
         # ===== [MULTI-HOLE UI OVERRIDE Add-On 2026-08-29] =====
         # 用户在多洞参数面板上改动后：UI → _detect_multihole_edits() →
         # user_multihole → 覆盖每洞 w/h/间距并重算 x/y，保证
@@ -280,18 +331,46 @@ def build_multihole_geometry(design, sketch_result, trim_cm, user_multihole=None
         # ===== [END UI OVERRIDE Add-On] =====
     # ===== [END ADD-ON] =====
 
-def apply_pool_geometry(design,target,sketch_result,canvas_w_cm,canvas_h_cm,user_margins,trim_cm,best_path,user_multihole=None,log=None,is_lshape=False):
-    design.mode='ellipse_hole' if '椭圆' in str(target or '').lower() or 'ellipse' in str(target or '').lower() else 'rect_hole'
-    if sketch_result and sketch_result.success:
-        vals=[sketch_result.margin_top_cm,sketch_result.margin_bottom_cm,sketch_result.margin_left_cm,sketch_result.margin_right_cm]
-        if user_margins and not is_lshape: vals=[float(user_margins[k]) if user_margins.get(k) is not None else v for k,v in zip(('top','bottom','left','right'),vals)]
-        design.inner_margin_top_cm,design.inner_margin_bottom_cm,design.inner_margin_left_cm,design.inner_margin_right_cm=vals
-    else:
-        m=min(canvas_w_cm,canvas_h_cm)*.10; design.inner_margin_top_cm=design.inner_margin_bottom_cm=design.inner_margin_left_cm=design.inner_margin_right_cm=m
-    build_multihole_geometry(design,sketch_result,trim_cm,user_multihole,log)
-    design.pool_hole_transparent=True; design.pool_outer_material_image=best_path; design.outer_bg_image=best_path
 
-def apply_composite_geometry(request, log=None):
+def apply_pool_geometry(
+    design: CropDesign,
+    target: str,
+    sketch_result: Any,
+    canvas_w_cm: float,
+    canvas_h_cm: float,
+    user_margins: dict | None,
+    trim_cm: float,
+    best_path: str,
+    user_multihole: dict | None = None,
+    log: Callable[[str], None] | None = None,
+    is_lshape: bool = False,
+) -> None:
+    design.mode = ('ellipse_hole'
+                   if '椭圆' in str(target or '').lower()
+                   or 'ellipse' in str(target or '').lower()
+                   else 'rect_hole')
+    if sketch_result and sketch_result.success:
+        vals = [sketch_result.margin_top_cm, sketch_result.margin_bottom_cm,
+                sketch_result.margin_left_cm, sketch_result.margin_right_cm]
+        if user_margins and not is_lshape:
+            vals = [float(user_margins[k]) if user_margins.get(k) is not None else v
+                    for k, v in zip(('top', 'bottom', 'left', 'right'), vals)]
+        (design.inner_margin_top_cm, design.inner_margin_bottom_cm,
+         design.inner_margin_left_cm, design.inner_margin_right_cm) = vals
+    else:
+        m = min(canvas_w_cm, canvas_h_cm) * .10
+        (design.inner_margin_top_cm, design.inner_margin_bottom_cm,
+         design.inner_margin_left_cm, design.inner_margin_right_cm) = (m, m, m, m)
+    build_multihole_geometry(design, sketch_result, trim_cm, user_multihole, log)
+    design.pool_hole_transparent = True
+    design.pool_outer_material_image = best_path
+    design.outer_bg_image = best_path
+
+
+def apply_composite_geometry(
+    request: DesignBuildRequest,
+    log: Callable[[str], None] | None = None,
+) -> CropDesign:
     """Build the composite shape from its pure parameter snapshot."""
     from core.geometry import CropDesign
     from models.design_model import DesignModel
@@ -313,6 +392,8 @@ def apply_composite_geometry(request, log=None):
     design.outer_bg_image = request.best.path
     log("综合形状：外框挖角 + 单中心洞（参数来自综合面板）")
     return design
+
+
 @dataclass(frozen=True)
 class DesignBuildRequest:
     mode: str
@@ -334,6 +415,7 @@ class DesignBuildContext:
     log: Callable[[str], None]
 
 
+@runtime_checkable
 class DesignBuilder(Protocol):
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> Any: ...
@@ -341,36 +423,68 @@ class DesignBuilder(Protocol):
 
 class LegacyRequestAdapter:
     @staticmethod
-    def from_worker(w,b,s,cw,ch,isl,t):
-        mode='composite' if w._composite_params is not None else ('lshape' if isl else 'pool')
-        return DesignBuildRequest(mode,b,s,float(cw),float(ch),float(t),str(w._target or ''),w._user_margins,w._user_multihole,w._lshape_params,w._composite_params)
-class _B:
-    def build(self, r: DesignBuildRequest, c: DesignBuildContext):
+    def from_worker(
+        worker: Any,
+        best: Any,
+        sketch_result: Any,
+        canvas_w_cm: float,
+        canvas_h_cm: float,
+        is_lshape: bool,
+        trim_cm: float,
+    ) -> DesignBuildRequest:
+        mode = ('composite' if worker._composite_params is not None
+                else 'lshape' if is_lshape
+                else 'pool')
+        return DesignBuildRequest(
+            mode=mode,
+            best=best,
+            sketch_result=sketch_result,
+            canvas_w_cm=float(canvas_w_cm),
+            canvas_h_cm=float(canvas_h_cm),
+            trim_cm=float(trim_cm),
+            target=str(worker._target or ''),
+            user_margins=worker._user_margins,
+            user_multihole_params=worker._user_multihole,
+            lshape_params=worker._lshape_params,
+            composite_params=worker._composite_params,
+        )
+
+
+class _B(DesignBuilder):
+    def build(self, request: DesignBuildRequest,
+              context: DesignBuildContext) -> Any:
         raise NotImplementedError
 
 
 class PoolDesignBuilder(_B):
-    def build(self, r, c):
-        d = c.new_design(r.canvas_w_cm, r.canvas_h_cm, r.trim_cm)
+    def build(self, request: DesignBuildRequest,
+              context: DesignBuildContext) -> CropDesign:
+        design = context.new_design(
+            request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_pool_geometry(
-            d, r.target, r.sketch_result, r.canvas_w_cm, r.canvas_h_cm,
-            r.user_margins, r.trim_cm, r.best.path,
-            r.user_multihole_params, c.log)
-        return d
+            design, request.target, request.sketch_result,
+            request.canvas_w_cm, request.canvas_h_cm,
+            request.user_margins, request.trim_cm, request.best.path,
+            request.user_multihole_params, context.log)
+        return design
 
 
 class LShapeDesignBuilder(_B):
-    def build(self, r, c):
-        d = c.new_design(r.canvas_w_cm, r.canvas_h_cm, r.trim_cm)
+    def build(self, request: DesignBuildRequest,
+              context: DesignBuildContext) -> CropDesign:
+        design = context.new_design(
+            request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_lshape_geometry(
-            d, r.lshape_params or {}, r.best.path, r.canvas_w_cm,
-            r.canvas_h_cm, r.trim_cm, c.log)
-        return d
+            design, request.lshape_params or {}, request.best.path,
+            request.canvas_w_cm, request.canvas_h_cm, request.trim_cm,
+            context.log)
+        return design
 
 
 class CompositeDesignBuilder(_B):
-    def build(self, r, c):
-        return apply_composite_geometry(r, c.log)
+    def build(self, request: DesignBuildRequest,
+              context: DesignBuildContext) -> CropDesign:
+        return apply_composite_geometry(request, context.log)
 
 
 BUILDERS: dict[str, DesignBuilder] = {

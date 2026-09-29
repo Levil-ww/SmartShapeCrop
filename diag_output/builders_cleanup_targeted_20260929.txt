@@ -1,0 +1,10 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: F:\SmartShapeCrop
+configfile: pytest.ini
+collected 14 items
+
+tests\integration\test_design_builders_equivalence.py ....               [ 28%]
+tests\integration\test_design_builders_contract.py ..........            [100%]
+
+============================= 14 passed in 0.38s ==============================
