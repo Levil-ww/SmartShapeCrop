@@ -602,63 +602,10 @@ class PoolRenderWorker(QThread):
             canvas_h_cm, TRIM_CM, self._log)
 
     def _apply_rect_hole_params(self, design, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape, TRIM_CM):
-        """矩形/水池模式：边距（草图 + 用户覆盖）→ 多洞 Add-On → 外框素材。"""
-        # 目标名中的“椭圆”是当前水池流程识别椭圆内洞的稳定业务标记。
-        # 外框素材仍按整张矩形画布铺设，只有内挖 mask 使用椭圆。
-        target_lower = str(self._target or '').lower()
-        design.mode = (
-            'ellipse_hole'
-            if '椭圆' in target_lower or 'ellipse' in target_lower
-            else 'rect_hole'
-        )
-        # 边距优先用草图，否则用默认等比例值（10% 短边）
-        # [契约变更 2026-08-27] 画布已 +TRIM_CM(1cm) 作为裁剪损耗，
-        # 草图识别到的 4 个边距视为设计真值，不再追加 +TRIM_CM 偏移。
-        # 内挖由 inner = canvas - sum(margins) 自动推导，因此 inner 相对
-        # sketch 原始内框自动 +1cm（损耗分摊到内挖区域，不挤占边距）。
-        # 新不变量：(outer+1) = ml + inner_w + mr；(outer+1)_v = mt + inner_h + mb
-        if sketch_result and sketch_result.success:
-            # 先取草图值，再用 user_margins 覆盖（如果提供了）
-            # [Fix 2026-09-02] 不再在上面修改 sketch_result 对象本身，
-            #   保持 PropertyPanel._sketch_parse_result 的原始值不被污染。
-            _mt = sketch_result.margin_top_cm
-            _mb = sketch_result.margin_bottom_cm
-            _ml = sketch_result.margin_left_cm
-            _mr = sketch_result.margin_right_cm
-            if self._user_margins and not is_lshape:
-                um = self._user_margins
-                if 'top' in um and um['top'] is not None:
-                    _mt = float(um['top'])
-                if 'bottom' in um and um['bottom'] is not None:
-                    _mb = float(um['bottom'])
-                if 'left' in um and um['left'] is not None:
-                    _ml = float(um['left'])
-                if 'right' in um and um['right'] is not None:
-                    _mr = float(um['right'])
-            design.inner_margin_top_cm = _mt
-            design.inner_margin_bottom_cm = _mb
-            design.inner_margin_left_cm = _ml
-            design.inner_margin_right_cm = _mr
-        else:
-            default_m = min(canvas_w_cm, canvas_h_cm) * 0.10
-            design.inner_margin_top_cm = default_m
-            design.inner_margin_bottom_cm = default_m
-            design.inner_margin_left_cm = default_m
-            design.inner_margin_right_cm = default_m
-
-        # ===== [MULTI-HOLE Add-On 2026-08-29] PURE ADD-ON GUARD =====
-        # 仅当 sketch_result.is_multi_hole=True 且 holes>=2 时触发。
-        # 将 sketch 解析的洞列表转换为「画布相对厘米坐标」绝对位置，
-        # 供 image_ops._get_inner_pixel_mask 的 Add-On 分支渲染 UNION mask。
-        # 单洞场景下 pool_holes_cm 默认为空 → Add-On 分支跳过 → 旧代码零影响。
-
-        # ===== [MULTI-HOLE Add-On] 由 _apply_multihole_addon 统一处理 =====
-        self._apply_multihole_addon(design, sketch_result, TRIM_CM)
-        # 水池模式开关 + 外框素材图
-        design.pool_hole_transparent = True
-        design.pool_outer_material_image = best.path
-        # 同时也写到外框素材字段（方便用户在"背景设置"里看到并编辑）
-        design.outer_bg_image = best.path
+        from workers.design_builders import apply_pool_geometry
+        apply_pool_geometry(design, self._target, sketch_result, canvas_w_cm, canvas_h_cm,
+                            self._user_margins, TRIM_CM, best.path, self._user_multihole,
+                            self._log, is_lshape)
     def _apply_multihole_addon(self, design, sketch_result, TRIM_CM):
         from workers.design_builders import build_multihole_geometry
         build_multihole_geometry(design, sketch_result, TRIM_CM, self._user_multihole, self._log)
