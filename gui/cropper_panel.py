@@ -70,6 +70,204 @@ class CropperPanel(QWidget):
         if hasattr(self, '_lbl_match_log'):
             self._lbl_match_log.setText(msg)
     
+    def _build_source_box(self, parent_layout):
+        """源图选择 GroupBox：模板库目录、目标文件名、源图路径、匹配日志。"""
+        gb_file = QGroupBox("1. 选择源图")
+        fg = QVBoxLayout(gb_file)
+
+        row_tpl_dir = QHBoxLayout()
+        row_tpl_dir.addWidget(QLabel("模板库:"))
+        self._ed_template_dir = QComboBox()
+        self._ed_template_dir.setEditable(True)
+        self._ed_template_dir.setPlaceholderText("模板库目录路径\u2026（点右侧 \u25be 选择历史记录）")
+        le = self._ed_template_dir.lineEdit()
+        le.textChanged.connect(self._on_template_dir_changed)
+        self._ed_template_dir.currentIndexChanged.connect(self._on_template_history_selected)
+        row_tpl_dir.addWidget(self._ed_template_dir, 1)
+        self._btn_tpl_history = QToolButton()
+        self._btn_tpl_history.setText("\u25be")
+        self._btn_tpl_history.setPopupMode(QToolButton.InstantPopup)
+        self._btn_tpl_history.setToolTip("最近打开的模板库")
+        self._tpl_history_menu = QMenu(self._btn_tpl_history)
+        self._btn_tpl_history.setMenu(self._tpl_history_menu)
+        row_tpl_dir.addWidget(self._btn_tpl_history)
+        btn_tpl_dir = QPushButton("浏览\u2026")
+        btn_tpl_dir.clicked.connect(self._pick_template_dir)
+        row_tpl_dir.addWidget(btn_tpl_dir)
+        fg.addLayout(row_tpl_dir)
+
+        row_target = QHBoxLayout()
+        row_target.addWidget(QLabel("目标文件名:"))
+        self._ed_target_name = QLineEdit()
+        self._ed_target_name.setPlaceholderText("如: 双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角半径2厘米")
+        row_target.addWidget(self._ed_target_name, 1)
+        self._btn_target_history = QToolButton()
+        self._btn_target_history.setText("\u25be")
+        self._btn_target_history.setPopupMode(QToolButton.InstantPopup)
+        self._btn_target_history.setToolTip("目标文件名历史记录（保留3天）")
+        self._target_history_menu = QMenu(self._btn_target_history)
+        self._btn_target_history.setMenu(self._target_history_menu)
+        row_target.addWidget(self._btn_target_history)
+        btn_match = QPushButton("自动匹配")
+        btn_match.setStyleSheet("background:#e67e22; color:white; font-weight:bold; padding:4px 8px;")
+        btn_match.setFixedWidth(80)
+        btn_match.clicked.connect(self._auto_match)
+        row_target.addWidget(btn_match)
+        fg.addLayout(row_target)
+
+        row_file = QHBoxLayout()
+        self._ed_file = QLineEdit()
+        self._ed_file.setPlaceholderText("JPG / PSD 文件路径\u2026")
+        btn_pick = QPushButton("浏览\u2026")
+        btn_pick.clicked.connect(self._pick_source)
+        row_file.addWidget(self._ed_file, 1)
+        row_file.addWidget(btn_pick)
+        fg.addLayout(row_file)
+
+        self._lbl_src_info = QLabel("尚未选择源图")
+        self._lbl_src_info.setStyleSheet("color:#666;")
+        self._lbl_src_info.setWordWrap(True)
+        fg.addWidget(self._lbl_src_info)
+
+        self._lbl_match_log = QLabel("")
+        self._lbl_match_log.setStyleSheet("color:#e67e22; font-size:11px;")
+        self._lbl_match_log.setWordWrap(True)
+        fg.addWidget(self._lbl_match_log)
+
+        btn_parse = QPushButton("2. 自动识别尺寸/圆角")
+        btn_parse.setStyleSheet("padding:5px; background:#4a90d9; color:white; font-weight:bold;")
+        btn_parse.clicked.connect(self._auto_parse)
+        fg.addWidget(btn_parse)
+
+        parent_layout.addWidget(gb_file)
+
+    def _build_params_box(self, parent_layout):
+        """裁剪参数 GroupBox：产品名称、布局/尺寸/DPI/模式、高级选项。"""
+        gb_param = QGroupBox("3. 裁剪参数")
+        fp = QVBoxLayout(gb_param)
+
+        row_name = QHBoxLayout()
+        row_name.addWidget(QLabel("产品名称:"))
+        self._ed_product = QLineEdit()
+        self._ed_product.setPlaceholderText("如\uff1a双面格-定制-定制尺寸-简织")
+        row_name.addWidget(self._ed_product, 1)
+        fp.addLayout(row_name)
+
+        grid_size = QGridLayout()
+        grid_size.addWidget(QLabel("布局:"), 0, 0)
+        self._cb_layout = QComboBox()
+        self._cb_layout.addItem("竖版（长边为高）", "竖版")
+        self._cb_layout.addItem("横版（长边为宽）", "横版")
+        grid_size.addWidget(self._cb_layout, 0, 1)
+
+        grid_size.addWidget(QLabel("宽(cm):"), 0, 2)
+        self._sp_w = QDoubleSpinBox(); self._sp_w.setRange(1, 500); self._sp_w.setValue(55); self._sp_w.setDecimals(2); self._sp_w.setSingleStep(0.5)
+        grid_size.addWidget(self._sp_w, 0, 3)
+
+        grid_size.addWidget(QLabel("高(cm):"), 0, 4)
+        self._sp_h = QDoubleSpinBox(); self._sp_h.setRange(1, 500); self._sp_h.setValue(41); self._sp_h.setDecimals(2); self._sp_h.setSingleStep(0.5)
+        grid_size.addWidget(self._sp_h, 0, 5)
+
+        grid_size.addWidget(QLabel("DPI:"), 1, 0)
+        self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(DEFAULT_DPI)
+        grid_size.addWidget(self._sp_dpi, 1, 1)
+
+        grid_size.addWidget(QLabel("裁剪模式:"), 1, 2)
+        self._cb_mode = QComboBox()
+        self._cb_mode.addItem("简单缩放（拉伸填满）", "simple_resize")
+        self._cb_mode.addItem("轻度裁剪", "light_cover")
+        self._cb_mode.addItem("智能模式", "auto")
+        self._cb_mode.addItem("裁剪填满", "cover")
+        self._cb_mode.addItem("留白填充", "contain")
+        grid_size.addWidget(self._cb_mode, 1, 3, 1, 3)
+
+        fp.addLayout(grid_size)
+
+        self._lbl_mode_desc = QLabel(get_mode_description('simple_resize'))
+        self._lbl_mode_desc.setStyleSheet("color:#666; font-size:11px;")
+        self._lbl_mode_desc.setWordWrap(True)
+        fp.addWidget(self._lbl_mode_desc)
+
+        row_adv = QHBoxLayout()
+        row_adv.addWidget(QLabel("最大裁剪比例(%):"))
+        self._sp_max_crop = QDoubleSpinBox()
+        self._sp_max_crop.setRange(1, 50)
+        self._sp_max_crop.setValue(15)
+        self._sp_max_crop.setSuffix(" %")
+        row_adv.addWidget(self._sp_max_crop)
+
+        row_adv.addWidget(QLabel("背景色:"))
+        self._btn_bg_color = QPushButton()
+        self._btn_bg_color.setStyleSheet("background-color: white; border: 1px solid #ccc; padding: 4px;")
+        self._btn_bg_color.setFixedWidth(60)
+        self._btn_bg_color.clicked.connect(self._pick_bg_color)
+        row_adv.addWidget(self._btn_bg_color)
+
+        row_adv.addStretch(1)
+        fp.addLayout(row_adv)
+
+        parent_layout.addWidget(gb_param)
+
+    def _build_corner_box(self, parent_layout):
+        """圆角设置 GroupBox：快速按钮 + 四角 spinbox 网格。"""
+        gb_corner = QGroupBox("4. 圆角设置（厘米）")
+        fc = QVBoxLayout(gb_corner)
+
+        row_quick = QHBoxLayout()
+        row_quick.addWidget(QLabel("快速设置:"))
+        self._sp_quick_r = QDoubleSpinBox(); self._sp_quick_r.setRange(0, 50); self._sp_quick_r.setValue(0); self._sp_quick_r.setDecimals(2); self._sp_quick_r.setSingleStep(0.5)
+        self._sp_quick_r.setSuffix(" cm")
+        row_quick.addWidget(self._sp_quick_r)
+
+        btn_all = QPushButton("四角相同")
+        btn_all.clicked.connect(self._apply_to_all)
+        btn_tl_br = QPushButton("左上+右下")
+        btn_tl_br.clicked.connect(lambda: self._apply_to_corners(['tl', 'br']))
+        btn_tr_bl = QPushButton("右上+左下")
+        btn_tr_bl.clicked.connect(lambda: self._apply_to_corners(['tr', 'bl']))
+        btn_bl_br = QPushButton("左下+右下")
+        btn_bl_br.clicked.connect(lambda: self._apply_to_corners(['bl', 'br']))
+        row_quick.addWidget(btn_all)
+        row_quick.addWidget(btn_tl_br)
+        row_quick.addWidget(btn_tr_bl)
+        row_quick.addWidget(btn_bl_br)
+        row_quick.addStretch(1)
+        fc.addLayout(row_quick)
+
+        grid_corner = QGridLayout()
+        self._sp_corners = {}
+        for i, (key, name) in enumerate([('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]):
+            grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 3)
+            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(0); sp.setDecimals(2); sp.setSingleStep(0.5); sp.setSuffix(" cm")
+            grid_corner.addWidget(sp, i // 2, (i % 2) * 3 + 1)
+            self._sp_corners[key] = sp
+
+        fc.addLayout(grid_corner)
+        parent_layout.addWidget(gb_corner)
+
+    def _build_output_name_box(self, parent_layout):
+        """输出文件名预览 GroupBox：自动/手动命名。"""
+        gb_name = QGroupBox("5. 输出文件名预览")
+        fn = QVBoxLayout(gb_name)
+
+        self._lbl_name_preview = QLabel("（选择源图并设置参数后自动生成）")
+        self._lbl_name_preview.setStyleSheet("color:#4a90d9; padding:4px; background:#f0f4f8; border-radius:3px;")
+        self._lbl_name_preview.setWordWrap(True)
+        fn.addWidget(self._lbl_name_preview)
+
+        row_name_opts = QHBoxLayout()
+        self._ck_auto_name = QCheckBox("自动命名")
+        self._ck_auto_name.setChecked(True)
+        row_name_opts.addWidget(self._ck_auto_name)
+
+        row_name_opts.addWidget(QLabel("手动命名:"))
+        self._ed_custom_name = QLineEdit()
+        self._ed_custom_name.setPlaceholderText("覆盖自动命名\u2026")
+        row_name_opts.addWidget(self._ed_custom_name, 1)
+        fn.addLayout(row_name_opts)
+
+        parent_layout.addWidget(gb_name)
+
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
@@ -85,212 +283,16 @@ class CropperPanel(QWidget):
         root.addWidget(scroll)
         
         # ===== 1) 源图选择 =====
-        gb_file = QGroupBox("1. 选择源图")
-        fg = QVBoxLayout(gb_file)
-        
-        # 1a) 模板库目录（可编辑 ComboBox + 历史记录下拉按钮 + 浏览）
-        row_tpl_dir = QHBoxLayout()
-        row_tpl_dir.addWidget(QLabel("模板库:"))
-        self._ed_template_dir = QComboBox()
-        self._ed_template_dir.setEditable(True)
-        self._ed_template_dir.setPlaceholderText("模板库目录路径…（点右侧 ▾ 选择历史记录）")
-        # 下拉：显示历史记录；编辑：手动输入路径
-        le = self._ed_template_dir.lineEdit()
-        le.textChanged.connect(self._on_template_dir_changed)
-        self._ed_template_dir.currentIndexChanged.connect(self._on_template_history_selected)
-        row_tpl_dir.addWidget(self._ed_template_dir, 1)
-        # 历史记录按钮（小箭头菜单）
-        self._btn_tpl_history = QToolButton()
-        self._btn_tpl_history.setText("▾")
-        self._btn_tpl_history.setPopupMode(QToolButton.InstantPopup)
-        self._btn_tpl_history.setToolTip("最近打开的模板库")
-        self._tpl_history_menu = QMenu(self._btn_tpl_history)
-        self._btn_tpl_history.setMenu(self._tpl_history_menu)
-        row_tpl_dir.addWidget(self._btn_tpl_history)
-        # 浏览按钮
-        btn_tpl_dir = QPushButton("浏览…")
-        btn_tpl_dir.clicked.connect(self._pick_template_dir)
-        row_tpl_dir.addWidget(btn_tpl_dir)
-        fg.addLayout(row_tpl_dir)
-        
-        # 1b) 目标文件名输入
-        row_target = QHBoxLayout()
-        row_target.addWidget(QLabel("目标文件名:"))
-        self._ed_target_name = QLineEdit()
-        self._ed_target_name.setPlaceholderText("如: 双面格-定制-定制尺寸-简织;竖版55x41cm右下角圆角半径2厘米")
-        row_target.addWidget(self._ed_target_name, 1)
-        # 目标文件名历史记录按钮（保留 3 天）
-        self._btn_target_history = QToolButton()
-        self._btn_target_history.setText("▾")
-        self._btn_target_history.setPopupMode(QToolButton.InstantPopup)
-        self._btn_target_history.setToolTip("目标文件名历史记录（保留3天）")
-        self._target_history_menu = QMenu(self._btn_target_history)
-        self._btn_target_history.setMenu(self._target_history_menu)
-        row_target.addWidget(self._btn_target_history)
-        btn_match = QPushButton("自动匹配")
-        btn_match.setStyleSheet("background:#e67e22; color:white; font-weight:bold; padding:4px 8px;")
-        btn_match.setFixedWidth(80)
-        btn_match.clicked.connect(self._auto_match)
-        row_target.addWidget(btn_match)
-        fg.addLayout(row_target)
-        
-        # 1c) 源图文件路径
-        row_file = QHBoxLayout()
-        self._ed_file = QLineEdit()
-        self._ed_file.setPlaceholderText("JPG / PSD 文件路径…")
-        btn_pick = QPushButton("浏览…")
-        btn_pick.clicked.connect(self._pick_source)
-        row_file.addWidget(self._ed_file, 1)
-        row_file.addWidget(btn_pick)
-        fg.addLayout(row_file)
-        
-        # 1d) 源图信息显示
-        self._lbl_src_info = QLabel("尚未选择源图")
-        self._lbl_src_info.setStyleSheet("color:#666;")
-        self._lbl_src_info.setWordWrap(True)
-        fg.addWidget(self._lbl_src_info)
-        
-        # 1e) 匹配日志
-        self._lbl_match_log = QLabel("")
-        self._lbl_match_log.setStyleSheet("color:#e67e22; font-size:11px;")
-        self._lbl_match_log.setWordWrap(True)
-        fg.addWidget(self._lbl_match_log)
-        
-        # 1f) 自动识别按钮
-        btn_parse = QPushButton("2. 自动识别尺寸/圆角")
-        btn_parse.setStyleSheet("padding:5px; background:#4a90d9; color:white; font-weight:bold;")
-        btn_parse.clicked.connect(self._auto_parse)
-        fg.addWidget(btn_parse)
-        
-        lay.addWidget(gb_file)
+        self._build_source_box(lay)
         
         # ===== 3) 裁剪参数 =====
-        gb_param = QGroupBox("3. 裁剪参数")
-        fp = QVBoxLayout(gb_param)
-        
-        # 产品名称
-        row_name = QHBoxLayout()
-        row_name.addWidget(QLabel("产品名称:"))
-        self._ed_product = QLineEdit()
-        self._ed_product.setPlaceholderText("如：双面格-定制-定制尺寸-简织")
-        row_name.addWidget(self._ed_product, 1)
-        fp.addLayout(row_name)
-        
-        # 布局 + 尺寸
-        grid_size = QGridLayout()
-        grid_size.addWidget(QLabel("布局:"), 0, 0)
-        self._cb_layout = QComboBox()
-        self._cb_layout.addItem("竖版（长边为高）", "竖版")
-        self._cb_layout.addItem("横版（长边为宽）", "横版")
-        grid_size.addWidget(self._cb_layout, 0, 1)
-        
-        grid_size.addWidget(QLabel("宽(cm):"), 0, 2)
-        self._sp_w = QDoubleSpinBox(); self._sp_w.setRange(1, 500); self._sp_w.setValue(55); self._sp_w.setDecimals(2); self._sp_w.setSingleStep(0.5)
-        grid_size.addWidget(self._sp_w, 0, 3)
-        
-        grid_size.addWidget(QLabel("高(cm):"), 0, 4)
-        self._sp_h = QDoubleSpinBox(); self._sp_h.setRange(1, 500); self._sp_h.setValue(41); self._sp_h.setDecimals(2); self._sp_h.setSingleStep(0.5)
-        grid_size.addWidget(self._sp_h, 0, 5)
-        
-        grid_size.addWidget(QLabel("DPI:"), 1, 0)
-        self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(DEFAULT_DPI)
-        grid_size.addWidget(self._sp_dpi, 1, 1)
-        
-        grid_size.addWidget(QLabel("裁剪模式:"), 1, 2)
-        self._cb_mode = QComboBox()
-        self._cb_mode.addItem("简单缩放（拉伸填满）", "simple_resize")
-        self._cb_mode.addItem("轻度裁剪", "light_cover")
-        self._cb_mode.addItem("智能模式", "auto")
-        self._cb_mode.addItem("裁剪填满", "cover")
-        self._cb_mode.addItem("留白填充", "contain")
-        grid_size.addWidget(self._cb_mode, 1, 3, 1, 3)
-        
-        fp.addLayout(grid_size)
-        
-        # 模式说明
-        self._lbl_mode_desc = QLabel(get_mode_description('simple_resize'))
-        self._lbl_mode_desc.setStyleSheet("color:#666; font-size:11px;")
-        self._lbl_mode_desc.setWordWrap(True)
-        fp.addWidget(self._lbl_mode_desc)
-        
-        # 高级选项
-        row_adv = QHBoxLayout()
-        row_adv.addWidget(QLabel("最大裁剪比例(%):"))
-        self._sp_max_crop = QDoubleSpinBox()
-        self._sp_max_crop.setRange(1, 50)
-        self._sp_max_crop.setValue(15)
-        self._sp_max_crop.setSuffix(" %")
-        row_adv.addWidget(self._sp_max_crop)
-        
-        row_adv.addWidget(QLabel("背景色:"))
-        self._btn_bg_color = QPushButton()
-        self._btn_bg_color.setStyleSheet("background-color: white; border: 1px solid #ccc; padding: 4px;")
-        self._btn_bg_color.setFixedWidth(60)
-        self._btn_bg_color.clicked.connect(self._pick_bg_color)
-        row_adv.addWidget(self._btn_bg_color)
-        
-        row_adv.addStretch(1)
-        fp.addLayout(row_adv)
-        
-        lay.addWidget(gb_param)
+        self._build_params_box(lay)
         
         # ===== 4) 圆角设置 =====
-        gb_corner = QGroupBox("4. 圆角设置（厘米）")
-        fc = QVBoxLayout(gb_corner)
-        
-        row_quick = QHBoxLayout()
-        row_quick.addWidget(QLabel("快速设置:"))
-        self._sp_quick_r = QDoubleSpinBox(); self._sp_quick_r.setRange(0, 50); self._sp_quick_r.setValue(0); self._sp_quick_r.setDecimals(2); self._sp_quick_r.setSingleStep(0.5)
-        self._sp_quick_r.setSuffix(" cm")
-        row_quick.addWidget(self._sp_quick_r)
-        
-        btn_all = QPushButton("四角相同")
-        btn_all.clicked.connect(self._apply_to_all)
-        btn_tl_br = QPushButton("左上+右下")
-        btn_tl_br.clicked.connect(lambda: self._apply_to_corners(['tl', 'br']))
-        btn_tr_bl = QPushButton("右上+左下")
-        btn_tr_bl.clicked.connect(lambda: self._apply_to_corners(['tr', 'bl']))
-        btn_bl_br = QPushButton("左下+右下")
-        btn_bl_br.clicked.connect(lambda: self._apply_to_corners(['bl', 'br']))
-        row_quick.addWidget(btn_all)
-        row_quick.addWidget(btn_tl_br)
-        row_quick.addWidget(btn_tr_bl)
-        row_quick.addWidget(btn_bl_br)
-        row_quick.addStretch(1)
-        fc.addLayout(row_quick)
-        
-        grid_corner = QGridLayout()
-        self._sp_corners = {}
-        for i, (key, name) in enumerate([('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]):
-            grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 3)
-            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(0); sp.setDecimals(2); sp.setSingleStep(0.5); sp.setSuffix(" cm")
-            grid_corner.addWidget(sp, i // 2, (i % 2) * 3 + 1)
-            self._sp_corners[key] = sp
-        
-        fc.addLayout(grid_corner)
-        lay.addWidget(gb_corner)
+        self._build_corner_box(lay)
         
         # ===== 5) 输出命名预览 =====
-        gb_name = QGroupBox("5. 输出文件名预览")
-        fn = QVBoxLayout(gb_name)
-        
-        self._lbl_name_preview = QLabel("（选择源图并设置参数后自动生成）")
-        self._lbl_name_preview.setStyleSheet("color:#4a90d9; padding:4px; background:#f0f4f8; border-radius:3px;")
-        self._lbl_name_preview.setWordWrap(True)
-        fn.addWidget(self._lbl_name_preview)
-        
-        row_name_opts = QHBoxLayout()
-        self._ck_auto_name = QCheckBox("自动命名")
-        self._ck_auto_name.setChecked(True)
-        row_name_opts.addWidget(self._ck_auto_name)
-        
-        row_name_opts.addWidget(QLabel("手动命名:"))
-        self._ed_custom_name = QLineEdit()
-        self._ed_custom_name.setPlaceholderText("覆盖自动命名…")
-        row_name_opts.addWidget(self._ed_custom_name, 1)
-        fn.addLayout(row_name_opts)
-        
-        lay.addWidget(gb_name)
+        self._build_output_name_box(lay)
         
         # ===== 6) 操作按钮（放在滚动区域外，始终可见） =====
         btn_preview = QPushButton("生成预览")
