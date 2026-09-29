@@ -1,15 +1,15 @@
-# SmartShapeCrop V2.2.5 全面审查报告（第二次审查）
+# SmartShapeCrop V2.2.5 全面审查报告（第三次审查）
 
-> **审查日期**：2026-09-29（第二轮，代码已更新）
+> **审查日期**：2026-09-29（第三轮，P1/P2 已修复）
 > **审查范围**：`core/`、`services/`、`gui/`、`workers/`、`models/`、`tests/`、`main.py`、`packaging/`
-> **审查方式**：只读静态审查 + 全量测试运行（未修改任何源码）
-> **审查基线**：Git HEAD = `f0e7341`，含未提交改动（`workers/design_builders.py` 格式化+类型注解、`tests/integration/test_design_builders_contract.py` 新增），Python 3.13.14，pytest 9.1.1
+> **审查方式**：只读静态审查 + 全量测试运行
+> **审查基线**：Git HEAD = `f0e7341`，含未提交改动（`workers/design_builders.py` 格式化+类型注解、`tests/integration/test_design_builders_contract.py` 新增、P1 版本号同步、P2 导入清理），Python 3.13.14，pytest 9.1.1
 
 ---
 
 ## 一、总体结论
 
-代码整体质量**良好**。v2.2.5 重构（统一参数协议 + Builder 纯函数提取）方向正确，架构边界清晰，测试基线健康。第一轮审查的 P3 项中两项已修复（docstring 位置、Protocol 继承），新增 10 条契约测试。发现 **1 项 P1 问题**、**1 组 P2 代码卫生问题**、**若干 P3 低优先级改进项**。无功能性缺陷。
+代码整体质量**良好**。v2.2.5 重构（统一参数协议 + Builder 纯函数提取）方向正确，架构边界清晰，测试基线健康。**P1 版本号同步、P2 导入清理均已修复**，第一轮 P3 项中两项已修复（docstring 位置、Protocol 继承），新增 10 条契约测试。剩余 **2 项 P3 低优先级改进项**。无功能性缺陷。
 
 ### 测试结果
 
@@ -25,18 +25,28 @@
 
 ---
 
-## 二、第一轮问题修复状态
+## 二、问题修复状态
 
 | 编号 | 严重级 | 问题 | 状态 |
 |---|---|---|---|
-| P1 | 🔴 | `APP_VERSION` 仍为 2.2.3 | **未修复** |
-| P2 | 🟡 | `property_panel_workers.py` 未用/重复导入 | **未修复** |
+| P1 | 🔴 | `APP_VERSION` 仍为 2.2.3 | **已修复** ✅ |
+| P2 | 🟡 | `property_panel_workers.py` 未用/重复导入 | **已修复** ✅ |
 | P3-a | 🟢 | `build_multihole_geometry` docstring 位置错误 | **已修复** ✅ |
 | P3-b | 🟢 | `DesignBuilder` Protocol 未实际继承 | **已修复** ✅ |
 | P3-c | 🟢 | 纯函数签名含未使用形参 | **部分改善**（已加类型注解，参数仍未用） |
 | P3-d | 🟢 | CHANGELOG 未覆盖 v2.2.4 / v2.2.5 | **未修复** |
 
 ### 已修复项详情
+
+**P1 版本号同步**：
+- `core/config.py:39`：`APP_VERSION` 从 `"2.2.3"` 改为 `"2.2.5"`。
+- **新建** `packaging/packageV2.2.5.py`（基于 V2.2.3 脚本，版本标识更新为 2.2.5）；原 `packageV2.2.3.py` 保留备查（与 `packageV2.2.2.py` 保留惯例一致）。
+- **新建** `packaging/specs/智能裁剪设计器V2.2.5.spec`（spec 内 `name=` 字段同步）；原 V2.2.3 spec 保留。
+- `tests/core/test_app_version_single_source.py:35,86`：`PACKAGE_SCRIPT` 路径常量 + 断言消息同步指向 `packageV2.2.5.py`。
+- `AGENTS.md`：打包入口引用同步（3 处）。
+
+**P2 导入清理**：
+- `workers/property_panel_workers.py:14-23`：移除未用 `CutRect`、`limit_l_cut_rects_per_anchor`、`DesignBuildRequest`；合并两条重复 `from workers.design_builders import` 为一条。
 
 **P3-a docstring 归位**：`build_multihole_geometry` 的 docstring 从第一条语句之后移至函数体首行，现在 `__doc__` 可正确获取。
 
@@ -62,50 +72,24 @@
 
 ## 四、问题清单
 
-### P1 — 版本号未同步（发版前必须修正）
+### ~~P1 — 版本号未同步~~（已修复 ✅）
 
-**位置**：`core/config.py:39`
+原问题：`APP_VERSION` 仍为 `"2.2.3"`，与 Git 提交标注的 `v2.2.5-*` 不符。
 
-```python
-APP_VERSION: str = "2.2.3"
-```
-
-**问题**：Git 提交已全部标注为 `v2.2.5-*`，但 `APP_VERSION` 仍为 `"2.2.3"`。该常量是版本单一事实来源，被以下消费方直接引用：
-- `main.py` 「关于」对话框 → 显示 **V2.2.3**
-- `core/log_setup.py` 启动日志头 → 输出 `SmartShapeCrop v2.2.3`
-- `packaging/packageV2.2.3.py` → exe 命名为 `智能裁剪设计器V2.2.3.exe`
-
-**影响**：若直接出包，产物版本标识与实际代码版本不符，重演 P1-1 历史问题。
-
-**附带**：`tests/core/test_app_version_single_source.py:35,86` 硬编码 `packaging/packageV2.2.3.py` 路径。升级 `APP_VERSION` 需同步重命名打包脚本并更新测试路径常量。
-
-**建议**：发版前将 `APP_VERSION` 改为 `"2.2.5"`，重命名 `packaging/packageV2.2.3.py` → `packageV2.2.5.py`（含 spec），同步更新测试中的 `PACKAGE_SCRIPT` 常量。
+**修复内容**：
+- `core/config.py:39`：`APP_VERSION` 改为 `"2.2.5"`。
+- 新建 `packaging/packageV2.2.5.py` + `packaging/specs/智能裁剪设计器V2.2.5.spec`（原 V2.2.3 文件保留备查）。
+- `tests/core/test_app_version_single_source.py` 路径常量同步。
+- `AGENTS.md` 打包入口引用同步。
+- 非回归验证：11 条版本单一来源测试全部通过。
 
 ---
 
-### P2 — `workers/property_panel_workers.py` 残留未用导入与重复导入
+### ~~P2 — `workers/property_panel_workers.py` 残留未用导入与重复导入~~（已修复 ✅）
 
-**位置**：`workers/property_panel_workers.py:14,16-23`
+原问题：`CutRect`、`limit_l_cut_rects_per_anchor`、`DesignBuildRequest` 未用；`BUILDERS`、`LegacyRequestAdapter` 重复导入。
 
-```python
-from core.geometry import CropDesign, CutRect, limit_l_cut_rects_per_anchor   # ← CutRect / limit_l_cut_rects_per_anchor 未使用
-...
-from workers.design_builders import (
-    BUILDERS,
-    DesignBuildContext,
-    LegacyRequestAdapter,
-)
-from workers.design_builders import (                                          # ← 重复导入 BUILDERS / LegacyRequestAdapter
-    BUILDERS, DesignBuildRequest, LegacyRequestAdapter,                        # ← DesignBuildRequest 未使用
-)
-```
-
-**问题**：
-1. `CutRect`、`limit_l_cut_rects_per_anchor`：L 形几何逻辑已提取到 `design_builders.py`，Worker 内不再使用。
-2. `BUILDERS`、`LegacyRequestAdapter`：被两个 `from ... import` 语句重复导入。
-3. `DesignBuildRequest`：仅导入未引用。
-
-**建议**：合并为一条导入，移除 `CutRect`、`limit_l_cut_rects_per_anchor`、`DesignBuildRequest`。
+**修复内容**：合并为一条 `from workers.design_builders import (BUILDERS, DesignBuildContext, LegacyRequestAdapter)`，移除全部未用符号。`from core.geometry import` 仅保留 `CropDesign`。
 
 ---
 
@@ -171,8 +155,8 @@ from workers.design_builders import (                                          #
 
 | 优先级 | 问题 | 建议 |
 |---|---|---|
-| **P1** | `APP_VERSION` 仍为 2.2.3 | 发版前改为 2.2.5 + 重命名打包脚本 + 更新测试路径常量 |
-| **P2** | `property_panel_workers.py` 未用/重复导入 | 随下一轮改动顺手清理 |
+| ~~P1~~ | ~~`APP_VERSION` 仍为 2.2.3~~ | **已修复** ✅ |
+| ~~P2~~ | ~~`property_panel_workers.py` 未用/重复导入~~ | **已修复** ✅ |
 | **P3** | 纯函数死参数、CHANGELOG 缺失 | 可选优化 |
 
 ---
@@ -181,7 +165,7 @@ from workers.design_builders import (                                          #
 
 ### core/
 
-- `config.py`：版本号单一来源机制完善，`PathResolver` 跨平台路径解析合理。`APP_VERSION` 仍为 2.2.3（P1）。
+- `config.py`：版本号单一来源机制完善，`PathResolver` 跨平台路径解析合理。`APP_VERSION` 已同步为 2.2.5。
 - `geometry.py`：`CutRect` / `limit_l_cut_rects_per_anchor` 阶梯挖角设计清晰，`COMPOSITE_MODE` 常量统一。
 - `image_ops.py`：EXIF 方向处理、LOD 下采样抗锯齿、素材缓存来源校验均到位。
 - `lshape_border.py` / `lshape_border_route.py`：混合 min/max 分层策略正确。
@@ -201,7 +185,7 @@ from workers.design_builders import (                                          #
 
 ### workers/
 
-- `design_builders.py`：纯函数提取干净，已补齐类型注解 + `@runtime_checkable` + Protocol 继承。`LegacyRequestAdapter.from_worker` 拆为多行具名参数映射，可读性良好。P2 未用导入残留仍在 `property_panel_workers.py`。
+- `design_builders.py`：纯函数提取干净，已补齐类型注解 + `@runtime_checkable` + Protocol 继承。`LegacyRequestAdapter.from_worker` 拆为多行具名参数映射，可读性良好。P2 导入清理已完成。
 - 架构边界：`workers/` 零 `gui/` 导入，符合 AGENTS.md 约定。
 
 ### models/
@@ -218,6 +202,6 @@ from workers.design_builders import (                                          #
 
 ## 九、结论
 
-v2.2.5 重构质量良好。第一轮 P3 项已修复两项（docstring 位置、Protocol 继承），新增 10 条契约测试进一步加固。**唯一发版阻断项仍为 P1 版本号同步**。P2 导入清理可随下一轮改动顺手完成。
+v2.2.5 重构质量良好。**P1 版本号同步、P2 导入清理均已修复**，第一轮 P3 项已修复两项（docstring 位置、Protocol 继承），新增 10 条契约测试进一步加固。剩余 P3 项（纯函数死参数、CHANGELOG 缺失）为可选优化，不影响发版。
 
-本次审查**未修改任何程序文件**，仅产出本报告。
+**无发版阻断项**。
