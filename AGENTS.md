@@ -43,7 +43,7 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
 
   | 改动位置 | 建议跑的测试 | 用例数 |
   |---|---|---|
-  | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 445 + 10 |
+  | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 458 + 10 |
   | `core/lshape_border*.py` | `tests/core/test_lshape_border*.py` | 59 |
   | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 68 + 64 |
   | `services/psd/**`、`services/parser/**` | `tests/integration/` | 168 |
@@ -90,8 +90,8 @@ python packaging/packageV2.2.5.py
 
 - 基线时间：2026-09-29，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
 - 测试命令：日常按上文「按改动范围跑针对性测试」选目录；发版前或跨层改动跑全量。
-- **当前基线：`940 passed`，0 failed / 0 error**（2026-09-29 更新：新增 23 条 Params 内嵌
-  验证 + Composite 错误路径契约测试。本环境全量实跑 940 passed in 175.05s，
+- **当前基线：`953 passed`，0 failed / 0 error**（2026-09-29 更新：新增 13 条
+  `build_multihole_geometry` 独立单元测试。本环境全量实跑 953 passed in 182.63s，
   0 failed / 0 error）。
   演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → 820 → 832（当日提交自然增长）
   → 842（综合形状阶段 0 新增 `tests/gui/test_composite_panel_wiring.py` 10 条）
@@ -109,7 +109,9 @@ python packaging/packageV2.2.5.py
   → **917**（Builder 边界契约 7 条 + Adapter 字段映射直接断言 5 条；
   全量实跑 917 passed in 150.93s，0 failed / 0 error）
   → **940**（Params 内嵌验证 18 条 + Composite 错误路径 5 条；
-  全量实跑 940 passed in 175.05s，0 failed / 0 error）。
+  全量实跑 940 passed in 175.05s，0 failed / 0 error）
+  → **953**（`build_multihole_geometry` 独立单元测试 13 条；
+  全量实跑 953 passed in 182.63s，0 failed / 0 error）。
 - 不带 `--basetemp` 时临时目录落 `%TEMP%`，耗时约 225s 且更易受权限影响；两次数字**不可纵向比**。
 - 当前没有已确认的功能性测试失败。
 - 当前未发现项目级 lint 命令或配置，未运行 lint。
