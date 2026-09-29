@@ -499,6 +499,7 @@ class LegacyRequestAdapter:
 class PoolDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
+        request.validate()
         design = context.new_design(
             request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_pool_geometry(
@@ -513,6 +514,7 @@ class PoolDesignBuilder:
 class LShapeDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
+        request.validate()
         design = context.new_design(
             request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_lshape_geometry(
@@ -524,6 +526,7 @@ class LShapeDesignBuilder:
 class CompositeDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
+        request.validate()
         return apply_composite_geometry(request, context.log)
 
 

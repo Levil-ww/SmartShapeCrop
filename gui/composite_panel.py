@@ -205,9 +205,14 @@ class CompositePanel(LShapePanel):
         """取消正在运行的综合解析线程（不等待调用方，避免堵塞 UI）。"""
         worker = self._composite_parse_worker
         self._composite_parse_worker = None
-        if worker is not None and worker.isRunning():
-            worker.requestInterruption()
-            worker.wait(2000)
+        if worker is not None:
+            try:
+                running = worker.isRunning()
+            except RuntimeError:
+                running = False
+            if running:
+                worker.requestInterruption()
+                worker.wait(2000)
 
     def _recognize_composite_sketch(self):
         """调用统一解析入口并回填控件；失败时保留用户当前值。
