@@ -60,7 +60,7 @@ def test_lshape_builder_maps_corner_and_cut_rects():
         "corner": "tr", "cut_w_cm": 20.0, "cut_h_cm": 15.0,
         "cut_rects": [{"anchor": "tr", "offset_x_cm": 0,
                        "offset_y_cm": 0, "w_cm": 20, "h_cm": 15}],
-    }, _Best().path, 80.0, 100.0, 1.0)
+    }, _Best().path)
     assert d.mode == "rect_lshape"
     assert d.l_corner == "tr"
     assert len(d.l_cut_rects) == 1

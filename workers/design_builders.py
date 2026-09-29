@@ -11,10 +11,6 @@ def apply_lshape_geometry(
     design: CropDesign,
     params: dict,
     best_path: str,
-    canvas_w_cm: float,
-    canvas_h_cm: float,
-    trim_cm: float,
-    log: Callable[[str], None] | None = None,
 ) -> None:
     from core.geometry import CutRect, limit_l_cut_rects_per_anchor
     design.mode = 'rect_lshape'
@@ -475,9 +471,7 @@ class LShapeDesignBuilder(_B):
         design = context.new_design(
             request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_lshape_geometry(
-            design, request.lshape_params or {}, request.best.path,
-            request.canvas_w_cm, request.canvas_h_cm, request.trim_cm,
-            context.log)
+            design, request.lshape_params or {}, request.best.path)
         return design
 
 

@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-09-29
+
+### v2.2.5 — 统一参数协议重构
+- **新增** `workers/design_builders.py`：提取 `apply_pool_geometry` / `apply_lshape_geometry` / `build_multihole_geometry` / `apply_composite_geometry` 四个纯构建函数，配套 `DesignBuildRequest` / `DesignBuildContext` / `DesignBuilder` Protocol + `BUILDERS` 分发表
+- **精简** `workers/property_panel_workers.py`：`_build_design` 改为 `LegacyRequestAdapter.from_worker(...)` + `BUILDERS[mode].build(...)`，净减约 471 行
+- **新增等价测试** `tests/integration/test_design_builders_equivalence.py`（4 用例）：覆盖 pool / multihole / lshape / composite 四条构建路径
+- **新增契约测试** `tests/integration/test_design_builders_contract.py`（10 用例）：冻结 dataclass 契约、Protocol 一致性、分发表完整性、适配器映射、构建冒烟、复合守卫
+- **类型注解**：纯函数 + 适配器 + Builder 方法均补齐参数/返回值注解；`DesignBuilder` 增加 `@runtime_checkable`，`_B` 基类显式继承 Protocol
+- **版本号同步**：`APP_VERSION` 2.2.3 → 2.2.5；新建 `packaging/packageV2.2.5.py` + `packaging/specs/智能裁剪设计器V2.2.5.spec`
+- **导入清理**：`property_panel_workers.py` 移除未用 `CutRect`、`limit_l_cut_rects_per_anchor`、`DesignBuildRequest`，合并重复导入
+- **死参数清理**：`apply_lshape_geometry` 移除未用形参 `canvas_w_cm` / `canvas_h_cm` / `trim_cm` / `log`
+- **测试基线**：899 passed（889 + 10 契约测试）
+
+### v2.2.4 — 综合形状功能
+- **阶段 0**：新增 `gui/composite_panel.py` 综合形状面板，独立解析线程与旧 L 形线程隔离
+- **D6**：`models/design_model.py` 新增 `apply_composite_params`，复合守卫隔离复合设计与水池/L 形快照路径
+- **D8**：L 形面板惰性守卫，防止旧模式残留几何干扰复合设计
+- **阶段 3**：多洞 OCR 角色分类，`services/sketch_parser/` Phase D.5/D.6 面积预过滤 + 一致性验证
+- **P1 Worker**：综合形状 Worker 侧支持，`workers/` 经 `LegacyRequestAdapter` 适配复合模式
+- **A①②**：真实素材样本验证 + 旧模式像素黄金基线
+- **A③**：综合形状关窗退役链路，`_retire_worker()` 范式统一
+- **测试增长**：501 → 889（+388 条，覆盖综合形状全链路）
+
+---
+
 ## 2026-09-17
 
 ### 性能优化

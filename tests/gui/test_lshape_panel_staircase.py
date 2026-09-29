@@ -461,7 +461,7 @@ class TestWorkerCutRectsPath:
     def _run(self, worker, canvas_w=188.5, canvas_h=74.0):
         design = CropDesign()
         from workers.design_builders import apply_lshape_geometry
-        apply_lshape_geometry(design, worker._lshape_params, 'x', canvas_w, canvas_h, 1.0)
+        apply_lshape_geometry(design, worker._lshape_params, 'x')
         return design
 
     def test_cut_rects_path_writes_l_cut_rects(self):

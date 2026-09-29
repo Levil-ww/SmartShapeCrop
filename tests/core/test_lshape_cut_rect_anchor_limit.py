@@ -153,7 +153,7 @@ class TestValidateSharesTheSameCap:
 
 WRITE_PATH_FILES = [
     PROJECT_ROOT / 'models' / 'design_model.py',
-    PROJECT_ROOT / 'workers' / 'property_panel_workers.py',
+    PROJECT_ROOT / 'workers' / 'design_builders.py',
 ]
 
 
