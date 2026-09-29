@@ -523,22 +523,6 @@ class PoolRenderWorker(QThread):
             "log": self._log,
         })
 
-    def _apply_lshape_params(self, design, best, canvas_w_cm, canvas_h_cm, TRIM_CM):
-        """Compatibility wrapper around the pure L-shape geometry mapper."""
-        from workers.design_builders import apply_lshape_geometry
-        apply_lshape_geometry(
-            design, self._lshape_params or {}, best.path, canvas_w_cm,
-            canvas_h_cm, TRIM_CM, self._log)
-
-    def _apply_rect_hole_params(self, design, best, sketch_result, canvas_w_cm, canvas_h_cm, is_lshape, TRIM_CM):
-        from workers.design_builders import apply_pool_geometry
-        apply_pool_geometry(design, self._target, sketch_result, canvas_w_cm, canvas_h_cm,
-                            self._user_margins, TRIM_CM, best.path, self._user_multihole,
-                            self._log, is_lshape)
-    def _apply_multihole_addon(self, design, sketch_result, TRIM_CM):
-        from workers.design_builders import build_multihole_geometry
-        build_multihole_geometry(design, sketch_result, TRIM_CM, self._user_multihole, self._log)
-
     def _step_write_material_design_size(self, best, design):
         """素材设计方向尺寸（文件名原始方向），供渲染判断旋转/缩放。"""
         # [Fix 2026-08-26] 传递素材原始设计方向尺寸（文件名方向，未经过oriented交换）

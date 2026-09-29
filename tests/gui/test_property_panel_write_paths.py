@@ -85,11 +85,8 @@ def _worker(cut_rects, corner='tr', cut_w=20.0, cut_h=14.0):
 
 def _apply(worker, canvas_w=188.5, canvas_h=74.0):
     design = CropDesign()
-    try:
-        worker._apply_lshape_params(
-            design, SimpleNamespace(path='x'), canvas_w, canvas_h, 1.0)
-    finally:
-        worker.deleteLater()
+    from workers.design_builders import apply_lshape_geometry
+    apply_lshape_geometry(design, worker._lshape_params, 'x', canvas_w, canvas_h, 1.0)
     return design
 
 
