@@ -1752,6 +1752,154 @@ def _apply_g1_invariant(result, n_detected, n_consumed, all_corners_geo,
     return not g1_blocked
 
 
+def _lshape_ocr_scan(cv2, tesseract, gray, img, external_cancel_check):
+    """执行多尺度 OCR 扫描，返回数值列表。内含 deadline + cancel 封装。"""
+    import time as _sp_time
+    try:
+        enhanced = _enhance_colored_ink(cv2, img)
+        deadline = _sp_time.monotonic() + _PARSE_TIMEOUT_SEC
+
+        def _cancel():
+            if _sp_time.monotonic() > deadline:
+                return True
+            if external_cancel_check is not None:
+                return external_cancel_check()
+            return False
+
+        return _multi_scale_ocr_scan(cv2, tesseract, gray,
+                                     enhanced_gray=enhanced,
+                                     check_cancel=_cancel)
+    except Exception as e:
+        logger.warning(f"[lshape] OCR 扫描失败（降级为纯几何）: {e}")
+        return []
+
+
+def _lshape_override_dims(dims, geo, target_outer_w_cm, target_outer_h_cm):
+    """用 target 文件名覆盖 OCR 外框值 + 像素比例反推挖角尺寸。"""
+    if target_outer_w_cm > 0:
+        if dims['outer_w_cm'] > 0 and abs(dims['outer_w_cm'] - target_outer_w_cm) / target_outer_w_cm > 0.5:
+            logger.warning(
+                f"[lshape] OCR 外框宽 {dims['outer_w_cm']:.1f}cm 与 "
+                f"target {target_outer_w_cm:.1f}cm 差距 >50%，使用 target 值"
+            )
+        dims['outer_w_cm'] = target_outer_w_cm
+    elif dims['outer_w_cm'] <= 0 and target_outer_w_cm > 0:
+        dims['outer_w_cm'] = target_outer_w_cm
+
+    if target_outer_h_cm > 0:
+        if dims['outer_h_cm'] > 0 and abs(dims['outer_h_cm'] - target_outer_h_cm) / target_outer_h_cm > 0.5:
+            logger.warning(
+                f"[lshape] OCR 外框高 {dims['outer_h_cm']:.1f}cm 与 "
+                f"target {target_outer_h_cm:.1f}cm 差距 >50%，使用 target 值"
+            )
+        dims['outer_h_cm'] = target_outer_h_cm
+    elif dims['outer_h_cm'] <= 0 and target_outer_h_cm > 0:
+        dims['outer_h_cm'] = target_outer_h_cm
+
+    if dims['outer_w_cm'] > 0 and geo['outer_w_px'] > 0 and dims['cut_w_cm'] <= 0:
+        dims['cut_w_cm'] = dims['outer_w_cm'] * (geo['cut_w_px'] / geo['outer_w_px'])
+    if dims['outer_h_cm'] > 0 and geo['outer_h_px'] > 0 and dims['cut_h_cm'] <= 0:
+        dims['cut_h_cm'] = dims['outer_h_cm'] * (geo['cut_h_px'] / geo['outer_h_px'])
+
+
+def _lshape_attribute_corners(geo, ocr_numbers, dims):
+    """多角 OCR 归属 + 阶梯场景条带分解。返回 (cuts_cm, pattern, stair_debug)。"""
+    all_corners_geo = geo.get('all_corners', [])
+
+    if all_corners_geo and ocr_numbers:
+        cuts_cm = _attribute_cut_ocr_per_corner(
+            all_corners_geo, ocr_numbers, geo,
+            dims['outer_w_cm'], dims['outer_h_cm'])
+    else:
+        cuts_cm = []
+        for candidate in all_corners_geo:
+            cut_w_px = float(candidate.get('cut_w_px', 0.0) or 0.0)
+            cut_h_px = float(candidate.get('cut_h_px', 0.0) or 0.0)
+            if cut_w_px <= 0 or cut_h_px <= 0:
+                continue
+            cuts_cm.append({
+                'corner': candidate['corner'],
+                'cut_w_cm': round(dims['outer_w_cm'] * cut_w_px / geo['outer_w_px'], 2),
+                'cut_h_cm': round(dims['outer_h_cm'] * cut_h_px / geo['outer_h_px'], 2),
+                'source': 'pixel_ratio',
+            })
+
+    pattern = _classify_pattern(all_corners_geo) if all_corners_geo else 'multi_edge'
+    stair_debug = {}
+    if pattern == 'single_edge_stepped' and len(cuts_cm) >= 2:
+        stepped_corner = _stepped_bucket_corner(all_corners_geo)
+        cut_rects, best_iou = _convert_stepped_to_cut_rects(
+            all_corners_geo, stepped_corner, geo, dims)
+        stair_debug = {
+            'staircase_pattern': pattern,
+            'staircase_corner': stepped_corner,
+            'staircase_iou': best_iou,
+        }
+        if cut_rects is not None:
+            cuts_cm = cut_rects
+            if best_iou is not None and best_iou < 0.92:
+                pattern = 'multi_edge'
+                stair_debug['staircase_downgraded'] = True
+                cuts_cm = [
+                    {
+                        'corner': cut['anchor'],
+                        'cut_w_cm': cut['w_cm'],
+                        'cut_h_cm': cut['h_cm'],
+                        'source': 'pixel_ratio',
+                    }
+                    for cut in cut_rects
+                ]
+        else:
+            pattern = 'multi_edge'
+            stair_debug['staircase_invalid_strips'] = True
+
+    return cuts_cm, pattern, stair_debug
+
+
+def _lshape_assemble_result(result, geo, dims, roles, sc, cuts_cm,
+                            n_detected, n_consumed, ocr_count,
+                            pattern, stair_debug):
+    """填充 result 字段 + debug 信息。"""
+    result.success = _apply_g1_invariant(
+        result, n_detected, n_consumed, geo.get('all_corners', []),
+        cuts_cm, base_msg=(
+            f"L 形识别{'成功' if n_detected == n_consumed else '部分完成'}"
+            f"（corner={geo['corner']}, "
+            f"外框 {dims['outer_w_cm']:.1f}×{dims['outer_h_cm']:.1f}cm, "
+            f"挖角 {dims['cut_w_cm']:.1f}×{dims['cut_h_cm']:.1f}cm, 自洽={sc:.2f}）"
+        ))
+    result.method = f"lshape_v{_ALGO_VERSION}(sc={sc:.2f})"
+    result.corner = geo['corner']
+    result.outer_w_cm = round(dims['outer_w_cm'], 2)
+    result.outer_h_cm = round(dims['outer_h_cm'], 2)
+    result.cut_w_cm = round(dims['cut_w_cm'], 2)
+    result.cut_h_cm = round(dims['cut_h_cm'], 2)
+    result.top_w_cm = round(dims['top_w_cm'], 2)
+    result.right_h_cm = round(dims['right_h_cm'], 2)
+    result.notch_w_cm = round(dims['notch_w_cm'], 2)
+    result.notch_h_cm = round(dims['notch_h_cm'], 2)
+    result.cuts_cm = cuts_cm
+    result.self_consistency = round(sc, 3)
+    result.debug.update({
+        'geometry': geo,
+        'roles': roles,
+        'ocr_count': ocr_count,
+        'outer_rect_px': geo['bbox'],
+        'concave_px': geo['concave'],
+        'cut_w_px': geo['cut_w_px'],
+        'cut_h_px': geo['cut_h_px'],
+        'verts': geo['verts'],
+        'all_corners': geo.get('all_corners', []),
+        'cuts_cm': cuts_cm,
+        'n_detected': n_detected,
+        **stair_debug,
+        'n_consumed': n_consumed,
+        'n_detected_hull': geo.get('n_detected_hull', 0),
+        'n_detected_sliding': geo.get('n_detected_sliding', 0),
+        'pattern': pattern,
+    })
+
+
 # ---------------------------------------------------------------------------
 # 公共入口
 # ---------------------------------------------------------------------------
@@ -1820,23 +1968,8 @@ def parse_lshape_sketch(
     tesseract = _safe_import_tesseract()
     ocr_numbers = []
     if tesseract is not None:
-        try:
-            enhanced = _enhance_colored_ink(cv2, img)
-            # [Fix N-P0-01] L 形解析也传入 deadline，防止 OCR 循环无限制运行
-            from .sketch_parser_base import _PARSE_TIMEOUT_SEC
-            import time as _sp_time
-            _lshape_deadline = _sp_time.monotonic() + _PARSE_TIMEOUT_SEC
-            def _lshape_cancel():
-                if _sp_time.monotonic() > _lshape_deadline:
-                    return True
-                if external_cancel_check is not None:
-                    return external_cancel_check()
-                return False
-            ocr_numbers = _multi_scale_ocr_scan(
-                cv2, tesseract, gray, enhanced_gray=enhanced,
-                check_cancel=_lshape_cancel)
-        except Exception as e:
-            logger.warning(f"[lshape] OCR 扫描失败（降级为纯几何）: {e}")
+        ocr_numbers = _lshape_ocr_scan(cv2, tesseract, gray, img,
+                                       external_cancel_check)
     else:
         logger.info("[lshape] 未安装 Tesseract，仅用几何推断")
 
@@ -1846,35 +1979,7 @@ def parse_lshape_sketch(
     sc = _score_consistency(geo, dims)
 
     # —— [2026-09-11 FIX] 外框真值始终信任 target 文件名 ——
-    # 产品不变量：草图的外框尺寸一定与目标文件名尺寸一致。
-    # OCR 可能因模糊/位置偏差识别出完全错误的外框值（如 9x21cm 应为 85x38cm），
-    # 导致方向颠倒（9<21 变竖版）、挖角 cm 值被像素比例定标污染。
-    # 当 target 值可用时，始终用 target 值覆盖 OCR；OCR 值仅作 debug 记录。
-    if target_outer_w_cm > 0:
-        if dims['outer_w_cm'] > 0 and abs(dims['outer_w_cm'] - target_outer_w_cm) / target_outer_w_cm > 0.5:
-            logger.warning(
-                f"[lshape] OCR 外框宽 {dims['outer_w_cm']:.1f}cm 与 "
-                f"target {target_outer_w_cm:.1f}cm 差距 >50%，使用 target 值"
-            )
-        dims['outer_w_cm'] = target_outer_w_cm
-    elif dims['outer_w_cm'] <= 0 and target_outer_w_cm > 0:
-        dims['outer_w_cm'] = target_outer_w_cm
-
-    if target_outer_h_cm > 0:
-        if dims['outer_h_cm'] > 0 and abs(dims['outer_h_cm'] - target_outer_h_cm) / target_outer_h_cm > 0.5:
-            logger.warning(
-                f"[lshape] OCR 外框高 {dims['outer_h_cm']:.1f}cm 与 "
-                f"target {target_outer_h_cm:.1f}cm 差距 >50%，使用 target 值"
-            )
-        dims['outer_h_cm'] = target_outer_h_cm
-    elif dims['outer_h_cm'] <= 0 and target_outer_h_cm > 0:
-        dims['outer_h_cm'] = target_outer_h_cm
-
-    # 若外框尺寸已知但挖角尺寸仍缺失，用像素比例反推
-    if dims['outer_w_cm'] > 0 and geo['outer_w_px'] > 0 and dims['cut_w_cm'] <= 0:
-        dims['cut_w_cm'] = dims['outer_w_cm'] * (geo['cut_w_px'] / geo['outer_w_px'])
-    if dims['outer_h_cm'] > 0 and geo['outer_h_px'] > 0 and dims['cut_h_cm'] <= 0:
-        dims['cut_h_cm'] = dims['outer_h_cm'] * (geo['cut_h_px'] / geo['outer_h_px'])
+    _lshape_override_dims(dims, geo, target_outer_w_cm, target_outer_h_cm)
 
     # 完成度判定
     have_w = dims['outer_w_cm'] > 0
@@ -1901,98 +2006,12 @@ def parse_lshape_sketch(
         return result
 
     # —— 多角参数：OCR 逐角归属 + 像素比例兜底 ——
-    all_corners_geo = geo.get('all_corners', [])
-    if all_corners_geo and ocr_numbers:
-        cuts_cm = _attribute_cut_ocr_per_corner(
-            all_corners_geo, ocr_numbers, geo,
-            dims['outer_w_cm'], dims['outer_h_cm'])
-    else:
-        cuts_cm = []
-        for candidate in all_corners_geo:
-            cut_w_px = float(candidate.get('cut_w_px', 0.0) or 0.0)
-            cut_h_px = float(candidate.get('cut_h_px', 0.0) or 0.0)
-            if cut_w_px <= 0 or cut_h_px <= 0:
-                continue
-            cuts_cm.append({
-                'corner': candidate['corner'],
-                'cut_w_cm': round(dims['outer_w_cm'] * cut_w_px / geo['outer_w_px'], 2),
-                'cut_h_cm': round(dims['outer_h_cm'] * cut_h_px / geo['outer_h_px'], 2),
-                'source': 'pixel_ratio',
-            })
-
-    # [V2.2 B2 / V2.4 修正] 阶梯场景：凹点坐标 → 条带分解 CutRect（IoU 择优读法）
-    pattern = _classify_pattern(all_corners_geo) if all_corners_geo else 'multi_edge'
-    stair_debug = {}
-    if pattern == 'single_edge_stepped' and len(cuts_cm) >= 2:
-        stepped_corner = _stepped_bucket_corner(all_corners_geo)
-        cut_rects, best_iou = _convert_stepped_to_cut_rects(
-            all_corners_geo, stepped_corner, geo, dims)
-        stair_debug = {
-            'staircase_pattern': pattern,
-            'staircase_corner': stepped_corner,
-            'staircase_iou': best_iou,
-        }
-        if cut_rects is not None:
-            cuts_cm = cut_rects
-            # [V2.2 B4] 反拼轮廓 IoU 闸口：< 0.92 降级为多边 L 形（旧格式）
-            if best_iou is not None and best_iou < 0.92:
-                pattern = 'multi_edge'
-                stair_debug['staircase_downgraded'] = True
-                cuts_cm = [
-                    {
-                        'corner': cut['anchor'],
-                        'cut_w_cm': cut['w_cm'],
-                        'cut_h_cm': cut['h_cm'],
-                        'source': 'pixel_ratio',
-                    }
-                    for cut in cut_rects
-                ]
-        else:
-            # 条带退化（如同 y 双凹点拼不出阶梯）→ 按多边 L 形处理，保留旧格式
-            pattern = 'multi_edge'
-            stair_debug['staircase_invalid_strips'] = True
+    cuts_cm, pattern, stair_debug = _lshape_attribute_corners(geo, ocr_numbers, dims)
 
     # —— G1 闸口：检测到的凹角数 vs 实际消费数（不变量常驻） ——
     n_consumed = len(cuts_cm)
-    msg = (
-        f"L 形识别{'成功' if n_detected == n_consumed else '部分完成'}"
-        f"（corner={geo['corner']}, "
-        f"外框 {dims['outer_w_cm']:.1f}×{dims['outer_h_cm']:.1f}cm, "
-        f"挖角 {dims['cut_w_cm']:.1f}×{dims['cut_h_cm']:.1f}cm, 自洽={sc:.2f}）"
-    )
-    g1_passed = _apply_g1_invariant(
-        result, n_detected, n_consumed, geo.get('all_corners', []),
-        cuts_cm, base_msg=msg)
-    result.success = g1_passed
-    result.method = f"lshape_v{_ALGO_VERSION}(sc={sc:.2f})"
-    result.corner = geo['corner']
-    result.outer_w_cm = round(dims['outer_w_cm'], 2)
-    result.outer_h_cm = round(dims['outer_h_cm'], 2)
-    result.cut_w_cm = round(dims['cut_w_cm'], 2)
-    result.cut_h_cm = round(dims['cut_h_cm'], 2)
-    result.top_w_cm = round(dims['top_w_cm'], 2)
-    result.right_h_cm = round(dims['right_h_cm'], 2)
-    result.notch_w_cm = round(dims['notch_w_cm'], 2)
-    result.notch_h_cm = round(dims['notch_h_cm'], 2)
-    result.cuts_cm = cuts_cm
-    result.self_consistency = round(sc, 3)
-    result.debug.update({
-        'geometry': geo,
-        'roles': roles,
-        'ocr_count': len(ocr_numbers),
-        'outer_rect_px': geo['bbox'],
-        'concave_px': geo['concave'],
-        'cut_w_px': geo['cut_w_px'],
-        'cut_h_px': geo['cut_h_px'],
-        'verts': geo['verts'],
-        'all_corners': geo.get('all_corners', []),
-        'cuts_cm': cuts_cm,
-        'n_detected': n_detected,
-        **stair_debug,
-        'n_consumed': n_consumed,
-        'n_detected_hull': geo.get('n_detected_hull', 0),
-        'n_detected_sliding': geo.get('n_detected_sliding', 0),
-        'pattern': pattern,
-    })
+    _lshape_assemble_result(result, geo, dims, roles, sc, cuts_cm,
+                            n_detected, n_consumed, len(ocr_numbers),
+                            pattern, stair_debug)
     _progress(100, "识别完成")
     return result
