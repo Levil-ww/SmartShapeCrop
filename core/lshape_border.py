@@ -710,6 +710,144 @@ def _detect_lshape_border_auto(detect_img: Image.Image):
     return profile_layers, v13_result, v13_computed, v13_preferred
 
 
+def _apply_multi_cut_completion(
+    canvas_arr: np.ndarray,
+    material_img: Image.Image,
+    outer_rect: RectShape,
+    cuts: list[tuple[str, float, float]],
+    dpi: int,
+    bg_color: tuple[int, int, int],
+    src_material_img: Image.Image | None,
+    scale_x: float,
+    scale_y: float,
+    manual_edge_px: int | None,
+    manual_band_px: int | None,
+    manual_band_color: tuple[int, int, int] | None,
+    directional_scale: bool,
+) -> bool:
+    """多角挖角的幂等像素提交。
+
+    每个角独立绘制到临时画布，再按输入顺序提交尚未被占用的像素，
+    保证重叠区幂等且不会被后一个角的回退路径覆盖。
+    """
+    completion_ok = False
+    claimed = np.zeros(canvas_arr.shape[:2], dtype=bool)
+    base_canvas = canvas_arr.copy()
+    for corner, cut_w, cut_h in cuts:
+        trial = base_canvas.copy()
+        cut_ok = apply_lshape_border_completion(
+            canvas_arr=trial,
+            material_img=material_img,
+            outer_rect=outer_rect,
+            cut_corner=corner,
+            cut_w_px=cut_w,
+            cut_h_px=cut_h,
+            dpi=dpi,
+            bg_color=bg_color,
+            src_material_img=src_material_img,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            manual_edge_px=manual_edge_px,
+            manual_band_px=manual_band_px,
+            manual_band_color=manual_band_color,
+            directional_scale=directional_scale,
+        )
+        changed = np.any(trial != base_canvas, axis=2)
+        write_mask = changed & ~claimed
+        canvas_arr[write_mask] = trial[write_mask]
+        claimed |= write_mask
+        completion_ok = cut_ok or completion_ok
+    return completion_ok
+
+
+def _try_v13_with_params(
+    canvas_arr: np.ndarray,
+    material_img: Image.Image,
+    outer_rect: RectShape,
+    cut_corner: str,
+    cut_w_px: float,
+    cut_h_px: float,
+    src_material_img: Image.Image | None,
+    scale_x: float,
+    scale_y: float,
+    v13: tuple,
+    staircase_cut_rects: list[tuple[float, float, float, float]] | None,
+    cut_area_mask: np.ndarray | None,
+) -> bool:
+    """尝试用 V13 检测结果绘制边框，返回是否成功。
+
+    v13 是 detect_border_v13 返回的四元组 (edge_px, band_px, edge_color, band_color)。
+    """
+    logger.info(
+        "[LShapeBorder] V13 检测命中: edge=%dpx band=%dpx color=%s",
+        v13[0], v13[1], v13[2],
+    )
+    return _try_apply_v13(
+        canvas_arr=canvas_arr,
+        material_img=material_img,
+        outer_rect=outer_rect,
+        cut_corner=cut_corner,
+        cut_w_px=cut_w_px,
+        cut_h_px=cut_h_px,
+        src_material_img=src_material_img,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        edge_px=v13[0],
+        band_px=v13[1],
+        band_color=v13[3],
+        edge_color=v13[2],
+        staircase_cut_rects=staircase_cut_rects,
+        cut_area_mask=cut_area_mask,
+    )
+
+
+def _apply_legacy_border_path(
+    canvas_arr: np.ndarray,
+    outer_rect: RectShape,
+    cut_corner: str,
+    cut_w_px: float,
+    cut_h_px: float,
+    detect_img: Image.Image,
+    bg_color: tuple[int, int, int],
+    scale_x: float,
+    scale_y: float,
+    staircase_cut_rects: list[tuple[float, float, float, float]] | None,
+    cut_area_mask: np.ndarray | None,
+) -> bool:
+    """旧路径：detect_pool_material_borders + scale 换算 + 绘制。
+
+    对纯黑框等简单结构保持兼容；对「黑描边+主色带」结构素材可能误检。
+    """
+    border_layers_src = detect_pool_material_borders(detect_img, bg_color)
+    if not border_layers_src:
+        logger.info("[LShapeBorder] 素材无边框层，跳过补全")
+        return False
+
+    scale_avg = float(np.sqrt(scale_x * scale_y)) if (scale_x > 0 and scale_y > 0) else 1.0
+    scale_avg = max(scale_avg, 0.1)
+
+    border_layers_canvas: list[tuple[tuple[int, int, int], float]] = []
+    for color, thickness in border_layers_src:
+        border_layers_canvas.append((color, float(thickness) * scale_avg))
+
+    total_t = sum(t for _, t in border_layers_canvas)
+    logger.info(
+        "[LShapeBorder] 检测到 %d 层边框（scale=%.2f×），画布总厚度 %.1f px: %s",
+        len(border_layers_canvas), scale_avg, total_t, border_layers_canvas,
+    )
+
+    if cut_area_mask is not None or staircase_cut_rects:
+        return _draw_staircase_union_layers(
+            canvas_arr, staircase_cut_rects, border_layers_canvas,
+            cut_area_mask=cut_area_mask,
+        )
+
+    return _draw_lshape_layers_on_retained_side(
+        canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px,
+        border_layers_canvas,
+    )
+
+
 def apply_lshape_border_completion(
     canvas_arr: np.ndarray,
     material_img: Image.Image,
@@ -787,40 +925,21 @@ def apply_lshape_border_completion(
     _try_apply_v13（V13 绘制尝试），主函数保持原三级回退顺序不变。
     """
     if cuts:
-        # 相邻挖角的补边可能在凹角过渡区相交。每个角先独立绘制到临时
-        # 画布，再按输入顺序提交尚未被占用的像素，保证重叠区幂等且不
-        # 会被后一个角的回退路径覆盖。
-        completion_ok = False
-        claimed = np.zeros(canvas_arr.shape[:2], dtype=bool)
-        # 每个角必须基于同一份补边前画布计算；否则前一个角写入的边框
-        # 会成为后一个角的输入，令角点的层裁剪依赖输入顺序，出现一角
-        # 有短横线、镜像角没有的情况。
-        base_canvas = canvas_arr.copy()
-        for corner, cut_w, cut_h in cuts:
-            trial = base_canvas.copy()
-            cut_ok = apply_lshape_border_completion(
-                canvas_arr=trial,
-                material_img=material_img,
-                outer_rect=outer_rect,
-                cut_corner=corner,
-                cut_w_px=cut_w,
-                cut_h_px=cut_h,
-                dpi=dpi,
-                bg_color=bg_color,
-                src_material_img=src_material_img,
-                scale_x=scale_x,
-                scale_y=scale_y,
-                manual_edge_px=manual_edge_px,
-                manual_band_px=manual_band_px,
-                manual_band_color=manual_band_color,
-                directional_scale=directional_scale,
-            )
-            changed = np.any(trial != base_canvas, axis=2)
-            write_mask = changed & ~claimed
-            canvas_arr[write_mask] = trial[write_mask]
-            claimed |= write_mask
-            completion_ok = cut_ok or completion_ok
-        return completion_ok
+        return _apply_multi_cut_completion(
+            canvas_arr=canvas_arr,
+            material_img=material_img,
+            outer_rect=outer_rect,
+            cuts=cuts,
+            dpi=dpi,
+            bg_color=bg_color,
+            src_material_img=src_material_img,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            manual_edge_px=manual_edge_px,
+            manual_band_px=manual_band_px,
+            manual_band_color=manual_band_color,
+            directional_scale=directional_scale,
+        )
 
     # ===== [V13 集成] 手动覆盖路径：任一 manual_* 非 None → 走 V13 路径 =====
     manual_active = (
@@ -869,11 +988,7 @@ def apply_lshape_border_completion(
     _profile_layers, _v13, _v13_computed, _v13_preferred = _detect_lshape_border_auto(detect_img)
 
     if _v13_preferred and _v13 is not None:
-        logger.info(
-            "[LShapeBorder] V13 检测命中（Profile 让位）: edge=%dpx band=%dpx color=%s",
-            _v13[0], _v13[1], _v13[2],
-        )
-        _v13_ok = _try_apply_v13(
+        _v13_ok = _try_v13_with_params(
             canvas_arr=canvas_arr,
             material_img=material_img,
             outer_rect=outer_rect,
@@ -883,10 +998,7 @@ def apply_lshape_border_completion(
             src_material_img=src_material_img,
             scale_x=scale_x,
             scale_y=scale_y,
-            edge_px=_v13[0],
-            band_px=_v13[1],
-            band_color=_v13[3],
-            edge_color=_v13[2],
+            v13=_v13,
             staircase_cut_rects=staircase_cut_rects,
             cut_area_mask=cut_area_mask,
         )
@@ -927,11 +1039,7 @@ def apply_lshape_border_completion(
         _v13 = detect_border_v13(detect_img)
     v13 = _v13
     if v13 is not None:
-        logger.info(
-            "[LShapeBorder] V13 检测命中: edge=%dpx band=%dpx color=%s，走 V13 路径",
-            v13[0], v13[1], v13[2],
-        )
-        _v13_ok2 = _try_apply_v13(
+        _v13_ok2 = _try_v13_with_params(
             canvas_arr=canvas_arr,
             material_img=material_img,
             outer_rect=outer_rect,
@@ -941,10 +1049,7 @@ def apply_lshape_border_completion(
             src_material_img=src_material_img,
             scale_x=scale_x,
             scale_y=scale_y,
-            edge_px=v13[0],
-            band_px=v13[1],
-            band_color=v13[3],
-            edge_color=v13[2],
+            v13=v13,
             staircase_cut_rects=staircase_cut_rects,
             cut_area_mask=cut_area_mask,
         )
@@ -952,42 +1057,18 @@ def apply_lshape_border_completion(
             return True
         logger.info("[LShapeBorder] V13 patch 绘制失败（直接优先路径），继续向下回退旧路径")
 
-    border_layers_src = detect_pool_material_borders(detect_img, bg_color)
-    if not border_layers_src:
-        logger.info("[LShapeBorder] 素材无边框层，跳过补全")
-        return False
-
-    # Step 2: 把检测到的厚度按 scale 因子换算到画布坐标系
-    # [Fix P1-06 2026-09-12] 统一为几何平均 sqrt(sx*sy)，与 Profile 路径
-    #   （lshape_border_route._apply_profile_path）口径一致：
-    #   非等比缩放（scale_x ≠ scale_y，如 ROTATE_270 素材）时算术平均会
-    #   系统性高估厚度（例 sx=2、sy=0.5 → 算术 1.25 vs 几何 1.0），
-    #   导致切边补边厚度失真、视觉上残留"裸边"。几何均值对"旋转校正
-    #   后 sx/sy 互换但乘积不变"的场景稳健（stretch 填满模式等价）。
-    scale_avg = float(np.sqrt(scale_x * scale_y)) if (scale_x > 0 and scale_y > 0) else 1.0
-    scale_avg = max(scale_avg, 0.1)  # 防御性下限
-
-    border_layers_canvas: list[tuple[tuple[int, int, int], float]] = []
-    for color, thickness in border_layers_src:
-        border_layers_canvas.append((color, float(thickness) * scale_avg))
-
-    total_t = sum(t for _, t in border_layers_canvas)
-    logger.info(
-        "[LShapeBorder] 检测到 %d 层边框（scale=%.2f×），画布总厚度 %.1f px: %s",
-        len(border_layers_canvas), scale_avg, total_t, border_layers_canvas,
-    )
-
-    if cut_area_mask is not None or staircase_cut_rects:
-        return _draw_staircase_union_layers(
-            canvas_arr, staircase_cut_rects, border_layers_canvas,
-            cut_area_mask=cut_area_mask,
-        )
-
-    # Step 3: 使用统一的 L 形距离分层绘制。旧的两矩形 bbox 画法在内凹角
-    # 需要靠端点重叠拼接，取整后会留下细缝/短线，且可能画入缺口。
-    return _draw_lshape_layers_on_retained_side(
-        canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px,
-        border_layers_canvas,
+    return _apply_legacy_border_path(
+        canvas_arr=canvas_arr,
+        outer_rect=outer_rect,
+        cut_corner=cut_corner,
+        cut_w_px=cut_w_px,
+        cut_h_px=cut_h_px,
+        detect_img=detect_img,
+        bg_color=bg_color,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        staircase_cut_rects=staircase_cut_rects,
+        cut_area_mask=cut_area_mask,
     )
 
 
