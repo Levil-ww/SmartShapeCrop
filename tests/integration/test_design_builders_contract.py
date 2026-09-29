@@ -343,3 +343,169 @@ class TestAdapterFieldMapping:
             snapshot, _Best(), _sketch(), 100, 80, False, 1)
         assert request.pool_params.target == ""
         assert isinstance(request.pool_params.target, str)
+
+
+# ── Priority 1: Params class validation tests ───────────────────────────
+
+
+class TestPoolBuildParamsValidation:
+    """PoolBuildParams.validate() rejects invalid field types."""
+
+    def test_valid_params_passes(self):
+        params = PoolBuildParams(target="test", user_margins={"top": 1.0})
+        params.validate()
+
+    def test_non_string_target_rejected(self):
+        params = PoolBuildParams(target=123)
+        with pytest.raises(DesignBuildValidationError, match="target"):
+            params.validate()
+
+    def test_non_dict_user_margins_rejected(self):
+        params = PoolBuildParams(user_margins="invalid")
+        with pytest.raises(DesignBuildValidationError, match="user_margins"):
+            params.validate()
+
+    def test_non_dict_user_multihole_rejected(self):
+        params = PoolBuildParams(user_multihole_params=[1, 2, 3])
+        with pytest.raises(DesignBuildValidationError, match="user_multihole_params"):
+            params.validate()
+
+
+class TestLShapeBuildParamsValidation:
+    """LShapeBuildParams.validate() rejects invalid corner and negative cuts."""
+
+    def test_valid_params_passes(self):
+        params = LShapeBuildParams({"corner": "tr", "cut_w_cm": 20.0, "cut_h_cm": 15.0})
+        params.validate()
+
+    def test_non_dict_values_rejected(self):
+        params = LShapeBuildParams("invalid")
+        with pytest.raises(DesignBuildValidationError, match="values"):
+            params.validate()
+
+    def test_invalid_corner_rejected(self):
+        params = LShapeBuildParams({"corner": "middle"})
+        with pytest.raises(DesignBuildValidationError, match="corner"):
+            params.validate()
+
+    def test_negative_cut_w_rejected(self):
+        params = LShapeBuildParams({"cut_w_cm": -5.0})
+        with pytest.raises(DesignBuildValidationError, match="cut_w_cm"):
+            params.validate()
+
+    def test_negative_cut_h_rejected(self):
+        params = LShapeBuildParams({"cut_h_cm": -10.0})
+        with pytest.raises(DesignBuildValidationError, match="cut_h_cm"):
+            params.validate()
+
+    def test_zero_cut_is_allowed(self):
+        params = LShapeBuildParams({"cut_w_cm": 0.0, "cut_h_cm": 0.0})
+        params.validate()
+
+
+class TestCompositeBuildParamsValidation:
+    """CompositeBuildParams.validate() rejects invalid dimensions and cuts."""
+
+    def test_valid_params_passes(self):
+        params = CompositeBuildParams({
+            "outer_w_cm": 100.0, "outer_h_cm": 80.0,
+            "cuts_cm": [{"corner": "br", "cut_w_cm": 20.0}]
+        })
+        params.validate()
+
+    def test_non_dict_values_rejected(self):
+        params = CompositeBuildParams([1, 2, 3])
+        with pytest.raises(DesignBuildValidationError, match="values"):
+            params.validate()
+
+    def test_zero_outer_w_rejected(self):
+        params = CompositeBuildParams({"outer_w_cm": 0.0})
+        with pytest.raises(DesignBuildValidationError, match="outer_w_cm"):
+            params.validate()
+
+    def test_negative_outer_h_rejected(self):
+        params = CompositeBuildParams({"outer_h_cm": -50.0})
+        with pytest.raises(DesignBuildValidationError, match="outer_h_cm"):
+            params.validate()
+
+    def test_non_list_cuts_rejected(self):
+        params = CompositeBuildParams({"cuts_cm": "invalid"})
+        with pytest.raises(DesignBuildValidationError, match="cuts_cm"):
+            params.validate()
+
+    def test_non_dict_cut_item_rejected(self):
+        params = CompositeBuildParams({"cuts_cm": ["invalid"]})
+        with pytest.raises(DesignBuildValidationError, match="cuts_cm\\[0\\]"):
+            params.validate()
+
+    def test_invalid_cut_corner_rejected(self):
+        params = CompositeBuildParams({"cuts_cm": [{"corner": "center"}]})
+        with pytest.raises(DesignBuildValidationError, match="corner"):
+            params.validate()
+
+    def test_empty_cuts_list_passes(self):
+        params = CompositeBuildParams({"cuts_cm": []})
+        params.validate()
+
+
+# ── Priority 3: Composite geometry error path tests ─────────────────────
+
+
+class TestCompositeGeometryErrorPaths:
+    """apply_composite_geometry raises on invalid parameter combinations."""
+
+    def test_missing_outer_w_cm_raises(self):
+        request = DesignBuildRequest(
+            mode="composite", best=_Best(), sketch_result=None,
+            canvas_w_cm=101.0, canvas_h_cm=81.0, trim_cm=1.0,
+            composite_params=CompositeBuildParams({
+                "outer_h_cm": 80.0,
+                "cuts_cm": [{"corner": "br", "cut_w_cm": 20.0, "cut_h_cm": 15.0}]
+            }))
+        with pytest.raises((KeyError, DesignBuildValidationError)):
+            CompositeDesignBuilder().build(request, _spy_context()[0])
+
+    def test_missing_outer_h_cm_raises(self):
+        request = DesignBuildRequest(
+            mode="composite", best=_Best(), sketch_result=None,
+            canvas_w_cm=101.0, canvas_h_cm=81.0, trim_cm=1.0,
+            composite_params=CompositeBuildParams({
+                "outer_w_cm": 100.0,
+                "cuts_cm": [{"corner": "br", "cut_w_cm": 20.0, "cut_h_cm": 15.0}]
+            }))
+        with pytest.raises((KeyError, DesignBuildValidationError)):
+            CompositeDesignBuilder().build(request, _spy_context()[0])
+
+    def test_cut_exceeding_outer_width_raises(self):
+        request = DesignBuildRequest(
+            mode="composite", best=_Best(), sketch_result=None,
+            canvas_w_cm=101.0, canvas_h_cm=81.0, trim_cm=1.0,
+            composite_params=CompositeBuildParams({
+                "outer_w_cm": 100.0, "outer_h_cm": 80.0,
+                "cuts_cm": [{"corner": "br", "cut_w_cm": 150.0, "cut_h_cm": 15.0}]
+            }))
+        with pytest.raises((ValueError, DesignBuildValidationError)):
+            CompositeDesignBuilder().build(request, _spy_context()[0])
+
+    def test_cut_exceeding_outer_height_raises(self):
+        request = DesignBuildRequest(
+            mode="composite", best=_Best(), sketch_result=None,
+            canvas_w_cm=101.0, canvas_h_cm=81.0, trim_cm=1.0,
+            composite_params=CompositeBuildParams({
+                "outer_w_cm": 100.0, "outer_h_cm": 80.0,
+                "cuts_cm": [{"corner": "br", "cut_w_cm": 20.0, "cut_h_cm": 150.0}]
+            }))
+        with pytest.raises((ValueError, DesignBuildValidationError)):
+            CompositeDesignBuilder().build(request, _spy_context()[0])
+
+    def test_builder_validates_params_before_geometry(self):
+        """Invalid params should be caught by validate(), not by geometry code."""
+        request = DesignBuildRequest(
+            mode="composite", best=_Best(), sketch_result=None,
+            canvas_w_cm=101.0, canvas_h_cm=81.0, trim_cm=1.0,
+            composite_params=CompositeBuildParams({
+                "outer_w_cm": -100.0, "outer_h_cm": 80.0,
+                "cuts_cm": [{"corner": "br"}]
+            }))
+        with pytest.raises(DesignBuildValidationError, match="outer_w_cm"):
+            CompositeDesignBuilder().build(request, _spy_context()[0])

@@ -23,15 +23,69 @@ class PoolBuildParams:
     user_margins: dict | None = None
     user_multihole_params: dict | None = None
 
+    def validate(self) -> None:
+        if not isinstance(self.target, str):
+            raise DesignBuildValidationError(
+                f"PoolBuildParams.target 必须是字符串，实际: {type(self.target).__name__}")
+        if self.user_margins is not None and not isinstance(self.user_margins, dict):
+            raise DesignBuildValidationError(
+                f"PoolBuildParams.user_margins 必须是 dict 或 None，"
+                f"实际: {type(self.user_margins).__name__}")
+        if (self.user_multihole_params is not None
+                and not isinstance(self.user_multihole_params, dict)):
+            raise DesignBuildValidationError(
+                f"PoolBuildParams.user_multihole_params 必须是 dict 或 None，"
+                f"实际: {type(self.user_multihole_params).__name__}")
+
 
 @dataclass(frozen=True)
 class LShapeBuildParams:
     values: dict
 
+    def validate(self) -> None:
+        if not isinstance(self.values, dict):
+            raise DesignBuildValidationError(
+                f"LShapeBuildParams.values 必须是 dict，实际: {type(self.values).__name__}")
+        corner = self.values.get('corner')
+        if corner is not None and corner not in ('tl', 'tr', 'bl', 'br'):
+            raise DesignBuildValidationError(
+                f"LShapeBuildParams.corner 必须是 tl/tr/bl/br，实际: {corner!r}")
+        for key in ('cut_w_cm', 'cut_h_cm'):
+            val = self.values.get(key)
+            if val is not None and float(val) < 0:
+                raise DesignBuildValidationError(
+                    f"LShapeBuildParams.{key} 不能为负: {val}")
+
 
 @dataclass(frozen=True)
 class CompositeBuildParams:
     values: dict
+
+    def validate(self) -> None:
+        if not isinstance(self.values, dict):
+            raise DesignBuildValidationError(
+                f"CompositeBuildParams.values 必须是 dict，"
+                f"实际: {type(self.values).__name__}")
+        for key in ('outer_w_cm', 'outer_h_cm'):
+            val = self.values.get(key)
+            if val is not None and float(val) <= 0:
+                raise DesignBuildValidationError(
+                    f"CompositeBuildParams.{key} 必须为正数: {val}")
+        cuts = self.values.get('cuts_cm')
+        if cuts is not None:
+            if not isinstance(cuts, list):
+                raise DesignBuildValidationError(
+                    f"CompositeBuildParams.cuts_cm 必须是 list，"
+                    f"实际: {type(cuts).__name__}")
+            for i, cut in enumerate(cuts):
+                if not isinstance(cut, dict):
+                    raise DesignBuildValidationError(
+                        f"CompositeBuildParams.cuts_cm[{i}] 必须是 dict")
+                corner = cut.get('corner')
+                if corner is not None and corner not in ('tl', 'tr', 'bl', 'br'):
+                    raise DesignBuildValidationError(
+                        f"CompositeBuildParams.cuts_cm[{i}].corner 必须是 tl/tr/bl/br，"
+                        f"实际: {corner!r}")
 
 
 @dataclass(frozen=True)
@@ -500,6 +554,7 @@ class PoolDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
         request.validate()
+        request.pool_params.validate()
         design = context.new_design(
             request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_pool_geometry(
@@ -515,6 +570,8 @@ class LShapeDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
         request.validate()
+        if request.lshape_params is not None:
+            request.lshape_params.validate()
         design = context.new_design(
             request.canvas_w_cm, request.canvas_h_cm, request.trim_cm)
         apply_lshape_geometry(
@@ -527,6 +584,8 @@ class CompositeDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
         request.validate()
+        if request.composite_params is not None:
+            request.composite_params.validate()
         return apply_composite_geometry(request, context.log)
 
 
