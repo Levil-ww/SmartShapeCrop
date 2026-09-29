@@ -70,13 +70,299 @@ class SketchParseResult:
     inner_rects_px: list = field(default_factory=list)
 
 
+def _round_pref_bonus(v):
+    """圆整数偏好加分：外框尺寸通常是5或10的倍数。"""
+    if abs(v - round(v)) > 0.01:
+        return 0.0
+    iv = int(v)
+    if iv % 100 == 0:
+        return 0.05
+    if iv % 50 == 0:
+        return 0.04
+    if iv % 10 == 0:
+        return 0.03
+    if iv % 5 == 0:
+        return 0.02
+    return 0.0
+
+
+def _build_excluded_values(dir_locked, target_outer_w_cm, target_outer_h_cm):
+    """构建需要从空间映射桶中排除的字段和值。
+
+    包含方向标签已锁定的值 + 目标外框尺寸及其近似值，
+    防止 total_w/total_h 被误分配给 inner_* 或 margin_* 桶。
+    """
+    excluded_fields = set(dir_locked.keys())
+    excluded_values = [v[0] for v in dir_locked.values()]
+    target_w = round(float(target_outer_w_cm or 0), 1)
+    target_h = round(float(target_outer_h_cm or 0), 1)
+    if target_w > 0:
+        excluded_values.append(target_w)
+        for dv in [target_w + 0.5, target_w - 0.5, target_w + 1.0, target_w - 1.0]:
+            if dv > 0:
+                excluded_values.append(dv)
+    if target_h > 0:
+        excluded_values.append(target_h)
+        for dv in [target_h + 0.5, target_h - 0.5, target_h + 1.0, target_h - 1.0]:
+            if dv > 0:
+                excluded_values.append(dv)
+    return excluded_fields, excluded_values
+
+
+def _collect_big_candidates(buckets, ocr_raw):
+    """收集外框候选大值（20~600），按 (位数, 置信度, 值大小) 排序取 top8。"""
+    all_big_vals = []
+    seen_v = set()
+    for bucket_name, cands in buckets.items():
+        for v, c, b in cands:
+            if 20.0 <= v <= 600:
+                key = round(v, 1)
+                if key not in seen_v:
+                    seen_v.add(key)
+                    all_big_vals.append((v, c, b))
+    for v, c, b in ocr_raw:
+        if 20.0 <= v <= 600:
+            key = round(v, 1)
+            if key not in seen_v:
+                seen_v.add(key)
+                all_big_vals.append((v, c, b))
+
+    def _sort_key(r):
+        v, c, _ = r
+        dig = len(f"{int(v)}") if v >= 1 else 1
+        return (dig, c, v)
+
+    all_big_vals.sort(key=_sort_key, reverse=True)
+    return all_big_vals[:8]
+
+
+def _try_outer_assignment(tw_cand, th_cand, dir_locked, buckets, ow, oh):
+    """评估一组外框宽高候选的综合得分。
+
+    返回 (综合得分, 自洽分, assignment_dict)。
+    """
+    asg = _build_assignment(dir_locked, buckets, tw_cand, th_cand)
+    asg = _validate_and_fix_margins(asg, tw_cand, th_cand,
+                                     dir_locked_fields=set(dir_locked.keys()))
+    sc = _score_assignment_consistency(asg)
+    px_r = ow / max(oh, 1)
+    cm_r = asg.get('total_w', (0, 0))[0] / max(asg.get('total_h', (0, 0))[0], 1)
+    ratio_match = 1.0 - min(abs(px_r - cm_r) / max(px_r, cm_r, 0.1), 1.0)
+    round_bonus = _round_pref_bonus(tw_cand) + _round_pref_bonus(th_cand)
+    outer_w_set = set(round(v, 1) for v, _, _ in buckets.get('outer_w', []))
+    outer_h_set = set(round(v, 1) for v, _, _ in buckets.get('outer_h', []))
+    bucket_bonus = 0.0
+    if round(tw_cand, 1) in outer_w_set:
+        bucket_bonus += 0.10
+    if round(th_cand, 1) in outer_h_set:
+        bucket_bonus += 0.10
+    size_penalty = 1.0
+    if tw_cand < 40 and th_cand < 40:
+        size_penalty = 0.5
+    return (sc * 0.65 + ratio_match * 0.10 + round_bonus * 0.10 + bucket_bonus) * size_penalty, sc, asg
+
+
+def _step5_5_enumerate_outer(dir_locked, buckets, ocr_raw, ow, oh,
+                              target_outer_w_cm, target_outer_h_cm):
+    """Step 5.5：外框候选组合枚举选优。
+
+    无 target 时枚举大值两两组合；有 target 时直接用用户指定尺寸。
+    返回 (assignment, sc_after)。
+    """
+    if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
+        top_cands = _collect_big_candidates(buckets, ocr_raw)
+        logger.info(f"[Step5.5] 外框候选池: {[round(v, 1) for v, _, _ in top_cands]}")
+        best_total = -1.0
+        best_sc = -1.0
+        best_asg = None
+        for i in range(len(top_cands)):
+            for j in range(len(top_cands)):
+                if i == j and len(top_cands) > 1:
+                    continue
+                tw_i = top_cands[i][0]
+                th_j = top_cands[j][0]
+                if tw_i + th_j < 60:
+                    continue
+                try:
+                    score, sc, asg = _try_outer_assignment(tw_i, th_j, dir_locked, buckets, ow, oh)
+                except Exception:
+                    logger.debug("[_7step_parse] 忽略异常", exc_info=True)
+                    continue
+                if score > best_total:
+                    best_total = score
+                    best_sc = sc
+                    best_asg = asg
+                    logger.info(f"[Step5.5] 候选外框组合({tw_i:.1f}x{th_j:.1f}) "
+                                f"综合分={score:.3f} 自洽sc={sc:.3f} → 暂时领先")
+        if best_asg is None:
+            best_asg = _build_assignment(dir_locked, buckets, 0.0, 0.0)
+            best_asg = _validate_and_fix_margins(best_asg, 0.0, 0.0,
+                                                  dir_locked_fields=set(dir_locked.keys()))
+            best_sc = _score_assignment_consistency(best_asg)
+        logger.info(f"[Step5.5选出] 综合分={best_total:.3f} 自洽sc={best_sc:.3f} "
+                    f"外框={best_asg.get('total_w', (0, 0))[0]:.1f}x{best_asg.get('total_h', (0, 0))[0]:.1f}")
+        return best_asg, best_sc
+    else:
+        assignment = _build_assignment(dir_locked, buckets, target_outer_w_cm, target_outer_h_cm)
+        assignment = _validate_and_fix_margins(assignment, target_outer_w_cm, target_outer_h_cm,
+                                                dir_locked_fields=set(dir_locked.keys()))
+        sc_after = _score_assignment_consistency(assignment)
+        return assignment, sc_after
+
+
+def _step6_5_ratio_swap(assignment, ow, oh, target_outer_w_cm, target_outer_h_cm, dir_locked):
+    """Step 6.5：像素比例 vs cm比例 对齐校验（方向搞反则swap）。"""
+    sc_after = _score_assignment_consistency(assignment)
+    if target_outer_w_cm > 0 or target_outer_h_cm > 0:
+        return assignment, sc_after
+    px_ratio = ow / max(oh, 1)
+    tw_val = assignment.get('total_w', (0, 0))[0]
+    th_val = assignment.get('total_h', (0, 0))[0]
+    if tw_val <= 0 or th_val <= 0:
+        return assignment, sc_after
+    cm_ratio = tw_val / max(th_val, 1)
+    need_swap = (px_ratio > 1.2 and cm_ratio < 0.83) or (px_ratio < 0.83 and cm_ratio > 1.2)
+    if not need_swap:
+        return assignment, sc_after
+    logger.info(f"[Step6.5] 像素/厘米比例不符，交换宽高！px比例={px_ratio:.2f} cm比例={cm_ratio:.2f}")
+    pairs = [('total_w', 'total_h'), ('inner_w', 'inner_h')]
+    for a, b in pairs:
+        av = assignment.pop(a, (0, 0.5))
+        bv = assignment.pop(b, (0, 0.5))
+        assignment[a] = bv
+        assignment[b] = av
+    ml = assignment.pop('margin_left', (0, 0.5))
+    mr = assignment.pop('margin_right', (0, 0.5))
+    mt = assignment.pop('margin_top', (0, 0.5))
+    mb = assignment.pop('margin_bottom', (0, 0.5))
+    assignment['margin_top'] = ml
+    assignment['margin_bottom'] = mr
+    assignment['margin_left'] = mt
+    assignment['margin_right'] = mb
+    assignment = _validate_and_fix_margins(assignment, 0.0, 0.0,
+                                            dir_locked_fields=set(dir_locked.keys()))
+    sc_after = _score_assignment_consistency(assignment)
+    logger.info(f"[Step6.5后] 新值: "
+                f"total={assignment.get('total_w', (0, 0))[0]:.1f}x{assignment.get('total_h', (0, 0))[0]:.1f} "
+                f"inner={assignment.get('inner_w', (0, 0))[0]:.1f}x{assignment.get('inner_h', (0, 0))[0]:.1f} "
+                f"上{assignment.get('margin_top', (0, 0))[0]:.1f}下{assignment.get('margin_bottom', (0, 0))[0]:.1f}"
+                f"左{assignment.get('margin_left', (0, 0))[0]:.1f}右{assignment.get('margin_right', (0, 0))[0]:.1f} "
+                f"sc={sc_after:.3f}")
+    return assignment, sc_after
+
+
+def _step6_6_rounding(assignment, target_outer_w_cm, target_outer_h_cm, dir_locked):
+    """Step 6.6：外框尺寸圆整校验（尝试5/10倍数圆整，提升自洽度）。"""
+    sc_after = _score_assignment_consistency(assignment)
+    if target_outer_w_cm > 0 or target_outer_h_cm > 0:
+        return assignment, sc_after
+    cur_tw = assignment.get('total_w', (0, 0))[0]
+    cur_th = assignment.get('total_h', (0, 0))[0]
+    if cur_tw <= 20 or cur_th <= 20:
+        return assignment, sc_after
+
+    def _try_round(orig_val, step):
+        near = round(orig_val / step) * step
+        results = []
+        for delta in [-step, 0, step]:
+            nv = near + delta
+            if 20 <= nv <= 600 and abs(nv - orig_val) <= orig_val * 0.15:
+                results.append(nv)
+        return list(set(results))
+
+    def _is_very_round(v):
+        for base in [100, 50, 25]:
+            if abs(v - round(v / base) * base) < 0.01:
+                return True
+        return False
+
+    tw_candidates = _try_round(cur_tw, 5) + _try_round(cur_tw, 10)
+    th_candidates = _try_round(cur_th, 5) + _try_round(cur_th, 10)
+    tw_candidates = sorted(set(v for v in tw_candidates if v != cur_tw))
+    th_candidates = sorted(set(v for v in th_candidates if v != cur_th))
+    tw_very_round = [v for v in tw_candidates
+                     if _is_very_round(v) and abs(cur_tw - v) / max(cur_tw, 1) < 0.10]
+    th_very_round = [v for v in th_candidates
+                     if _is_very_round(v) and abs(cur_th - v) / max(cur_th, 1) < 0.10]
+    if not (tw_very_round or th_very_round):
+        return assignment, sc_after
+    logger.info(f"[Step6.6] 尝试外框尺寸圆整(很圆): tw={tw_very_round} th={th_very_round}")
+    all_tw = list(set(tw_very_round + [cur_tw]))
+    all_th = list(set(th_very_round + [cur_th]))
+    best_total = sc_after * 0.6 + (_round_pref_bonus(cur_tw) + _round_pref_bonus(cur_th)) * 0.4
+    best_final_assg = dict(assignment)
+    best_final_sc = sc_after
+    for tw_c in all_tw:
+        for th_c in all_th:
+            if tw_c == cur_tw and th_c == cur_th:
+                continue
+            alt_asg = dict(assignment)
+            alt_asg['total_w'] = (tw_c, 0.9)
+            alt_asg['total_h'] = (th_c, 0.9)
+            alt_asg = _validate_and_fix_margins(alt_asg, tw_c, th_c,
+                                                dir_locked_fields=set(dir_locked.keys()))
+            alt_sc = _score_assignment_consistency(alt_asg)
+            alt_round = _round_pref_bonus(tw_c) + _round_pref_bonus(th_c)
+            alt_total = alt_sc * 0.6 + alt_round * 0.4
+            logger.info(f"[Step6.6] 候选 {tw_c}x{th_c} sc={alt_sc:.3f} round={alt_round:.3f} total={alt_total:.3f}")
+            if alt_total > best_total + 0.003:
+                best_total = alt_total
+                best_final_sc = alt_sc
+                best_final_assg = alt_asg
+                logger.info(f"[Step6.6] ⬆ 采用 {tw_c}x{th_c} total={alt_total:.3f}")
+    if best_final_assg != assignment:
+        assignment = best_final_assg
+        sc_after = best_final_sc
+        logger.info(f"[Step6.6采用] 圆整后: "
+                    f"total={assignment.get('total_w', (0, 0))[0]:.1f}x{assignment.get('total_h', (0, 0))[0]:.1f} "
+                    f"sc={sc_after:.3f}")
+    return assignment, sc_after
+
+
+def _step6_7_brute_force(assignment, sc_after, dir_locked, buckets):
+    """Step 6.7：几何自洽穷举校验（仅在自洽度低或边距缺失时触发）。"""
+    need_brute = (
+        sc_after < 0.9
+        or assignment.get('margin_top', (0, 0))[0] <= 0
+        or assignment.get('margin_bottom', (0, 0))[0] <= 0
+        or assignment.get('margin_left', (0, 0))[0] <= 0
+        or assignment.get('margin_right', (0, 0))[0] <= 0
+        or len(dir_locked) < 2
+    )
+    if not need_brute:
+        logger.info(f"[Step6.7穷举] 跳过(sc={sc_after:.3f}≥0.9且边距完整，"
+                    f"锁定{len(dir_locked)}项→主路径0额外开销)")
+        return assignment, sc_after
+    locked_fields_set = set(dir_locked.keys())
+    new_asg, new_sc, info = _brute_force_margin_permute(
+        assignment, locked_fields_set, buckets=buckets)
+    if new_asg is not None and new_sc > sc_after:
+        assignment = new_asg
+        sc_after = new_sc
+        assignment = _validate_and_fix_margins(
+            assignment,
+            assignment.get('total_w', (0, 0))[0],
+            assignment.get('total_h', (0, 0))[0],
+            dir_locked_fields=locked_fields_set)
+        sc_after = _score_assignment_consistency(assignment)
+        logger.info(f"[Step6.7穷举] ✅ 采用改进方案: {info}")
+        logger.info(f"[Step6.7穷举后] 边距: "
+                    f"上{assignment.get('margin_top', (0, 0))[0]:.1f}"
+                    f"下{assignment.get('margin_bottom', (0, 0))[0]:.1f}"
+                    f"左{assignment.get('margin_left', (0, 0))[0]:.1f}"
+                    f"右{assignment.get('margin_right', (0, 0))[0]:.1f} sc={sc_after:.3f}")
+    else:
+        logger.info(f"[Step6.7穷举] 无改进 ({info})")
+    return assignment, sc_after
+
+
 def _7step_parse(cv2, gray_img, color_img, tesseract,
                  target_outer_w_cm=0.0, target_outer_h_cm=0.0,
                  enhanced_gray=None, deadline=None):
     """严格7步法草图解析。
 
     [F6 修复] deadline: 可选 float 时间戳（time.monotonic），用于在 OCR 等
-    耗时步骤之间检查总耗时，超时立即返回失败，避免“解析中”状态永久挂起。
+    耗时步骤之间检查总耗时，超时立即返回失败，避免"解析中"状态永久挂起。
     （单次 OCR 调用的硬超时由 image_to_data(timeout=_PARSE_TIMEOUT_SEC) 保证。）
     """
     import time as _time
@@ -103,7 +389,7 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     zone_of = _divide_8_zones(outer, inner, w_img, h_img)
     logger.info(f"[Step2] 间隙区域: {list(gaps.keys())}")
 
-    # Step 3: 全局OCR扫描（传入颜色增强灰度图作为附加变体）
+    # Step 3: 全局OCR扫描
     if (early := _check_deadline('OCR扫描')) is not None:
         return early
     ocr_raw = _multi_scale_ocr_scan(cv2, tesseract, gray_img,
@@ -113,7 +399,7 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
         return {'success': False, 'message': '全局OCR未识别到任何数值'}
     ocr_raw = _merge_split_decimals(ocr_raw)
 
-    # Step 4: 方向标签优先锁定（传入颜色增强灰度图 + target 用于边距合理性校验）
+    # Step 4: 方向标签优先锁定
     if (early := _check_deadline('方向标签识别')) is not None:
         return early
     dir_locked = _extract_direction_label_numbers(cv2, tesseract, gray_img,
@@ -121,23 +407,8 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
                                                    target_outer_w_cm=target_outer_w_cm,
                                                    target_outer_h_cm=target_outer_h_cm,
                                                    check_cancel=lambda: _check_deadline('方向标签识别') is not None)
-    excluded_fields = set(dir_locked.keys())
-    excluded_values = [v[0] for v in dir_locked.values()]
-    # [Fix Bug2] 将权威外框尺寸和目标尺寸加入 value 排除，防止 total_w/total_h 被误分配给 inner_* 或 margin_* 桶
-    # 例如：172（外框宽）不应出现在 inner_h、margin_left 等候选中；60（外框高）同理
-    target_w = round(float(target_outer_w_cm or 0), 1)
-    target_h = round(float(target_outer_h_cm or 0), 1)
-    if target_w > 0:
-        excluded_values.append(target_w)
-        # 同时添加近似整数值（如 172.0 被识别为 172、或 171.5）
-        for dv in [target_w + 0.5, target_w - 0.5, target_w + 1.0, target_w - 1.0]:
-            if dv > 0:
-                excluded_values.append(dv)
-    if target_h > 0:
-        excluded_values.append(target_h)
-        for dv in [target_h + 0.5, target_h - 0.5, target_h + 1.0, target_h - 1.0]:
-            if dv > 0:
-                excluded_values.append(dv)
+    excluded_fields, excluded_values = _build_excluded_values(
+        dir_locked, target_outer_w_cm, target_outer_h_cm)
     logger.info(f"[Step4] 方向标签锁定 {len(dir_locked)} 个字段: {list(dir_locked.keys())}")
 
     # Step 5: 空间位置映射
@@ -145,259 +416,26 @@ def _7step_parse(cv2, gray_img, color_img, tesseract,
     for field, cands in buckets.items():
         logger.info(f"[Step5] 区域[{field}] 候选数={len(cands)} top1={cands[0][0] if cands else None}")
 
-    # ---- Step 5.5：外框候选组合枚举选优（核心改进）----
-    # 外框尺寸通常是所有数值中最大的2个。从所有桶+OCR候选收集大值，枚举两两组合并评分。
-    def _round_pref_bonus(v):
-        """圆整数偏好加分：外框尺寸通常是5或10的倍数。"""
-        if abs(v - round(v)) > 0.01:
-            return 0.0
-        iv = int(v)
-        if iv % 100 == 0:
-            return 0.05  # 整百 +5%
-        if iv % 50 == 0:
-            return 0.04  # 整五十 +4%
-        if iv % 10 == 0:
-            return 0.03  # 整十 +3%
-        if iv % 5 == 0:
-            return 0.02  # 整五 +2%
-        return 0.0
+    # Step 5.5: 外框候选组合枚举选优
+    assignment, sc_after = _step5_5_enumerate_outer(
+        dir_locked, buckets, ocr_raw, ow, oh, target_outer_w_cm, target_outer_h_cm)
 
-    def _try_assignment(tw_cand, th_cand):
-        asg = _build_assignment(dir_locked, buckets, tw_cand, th_cand)
-        asg = _validate_and_fix_margins(asg, tw_cand, th_cand,
-                                         dir_locked_fields=set(dir_locked.keys()))
-        sc = _score_assignment_consistency(asg)
-        # 像素比例匹配分
-        px_r = ow / max(oh, 1)
-        cm_r = asg.get('total_w', (0, 0))[0] / max(asg.get('total_h', (0, 0))[0], 1)
-        ratio_match = 1.0 - min(abs(px_r - cm_r) / max(px_r, cm_r, 0.1), 1.0)
-        # 圆整数偏好：外框宽高为5/10/50/100倍数的加分
-        round_bonus = _round_pref_bonus(tw_cand) + _round_pref_bonus(th_cand)
-        # 外框桶匹配奖励：若候选值来自 outer_w/outer_h 桶，给予额外加分
-        outer_w_set = set(round(v, 1) for v, _, _ in buckets.get('outer_w', []))
-        outer_h_set = set(round(v, 1) for v, _, _ in buckets.get('outer_h', []))
-        bucket_bonus = 0.0
-        if round(tw_cand, 1) in outer_w_set:
-            bucket_bonus += 0.10
-        if round(th_cand, 1) in outer_h_set:
-            bucket_bonus += 0.10
-        # 尺寸合理性：若外框两边都很小（<40cm），给予惩罚
-        size_penalty = 1.0
-        if tw_cand < 40 and th_cand < 40:
-            size_penalty = 0.5
-        # 综合得分：自洽65% + 比例匹配10% + 圆整偏好10% + 桶匹配15%
-        return (sc * 0.65 + ratio_match * 0.10 + round_bonus * 0.10 + bucket_bonus) * size_penalty, sc, asg
+    # Step 6.5: 像素比例 vs cm比例 对齐校验
+    assignment, sc_after = _step6_5_ratio_swap(
+        assignment, ow, oh, target_outer_w_cm, target_outer_h_cm, dir_locked)
 
-    if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
-        # 收集所有可能的大值候选（20~600）
-        all_big_vals = []
-        seen_v = set()
-        for bucket_name, cands in buckets.items():
-            for v, c, b in cands:
-                if 20.0 <= v <= 600:
-                    key = round(v, 1)
-                    if key not in seen_v:
-                        seen_v.add(key)
-                        all_big_vals.append((v, c, b))
-        # 补充：merge 所有全局OCR原始值里的大值（避免遗漏）
-        for v, c, b in ocr_raw:
-            if 20.0 <= v <= 600:
-                key = round(v, 1)
-                if key not in seen_v:
-                    seen_v.add(key)
-                    all_big_vals.append((v, c, b))
-        # 按 (位数, 置信度, 值大小) 排序取top8（越大越像外框）
-        def _sort_key(r):
-            v, c, _ = r
-            dig = len(f"{int(v)}") if v >= 1 else 1
-            return (dig, c, v)
-        all_big_vals.sort(key=_sort_key, reverse=True)
-        top_cands = all_big_vals[:8]
-        logger.info(f"[Step5.5] 外框候选池: {[round(v,1) for v,_,_ in top_cands]}")
+    # Step 6.6: 外框尺寸圆整校验
+    assignment, sc_after = _step6_6_rounding(
+        assignment, target_outer_w_cm, target_outer_h_cm, dir_locked)
 
-        # 枚举所有两两组合（含自身swap），选综合得分最高的
-        best_total = -1.0
-        best_sc = -1.0
-        best_asg = None
-        for i in range(len(top_cands)):
-            for j in range(len(top_cands)):
-                if i == j and len(top_cands) > 1:
-                    continue
-                tw_i = top_cands[i][0]
-                th_j = top_cands[j][0]
-                # 避免太小组合：两值之和至少60
-                if tw_i + th_j < 60:
-                    continue
-                try:
-                    score, sc, asg = _try_assignment(tw_i, th_j)
-                except Exception:
-                    logger.debug("[_7step_parse] 忽略异常", exc_info=True)
-                    continue
-                if score > best_total:
-                    best_total = score
-                    best_sc = sc
-                    best_asg = asg
-                    logger.info(f"[Step5.5] 候选外框组合({tw_i:.1f}x{th_j:.1f}) "
-                                f"综合分={score:.3f} 自洽sc={sc:.3f} → 暂时领先")
-        # 兜底：同时尝试只取单个最大外框值，另一侧用对称比例估算
-        if best_asg is None:
-            best_asg = _build_assignment(dir_locked, buckets, 0.0, 0.0)
-            best_asg = _validate_and_fix_margins(best_asg, 0.0, 0.0,
-                                                  dir_locked_fields=set(dir_locked.keys()))
-            best_sc = _score_assignment_consistency(best_asg)
-        assignment = best_asg
-        sc_after = best_sc
-        logger.info(f"[Step5.5选出] 综合分={best_total:.3f} 自洽sc={sc_after:.3f} "
-                    f"外框={assignment.get('total_w',(0,0))[0]:.1f}x{assignment.get('total_h',(0,0))[0]:.1f}")
-    else:
-        # target模式：直接用用户指定外框尺寸
-        assignment = _build_assignment(dir_locked, buckets, target_outer_w_cm, target_outer_h_cm)
-        assignment = _validate_and_fix_margins(assignment, target_outer_w_cm, target_outer_h_cm,
-                                                dir_locked_fields=set(dir_locked.keys()))
-        sc_after = _score_assignment_consistency(assignment)
-
-    # ---- Step 6.5：像素比例 vs cm比例 对齐校验（方向搞反则swap）----
-    px_ratio = ow / max(oh, 1)  # 像素外框宽/高
-    tw_val = assignment.get('total_w', (0, 0))[0]
-    th_val = assignment.get('total_h', (0, 0))[0]
-    if tw_val > 0 and th_val > 0 and target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
-        cm_ratio = tw_val / max(th_val, 1)
-        need_swap = (px_ratio > 1.2 and cm_ratio < 0.83) or (px_ratio < 0.83 and cm_ratio > 1.2)
-        if need_swap:
-            logger.info(f"[Step6.5] 像素/厘米比例不符，交换宽高！px比例={px_ratio:.2f} cm比例={cm_ratio:.2f}")
-            pairs = [('total_w', 'total_h'), ('inner_w', 'inner_h')]
-            for a, b in pairs:
-                av = assignment.pop(a, (0, 0.5))
-                bv = assignment.pop(b, (0, 0.5))
-                assignment[a] = bv
-                assignment[b] = av
-            ml = assignment.pop('margin_left', (0, 0.5))
-            mr = assignment.pop('margin_right', (0, 0.5))
-            mt = assignment.pop('margin_top', (0, 0.5))
-            mb = assignment.pop('margin_bottom', (0, 0.5))
-            assignment['margin_top'] = ml
-            assignment['margin_bottom'] = mr
-            assignment['margin_left'] = mt
-            assignment['margin_right'] = mb
-            assignment = _validate_and_fix_margins(assignment, 0.0, 0.0,
-                                                    dir_locked_fields=set(dir_locked.keys()))
-            sc_after = _score_assignment_consistency(assignment)
-            logger.info(f"[Step6.5后] 新值: "
-                        f"total={assignment.get('total_w',(0,0))[0]:.1f}x{assignment.get('total_h',(0,0))[0]:.1f} "
-                        f"inner={assignment.get('inner_w',(0,0))[0]:.1f}x{assignment.get('inner_h',(0,0))[0]:.1f} "
-                        f"上{assignment.get('margin_top',(0,0))[0]:.1f}下{assignment.get('margin_bottom',(0,0))[0]:.1f}"
-                        f"左{assignment.get('margin_left',(0,0))[0]:.1f}右{assignment.get('margin_right',(0,0))[0]:.1f} "
-                        f"sc={sc_after:.3f}")
-
-    # ---- Step 6.6：外框尺寸圆整校验（尝试5/10倍数圆整，提升自洽度）----
-    if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
-        cur_tw = assignment.get('total_w', (0, 0))[0]
-        cur_th = assignment.get('total_h', (0, 0))[0]
-        if cur_tw > 20 and cur_th > 20:
-            best_sc = _score_assignment_consistency(assignment)
-            best_assg = dict(assignment)
-
-            def _try_round(orig_val, step, label):
-                """尝试将原值圆整到最近的step倍数，返回候选列表。"""
-                near = round(orig_val / step) * step
-                results = []
-                for delta in [-step, 0, step]:
-                    nv = near + delta
-                    if 20 <= nv <= 600 and abs(nv - orig_val) <= orig_val * 0.15:
-                        results.append(nv)
-                return list(set(results))
-
-            tw_candidates = _try_round(cur_tw, 5, 'w')
-            th_candidates = _try_round(cur_th, 5, 'h')
-            tw_candidates += _try_round(cur_tw, 10, 'w')
-            th_candidates += _try_round(cur_th, 10, 'h')
-            tw_candidates = sorted(set([v for v in tw_candidates if v != cur_tw]))
-            th_candidates = sorted(set([v for v in th_candidates if v != cur_th]))
-
-            # 仅保留"很圆"的候选（100/50/25的倍数），且原始值在10%范围内
-            def _is_very_round(v):
-                for base in [100, 50, 25]:
-                    if abs(v - round(v / base) * base) < 0.01:
-                        return True
-                return False
-
-            tw_very_round = [v for v in tw_candidates if _is_very_round(v) and abs(cur_tw - v) / max(cur_tw, 1) < 0.10]
-            th_very_round = [v for v in th_candidates if _is_very_round(v) and abs(cur_th - v) / max(cur_th, 1) < 0.10]
-
-            if tw_very_round or th_very_round:
-                logger.info(f"[Step6.6] 尝试外框尺寸圆整(很圆): tw={tw_very_round} th={th_very_round}")
-                # 遍历所有tw和th组合（含原始值），选自洽分+圆整分最高的
-                all_tw = list(set(tw_very_round + [cur_tw]))
-                all_th = list(set(th_very_round + [cur_th]))
-                best_total = best_sc * 0.6 + (_round_pref_bonus(cur_tw) + _round_pref_bonus(cur_th)) * 0.4
-                best_final_assg = dict(assignment)
-                best_final_sc = best_sc
-                for tw_c in all_tw:
-                    for th_c in all_th:
-                        if tw_c == cur_tw and th_c == cur_th:
-                            continue
-                        alt_asg = dict(assignment)
-                        alt_asg['total_w'] = (tw_c, 0.9)
-                        alt_asg['total_h'] = (th_c, 0.9)
-                        alt_asg = _validate_and_fix_margins(alt_asg, tw_c, th_c,
-                                                                dir_locked_fields=set(dir_locked.keys()))
-                        alt_sc = _score_assignment_consistency(alt_asg)
-                        alt_round = _round_pref_bonus(tw_c) + _round_pref_bonus(th_c)
-                        alt_total = alt_sc * 0.6 + alt_round * 0.4
-                        logger.info(f"[Step6.6] 候选 {tw_c}x{th_c} sc={alt_sc:.3f} round={alt_round:.3f} total={alt_total:.3f}")
-                        if alt_total > best_total + 0.003:
-                            best_total = alt_total
-                            best_final_sc = alt_sc
-                            best_final_assg = alt_asg
-                            logger.info(f"[Step6.6] ⬆ 采用 {tw_c}x{th_c} total={alt_total:.3f}")
-
-                if best_final_assg != assignment:
-                    assignment = best_final_assg
-                    sc_after = best_final_sc
-                    logger.info(f"[Step6.6采用] 圆整后: "
-                                f"total={assignment.get('total_w',(0,0))[0]:.1f}x{assignment.get('total_h',(0,0))[0]:.1f} "
-                                f"sc={sc_after:.3f}")
-
-    # ---- Step 6.7：几何自洽穷举校验（Phase2 改进5）----
-    # 性能保护（条件触发）：仅当 sc<0.9 或 边距有0 或 锁定<2项 时才运行
-    need_brute = (
-        sc_after < 0.9
-        or assignment.get('margin_top', (0,0))[0] <= 0
-        or assignment.get('margin_bottom', (0,0))[0] <= 0
-        or assignment.get('margin_left', (0,0))[0] <= 0
-        or assignment.get('margin_right', (0,0))[0] <= 0
-        or len(dir_locked) < 2
-    )
-    if need_brute:
-        locked_fields_set = set(dir_locked.keys())
-        new_asg, new_sc, info = _brute_force_margin_permute(
-            assignment, locked_fields_set, buckets=buckets)
-        if new_asg is not None and new_sc > sc_after:
-            assignment = new_asg
-            sc_after = new_sc
-            # 穷举后再做一次修正，保证边距裁剪规则有效
-            assignment = _validate_and_fix_margins(
-                assignment,
-                assignment.get('total_w', (0,0))[0],
-                assignment.get('total_h', (0,0))[0],
-                dir_locked_fields=locked_fields_set)
-            sc_after = _score_assignment_consistency(assignment)
-            logger.info(f"[Step6.7穷举] ✅ 采用改进方案: {info}")
-            logger.info(f"[Step6.7穷举后] 边距: "
-                        f"上{assignment.get('margin_top',(0,0))[0]:.1f}"
-                        f"下{assignment.get('margin_bottom',(0,0))[0]:.1f}"
-                        f"左{assignment.get('margin_left',(0,0))[0]:.1f}"
-                        f"右{assignment.get('margin_right',(0,0))[0]:.1f} sc={sc_after:.3f}")
-        else:
-            logger.info(f"[Step6.7穷举] 无改进 ({info})")
-    else:
-        logger.info(f"[Step6.7穷举] 跳过(sc={sc_after:.3f}≥0.9且边距完整，锁定{len(dir_locked)}项→主路径0额外开销)")
+    # Step 6.7: 几何自洽穷举校验
+    assignment, sc_after = _step6_7_brute_force(assignment, sc_after, dir_locked, buckets)
 
     logger.info(f"[Step7终态] 赋值: "
-                f"total={assignment.get('total_w',(0,0))[0]:.1f}x{assignment.get('total_h',(0,0))[0]:.1f} "
-                f"inner={assignment.get('inner_w',(0,0))[0]:.1f}x{assignment.get('inner_h',(0,0))[0]:.1f} "
-                f"边距上{assignment.get('margin_top',(0,0))[0]:.1f}下{assignment.get('margin_bottom',(0,0))[0]:.1f}"
-                f"左{assignment.get('margin_left',(0,0))[0]:.1f}右{assignment.get('margin_right',(0,0))[0]:.1f}")
+                f"total={assignment.get('total_w', (0, 0))[0]:.1f}x{assignment.get('total_h', (0, 0))[0]:.1f} "
+                f"inner={assignment.get('inner_w', (0, 0))[0]:.1f}x{assignment.get('inner_h', (0, 0))[0]:.1f} "
+                f"边距上{assignment.get('margin_top', (0, 0))[0]:.1f}下{assignment.get('margin_bottom', (0, 0))[0]:.1f}"
+                f"左{assignment.get('margin_left', (0, 0))[0]:.1f}右{assignment.get('margin_right', (0, 0))[0]:.1f}")
 
     return {
         'success': True,
