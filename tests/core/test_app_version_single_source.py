@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 from core.config import APP_DISPLAY_NAME, APP_VERSION
 
-PACKAGE_SCRIPT = PROJECT_ROOT / 'packaging' / 'packageV2.2.3.py'
+PACKAGE_SCRIPT = PROJECT_ROOT / 'packaging' / 'packageV2.2.5.py'
 SPEC_FILE = PROJECT_ROOT / 'packaging' / 'specs' / f'{APP_DISPLAY_NAME}.spec'
 
 
@@ -83,7 +83,7 @@ def _load_package_script():
 
 class TestPackagingScript:
     def test_new_entry_exists(self):
-        assert PACKAGE_SCRIPT.is_file(), '缺少 packaging/packageV2.2.3.py'
+        assert PACKAGE_SCRIPT.is_file(), '缺少 packaging/packageV2.2.5.py'
         assert SPEC_FILE.is_file(), f'缺少 spec：{SPEC_FILE.name}'
 
     def test_exe_name_matches_app_version(self):

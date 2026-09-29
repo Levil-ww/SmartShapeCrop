@@ -79,10 +79,10 @@ python -m pytest tests/gui/ -v
 - 打包：
 
 ```powershell
-python packaging/packageV2.2.3.py
+python packaging/packageV2.2.5.py
 ```
 
-  当前打包入口是 `packaging/packageV2.2.3.py`（配 `packaging/specs/智能裁剪设计器V2.2.3.spec`）。
+  当前打包入口是 `packaging/packageV2.2.5.py`（配 `packaging/specs/智能裁剪设计器V2.2.5.spec`）。
   `packaging/packageV2.2.2.py` 保留备查，**不要再用于出包**（其 `PROJECT_ROOT` 关系与版本号
   均指向 V2.2.2）。`packaging/legacy/` 已不存在，无需再避让。
 
@@ -129,7 +129,7 @@ python packaging/packageV2.2.3.py
 - 不要修改用户未要求的文件；改动前先看 `git status`，不要回退已有未提交改动。
 - 不要安装 `python-qt5`，它会与 `PyQt5` 冲突并可能破坏 Windows DLL 加载。
 - 不要把正式 pytest 测试放进 `scripts/`、`_archive/`、`packaging/` 或 `ProductSummary/`。
-- 不要用 `packaging/packageV2.2.2.py` 出包；当前打包入口是 `packaging/packageV2.2.3.py`。
+- 不要用 `packaging/packageV2.2.2.py` 出包；当前打包入口是 `packaging/packageV2.2.5.py`。
 - 不要随意清理或改写 `logs/`、`build/`、`dist/` 生成物，除非任务明确涉及诊断、构建或打包。
 - 不要改 `.venv/`、`.git/`、`.idea/`、`.pytest_cache/`、`.workbuddy/`。
 - 涉及依赖安装、打包环境、OCR/Tesseract 路径、删除文件、数据库/持久化格式迁移、批量移动历史文档或更改测试基线时，先问用户。

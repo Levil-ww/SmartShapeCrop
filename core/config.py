@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 #     - packaging/packageV<版本>.py  → exe 文件名 / 打包横幅
 #     - core/log_setup.py            → 启动日志头
 #     - main.py                      → 「关于」对话框
-APP_VERSION: str = "2.2.3"
+APP_VERSION: str = "2.2.5"
 
 # exe 名与窗口显示名（由 APP_VERSION 派生，勿另行硬编码）
 APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"

@@ -11,15 +11,12 @@ import os
 from PyQt5.QtCore import pyqtSignal, QThread
 from PIL import Image
 
-from core.geometry import CropDesign, CutRect, limit_l_cut_rects_per_anchor
+from core.geometry import CropDesign
 from core.config import CUT_LOSS_CM
 from workers.design_builders import (
     BUILDERS,
     DesignBuildContext,
     LegacyRequestAdapter,
-)
-from workers.design_builders import (
-    BUILDERS, DesignBuildRequest, LegacyRequestAdapter,
 )
 from services.parser.name_parser import parse_filename
 from services.parser.template_matcher import TemplateMatcher
