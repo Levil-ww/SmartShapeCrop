@@ -777,115 +777,118 @@ def _parse_arrow_or_dir_token(text):
     return None, None
 
 
-def _extract_arrow_direction_numbers(cv2, tesseract, gray_img,
-                                     enhanced_gray=None,
-                                     target_outer_w_cm=0.0,
-                                     target_outer_h_cm=0.0):
-    """方向+箭头增强版的数值字段锁定（返回 dict: field → (val, conf, bbox)）。
+def _mh_reasonability_caps(target_outer_w_cm, target_outer_h_cm):
+    """计算多洞方向/箭头数值合理性上限。
 
-    复用单洞 _extract_direction_label_numbers 的整体框架，但：
-      1. 方向字符表扩展包含箭头
-      2. 允许更多字符组合
-      3. 合理性 cap 按 target 轴向
+    Returns:
+        dict: {target_authoritative, cap_h, cap_v, margin_cap}
     """
-    from PIL import Image as PILImage
-    result = {}
-
-    if tesseract is None:
-        return result
-
-    # ===== 合理性 cap（与单洞 Step4 一致）=====
-    _target_authoritative = (target_outer_w_cm > 0 and target_outer_h_cm > 0)
-    if _target_authoritative:
-        _cap_h = target_outer_w_cm * 0.90
-        _cap_v = target_outer_h_cm * 0.90
-        _margin_cap = max(_cap_h, _cap_v)
+    authoritative = (target_outer_w_cm > 0 and target_outer_h_cm > 0)
+    if authoritative:
+        cap_h = target_outer_w_cm * 0.90
+        cap_v = target_outer_h_cm * 0.90
+        margin_cap = max(cap_h, cap_v)
     else:
-        _ref = max(target_outer_w_cm, target_outer_h_cm, 0.0)
-        _margin_cap = min(_ref * 0.30, 30.0) if _ref > 0 else 30.0
+        ref = max(target_outer_w_cm, target_outer_h_cm, 0.0)
+        margin_cap = min(ref * 0.30, 30.0) if ref > 0 else 30.0
+        cap_h = cap_v = margin_cap
+    return dict(target_authoritative=authoritative,
+                cap_h=cap_h, cap_v=cap_v, margin_cap=margin_cap)
 
-    def _is_reasonable_for_field(v, fld_hint):
-        if v is None or v <= 0 or v < 0.3:
-            return False
-        if fld_hint in ('margin_left', 'margin_right'):
-            return v <= (_cap_h if _target_authoritative else _margin_cap)
-        if fld_hint in ('margin_top', 'margin_bottom'):
-            return v <= (_cap_v if _target_authoritative else _margin_cap)
-        return v <= _margin_cap if _margin_cap > 0 else v <= 500
 
-    # ===== 扫描列表 =====
-    scan_list = [(gray_img, 1.0, 'gray')]
+def _mh_is_reasonable(v, fld, caps):
+    """判断数值是否在该字段的合理范围内。"""
+    if v is None or v <= 0 or v < 0.3:
+        return False
+    if fld in ('margin_left', 'margin_right'):
+        return v <= (caps['cap_h'] if caps['target_authoritative'] else caps['margin_cap'])
+    if fld in ('margin_top', 'margin_bottom'):
+        return v <= (caps['cap_v'] if caps['target_authoritative'] else caps['margin_cap'])
+    return v <= caps['margin_cap'] if caps['margin_cap'] > 0 else v <= 500
+
+
+def _mh_build_scan_list(cv2, gray_img, enhanced_gray):
+    """构建多尺度 OCR 扫描列表: [(img, scale, tag), ...]。"""
+    scans = [(gray_img, 1.0, 'gray')]
     try:
-        scan_list.append((cv2.resize(gray_img, None, fx=2.5, fy=2.5,
-                                     interpolation=cv2.INTER_CUBIC), 2.5, 'gray'))
-        scan_list.append((cv2.resize(gray_img, None, fx=4.0, fy=4.0,
-                                     interpolation=cv2.INTER_CUBIC), 4.0, 'gray'))
+        scans.append((cv2.resize(gray_img, None, fx=2.5, fy=2.5,
+                                 interpolation=cv2.INTER_CUBIC), 2.5, 'gray'))
+        scans.append((cv2.resize(gray_img, None, fx=4.0, fy=4.0,
+                                 interpolation=cv2.INTER_CUBIC), 4.0, 'gray'))
     except Exception:
         pass
     if enhanced_gray is not None:
         try:
-            scan_list.append((enhanced_gray, 1.0, 'enh'))
-            scan_list.append((cv2.resize(enhanced_gray, None, fx=2.5, fy=2.5,
-                                         interpolation=cv2.INTER_CUBIC), 2.5, 'enh'))
+            scans.append((enhanced_gray, 1.0, 'enh'))
+            scans.append((cv2.resize(enhanced_gray, None, fx=2.5, fy=2.5,
+                                     interpolation=cv2.INTER_CUBIC), 2.5, 'enh'))
         except Exception:
             pass
+    return scans
 
-    def _tokens_adjacent_line(l1, t1, w1, h1, l2, t2, w2, h2):
-        y_overlap = max(0, min(t1 + h1, t2 + h2) - max(t1, t2))
-        min_h = max(1, min(h1, h2))
-        if y_overlap < 0.45 * min_h:
-            return False
-        box1_right = l1 + w1
-        box2_right = l2 + w2
-        if box1_right <= l2:
-            gap_x = l2 - box1_right
-        elif box2_right <= l1:
-            gap_x = l1 - box2_right
-        else:
-            gap_x = 0
-        if gap_x > 3 * max(1, min(w1, w2)):
-            return False
-        if gap_x > 350:
-            return False
-        return True
 
-    def _try_bind_value(field, val, conf, bx, by, bw, bh, tag):
-        if val is None or not (0.3 <= val <= 500):
-            return
-        # 外框值排除
-        if _target_authoritative:
-            for xv in (target_outer_w_cm, target_outer_h_cm,
-                       target_outer_w_cm - 0.5, target_outer_w_cm + 0.5,
-                       target_outer_h_cm - 0.5, target_outer_h_cm + 0.5):
-                if xv > 0 and abs(val - xv) < 0.15:
-                    logger.info(f"[MH Step5] 外框值拒绝: {field}={val}")
-                    return
-        if not _is_reasonable_for_field(val, field):
-            # 尝试小数点恢复
-            if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
-                s = str(int(val))
-                if len(s) == 2 and s[1] != '0':
-                    dv = float(f"{s[0]}.{s[1]}")
-                    if _is_reasonable_for_field(dv, field):
-                        val = dv
-                        conf *= 0.85
-                        logger.info(f"[MH Step5] 小数恢复: {int(round(val*100)/100)}原→{dv}")
-                    else:
-                        return
+def _mh_tokens_adjacent(l1, t1, w1, h1, l2, t2, w2, h2):
+    """判断两个 OCR token bbox 是否在同一行且水平相邻。"""
+    y_overlap = max(0, min(t1 + h1, t2 + h2) - max(t1, t2))
+    min_h = max(1, min(h1, h2))
+    if y_overlap < 0.45 * min_h:
+        return False
+    box1_right = l1 + w1
+    box2_right = l2 + w2
+    if box1_right <= l2:
+        gap_x = l2 - box1_right
+    elif box2_right <= l1:
+        gap_x = l1 - box2_right
+    else:
+        gap_x = 0
+    if gap_x > 3 * max(1, min(w1, w2)):
+        return False
+    if gap_x > 350:
+        return False
+    return True
+
+
+def _mh_try_bind(result, caps, field, val, conf, bx, by, bw, bh, tag,
+                 target_outer_w_cm=0.0, target_outer_h_cm=0.0):
+    """尝试将 (field, val) 绑定到 result，含外框值排除 + 小数恢复 + 去重保护。"""
+    if val is None or not (0.3 <= val <= 500):
+        return
+    if caps['target_authoritative']:
+        for xv in (target_outer_w_cm, target_outer_h_cm,
+                   target_outer_w_cm - 0.5, target_outer_w_cm + 0.5,
+                   target_outer_h_cm - 0.5, target_outer_h_cm + 0.5):
+            if xv > 0 and abs(val - xv) < 0.15:
+                logger.info(f"[MH Step5] 外框值拒绝: {field}={val}")
+                return
+    if not _mh_is_reasonable(val, field, caps):
+        if abs(val - round(val)) <= 0.01 and 10 <= val <= 99:
+            s = str(int(val))
+            if len(s) == 2 and s[1] != '0':
+                dv = float(f"{s[0]}.{s[1]}")
+                if _mh_is_reasonable(dv, field, caps):
+                    val = dv
+                    conf *= 0.85
+                    logger.info(f"[MH Step5] 小数恢复: {int(round(val*100)/100)}原→{dv}")
                 else:
                     return
             else:
                 return
-        # 同值去重 + 覆盖保护
-        if field in result:
-            old_val, old_conf, _ = result[field]
-            if abs(old_val - val) < 0.01:
-                return  # 同值，保留先到的
-            if conf <= old_conf + 5:
-                return  # 置信度没有显著提升，保留先到的
-        result[field] = (val, conf, (bx, by, bw, bh))
-        logger.info(f"[MH Step5] {tag}: {field}={val} conf={conf}")
+        else:
+            return
+    if field in result:
+        old_val, old_conf, _ = result[field]
+        if abs(old_val - val) < 0.01:
+            return
+        if conf <= old_conf + 5:
+            return
+    result[field] = (val, conf, (bx, by, bw, bh))
+    logger.info(f"[MH Step5] {tag}: {field}={val} conf={conf}")
 
+
+def _mh_scan_ocr_tokens(tesseract, scan_list, result, caps,
+                        target_outer_w_cm, target_outer_h_cm):
+    """主 OCR 多尺度扫描，对每个 token 尝试 A/B/C 三种匹配模式。"""
+    from PIL import Image as PILImage
     lang_options = ['chi_sim+eng', 'eng']
     psm_list = [6, 4, 11, 12]
 
@@ -923,38 +926,39 @@ def _extract_arrow_direction_numbers(cv2, tesseract, gray_img,
                         ci = 0
                     if ci < 8:
                         continue
-
                     bx = int(lefts[i]) / scale
                     by = int(tops[i]) / scale
                     bw = int(widths[i]) / scale
                     bh = int(heights[i]) / scale
-
-                    # ---- A: 单 token 双向匹配（方向字/箭头 + 数值）----
+                    tag_pfx = f"{src_tag} {lang} psm{psm}"
+                    # A: 单 token 双向匹配
                     field, val = _parse_arrow_or_dir_token(raw)
                     if field is not None and val is not None:
-                        _try_bind_value(field, val, ci, bx, by, bw, bh,
-                                        f"A单token({src_tag} {lang} psm{psm})")
+                        _mh_try_bind(result, caps, field, val, ci, bx, by, bw, bh,
+                                     f"A单token({tag_pfx})",
+                                     target_outer_w_cm, target_outer_h_cm)
                         continue
-                    # ---- B: 双 token 方向字/箭头在前 + 数值在后 ----
-                    if field is not None and val is None:
-                        # 仅方向/箭头字符，尝试结合下一个数值 token
-                        if i + 1 < n:
-                            ntxt = _normalize_ocr_text(str(texts[i + 1]))
-                            nm = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt)
-                            if nm:
-                                try:
-                                    vv = float(nm.group(1))
-                                    li, ti, wi, hi = int(lefts[i]), int(tops[i]), int(widths[i]), int(heights[i])
-                                    lj, tj, wj, hj = int(lefts[i+1]), int(tops[i+1]), int(widths[i+1]), int(heights[i+1])
-                                    if _tokens_adjacent_line(li, ti, wi, hi, lj, tj, wj, hj):
-                                        nbw = (lj + wj - li) / scale
-                                        nbh = max(hi, hj) / scale
-                                        _try_bind_value(field, vv, ci, bx, by, nbw, nbh,
-                                                        f"B双token(符→值 {src_tag} {lang} psm{psm})")
-                                        continue
-                                except ValueError:
-                                    pass
-                    # ---- C: 双 token 数值在前 + 方向/箭头在后 ----
+                    # B: 方向/箭头在前 + 数值在后
+                    if field is not None and val is None and i + 1 < n:
+                        ntxt = _normalize_ocr_text(str(texts[i + 1]))
+                        nm = re.match(r'^(\d+\.?\d*|\.\d+)', ntxt)
+                        if nm:
+                            try:
+                                vv = float(nm.group(1))
+                                li, ti, wi, hi = (int(lefts[i]), int(tops[i]),
+                                                  int(widths[i]), int(heights[i]))
+                                lj, tj, wj, hj = (int(lefts[i+1]), int(tops[i+1]),
+                                                  int(widths[i+1]), int(heights[i+1]))
+                                if _mh_tokens_adjacent(li, ti, wi, hi, lj, tj, wj, hj):
+                                    nbw = (lj + wj - li) / scale
+                                    nbh = max(hi, hj) / scale
+                                    _mh_try_bind(result, caps, field, vv, ci, bx, by, nbw, nbh,
+                                                 f"B双token(符→值 {tag_pfx})",
+                                                 target_outer_w_cm, target_outer_h_cm)
+                                    continue
+                            except ValueError:
+                                pass
+                    # C: 数值在前 + 方向/箭头在后
                     m_num = re.match(r'^(\d+\.?\d*|\.\d+)$', raw)
                     if m_num and i + 1 < n:
                         nxt = _normalize_ocr_text(str(texts[i + 1]))
@@ -962,64 +966,98 @@ def _extract_arrow_direction_numbers(cv2, tesseract, gray_img,
                         if nxt_field is not None:
                             try:
                                 vv = float(m_num.group(1))
-                                li, ti, wi, hi = int(lefts[i]), int(tops[i]), int(widths[i]), int(heights[i])
-                                lj, tj, wj, hj = int(lefts[i+1]), int(tops[i+1]), int(widths[i+1]), int(heights[i+1])
-                                if _tokens_adjacent_line(li, ti, wi, hi, lj, tj, wj, hj):
+                                li, ti, wi, hi = (int(lefts[i]), int(tops[i]),
+                                                  int(widths[i]), int(heights[i]))
+                                lj, tj, wj, hj = (int(lefts[i+1]), int(tops[i+1]),
+                                                  int(widths[i+1]), int(heights[i+1]))
+                                if _mh_tokens_adjacent(li, ti, wi, hi, lj, tj, wj, hj):
                                     nbw = (lj + wj - li) / scale
                                     nbh = max(hi, hj) / scale
-                                    _try_bind_value(nxt_field, vv, ci, li/scale, ti/scale, nbw, nbh,
-                                                    f"C双token(值→符 {src_tag} {lang} psm{psm})")
+                                    _mh_try_bind(result, caps, nxt_field, vv, ci,
+                                                 li / scale, ti / scale, nbw, nbh,
+                                                 f"C双token(值→符 {tag_pfx})",
+                                                 target_outer_w_cm, target_outer_h_cm)
                                     continue
                             except ValueError:
                                 pass
 
-    # ===== 小数字补漏（6x + PSM 10/7）=====
-    missing_count = 4 - len(result)
-    if missing_count > 0 and enhanced_gray is not None and cv2 is not None:
-        logger.info(f"[MH Step5] 小数字补漏触发: 缺失{missing_count}")
+
+def _mh_fallback_small_numbers(cv2, tesseract, enhanced_gray, result, caps,
+                               target_outer_w_cm, target_outer_h_cm):
+    """6x 放大 + PSM 10/7 小数字补漏（仅在缺失字段时触发）。"""
+    from PIL import Image as PILImage
+    missing = 4 - len(result)
+    if missing <= 0 or enhanced_gray is None or cv2 is None:
+        return
+    logger.info(f"[MH Step5] 小数字补漏触发: 缺失{missing}")
+    try:
+        s6 = cv2.resize(enhanced_gray, None, fx=6.0, fy=6.0,
+                        interpolation=cv2.INTER_CUBIC)
+        pil_s6 = PILImage.fromarray(s6)
+    except Exception:
+        pil_s6 = None
+    if pil_s6 is None:
+        return
+    for psm_s in [10, 7]:
         try:
-            s6 = cv2.resize(enhanced_gray, None, fx=6.0, fy=6.0,
-                            interpolation=cv2.INTER_CUBIC)
-            pil_s6 = PILImage.fromarray(s6)
+            d6 = tesseract.image_to_data(
+                pil_s6, lang='chi_sim+eng',
+                config=f'--oem 3 --psm {psm_s}',
+                output_type=tesseract.Output.DICT,
+                timeout=_PARSE_TIMEOUT_SEC)
         except Exception:
-            pil_s6 = None
-        if pil_s6 is not None:
-            for psm_s in [10, 7]:
-                try:
-                    d6 = tesseract.image_to_data(
-                        pil_s6, lang='chi_sim+eng',
-                        config=f'--oem 3 --psm {psm_s}',
-                        output_type=tesseract.Output.DICT,
-                        timeout=_PARSE_TIMEOUT_SEC)
-                except Exception:
-                    continue
-                if not d6 or 'text' not in d6:
-                    continue
-                t6s = d6.get('text', [])
-                ns = len(t6s)
-                c6s = d6.get('conf', ['0'] * ns)
-                l6s = d6.get('left', [0] * ns)
-                tp6s = d6.get('top', [0] * ns)
-                w6s = d6.get('width', [0] * ns)
-                h6s = d6.get('height', [0] * ns)
-                for i in range(ns):
-                    raw_s = _normalize_ocr_text(str(t6s[i]))
-                    if not raw_s:
-                        continue
-                    try:
-                        ci_s = max(0, int(str(c6s[i])))
-                    except Exception:
-                        ci_s = 0
-                    if ci_s < 8:
-                        continue
-                    fld_s, val_s = _parse_arrow_or_dir_token(raw_s)
-                    if fld_s is not None and val_s is not None:
-                        bx6 = int(l6s[i]) / 6.0
-                        by6 = int(tp6s[i]) / 6.0
-                        bw6 = int(w6s[i]) / 6.0
-                        bh6 = int(h6s[i]) / 6.0
-                        _try_bind_value(fld_s, val_s, ci_s, bx6, by6, bw6, bh6,
-                                        f"小数字单token(6x psm{psm_s})")
+            continue
+        if not d6 or 'text' not in d6:
+            continue
+        t6s = d6.get('text', [])
+        ns = len(t6s)
+        c6s = d6.get('conf', ['0'] * ns)
+        l6s = d6.get('left', [0] * ns)
+        tp6s = d6.get('top', [0] * ns)
+        w6s = d6.get('width', [0] * ns)
+        h6s = d6.get('height', [0] * ns)
+        for i in range(ns):
+            raw_s = _normalize_ocr_text(str(t6s[i]))
+            if not raw_s:
+                continue
+            try:
+                ci_s = max(0, int(str(c6s[i])))
+            except Exception:
+                ci_s = 0
+            if ci_s < 8:
+                continue
+            fld_s, val_s = _parse_arrow_or_dir_token(raw_s)
+            if fld_s is not None and val_s is not None:
+                bx6 = int(l6s[i]) / 6.0
+                by6 = int(tp6s[i]) / 6.0
+                bw6 = int(w6s[i]) / 6.0
+                bh6 = int(h6s[i]) / 6.0
+                _mh_try_bind(result, caps, fld_s, val_s, ci_s, bx6, by6, bw6, bh6,
+                             f"小数字单token(6x psm{psm_s})",
+                             target_outer_w_cm, target_outer_h_cm)
+
+
+def _extract_arrow_direction_numbers(cv2, tesseract, gray_img,
+                                     enhanced_gray=None,
+                                     target_outer_w_cm=0.0,
+                                     target_outer_h_cm=0.0):
+    """方向+箭头增强版的数值字段锁定（返回 dict: field → (val, conf, bbox)）。
+
+    复用单洞 _extract_direction_label_numbers 的整体框架，但：
+      1. 方向字符表扩展包含箭头
+      2. 允许更多字符组合
+      3. 合理性 cap 按 target 轴向
+    """
+    result = {}
+    if tesseract is None:
+        return result
+
+    caps = _mh_reasonability_caps(target_outer_w_cm, target_outer_h_cm)
+    scan_list = _mh_build_scan_list(cv2, gray_img, enhanced_gray)
+    _mh_scan_ocr_tokens(tesseract, scan_list, result, caps,
+                        target_outer_w_cm, target_outer_h_cm)
+    _mh_fallback_small_numbers(cv2, tesseract, enhanced_gray, result, caps,
+                               target_outer_w_cm, target_outer_h_cm)
 
     logger.info(f"[MH Step5] 方向/箭头锁定 {len(result)} 个字段: {list(result.keys())}")
     return result
