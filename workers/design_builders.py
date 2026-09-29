@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
+
+from services.parser.template_matcher import TemplateEntry
 
 if TYPE_CHECKING:
     from core.geometry import CropDesign
@@ -56,7 +58,7 @@ def apply_lshape_geometry(
 
 def build_multihole_geometry(
     design: CropDesign,
-    sketch_result: Any,
+    sketch_result: object | None,
     trim_cm: float,
     user_multihole: dict | None = None,
     log: Callable[[str], None] | None = None,
@@ -331,7 +333,7 @@ def build_multihole_geometry(
 def apply_pool_geometry(
     design: CropDesign,
     target: str,
-    sketch_result: Any,
+    sketch_result: object | None,
     canvas_w_cm: float,
     canvas_h_cm: float,
     user_margins: dict | None,
@@ -393,8 +395,8 @@ def apply_composite_geometry(
 @dataclass(frozen=True)
 class DesignBuildRequest:
     mode: str
-    best: Any
-    sketch_result: Any
+    best: TemplateEntry
+    sketch_result: object | None
     canvas_w_cm: float
     canvas_h_cm: float
     trim_cm: float
@@ -407,22 +409,22 @@ class DesignBuildRequest:
 
 @dataclass(frozen=True)
 class DesignBuildContext:
-    new_design: Callable[[float, float, float], Any]
+    new_design: Callable[[float, float, float], CropDesign]
     log: Callable[[str], None]
 
 
 @runtime_checkable
 class DesignBuilder(Protocol):
     def build(self, request: DesignBuildRequest,
-              context: DesignBuildContext) -> Any: ...
+              context: DesignBuildContext) -> CropDesign: ...
 
 
 class LegacyRequestAdapter:
     @staticmethod
     def from_worker(
-        worker: Any,
-        best: Any,
-        sketch_result: Any,
+        worker: object,
+        best: TemplateEntry,
+        sketch_result: object | None,
         canvas_w_cm: float,
         canvas_h_cm: float,
         is_lshape: bool,
@@ -446,13 +448,7 @@ class LegacyRequestAdapter:
         )
 
 
-class _B(DesignBuilder):
-    def build(self, request: DesignBuildRequest,
-              context: DesignBuildContext) -> Any:
-        raise NotImplementedError
-
-
-class PoolDesignBuilder(_B):
+class PoolDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
         design = context.new_design(
@@ -465,7 +461,7 @@ class PoolDesignBuilder(_B):
         return design
 
 
-class LShapeDesignBuilder(_B):
+class LShapeDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
         design = context.new_design(
@@ -475,7 +471,7 @@ class LShapeDesignBuilder(_B):
         return design
 
 
-class CompositeDesignBuilder(_B):
+class CompositeDesignBuilder:
     def build(self, request: DesignBuildRequest,
               context: DesignBuildContext) -> CropDesign:
         return apply_composite_geometry(request, context.log)
