@@ -126,163 +126,13 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._build_pool_box()
 
         # 1) + 2) 画布尺寸 与 裁剪模式 同行排列
-        row_size_mode = QHBoxLayout()
-        gb1 = QGroupBox("画布尺寸 (厘米)")
-        f = QVBoxLayout(gb1)
-        self._sp_w = self._dspin(5, 500, self.design.canvas_w_cm, decimals=1)
-        self._sp_h = self._dspin(5, 500, self.design.canvas_h_cm, decimals=1)
-        self._sp_dpi = QSpinBox(); self._sp_dpi.setRange(72, 600); self._sp_dpi.setValue(self.design.dpi)
-        f.addLayout(self._row("宽(cm)", self._sp_w))
-        f.addLayout(self._row("高(cm)", self._sp_h))
-        f.addLayout(self._row("DPI", self._sp_dpi))
-
-        gb_mode = QGroupBox("裁剪模式")
-        fm = QVBoxLayout(gb_mode)
-        self._cb_mode = QComboBox()
-        self._cb_mode.addItem("矩形嵌套挖洞", "rect_hole")
-        self._cb_mode.addItem("L形挖角", "rect_lshape")
-        self._cb_mode.addItem("椭圆挖洞", "ellipse_hole")
-        # [D6] 第 4 项：综合形状（L形挖角 + 中心洞）。此前 combo 只有 3 项，
-        # 复合设计的 mode='rect_lshape_hole' 在回填时 findData 返回 -1 → 静默回落到
-        # 索引 0（矩形嵌套挖洞），下拉框显示与画布设计不一致。参数编辑仍在独立的
-        # 「综合形状设计」面板，本项负责模式往返与生成路由。
-        self._cb_mode.addItem("综合形状(挖角+中心洞)", COMPOSITE_MODE)
-        fm.addWidget(self._cb_mode)
-
-        self._sp_outer_margin = self._dspin(0, 20, self.design.outer_margin_cm)
-        fm.addLayout(self._row("外框留白(cm)", self._sp_outer_margin))
-
-        row_size_mode.addWidget(gb1)
-        row_size_mode.addWidget(gb_mode)
-        self._inner_layout.addLayout(row_size_mode)
+        self._build_canvas_mode_row()
 
         # 3) 内挖边距 与 圆角设置 同行排列
-        row_inner_corner = QHBoxLayout()
+        self._build_inner_margin_corner_row()
 
-        gb_inner = QGroupBox("内挖边距 (厘米)")
-        fi = QVBoxLayout(gb_inner)
-        self._sp_mt = self._dspin(0, 450, self.design.inner_margin_top_cm)
-        self._sp_mb = self._dspin(0, 450, self.design.inner_margin_bottom_cm)
-        self._sp_ml = self._dspin(0, 450, self.design.inner_margin_left_cm)
-        self._sp_mr = self._dspin(0, 450, self.design.inner_margin_right_cm)
-        # ===== [2026-09-05 交互范式切换] SpinBox → 手动生成 =====
-        # 之前：valueChanged → 防抖合并 → _apply_quiet → _collect + design_changed →
-        #       render_design (主线程 100~500ms)；即使有防抖，合并渲染仍阻塞主线程。
-        # 现在：SpinBox 修改 → 只更新设计模型（_collect 由显式生成按钮触发）
-        #       渲染 100% 由"生成预览"按钮、"匹配模板→解析草图→生成预览"按钮、
-        #       PoolRenderWorker 完成回调三处独立路径触发，不依赖 SpinBox 信号。
-        #       用户修改 SpinBox 时 UI 零渲染 → 100% 流畅。
-        # [N-P2-13] 原 valueChanged → _schedule_apply_quiet 连接已全部移除（DISCONNECTED）
-        fi.addLayout(self._row("上", self._sp_mt))
-        fi.addLayout(self._row("下", self._sp_mb))
-        fi.addLayout(self._row("左", self._sp_ml))
-        fi.addLayout(self._row("右", self._sp_mr))
-
-        self._gb_corner = QGroupBox("圆角设置（厘米）")
-        fc = QVBoxLayout(self._gb_corner)
-        grid_corner = QGridLayout()
-        self._sp_design_corners = {}
-        corner_labels = [('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]
-        for i, (key, name) in enumerate(corner_labels):
-            grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 2)
-            sp = QDoubleSpinBox(); sp.setRange(0, 50); sp.setValue(getattr(self.design, f'corner_{key}_cm', 0)); sp.setDecimals(1); sp.setSuffix(" cm")
-            sp.setFixedWidth(100)
-            grid_corner.addWidget(sp, i // 2, (i % 2) * 2 + 1)
-            self._sp_design_corners[key] = sp
-        fc.addLayout(grid_corner)
-
-        row_inner_corner.addWidget(gb_inner)
-        row_inner_corner.addWidget(self._gb_corner)
-        self._inner_layout.addLayout(row_inner_corner)
-
-        # 3b) ===== [MULTI-HOLE Add-On 2026-08-29 + 2026-09-05 增强] 多洞参数区（默认隐藏）=====
-        # 2026-09-05 FIX: 扩展每洞 6 个 SpinBox（宽、高、上距、下距、左距、右距）
-        # + 添加洞数手动调整按钮（+/-），让用户在识别错误时能手动修正。
-        # 单洞模式：永远隐藏 → 视觉和行为零影响；
-        # 多洞模式：Worker 完成后按 design.pool_is_multi_hole 显示。
-        self._gb_multihole = QGroupBox("多洞参数（厘米）")
-        self._gb_multihole.setObjectName("gb_multihole")
-        fm = QFormLayout(self._gb_multihole)
-        fm.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-
-        # 标题标签 + 洞数手动调整按钮（2026-09-05 新增）
-        title_row = QHBoxLayout()
-        self._mh_title_label = QLabel("洞数量：0（仅多洞模式生效）")
-        self._mh_title_label.setStyleSheet("font-weight:bold; color:#2a6;")
-        title_row.addWidget(self._mh_title_label, 1)
-        self._mh_btn_add = QPushButton("＋ 添加洞")
-        self._mh_btn_add.setFixedWidth(80)
-        self._mh_btn_add.clicked.connect(self._mh_add_hole)
-        title_row.addWidget(self._mh_btn_add, 0)
-        self._mh_btn_del = QPushButton("－ 删除末洞")
-        self._mh_btn_del.setFixedWidth(80)
-        self._mh_btn_del.clicked.connect(self._mh_del_hole)
-        title_row.addWidget(self._mh_btn_del, 0)
-        title_wrap = QWidget(); title_wrap.setLayout(title_row)
-        fm.addRow(title_wrap)
-
-        # 初始化最大洞数=8（常规产品足够；支持更多洞时可 expand 动态增行）
-        self._MAX_MH_UI_HOLES = 8
-        self._mh_sp_hole_w = []   # list[QDoubleSpinBox]
-        self._mh_sp_hole_h = []   # list[QDoubleSpinBox]
-        self._mh_sp_mt = []       # list[QDoubleSpinBox] 每洞上距
-        self._mh_sp_mb = []       # list[QDoubleSpinBox] 每洞下距
-        self._mh_sp_ml = []       # list[QDoubleSpinBox] 每洞左距
-        self._mh_sp_mr = []       # list[QDoubleSpinBox] 每洞右距
-        self._mh_sp_gaps = []     # list[QDoubleSpinBox] len = N-1
-        self._mh_rows_widgets = []  # list[(QLabel, QWidget)] 用于显隐控制
-
-        for idx in range(self._MAX_MH_UI_HOLES):
-            i = idx + 1
-            # ===== 每洞 6 个 SpinBox：宽、高、上、下、左、右 =====
-            # 使用 QGridLayout 3x2 布局以在有限空间内容纳
-            wrap = QWidget()
-            grid = QGridLayout(wrap)
-            grid.setContentsMargins(2, 2, 2, 2)
-            grid.setHorizontalSpacing(4)
-            grid.setVerticalSpacing(2)
-
-            spw = self._dspin(0, 1000, 0.0); spw.setSuffix("cm")
-            sph = self._dspin(0, 1000, 0.0); sph.setSuffix("cm")
-            sp_mt = self._dspin(0, 500, 0.0); sp_mt.setSuffix("cm")
-            sp_mb = self._dspin(0, 500, 0.0); sp_mb.setSuffix("cm")
-            sp_ml = self._dspin(0, 500, 0.0); sp_ml.setSuffix("cm")
-            sp_mr = self._dspin(0, 500, 0.0); sp_mr.setSuffix("cm")
-
-            # ===== [2026-09-05 交互范式切换] 多洞 SpinBox → 手动生成 =====
-            # valueChanged 连接已全部移除（渲染由显式生成按钮驱动，见 L158-169 注释）
-
-            # 布局：第 0 行 宽/高，第 1 行 上/下，第 2 行 左/右
-            grid.addWidget(QLabel("宽"), 0, 0); grid.addWidget(spw, 0, 1)
-            grid.addWidget(QLabel("高"), 0, 2); grid.addWidget(sph, 0, 3)
-            grid.addWidget(QLabel("上"), 1, 0); grid.addWidget(sp_mt, 1, 1)
-            grid.addWidget(QLabel("下"), 1, 2); grid.addWidget(sp_mb, 1, 3)
-            grid.addWidget(QLabel("左"), 2, 0); grid.addWidget(sp_ml, 2, 1)
-            grid.addWidget(QLabel("右"), 2, 2); grid.addWidget(sp_mr, 2, 3)
-            grid.setColumnStretch(1, 1); grid.setColumnStretch(3, 1)
-
-            lab = QLabel(f"洞{i}")
-            fm.addRow(lab, wrap)
-            self._mh_sp_hole_w.append(spw)
-            self._mh_sp_hole_h.append(sph)
-            self._mh_sp_mt.append(sp_mt)
-            self._mh_sp_mb.append(sp_mb)
-            self._mh_sp_ml.append(sp_ml)
-            self._mh_sp_mr.append(sp_mr)
-            self._mh_rows_widgets.append((lab, wrap))
-
-            # 间距：N 个洞 → N-1 个间距。最后一个洞之后不加
-            if idx < self._MAX_MH_UI_HOLES - 1:
-                spg = self._dspin(0, 1000, 0.0); spg.setSuffix(" cm")
-                lab_gap = QLabel(f"间距{i}↔{i+1}")
-                fm.addRow(lab_gap, spg)
-                self._mh_sp_gaps.append(spg)
-                self._mh_rows_widgets.append((lab_gap, spg))
-
-        # 默认所有洞/间距都隐藏；回填时根据真实洞数 show 对应行
-        self._set_multi_hole_row_visibility(0)
-        self._gb_multihole.hide()   # 启动时默认隐藏（单洞模式）
-        self._inner_layout.addWidget(self._gb_multihole)
+        # 3b) 多洞参数区（默认隐藏）
+        self._build_multihole_box()
 
         # 4) L 形参数 —— 已迁移到独立的 LShapePanel（gui/lshape_panel.py）
         # 原 _gb_l / _cb_lcorner / _sp_lw / _sp_lh 由 LShapePanel 承载；
@@ -404,6 +254,153 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
         self._btn_save.clicked.connect(self.save_requested.emit)
 
         self._on_mode_change()
+
+    def _build_canvas_mode_row(self):
+        """画布尺寸 + 裁剪模式同行排列（_build_ui 子组件）。"""
+        row_size_mode = QHBoxLayout()
+        gb1 = QGroupBox("画布尺寸 (厘米)")
+        f = QVBoxLayout(gb1)
+        self._sp_w = self._dspin(5, 500, self.design.canvas_w_cm, decimals=1)
+        self._sp_h = self._dspin(5, 500, self.design.canvas_h_cm, decimals=1)
+        self._sp_dpi = QSpinBox()
+        self._sp_dpi.setRange(72, 600)
+        self._sp_dpi.setValue(self.design.dpi)
+        f.addLayout(self._row("宽(cm)", self._sp_w))
+        f.addLayout(self._row("高(cm)", self._sp_h))
+        f.addLayout(self._row("DPI", self._sp_dpi))
+
+        gb_mode = QGroupBox("裁剪模式")
+        fm = QVBoxLayout(gb_mode)
+        self._cb_mode = QComboBox()
+        self._cb_mode.addItem("矩形嵌套挖洞", "rect_hole")
+        self._cb_mode.addItem("L形挖角", "rect_lshape")
+        self._cb_mode.addItem("椭圆挖洞", "ellipse_hole")
+        self._cb_mode.addItem("综合形状(挖角+中心洞)", COMPOSITE_MODE)
+        fm.addWidget(self._cb_mode)
+
+        self._sp_outer_margin = self._dspin(0, 20, self.design.outer_margin_cm)
+        fm.addLayout(self._row("外框留白(cm)", self._sp_outer_margin))
+
+        row_size_mode.addWidget(gb1)
+        row_size_mode.addWidget(gb_mode)
+        self._inner_layout.addLayout(row_size_mode)
+
+    def _build_inner_margin_corner_row(self):
+        """内挖边距 + 圆角设置同行排列（_build_ui 子组件）。"""
+        row_inner_corner = QHBoxLayout()
+
+        gb_inner = QGroupBox("内挖边距 (厘米)")
+        fi = QVBoxLayout(gb_inner)
+        self._sp_mt = self._dspin(0, 450, self.design.inner_margin_top_cm)
+        self._sp_mb = self._dspin(0, 450, self.design.inner_margin_bottom_cm)
+        self._sp_ml = self._dspin(0, 450, self.design.inner_margin_left_cm)
+        self._sp_mr = self._dspin(0, 450, self.design.inner_margin_right_cm)
+        fi.addLayout(self._row("上", self._sp_mt))
+        fi.addLayout(self._row("下", self._sp_mb))
+        fi.addLayout(self._row("左", self._sp_ml))
+        fi.addLayout(self._row("右", self._sp_mr))
+
+        self._gb_corner = QGroupBox("圆角设置（厘米）")
+        fc = QVBoxLayout(self._gb_corner)
+        grid_corner = QGridLayout()
+        self._sp_design_corners = {}
+        corner_labels = [('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角')]
+        for i, (key, name) in enumerate(corner_labels):
+            grid_corner.addWidget(QLabel(name), i // 2, (i % 2) * 2)
+            sp = QDoubleSpinBox()
+            sp.setRange(0, 50)
+            sp.setValue(getattr(self.design, f'corner_{key}_cm', 0))
+            sp.setDecimals(1)
+            sp.setSuffix(" cm")
+            sp.setFixedWidth(100)
+            grid_corner.addWidget(sp, i // 2, (i % 2) * 2 + 1)
+            self._sp_design_corners[key] = sp
+        fc.addLayout(grid_corner)
+
+        row_inner_corner.addWidget(gb_inner)
+        row_inner_corner.addWidget(self._gb_corner)
+        self._inner_layout.addLayout(row_inner_corner)
+
+    def _build_multihole_box(self):
+        """多洞参数 GroupBox（_build_ui 子组件）。
+
+        预分配 _MAX_MH_UI_HOLES=8 个洞的 SpinBox（宽/高/上下左右 + 间距），
+        默认全部隐藏；回填时按实际洞数 _set_multi_hole_row_visibility 显示。
+        """
+        self._gb_multihole = QGroupBox("多洞参数（厘米）")
+        self._gb_multihole.setObjectName("gb_multihole")
+        fm = QFormLayout(self._gb_multihole)
+        fm.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        title_row = QHBoxLayout()
+        self._mh_title_label = QLabel("洞数量：0（仅多洞模式生效）")
+        self._mh_title_label.setStyleSheet("font-weight:bold; color:#2a6;")
+        title_row.addWidget(self._mh_title_label, 1)
+        self._mh_btn_add = QPushButton("＋ 添加洞")
+        self._mh_btn_add.setFixedWidth(80)
+        self._mh_btn_add.clicked.connect(self._mh_add_hole)
+        title_row.addWidget(self._mh_btn_add, 0)
+        self._mh_btn_del = QPushButton("－ 删除末洞")
+        self._mh_btn_del.setFixedWidth(80)
+        self._mh_btn_del.clicked.connect(self._mh_del_hole)
+        title_row.addWidget(self._mh_btn_del, 0)
+        title_wrap = QWidget()
+        title_wrap.setLayout(title_row)
+        fm.addRow(title_wrap)
+
+        self._MAX_MH_UI_HOLES = 8
+        self._mh_sp_hole_w = []
+        self._mh_sp_hole_h = []
+        self._mh_sp_mt = []
+        self._mh_sp_mb = []
+        self._mh_sp_ml = []
+        self._mh_sp_mr = []
+        self._mh_sp_gaps = []
+        self._mh_rows_widgets = []
+
+        for idx in range(self._MAX_MH_UI_HOLES):
+            i = idx + 1
+            wrap = QWidget()
+            grid = QGridLayout(wrap)
+            grid.setContentsMargins(2, 2, 2, 2)
+            grid.setHorizontalSpacing(4)
+            grid.setVerticalSpacing(2)
+
+            spw = self._dspin(0, 1000, 0.0); spw.setSuffix("cm")
+            sph = self._dspin(0, 1000, 0.0); sph.setSuffix("cm")
+            sp_mt = self._dspin(0, 500, 0.0); sp_mt.setSuffix("cm")
+            sp_mb = self._dspin(0, 500, 0.0); sp_mb.setSuffix("cm")
+            sp_ml = self._dspin(0, 500, 0.0); sp_ml.setSuffix("cm")
+            sp_mr = self._dspin(0, 500, 0.0); sp_mr.setSuffix("cm")
+
+            grid.addWidget(QLabel("宽"), 0, 0); grid.addWidget(spw, 0, 1)
+            grid.addWidget(QLabel("高"), 0, 2); grid.addWidget(sph, 0, 3)
+            grid.addWidget(QLabel("上"), 1, 0); grid.addWidget(sp_mt, 1, 1)
+            grid.addWidget(QLabel("下"), 1, 2); grid.addWidget(sp_mb, 1, 3)
+            grid.addWidget(QLabel("左"), 2, 0); grid.addWidget(sp_ml, 2, 1)
+            grid.addWidget(QLabel("右"), 2, 2); grid.addWidget(sp_mr, 2, 3)
+            grid.setColumnStretch(1, 1); grid.setColumnStretch(3, 1)
+
+            lab = QLabel(f"洞{i}")
+            fm.addRow(lab, wrap)
+            self._mh_sp_hole_w.append(spw)
+            self._mh_sp_hole_h.append(sph)
+            self._mh_sp_mt.append(sp_mt)
+            self._mh_sp_mb.append(sp_mb)
+            self._mh_sp_ml.append(sp_ml)
+            self._mh_sp_mr.append(sp_mr)
+            self._mh_rows_widgets.append((lab, wrap))
+
+            if idx < self._MAX_MH_UI_HOLES - 1:
+                spg = self._dspin(0, 1000, 0.0); spg.setSuffix(" cm")
+                lab_gap = QLabel(f"间距{i}\u2194{i+1}")
+                fm.addRow(lab_gap, spg)
+                self._mh_sp_gaps.append(spg)
+                self._mh_rows_widgets.append((lab_gap, spg))
+
+        self._set_multi_hole_row_visibility(0)
+        self._gb_multihole.hide()
+        self._inner_layout.addWidget(self._gb_multihole)
 
     def _dspin(self, mn, mx, val, decimals=2):
         s = QDoubleSpinBox(); s.setRange(mn, mx); s.setValue(val); s.setDecimals(decimals); s.setSingleStep(0.5)
