@@ -15,8 +15,10 @@ from workers.design_builders import (
     BUILDERS,
     CompositeBuildParams,
     CompositeDesignBuilder,
+    DesignBuildError,
     DesignBuildContext,
     DesignBuildRequest,
+    DesignBuildValidationError,
     DesignBuilder,
     LegacyBuildSnapshot,
     LShapeBuildParams,
@@ -208,3 +210,136 @@ def test_composite_builder_rejects_params_without_cuts():
             {"outer_w_cm": 100.0, "outer_h_cm": 80.0}))
     with pytest.raises(ValueError):
         CompositeDesignBuilder().build(request, _spy_context()[0])
+
+
+# ── Priority 1: Builder boundary tests ──────────────────────────────────
+
+
+class TestBuilderValidationBoundaries:
+    """Builder.validate() rejects invalid requests before any geometry work."""
+
+    def test_pool_builder_rejects_negative_trim(self):
+        request = DesignBuildRequest(
+            mode="pool", best=_Best(), sketch_result=_sketch(),
+            canvas_w_cm=100.0, canvas_h_cm=80.0, trim_cm=-1.0,
+            pool_params=PoolBuildParams(target="花型-101x81CM"))
+        with pytest.raises(DesignBuildValidationError, match="trim_cm"):
+            PoolDesignBuilder().build(request, _spy_context()[0])
+
+    def test_pool_builder_rejects_unknown_mode(self):
+        request = DesignBuildRequest(
+            mode="hexagon", best=_Best(), sketch_result=_sketch(),
+            canvas_w_cm=100.0, canvas_h_cm=80.0, trim_cm=1.0)
+        with pytest.raises(DesignBuildValidationError, match="未知构建模式"):
+            PoolDesignBuilder().build(request, _spy_context()[0])
+
+    def test_lshape_builder_rejects_missing_lshape_params(self):
+        request = DesignBuildRequest(
+            mode="lshape", best=_Best(), sketch_result=None,
+            canvas_w_cm=80.0, canvas_h_cm=100.0, trim_cm=1.0,
+            lshape_params=None)
+        with pytest.raises(DesignBuildValidationError, match="lshape_params"):
+            LShapeDesignBuilder().build(request, _spy_context()[0])
+
+    def test_composite_builder_rejects_missing_composite_params(self):
+        request = DesignBuildRequest(
+            mode="composite", best=_Best(), sketch_result=None,
+            canvas_w_cm=101.0, canvas_h_cm=81.0, trim_cm=1.0,
+            composite_params=None)
+        with pytest.raises(DesignBuildValidationError, match="composite_params"):
+            CompositeDesignBuilder().build(request, _spy_context()[0])
+
+    def test_pool_builder_succeeds_with_empty_target(self):
+        context, calls, _ = _spy_context()
+        request = DesignBuildRequest(
+            mode="pool", best=_Best(), sketch_result=_sketch(),
+            canvas_w_cm=100.0, canvas_h_cm=80.0, trim_cm=1.0,
+            pool_params=PoolBuildParams(target=""))
+        design = PoolDesignBuilder().build(request, context)
+        assert isinstance(design, CropDesign)
+        assert design.mode == "rect_hole"
+
+    def test_pool_builder_succeeds_with_none_sketch(self):
+        context, calls, _ = _spy_context()
+        request = DesignBuildRequest(
+            mode="pool", best=_Best(), sketch_result=None,
+            canvas_w_cm=100.0, canvas_h_cm=80.0, trim_cm=1.0,
+            pool_params=PoolBuildParams(target="花型-101x81CM"))
+        design = PoolDesignBuilder().build(request, context)
+        assert isinstance(design, CropDesign)
+        assert design.inner_margin_top_cm == 8.0
+
+    def test_lshape_builder_succeeds_with_minimal_params(self):
+        context, calls, _ = _spy_context()
+        request = DesignBuildRequest(
+            mode="lshape", best=_Best(), sketch_result=None,
+            canvas_w_cm=80.0, canvas_h_cm=100.0, trim_cm=1.0,
+            lshape_params=LShapeBuildParams({"corner": "bl"}))
+        design = LShapeDesignBuilder().build(request, context)
+        assert design.mode == "rect_lshape"
+        assert design.l_corner == "bl"
+        assert design.l_cut_w_cm == 0.0
+        assert design.l_cut_h_cm == 0.0
+
+
+# ── Priority 3: Adapter field mapping direct assertions ─────────────────
+
+
+class TestAdapterFieldMapping:
+    """Direct assertions on LegacyRequestAdapter output structure."""
+
+    def test_adapter_pool_mode_preserves_all_snapshot_fields(self):
+        snapshot = LegacyBuildSnapshot(
+            target="花型-101x81CM",
+            user_margins={"top": 5.0, "bottom": 6.0},
+            user_multihole_params={"active_count": 3},
+            lshape_params=None,
+            composite_params=None,
+        )
+        best = _Best()
+        sketch = _sketch()
+        request = LegacyRequestAdapter.from_snapshot(
+            snapshot, best, sketch, 120.5, 90.5, False, 1.5)
+        assert request.mode == "pool"
+        assert request.pool_params.target == "花型-101x81CM"
+        assert request.pool_params.user_margins == {"top": 5.0, "bottom": 6.0}
+        assert request.pool_params.user_multihole_params == {"active_count": 3}
+        assert request.lshape_params is None
+        assert request.composite_params is None
+        assert request.best is best
+        assert request.sketch_result is sketch
+
+    def test_adapter_wraps_lshape_params_in_typed_wrapper(self):
+        snapshot = LegacyBuildSnapshot(
+            target="", lshape_params={"corner": "tr", "cut_w_cm": 20.0})
+        request = LegacyRequestAdapter.from_snapshot(
+            snapshot, _Best(), _sketch(), 100, 80, True, 1)
+        assert request.mode == "lshape"
+        assert isinstance(request.lshape_params, LShapeBuildParams)
+        assert request.lshape_params.values == {"corner": "tr", "cut_w_cm": 20.0}
+
+    def test_adapter_wraps_composite_params_in_typed_wrapper(self):
+        composite = {"outer_w_cm": 100.0, "cuts_cm": [{"corner": "br"}]}
+        snapshot = LegacyBuildSnapshot(target="", composite_params=composite)
+        request = LegacyRequestAdapter.from_snapshot(
+            snapshot, _Best(), _sketch(), 100, 80, False, 1)
+        assert request.mode == "composite"
+        assert isinstance(request.composite_params, CompositeBuildParams)
+        assert request.composite_params.values == composite
+
+    def test_adapter_coerces_numeric_types_to_float(self):
+        snapshot = LegacyBuildSnapshot(target="test")
+        request = LegacyRequestAdapter.from_snapshot(
+            snapshot, _Best(), _sketch(), 100, 80, False, 1)
+        assert isinstance(request.canvas_w_cm, float)
+        assert isinstance(request.canvas_h_cm, float)
+        assert isinstance(request.trim_cm, float)
+        assert request.canvas_w_cm == 100.0
+        assert request.trim_cm == 1.0
+
+    def test_adapter_none_target_becomes_empty_string(self):
+        snapshot = LegacyBuildSnapshot(target=None)
+        request = LegacyRequestAdapter.from_snapshot(
+            snapshot, _Best(), _sketch(), 100, 80, False, 1)
+        assert request.pool_params.target == ""
+        assert isinstance(request.pool_params.target, str)

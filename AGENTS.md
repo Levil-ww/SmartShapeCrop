@@ -46,10 +46,10 @@ python -m pytest tests/ -q -p no:cacheprovider --basetemp=.pytest_tmp
   | `core/geometry.py`、`core/image_ops.py`、`core/corner/**` | `tests/core/` + `tests/border/` | 445 + 10 |
   | `core/lshape_border*.py` | `tests/core/test_lshape_border*.py` | 59 |
   | `services/sketch_parser/**` | `tests/sketch_parser/` + `tests/sketch/` | 68 + 64 |
-  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 133 |
+  | `services/psd/**`、`services/parser/**` | `tests/integration/` | 145 |
   | `models/design_model.py` | `tests/models/` + `tests/core/` | 28 + 445 |
   | `gui/**`、`workers/**` | `tests/gui/`（需 `QT_QPA_PLATFORM=offscreen`） | 166 |
-  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 905 |
+  | 跨层/架构改动、改公共数据结构 | **全量 `tests/`** | 917 |
 
   （另 `tests/` 根目录下 `test_phase0_multihole.py` 4 条，只在全量里跑到。）
 
@@ -90,10 +90,9 @@ python packaging/packageV2.2.5.py
 
 - 基线时间：2026-09-29，本地 Python 3.13.14，pytest 9.1.1，PyInstaller 6.22.3。
 - 测试命令：日常按上文「按改动范围跑针对性测试」选目录；发版前或跨层改动跑全量。
-- **当前基线：`905 passed`，0 failed / 0 error**（2026-09-29 更新：补提交 3 个测试文件
-  共 19 条 —— `test_composite_close_retire.py`(10)、`test_composite_real_material_samples.py`(3)、
-  `test_legacy_mode_pixel_goldens.py`(6)，同时修复 `composite_panel.cancel_composite_parse()`
-  悬垂引用缺陷。本环境全量实跑 905 passed in 135.87s，0 failed / 0 error）。
+- **当前基线：`917 passed`，0 failed / 0 error**（2026-09-29 更新：新增 12 条 Builder 边界
+  契约测试 + Adapter 字段映射直接断言。本环境全量实跑 917 passed in 150.93s，
+  0 failed / 0 error）。
   演进：501 → 671 → 680 → 704 → 732 → 805 → 813 → 818 → 820 → 832（当日提交自然增长）
   → 842（综合形状阶段 0 新增 `tests/gui/test_composite_panel_wiring.py` 10 条）
   → 852（综合形状 D6 新增 `tests/gui/test_composite_d6_mode_roundtrip.py` 10 条）
@@ -106,7 +105,9 @@ python packaging/packageV2.2.5.py
   → 899（九次更新 Builder 契约测试新增 `tests/integration/test_design_builders_contract.py`
   10 条）
   → **905**（补提交 3 个缺失测试文件共 19 条 + 修复 `cancel_composite_parse` 悬垂引用；
-  全量实跑 905 passed in 135.87s，0 failed / 0 error）。
+  全量实跑 905 passed in 135.87s，0 failed / 0 error）
+  → **917**（Builder 边界契约 7 条 + Adapter 字段映射直接断言 5 条；
+  全量实跑 917 passed in 150.93s，0 failed / 0 error）。
 - 不带 `--basetemp` 时临时目录落 `%TEMP%`，耗时约 225s 且更易受权限影响；两次数字**不可纵向比**。
 - 当前没有已确认的功能性测试失败。
 - 当前未发现项目级 lint 命令或配置，未运行 lint。
