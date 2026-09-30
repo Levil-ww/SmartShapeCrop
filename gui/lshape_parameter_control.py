@@ -56,6 +56,25 @@ class LShapeParameterControl(QWidget):
     def get_outer_size(self) -> tuple[float, float]:
         return self._sp_outer_w.value(), self._sp_outer_h.value()
 
+    def set_outer_size(self, width: float, height: float, *, block_signals: bool = False):
+        widgets = (self._sp_outer_w, self._sp_outer_h)
+        if block_signals:
+            for widget in widgets:
+                widget.blockSignals(True)
+        try:
+            self._sp_outer_w.setValue(max(0.0, float(width)))
+            self._sp_outer_h.setValue(max(0.0, float(height)))
+        finally:
+            if block_signals:
+                for widget in widgets:
+                    widget.blockSignals(False)
+
+    def set_standard_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
+        return self._corner_control.set_lshape_params(corner, cut_w_cm, cut_h_cm)
+
+    def set_cuts(self, cuts: list[dict] | None):
+        return self._corner_control.set_lshape_cuts(cuts)
+
     def get_corner(self) -> str:
         return self._corner_control.get_corner()
 

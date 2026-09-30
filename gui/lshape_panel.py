@@ -505,10 +505,10 @@ class LShapePanel(QWidget):
         return self._corner_control.get_lshape_params()
 
     def set_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
-        return self._corner_control.set_lshape_params(corner, cut_w_cm, cut_h_cm)
+        return self._parameter_control.set_standard_params(corner, cut_w_cm, cut_h_cm)
 
     def set_lshape_cuts(self, cuts: list[dict] | None):
-        return self._corner_control.set_lshape_cuts(cuts)
+        return self._parameter_control.set_cuts(cuts)
 
     def _set_mode_legacy(self, staircase: bool) -> None:
         self._set_staircase_mode(staircase)
