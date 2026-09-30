@@ -155,7 +155,8 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self.panel, "水池设计器")
         self._tabs.addTab(self.lshape_panel, "L形挖角设计")
         self._tabs.addTab(self.composite_panel, "综合形状设计")
-        
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+
         splitter.addWidget(self.canvas)
         splitter.addWidget(self._tabs)
         splitter.setStretchFactor(0, 3)
@@ -297,6 +298,7 @@ class MainWindow(QMainWindow):
     def _on_cropped_image(self, pil_img):
         """裁剪面板生成的图片：在画布上显示预览"""
         self.canvas.clear_notch_overlay()
+        self.canvas.clear_pool_holes_overlay()
         self.canvas._full_image = pil_img
         self.canvas._update_preview_pixmap()
         self.canvas.update()
@@ -310,16 +312,28 @@ class MainWindow(QMainWindow):
                 self.canvas.set_design(self.panel.design)
             else:
                 self.canvas.clear_notch_overlay()
+                self.canvas.clear_pool_holes_overlay()
                 self.canvas._full_image = None
                 self.canvas._preview_pixmap = None
                 self.canvas.update()
             return
         # 直接在主画布显示草图（不悬浮在侧栏小缩略图里）
         self.canvas.clear_notch_overlay()
+        self.canvas.clear_pool_holes_overlay()
         self.canvas._full_image = pil_img
         self.canvas._update_preview_pixmap()
         self.canvas.update()
         self.canvas.rendered.emit(pil_img)
+
+    def _on_tab_changed(self, index: int) -> None:
+        """切换标签页时清理/恢复多洞叠加层，避免残留到其他模块画布。"""
+        if index != 1:
+            # 离开水池设计器：清除多洞标注
+            self.canvas.clear_pool_holes_overlay()
+        else:
+            # 回到水池设计器：从当前 design 重新生成叠加层
+            self.canvas._update_pool_holes_overlay(self.canvas._design)
+            self.canvas.update()
 
     def _on_save(self):
         """

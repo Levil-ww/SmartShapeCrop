@@ -73,6 +73,11 @@ class PreviewCanvas(QWidget):
         self._notch_overlay = []
         self.update()
 
+    def clear_pool_holes_overlay(self) -> None:
+        """清除多洞预览标注（切换模块时调用，避免残留到其他面板）。"""
+        self._pool_holes_overlay = []
+        self.update()
+
     def _update_notch_overlay(self, design) -> None:
         """从当前 L 形设计生成预览图上的凹角框与角位标签。"""
         self._notch_overlay = []
