@@ -92,7 +92,37 @@ def _redraw_outer_border_on_corners(
     src_arr = np.array(src_img, dtype=np.uint8)
     mask_arr = np.array(validity_mask, dtype=np.uint8) if validity_mask is not None else None
 
-    OUTER_BAND = 5
+    # The validity mask is built from the detected outer border depth.  A
+    # fixed five-pixel redraw band made every larger source border taper to
+    # five pixels at the rounded corners (and could remove it entirely after
+    # the mask cut).  Keep the redraw band tied to the actual outer layer;
+    # the small tolerance is already supplied by validity_mask.
+    detected_outer_depth = (
+        int(round(border_layers[0][1]))
+        if border_layers and border_layers[0][1] is not None
+        else 0
+    )
+    # Keep a conservative ceiling for unusually broad decorative bands.  The
+    # corner-only redraw is intended for the outer line; allowing a very wide
+    # detected layer to sweep through a deliberate white gap changes the
+    # established border-only behavior.
+    OUTER_BAND = (
+        max(1, detected_outer_depth)
+        if 0 < detected_outer_depth <= 20
+        else 5
+    )
+
+    # A broad dark color band is a filled border, not a fine outline.  Let
+    # the normal corner mask preserve and round that band; the specialized
+    # outer-line redraw is only for the thin black-line case.
+    if (
+        only_outermost
+        and border_layers
+        and detected_outer_depth > 20
+        and float(np.mean(np.asarray(border_layers[0][0], dtype=np.float64))) < 100.0
+        and int(max(border_layers[0][0])) - int(min(border_layers[0][0])) < 20
+    ):
+        return
 
     for corner_key, r in corners_px.items():
         if r <= 0:
@@ -145,6 +175,23 @@ def _redraw_outer_border_on_corners(
         else:
             should = in_angle & in_band
 
+        dark_outer = (
+            only_outermost
+            and border_layers
+            and float(np.mean(np.asarray(border_layers[0][0], dtype=np.float64))) < 100.0
+            and int(max(border_layers[0][0])) - int(min(border_layers[0][0])) < 20
+        )
+        if dark_outer and mask_arr is not None:
+            # Remove any source pixels that survived the content-protection
+            # mask around this arc before painting the canonical band.  This
+            # prevents one corner from retaining an extra dark fringe while
+            # another corner is redrawn cleanly.
+            clear_region = in_angle & (dist >= float(r) - float(OUTER_BAND)) & \
+                           (dist <= float(r) + 1.5)
+            if np.any(clear_region):
+                arr_roi = arr[y1:y2, x1:x2]
+                arr_roi[clear_region] = np.asarray(bg_color, dtype=np.uint8)
+
         if not np.any(should):
             continue
 
@@ -154,7 +201,11 @@ def _redraw_outer_border_on_corners(
 
         # depth_v: distance from arc boundary (positive = inside arc)
         depth_v = float(r) - dist[ys, xs]
-        d_int_v = np.clip(np.round(depth_v).astype(np.int32), 0, OUTER_BAND + 1)
+        # The first source row/column is often an anti-aliased transition
+        # pixel (especially on light materials); sample one pixel inward for
+        # the outermost arc depth so that transition gray cannot suppress the
+        # actual border color.
+        d_int_v = np.clip(np.round(depth_v).astype(np.int32), 1, OUTER_BAND + 1)
 
         # === V1.0 风格保留：从直边采样边框颜色 ===
         # 这是 V1.0 的重要特性，能正确处理多层边框
@@ -214,6 +265,16 @@ def _redraw_outer_border_on_corners(
         N = len(gy)
         rep_colors = _edge_sample(corner_key, d_int_v, N)
 
+        # Dark outer borders must be identical at all four corners.  Sampling
+        # the two adjacent edges independently lets anti-aliased pixels at
+        # one edge fail the color gate while another edge passes, producing
+        # the reported thin/overflowing corner mismatch.  Use the detected
+        # global outer color for the entire dark outer arc instead.
+        if only_outermost and border_layers:
+            outer_color = np.asarray(border_layers[0][0], dtype=np.uint8)
+            if float(np.mean(outer_color)) < 100.0 and int(outer_color.max()) - int(outer_color.min()) < 20:
+                rep_colors = np.tile(outer_color.reshape(1, 3), (N, 1))
+
         # === V1.0 风格简化：直接绘制边框颜色 ===
         # 简化安全判定：只检查当前像素是否需要补绘
         # 移除复杂的多重安全判定逻辑
@@ -231,7 +292,11 @@ def _redraw_outer_border_on_corners(
             color_diff = np.sqrt(
                 np.sum((rep_f.astype(np.float64) - outermost_color.reshape(1, 3)) ** 2, axis=1)
             )
-            is_border_color = is_border_color & (color_diff <= 30.0)
+            # Detection colors are averages of the anti-aliased straight
+            # edge.  The actual source edge can therefore be considerably
+            # darker (for example, detected (28,28,28) vs. source black),
+            # and a 30-level gate incorrectly removes the whole corner arc.
+            is_border_color = is_border_color & (color_diff <= 80.0)
 
         if not np.any(is_border_color):
             continue
@@ -331,6 +396,42 @@ def _find_first_color_change_from_edge(
     if all_changes:
         return min(all_changes)
     return None
+
+
+def _estimate_dark_edge_border_depth(
+    img: Image.Image, max_scan: int = 64,
+) -> int | None:
+    """Measure a dark outer border from the four straight edges.
+
+    Layer detection intentionally smooths short transitions, which can turn
+    an 8–12px black line into a 1–2px layer.  For dark materials the useful
+    invariant is the contiguous dark run on each edge, so measure that run
+    directly and use the most conservative edge width.
+    """
+    w, h = img.size
+    arr = np.asarray(img, dtype=np.float64)
+    sequences = (
+        arr[:max_scan, w // 2, :],
+        arr[max(0, h - max_scan):, w // 2, :][::-1],
+        arr[h // 2, :max_scan, :],
+        arr[h // 2, max(0, w - max_scan):, :][::-1],
+    )
+    depths: list[int] = []
+    for seq in sequences:
+        luminance = np.mean(seq, axis=1)
+        dark = luminance < 120.0
+        start_candidates = np.flatnonzero(dark[:4])
+        if start_candidates.size == 0:
+            continue
+        start = int(start_candidates[0])
+        end = start
+        while end < len(dark) and dark[end]:
+            end += 1
+        if end - start >= 3:
+            depths.append(end)
+    if not depths:
+        return None
+    return int(round(float(np.median(depths))))
 
 
 def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
@@ -488,10 +589,15 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
         if outer_bg_mean <= 200:  # 无白色外背景
             # 从图像真实边缘采样中位色（避免 border_layers 均值拉偏颜色）
             img_arr_for_scan = np.array(img)
-            edge_top = img_arr_for_scan[0, w // 2, :]
-            edge_bottom = img_arr_for_scan[h - 1, w // 2, :]
-            edge_left = img_arr_for_scan[h // 2, 0, :]
-            edge_right = img_arr_for_scan[h // 2, w - 1, :]
+            # Skip the first raster row/column: it is frequently a light
+            # anti-aliased transition while the real dark border starts one
+            # pixel inward.
+            edge_offset_y = min(1, h - 1)
+            edge_offset_x = min(1, w - 1)
+            edge_top = img_arr_for_scan[edge_offset_y, w // 2, :]
+            edge_bottom = img_arr_for_scan[h - 1 - edge_offset_y, w // 2, :]
+            edge_left = img_arr_for_scan[h // 2, edge_offset_x, :]
+            edge_right = img_arr_for_scan[h // 2, w - 1 - edge_offset_x, :]
             edge_color_arr = np.median([edge_top, edge_bottom, edge_left, edge_right], axis=0)
             edge_color = tuple(int(c) for c in edge_color_arr)
 
@@ -500,8 +606,22 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             outermost_layers = [(edge_color, old_depth)]
 
             # === 厚度修正：独立判断是否需要调小 ===
-            actual_outer = _find_first_color_change_from_edge(img, edge_color)
-            if actual_outer is not None and actual_outer < raw_depth:
+            actual_outer = _estimate_dark_edge_border_depth(img)
+            if actual_outer is None:
+                actual_outer = _find_first_color_change_from_edge(img, edge_color)
+            # A one-pixel transition is commonly the anti-aliased edge of a
+            # real 10–12px border.  Do not let that transition collapse the
+            # detected border depth; only accept a correction when the scan
+            # confirms at least half of the original layer thickness.
+            min_reliable_depth = max(3, int(round(raw_depth * 0.5)))
+            if (
+                actual_outer is not None
+                and actual_outer >= min_reliable_depth
+                and (
+                    (actual_outer < raw_depth)
+                    or (actual_outer > raw_depth and actual_outer <= 12)
+                )
+            ):
                 raw_depth = actual_outer
                 outermost_layers = [(edge_color, actual_outer)]
 

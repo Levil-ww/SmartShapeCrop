@@ -70,6 +70,154 @@ def test_maliya_rose_content_preserved():
     print("  CASE1 (玛利亚玫瑰): PASS")
 
 
+def test_outer_border_arc_keeps_detected_thickness():
+    """回归：圆角弧线的最外层黑边不能被固定窄带削薄。"""
+    w = h = 400
+    arr = np.full((h, w, 3), 240, dtype=np.uint8)
+    border_width = 10
+    arr[:border_width, :, :] = 0
+    arr[-border_width:, :, :] = 0
+    arr[:, :border_width, :] = 0
+    arr[:, -border_width:, :] = 0
+
+    result = apply_border_only_corners(
+        Image.fromarray(arr, 'RGB'), {'br': 1.5}, dpi=150,
+        bg_color=(255, 255, 255),
+        pre_detected_layers=[((0, 0, 0), border_width)],
+    )
+    result_arr = np.array(result)
+    radius = int(1.5 * 150 / 2.54)
+    cx = w - radius
+    cy = h - radius
+    black_depths = []
+    for depth in range(border_width):
+        d = radius - depth
+        x = int(round(cx + d / np.sqrt(2)))
+        y = int(round(cy + d / np.sqrt(2)))
+        black_depths.append(np.all(result_arr[y, x] == 0))
+
+    assert sum(black_depths) == border_width
+
+
+def test_outer_border_arc_accepts_antialiased_detected_color():
+    """回归：检测均值偏浅时，真实黑色圆角仍需重绘。"""
+    w = h = 240
+    border_width = 10
+    arr = np.full((h, w, 3), 245, dtype=np.uint8)
+    arr[:border_width, :, :] = 0
+    arr[-border_width:, :, :] = 0
+    arr[:, :border_width, :] = 0
+    arr[:, -border_width:, :] = 0
+
+    result = apply_border_only_corners(
+        Image.fromarray(arr, 'RGB'), {'br': 1.5}, dpi=150,
+        bg_color=(255, 255, 255),
+        # Simulate the antialiased average returned by border detection.
+        pre_detected_layers=[((28, 28, 28), border_width)],
+    )
+    result_arr = np.array(result)
+    radius = int(1.5 * 150 / 2.54)
+    cx = w - radius
+    cy = h - radius
+    for depth in range(border_width):
+        d = radius - depth
+        x = int(round(cx + d / np.sqrt(2)))
+        y = int(round(cy + d / np.sqrt(2)))
+        assert np.all(result_arr[y, x] == 0)
+
+
+def test_outer_border_arc_keeps_depth_after_edge_antialias_correction():
+    """回归：边缘首像素抗锯齿时，不得把 10px 黑边缩成 1px。"""
+    w = h = 240
+    border_width = 10
+    arr = np.full((h, w, 3), 212, dtype=np.uint8)
+    arr[:border_width, :, :] = 0
+    arr[-border_width:, :, :] = 0
+    arr[:, :border_width, :] = 0
+    arr[:, -border_width:, :] = 0
+    # Anti-aliased outermost row/column; the actual black line starts at 1px.
+    arr[0, :, :] = 239
+    arr[-1, :, :] = 239
+    arr[:, 0, :] = 239
+    arr[:, -1, :] = 239
+
+    result = apply_border_only_corners(
+        Image.fromarray(arr, 'RGB'), {'br': 1.5}, dpi=150,
+        bg_color=(255, 255, 255),
+        pre_detected_layers=[((2, 2, 2), border_width)],
+    )
+    result_arr = np.array(result)
+    radius = int(1.5 * 150 / 2.54)
+    cx = w - radius
+    cy = h - radius
+    dark_depths = []
+    for depth in range(border_width):
+        d = radius - depth
+        x = int(round(cx + d / np.sqrt(2)))
+        y = int(round(cy + d / np.sqrt(2)))
+        dark_depths.append(np.mean(result_arr[y, x]) < 80)
+
+    assert sum(dark_depths) >= border_width - 2
+
+
+def test_outer_border_arc_recovers_underdetected_dark_layer():
+    """回归：检测误报 2px 时，按直边实测 9px 恢复圆角厚度。"""
+    w = h = 240
+    actual_width = 9
+    arr = np.full((h, w, 3), 220, dtype=np.uint8)
+    arr[:actual_width, :, :] = 0
+    arr[-actual_width:, :, :] = 0
+    arr[:, :actual_width, :] = 0
+    arr[:, -actual_width:, :] = 0
+
+    result = apply_border_only_corners(
+        Image.fromarray(arr, 'RGB'), {'br': 1.5}, dpi=150,
+        bg_color=(255, 255, 255),
+        # Simulate a detector that collapsed the dark layer to 2px.
+        pre_detected_layers=[((21, 21, 21), 2)],
+    )
+    result_arr = np.array(result)
+    radius = int(1.5 * 150 / 2.54)
+    cx = w - radius
+    cy = h - radius
+    dark_depths = []
+    for depth in range(actual_width):
+        d = radius - depth
+        x = int(round(cx + d / np.sqrt(2)))
+        y = int(round(cy + d / np.sqrt(2)))
+        dark_depths.append(np.mean(result_arr[y, x]) < 80)
+
+    assert sum(dark_depths) >= actual_width - 1
+
+
+def test_dark_outer_arc_has_no_white_inner_halo():
+    """回归：黑色圆角边框内侧不得被清成白色细线。"""
+    w = h = 240
+    border_width = 10
+    content = (238, 226, 210)
+    arr = np.full((h, w, 3), content, dtype=np.uint8)
+    arr[:border_width, :, :] = 0
+    arr[-border_width:, :, :] = 0
+    arr[:, :border_width, :] = 0
+    arr[:, -border_width:, :] = 0
+
+    result = apply_border_only_corners(
+        Image.fromarray(arr, 'RGB'), {'br': 1.5}, dpi=150,
+        bg_color=(255, 255, 255),
+        pre_detected_layers=[((2, 2, 2), border_width)],
+    )
+    result_arr = np.array(result)
+    radius = int(1.5 * 150 / 2.54)
+    cx = w - radius
+    cy = h - radius
+    # Immediately inside the 10px line must retain the material color.
+    for depth in range(border_width + 1, border_width + 5):
+        d = radius - depth
+        x = int(round(cx + d / np.sqrt(2)))
+        y = int(round(cy + d / np.sqrt(2)))
+        assert tuple(result_arr[y, x]) == content
+
+
 def test_fugu_border_thickness_preserved():
     """CASE 3: 复古花丛 — 直边边框保持完整厚度"""
     w, h = 700, 500
