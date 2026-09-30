@@ -1,6 +1,7 @@
 """Compatibility boundary for the L-shape parameter section."""
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QWidget, QGroupBox, QVBoxLayout
+from core.config import CUT_LOSS_CM
 
 
 class LShapeParameterControl(QWidget):
@@ -16,7 +17,7 @@ class LShapeParameterControl(QWidget):
 
     def _apply_parameter_edit(self, mode: str):
         if mode == 'staircase':
-            self._corner_control.on_staircase_changed()
+            self._panel._sync_staircase_snapshot()
         else:
             self._panel._on_param_changed_legacy()
 
@@ -139,10 +140,39 @@ class LShapeParameterControl(QWidget):
         return self._corner_control.get_cuts_cm()
 
     def manual_cut_snapshot(self) -> tuple[list[dict], dict]:
-        return self._corner_control.manual_cut_snapshot()
+        cuts = self.get_cuts_cm()
+        if cuts:
+            return cuts, dict(cuts[0])
+        return [], {
+            'corner': self._cb_lcorner.currentData(),
+            'cut_w_cm': max(0.0, self._sp_lw.value()),
+            'cut_h_cm': max(0.0, self._sp_lh.value()),
+        }
 
     def build_manual_params(self, outer_w_cm: float, outer_h_cm: float) -> dict:
-        return self._corner_control.build_manual_params(outer_w_cm, outer_h_cm)
+        """Compatibility API accepting outer dimensions already in design cm."""
+        cuts, primary = self.manual_cut_snapshot()
+        return {
+            **primary, 'cuts_cm': cuts,
+            'outer_w_cm': max(0.0, float(outer_w_cm)),
+            'outer_h_cm': max(0.0, float(outer_h_cm)),
+        }
+
+    def build_parameter_snapshot(self) -> dict:
+        """Read either mode without mutating the model; convert canvas cm once."""
+        canvas_w, canvas_h = self.get_outer_size()
+        outer_w = max(0.0, canvas_w - CUT_LOSS_CM)
+        outer_h = max(0.0, canvas_h - CUT_LOSS_CM)
+        if not self._corner_control.staircase_mode:
+            return self.build_manual_params(outer_w, outer_h)
+        rects = self.get_cut_rects_cm()
+        return {
+            'corner': self._stair_corner.currentData() or 'tr',
+            'cut_w_cm': rects[0]['w_cm'] if rects else 0.0,
+            'cut_h_cm': sum(rect['h_cm'] for rect in rects),
+            'cuts_cm': [], 'cut_rects': rects,
+            'outer_w_cm': outer_w, 'outer_h_cm': outer_h,
+        }
 
     def set_cut_rects(self, cut_rects: list[dict]):
         """识别结果回填：把 CutRect 条带列表逆换算为步进值写入阶梯子行 SpinBox。

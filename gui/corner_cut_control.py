@@ -197,52 +197,17 @@ class CornerCutControl(QWidget):
             button.setVisible(i == n - 1 and n < self._panel._stair_max_levels)
 
     def on_staircase_changed(self):
-        panel = self._panel
-        if not panel._staircase_mode:
-            return
-        rects = self.get_cut_rects_cm()
-        outer_w = max(0.0, panel._sp_outer_w.value() - CUT_LOSS_CM)
-        outer_h = max(0.0, panel._sp_outer_h.value() - CUT_LOSS_CM)
-        anchor = self._stair_corner.currentData() or 'tr'
-        primary_w = rects[0]['w_cm'] if rects else 0.0
-        primary_h = sum(item['h_cm'] for item in rects)
-        if panel._lshape_params is None:
-            panel._lshape_params = {}
-        panel._lshape_params.update({
-            'corner': anchor, 'cut_w_cm': primary_w, 'cut_h_cm': primary_h,
-            'cuts_cm': [], 'cut_rects': rects,
-            'outer_w_cm': outer_w, 'outer_h_cm': outer_h,
-        })
-        panel._params_source = 'manual'
-        if not rects:
-            panel._set_status(
-                "请填写至少一级「步进宽 × 落差」（均需 > 0）后再生成预览",
-                is_error=True)
+        """Compatibility entry; snapshot generation belongs to parameter control."""
+        return self._panel._sync_staircase_snapshot()
 
     def on_param_changed(self, *args):
-        """参数变化入口；面板保留外框换算和状态提示实现。"""
         return self._panel._on_param_changed_legacy(*args)
 
     def manual_cut_snapshot(self) -> tuple[list[dict], dict]:
-        cuts = self.get_cuts_cm()
-        if cuts:
-            return cuts, dict(cuts[0])
-        return [], {
-            'corner': self._cb_lcorner.currentData(),
-            'cut_w_cm': max(0.0, self._sp_lw.value()),
-            'cut_h_cm': max(0.0, self._sp_lh.value()),
-        }
+        return self._panel._parameter_control.manual_cut_snapshot()
 
     def build_manual_params(self, outer_w_cm: float, outer_h_cm: float) -> dict:
-        cuts, primary = self.manual_cut_snapshot()
-        return {
-            'corner': primary['corner'],
-            'cut_w_cm': primary['cut_w_cm'],
-            'cut_h_cm': primary['cut_h_cm'],
-            'cuts_cm': cuts,
-            'outer_w_cm': max(0.0, float(outer_w_cm)),
-            'outer_h_cm': max(0.0, float(outer_h_cm)),
-        }
+        return self._panel._parameter_control.build_manual_params(outer_w_cm, outer_h_cm)
 
     def build_standard_ui(self):
         """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""

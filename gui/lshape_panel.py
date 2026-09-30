@@ -634,6 +634,20 @@ class LShapePanel(QWidget):
     # ====================================================================
     # L 形参数变化 → 通知 PropertyPanel 触发预览
     # ====================================================================
+    def _sync_staircase_snapshot(self):
+        """Synchronize the control snapshot while retaining panel status handling."""
+        if not self._staircase_mode:
+            return
+        snapshot = self._parameter_control.build_parameter_snapshot()
+        if self._lshape_params is None:
+            self._lshape_params = {}
+        self._lshape_params.update(snapshot)
+        self._params_source = 'manual'
+        if not snapshot['cut_rects']:
+            self._set_status(
+                "请填写至少一级「步进宽 × 落差」（均需 > 0）后再生成预览",
+                is_error=True)
+
     def _on_param_changed_legacy(self, *_):
         """参数变化（挖角 + 外框画布）→ 更新 _lshape_params 设计真值 + 发信号触发预览。
 
@@ -642,16 +656,12 @@ class LShapePanel(QWidget):
           - dict['outer_w_cm'] 存设计真值（SpinBox - 1cm）
           - 挖角 SpinBox 存设计值，dict['cut_w_cm'] 直接取 SpinBox
         """
-        _TRIM = CUT_LOSS_CM
-        # 外框：SpinBox 画布值 → dict 设计值
-        canvas_outer_w = max(0.0, self._sp_outer_w.value())
-        canvas_outer_h = max(0.0, self._sp_outer_h.value())
-        design_outer_w = max(0.0, canvas_outer_w - _TRIM)
-        design_outer_h = max(0.0, canvas_outer_h - _TRIM)
-        cuts, primary = self._parameter_control.manual_cut_snapshot()
-        self._update_margin_hint(design_outer_w, design_outer_h, cuts)
-        manual_params = self._parameter_control.build_manual_params(
-            design_outer_w, design_outer_h)
+        if self._staircase_mode:
+            return self._sync_staircase_snapshot()
+        manual_params = self._parameter_control.build_parameter_snapshot()
+        cuts = manual_params['cuts_cm']
+        self._update_margin_hint(
+            manual_params['outer_w_cm'], manual_params['outer_h_cm'], cuts)
         if self._lshape_params is None:
             self._lshape_params = manual_params
         else:

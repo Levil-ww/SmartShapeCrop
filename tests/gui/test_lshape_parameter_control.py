@@ -1,4 +1,47 @@
 from gui.lshape_panel import LShapePanel
+from core.config import CUT_LOSS_CM
+
+
+def test_standard_snapshot_converts_canvas_once_and_is_detached(qapp):
+    panel = LShapePanel()
+    panel.set_outer_dims(80, 60)
+    panel.set_lshape_params('bl', 12, 9)
+    control = panel._parameter_control
+    snapshot = control.build_parameter_snapshot()
+    assert snapshot == {
+        'corner': 'bl', 'cut_w_cm': 12, 'cut_h_cm': 9,
+        'cuts_cm': [{'corner': 'bl', 'cut_w_cm': 12, 'cut_h_cm': 9}],
+        'outer_w_cm': 80, 'outer_h_cm': 60,
+    }
+    snapshot['cuts_cm'][0]['cut_w_cm'] = 99
+    assert panel.get_cut_w_cm() == 12
+    assert panel.get_lshape_params()['cuts_cm'][0]['cut_w_cm'] == 12
+    # Old CornerCutControl APIs must delegate without recursive calls.
+    assert panel._corner_control.build_manual_params(80, 60)['cut_w_cm'] == 12
+    panel.close()
+
+
+def test_staircase_snapshot_and_outer_edit_preserve_strips(qapp):
+    panel = LShapePanel()
+    panel.set_outer_dims(80, 60)
+    rects = [
+        {'anchor': 'tl', 'offset_x_cm': 0, 'offset_y_cm': 0, 'w_cm': 30, 'h_cm': 5},
+        {'anchor': 'tl', 'offset_x_cm': 0, 'offset_y_cm': 5, 'w_cm': 20, 'h_cm': 7},
+    ]
+    panel.set_cut_rects(rects)
+    snapshot = panel._parameter_control.build_parameter_snapshot()
+    assert snapshot == {
+        'corner': 'tl', 'cut_w_cm': 30, 'cut_h_cm': 12,
+        'cuts_cm': [], 'cut_rects': rects,
+        'outer_w_cm': 80, 'outer_h_cm': 60,
+    }
+    panel._sp_outer_w.setValue(90 + CUT_LOSS_CM)
+    assert panel.get_lshape_params()['outer_w_cm'] == 90
+    assert panel.get_lshape_params()['cut_w_cm'] == 30
+    assert panel.get_lshape_params()['cut_rects'] == rects
+    panel._corner_control.on_staircase_changed()
+    assert panel.get_lshape_params()['cut_h_cm'] == 12
+    panel.close()
 
 
 def test_parameter_notifications_follow_model_updates(qapp):
