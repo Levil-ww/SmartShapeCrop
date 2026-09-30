@@ -249,7 +249,6 @@ class LShapePanel(QWidget):
         self._sp_lw = self._corner_control._sp_lw
         self._sp_lh = self._corner_control._sp_lh
         self._margin_hint = self._corner_control._margin_hint
-        self._corner_control.adopt_standard_ui()
         params_row.addWidget(self._gb_l, 1)  # L 形挖角参数 → 右
 
         self._inner_layout.addLayout(params_row)

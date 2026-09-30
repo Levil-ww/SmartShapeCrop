@@ -75,15 +75,6 @@ class CornerCutControl(QWidget):
         self._stair_corner = self._panel._stair_corner
         self._stair_rows_container = self._panel._stair_rows_container
 
-    def adopt_standard_ui(self):
-        """接管标准多角 UI 的 canonical 引用，保持宿主兼容字段不变。"""
-        panel = self._panel
-        self._corner_rows = panel._corner_rows
-        self._gb_l = panel._gb_l
-        self._cb_lcorner = panel._cb_lcorner
-        self._sp_lw = panel._sp_lw
-        self._sp_lh = panel._sp_lh
-
     def build_standard_ui(self):
         """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""
         panel = self._panel
