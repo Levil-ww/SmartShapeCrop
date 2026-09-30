@@ -6,8 +6,9 @@
 """
 from __future__ import annotations
 
+from PyQt5.QtWidgets import QWidget
 
-class CornerCutControl:
+class CornerCutControl(QWidget):
     """为标准多角和单边阶梯模式提供统一的挖角契约。
 
     ``panel`` 是暂时的 UI 宿主。所有方法都调用宿主的 legacy 实现，避免
@@ -15,6 +16,10 @@ class CornerCutControl:
     """
 
     def __init__(self, panel):
+        # QWidget 化是本阶段的迁移边界。现有控件仍由 LShapePanel 创建并
+        # 保持原布局，避免 Qt layout reparent 导致视觉和信号行为变化。
+        super().__init__(panel)
+        self.setObjectName("cornerCutControl")
         self._panel = panel
 
     def get_mode(self) -> str:
