@@ -33,6 +33,7 @@ from PyQt5.QtWidgets import (
 from core.app_settings import get_app_settings
 from core.config import CUT_LOSS_CM
 from .property_panel_widgets import _SketchDropLabel
+from .corner_cut_control import CornerCutControl
 from workers.property_panel_workers import _LShapeParseWorker
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,8 @@ class LShapePanel(QWidget):
         self._block_target_signal = False
         # —— 持久化设置（与水池设计器/圆角裁剪工具共用同一份 QSettings，但 source 隔离）——
         self._app_settings = get_app_settings()
+        # 先建立契约适配器；UI 构建期间已有的参数初始化也通过它读取。
+        self._corner_control = CornerCutControl(self)
         self._build_ui()
         # —— 初始化本面板独立的目标文件名历史菜单 ——
         self._refresh_target_history_ui()
@@ -567,7 +570,7 @@ class LShapePanel(QWidget):
             self._on_param_changed()
             self._set_status("已切换到「标准 L 形」模式（保留第 1 级参数）")
 
-    def get_cut_rects_cm(self) -> list[dict]:
+    def _get_cut_rects_cm_legacy(self) -> list[dict]:
         """返回阶梯挖角的 CutRect 列表（厘米），步进值 → 条带换算（报告 V2.4）。
 
         用户输入第 i 级「步进宽 r_i × 落差 d_i」，第 1 级 = 远端第一步：
@@ -596,6 +599,35 @@ class LShapePanel(QWidget):
             prev_y += d
             total_w -= r
         return result
+
+    # Public compatibility API. These delegates preserve the old panel
+    # contract while the挖角 implementation moves behind CornerCutControl.
+    def get_cut_rects_cm(self) -> list[dict]:
+        return self._corner_control.get_cut_rects_cm()
+
+    def get_corner(self) -> str:
+        return self._corner_control.get_corner()
+
+    def get_cut_w_cm(self) -> float:
+        return self._corner_control.get_cut_w_cm()
+
+    def get_cut_h_cm(self) -> float:
+        return self._corner_control.get_cut_h_cm()
+
+    def get_cuts_cm(self) -> list[dict]:
+        return self._corner_control.get_cuts_cm()
+
+    def get_lshape_params(self):
+        return self._corner_control.get_lshape_params()
+
+    def set_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
+        return self._corner_control.set_lshape_params(corner, cut_w_cm, cut_h_cm)
+
+    def set_lshape_cuts(self, cuts: list[dict] | None):
+        return self._corner_control.set_lshape_cuts(cuts)
+
+    def _set_mode_legacy(self, staircase: bool) -> None:
+        self._set_staircase_mode(staircase)
 
     def set_cut_rects(self, cut_rects: list[dict]):
         """识别结果回填：把 CutRect 条带列表逆换算为步进值写入阶梯子行 SpinBox。
@@ -1179,27 +1211,27 @@ class LShapePanel(QWidget):
     # ====================================================================
     # 外部访问 API（供 PropertyPanel 调用）
     # ====================================================================
-    def get_corner(self) -> str:
+    def _get_corner_legacy(self) -> str:
         """读取挖角位置（阶梯模式从 _stair_corner 读取）。"""
         if self._staircase_mode:
             return self._stair_corner.currentData() or 'tr'
         return self._cb_lcorner.currentData()
 
-    def get_cut_w_cm(self) -> float:
+    def _get_cut_w_cm_legacy(self) -> float:
         """读取挖角宽度（阶梯模式取第一根条带宽 = Σ步进宽）。"""
         if self._staircase_mode:
             rects = self.get_cut_rects_cm()
             return rects[0]['w_cm'] if rects else 0.0
         return self._sp_lw.value()
 
-    def get_cut_h_cm(self) -> float:
+    def _get_cut_h_cm_legacy(self) -> float:
         """读取挖角高度（阶梯模式取总落差 = Σ条带高）。"""
         if self._staircase_mode:
             rects = self.get_cut_rects_cm()
             return sum(cr['h_cm'] for cr in rects)
         return self._sp_lh.value()
 
-    def get_cuts_cm(self) -> list[dict]:
+    def _get_cuts_cm_legacy(self) -> list[dict]:
         """返回启用的挖角列表，最多四个；未填写尺寸的行不写入设计。
 
         阶梯模式下返回空列表：旧格式 {corner, cut_w_cm, cut_h_cm} 不允许同角位
@@ -1218,7 +1250,7 @@ class LShapePanel(QWidget):
             })
         return cuts[:4]
 
-    def get_lshape_params(self):
+    def _get_lshape_params_legacy(self):
         """读取 _lshape_params"""
         return self._lshape_params
 
@@ -1237,7 +1269,7 @@ class LShapePanel(QWidget):
             self._sp_outer_w.blockSignals(False)
             self._sp_outer_h.blockSignals(False)
 
-    def set_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
+    def _set_lshape_params_legacy(self, corner: str, cut_w_cm: float, cut_h_cm: float):
         """外部回填 L 形参数（blockSignals 避免触发预览）。
 
         同时同步 `_lshape_params` dict，确保 Worker 下次读取时拿到回填后的值，
@@ -1267,7 +1299,7 @@ class LShapePanel(QWidget):
         self._lshape_params['cut_h_cm'] = max(0.0, float(cut_h_cm))
         self._lshape_params['cuts_cm'] = self.get_cuts_cm()
 
-    def set_lshape_cuts(self, cuts: list[dict] | None):
+    def _set_lshape_cuts_legacy(self, cuts: list[dict] | None):
         """回填多角参数；空列表回退到旧单角控件。"""
         cuts = list(cuts or [])[:4]
         for index, (enabled, combo, width, height) in enumerate(self._corner_rows):
