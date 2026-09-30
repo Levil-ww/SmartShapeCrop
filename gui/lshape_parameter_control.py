@@ -30,8 +30,25 @@ class LShapeParameterControl(QWidget):
         self._gb_outer, self._sp_outer_w, self._sp_outer_h = group, width, height
         return group, width, height
 
+    def build_standard_ui(self):
+        """Create the standard L-shape group through the established contract."""
+        group = self._corner_control.build_standard_ui()
+        self._gb_l = group
+        self._corner_rows = self._corner_control._corner_rows
+        self._cb_lcorner = self._corner_control._cb_lcorner
+        self._sp_lw = self._corner_control._sp_lw
+        self._sp_lh = self._corner_control._sp_lh
+        self._margin_hint = self._corner_control._margin_hint
+        return group
+
     def build_staircase_ui(self):
-        return self._corner_control.build_staircase_ui()
+        group = self._corner_control.build_staircase_ui()
+        self._gb_staircase = group
+        self._stair_corner = self._corner_control._stair_corner
+        self._stair_rows_container = self._corner_control._stair_rows_container
+        self._stair_rows = self._corner_control._stair_rows
+        self._stair_add_btns = self._corner_control._stair_add_btns
+        return group
 
     def set_staircase_mode(self, enabled: bool):
         return self._corner_control.set_staircase_mode(enabled)

@@ -10,5 +10,8 @@ def test_parameter_control_keeps_legacy_mode_contract(qapp):
     assert control._gb_outer is panel._gb_outer
     assert control._sp_outer_w is panel._sp_outer_w
     assert control._sp_outer_h is panel._sp_outer_h
+    assert control._gb_l is panel._gb_l
+    assert control._sp_lw is panel._sp_lw
+    assert control._sp_lh is panel._sp_lh
     assert control.build_staircase_ui is not None
     panel.close()

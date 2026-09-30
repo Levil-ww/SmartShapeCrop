@@ -195,23 +195,23 @@ class LShapePanel(QWidget):
         params_row.addWidget(self._gb_outer, 1)  # 外框尺寸 → 左
 
         # ===== 4) L 形挖角参数 GroupBox (右侧：后 add → 右) =====
-        self._gb_l = self._corner_control.build_standard_ui()
-        self._corner_rows = self._corner_control._corner_rows
-        self._cb_lcorner = self._corner_control._cb_lcorner
-        self._sp_lw = self._corner_control._sp_lw
-        self._sp_lh = self._corner_control._sp_lh
-        self._margin_hint = self._corner_control._margin_hint
+        self._gb_l = self._parameter_control.build_standard_ui()
+        self._corner_rows = self._parameter_control._corner_rows
+        self._cb_lcorner = self._parameter_control._cb_lcorner
+        self._sp_lw = self._parameter_control._sp_lw
+        self._sp_lh = self._parameter_control._sp_lh
+        self._margin_hint = self._parameter_control._margin_hint
         params_row.addWidget(self._gb_l, 1)  # L 形挖角参数 → 右
 
         self._inner_layout.addLayout(params_row)
 
         # ===== 4.5) 阶梯挖角参数 GroupBox（默认隐藏，阶梯模式时显示）=====
-        self._corner_control.build_staircase_ui()
-        self._gb_staircase = self._corner_control._gb_staircase
-        self._stair_corner = self._corner_control._stair_corner
-        self._stair_rows_container = self._corner_control._stair_rows_container
-        self._stair_rows = self._corner_control._stair_rows
-        self._stair_add_btns = self._corner_control._stair_add_btns
+        self._parameter_control.build_staircase_ui()
+        self._gb_staircase = self._parameter_control._gb_staircase
+        self._stair_corner = self._parameter_control._stair_corner
+        self._stair_rows_container = self._parameter_control._stair_rows_container
+        self._stair_rows = self._parameter_control._stair_rows
+        self._stair_add_btns = self._parameter_control._stair_add_btns
         self._inner_layout.addWidget(self._gb_staircase)
         self._gb_staircase.setVisible(False)
 
