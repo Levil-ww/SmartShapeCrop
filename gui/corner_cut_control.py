@@ -6,7 +6,10 @@
 """
 from __future__ import annotations
 
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QComboBox
+from PyQt5.QtWidgets import (
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QGroupBox,
+    QCheckBox,
+)
 
 class CornerCutControl(QWidget):
     """为标准多角和单边阶梯模式提供统一的挖角契约。
@@ -80,6 +83,51 @@ class CornerCutControl(QWidget):
         self._cb_lcorner = panel._cb_lcorner
         self._sp_lw = panel._sp_lw
         self._sp_lh = panel._sp_lh
+
+    def build_standard_ui(self):
+        """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""
+        panel = self._panel
+        group = QGroupBox("L 形挖角参数", self)
+        group.setStyleSheet(panel._param_group_style("#5B6CFF"))
+        form = QVBoxLayout(group)
+        form.setSpacing(6)
+        rows = []
+        for row_index in range(4):
+            enabled = QCheckBox(f"挖角 {row_index + 1}", group)
+            enabled.setChecked(row_index == 0)
+            combo = QComboBox(group)
+            combo.addItem("左上角", "tl")
+            combo.addItem("右上角", "tr")
+            combo.addItem("左下角", "bl")
+            combo.addItem("右下角", "br")
+            combo.setCurrentIndex(3 if row_index == 0 else row_index)
+            width = panel._dspin(0, 450, 0.0)
+            height = panel._dspin(0, 450, 0.0)
+            enabled.toggled.connect(panel._on_param_changed)
+            combo.currentIndexChanged.connect(panel._on_param_changed)
+            width.valueChanged.connect(panel._on_param_changed)
+            height.valueChanged.connect(panel._on_param_changed)
+            row = QHBoxLayout()
+            row.addWidget(enabled, 0)
+            row.addWidget(combo, 1)
+            row.addWidget(QLabel("宽"), 0)
+            row.addWidget(width, 1)
+            row.addWidget(QLabel("高"), 0)
+            row.addWidget(height, 1)
+            form.addLayout(row)
+            rows.append((enabled, combo, width, height))
+        margin_hint = QLabel("边余量：上— · 下— · 左— · 右—", group)
+        margin_hint.setObjectName("margin_hint")
+        margin_hint.setWordWrap(True)
+        margin_hint.setStyleSheet("color:#667085; padding: 2px 4px;")
+        form.addWidget(margin_hint)
+        self._corner_rows = rows
+        self._gb_l = group
+        self._cb_lcorner = rows[0][1]
+        self._sp_lw = rows[0][2]
+        self._sp_lh = rows[0][3]
+        self._margin_hint = margin_hint
+        return group
 
     def get_mode(self) -> str:
         return "staircase" if self._panel._staircase_mode else "standard"

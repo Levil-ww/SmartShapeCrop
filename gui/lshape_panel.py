@@ -243,44 +243,12 @@ class LShapePanel(QWidget):
         params_row.addWidget(self._gb_outer, 1)  # 外框尺寸 → 左
 
         # ===== 4) L 形挖角参数 GroupBox (右侧：后 add → 右) =====
-        self._gb_l = QGroupBox("L 形挖角参数")
-        self._gb_l.setStyleSheet(self._param_group_style("#5B6CFF"))
-        fl = QVBoxLayout(self._gb_l)
-        fl.setSpacing(6)
-        self._corner_rows = []
-        for row_index in range(4):
-            enabled = QCheckBox(f"挖角 {row_index + 1}")
-            enabled.setChecked(row_index == 0)
-            combo = QComboBox()
-            combo.addItem("左上角", "tl")
-            combo.addItem("右上角", "tr")
-            combo.addItem("左下角", "bl")
-            combo.addItem("右下角", "br")
-            combo.setCurrentIndex(3 if row_index == 0 else row_index)
-            width = self._dspin(0, 450, 0.0)
-            height = self._dspin(0, 450, 0.0)
-            enabled.toggled.connect(self._on_param_changed)
-            combo.currentIndexChanged.connect(self._on_param_changed)
-            width.valueChanged.connect(self._on_param_changed)
-            height.valueChanged.connect(self._on_param_changed)
-            row = QHBoxLayout()
-            row.addWidget(enabled, 0)
-            row.addWidget(combo, 1)
-            row.addWidget(QLabel("宽"), 0)
-            row.addWidget(width, 1)
-            row.addWidget(QLabel("高"), 0)
-            row.addWidget(height, 1)
-            fl.addLayout(row)
-            self._corner_rows.append((enabled, combo, width, height))
-        self._margin_hint = QLabel("边余量：上— · 下— · 左— · 右—")
-        self._margin_hint.setObjectName("margin_hint")
-        self._margin_hint.setWordWrap(True)
-        self._margin_hint.setStyleSheet("color:#667085; padding: 2px 4px;")
-        fl.addWidget(self._margin_hint)
-        # 旧单角 API 继续指向第一行，避免外部调用方行为变化。
-        self._cb_lcorner = self._corner_rows[0][1]
-        self._sp_lw = self._corner_rows[0][2]
-        self._sp_lh = self._corner_rows[0][3]
+        self._gb_l = self._corner_control.build_standard_ui()
+        self._corner_rows = self._corner_control._corner_rows
+        self._cb_lcorner = self._corner_control._cb_lcorner
+        self._sp_lw = self._corner_control._sp_lw
+        self._sp_lh = self._corner_control._sp_lh
+        self._margin_hint = self._corner_control._margin_hint
         self._corner_control.adopt_standard_ui()
         params_row.addWidget(self._gb_l, 1)  # L 形挖角参数 → 右
 
@@ -800,9 +768,9 @@ class LShapePanel(QWidget):
         cuts = self.get_cuts_cm()
         self._update_margin_hint(design_outer_w, design_outer_h, cuts)
         primary = cuts[0] if cuts else {
-            'corner': self._cb_lcorner.currentData(),
-            'cut_w_cm': max(0.0, self._sp_lw.value()),
-            'cut_h_cm': max(0.0, self._sp_lh.value()),
+            'corner': self._corner_control._cb_lcorner.currentData(),
+            'cut_w_cm': max(0.0, self._corner_control._sp_lw.value()),
+            'cut_h_cm': max(0.0, self._corner_control._sp_lh.value()),
         }
         if self._lshape_params is None:
             self._lshape_params = {
