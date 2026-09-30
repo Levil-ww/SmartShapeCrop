@@ -362,7 +362,7 @@ class LShapePanel(QWidget):
         self._corner_control._stair_corner = self._stair_corner
         self._corner_control._stair_rows_container = self._stair_rows_container
 
-    def _stair_add_level_row(self, r: float = 0.0, d: float = 0.0):
+    def _stair_add_level_row_legacy(self, r: float = 0.0, d: float = 0.0):
         """向阶梯容器追加一行（步进宽 / 落差 SpinBox，报告 V2.4 尺寸语义）。
 
         紧凑格式：「第X级 宽 [val] cm 高 [val] cm」，↳ 缩进表示逐级嵌套，
@@ -408,14 +408,14 @@ class LShapePanel(QWidget):
         self._stair_rows_container.addWidget(container_widget)
         self._stair_rows.append((sp_r, sp_d, container_widget))
 
-    def _on_stair_add_level(self):
+    def _on_stair_add_level_legacy(self):
         """用户点「追加一级」→ 新增一行子行。"""
         if len(self._stair_rows) < self._stair_max_levels:
             self._stair_add_level_row()
             self._update_stair_buttons()
             self._on_staircase_changed()
 
-    def _on_stair_remove_level(self):
+    def _on_stair_remove_level_legacy(self):
         """用户点「删除末级」→ 移除最后一行子行（至少保留 1 行）。"""
         if len(self._stair_rows) <= 1:
             return
@@ -429,12 +429,26 @@ class LShapePanel(QWidget):
         self._update_stair_buttons()
         self._on_staircase_changed()
 
-    def _update_stair_buttons(self):
+    def _update_stair_buttons_legacy(self):
         """根据当前子行数更新内嵌追加按钮的可见性：仅末级行显示，达上限时隐藏。"""
         n = len(self._stair_rows)
         for i, btn in enumerate(self._stair_add_btns):
             is_last = (i == n - 1)
             btn.setVisible(is_last and n < self._stair_max_levels)
+
+    # Compatibility entry points; implementation is routed through the
+    # CornerCutControl boundary while existing callers keep old names.
+    def _stair_add_level_row(self, r: float = 0.0, d: float = 0.0):
+        return self._corner_control.add_level_row(r, d)
+
+    def _on_stair_add_level(self):
+        return self._corner_control.add_level()
+
+    def _on_stair_remove_level(self):
+        return self._corner_control.remove_level()
+
+    def _update_stair_buttons(self):
+        return self._corner_control.update_buttons()
 
     def _on_staircase_changed(self, *_):
         """阶梯控件变化 → 更新 _lshape_params dict（与 _on_param_changed 同语义）。"""

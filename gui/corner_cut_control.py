@@ -75,6 +75,18 @@ class CornerCutControl(QWidget):
         self._stair_corner = self._panel._stair_corner
         self._stair_rows_container = self._panel._stair_rows_container
 
+    def add_level_row(self, r: float = 0.0, d: float = 0.0):
+        return self._panel._stair_add_level_row_legacy(r, d)
+
+    def add_level(self):
+        return self._panel._on_stair_add_level_legacy()
+
+    def remove_level(self):
+        return self._panel._on_stair_remove_level_legacy()
+
+    def update_buttons(self):
+        return self._panel._update_stair_buttons_legacy()
+
     def build_standard_ui(self):
         """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""
         panel = self._panel
