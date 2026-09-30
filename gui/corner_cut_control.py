@@ -219,6 +219,20 @@ class CornerCutControl(QWidget):
                 "请填写至少一级「步进宽 × 落差」（均需 > 0）后再生成预览",
                 is_error=True)
 
+    def on_param_changed(self, *args):
+        """参数变化入口；面板保留外框换算和状态提示实现。"""
+        return self._panel._on_param_changed_legacy(*args)
+
+    def manual_cut_snapshot(self) -> tuple[list[dict], dict]:
+        cuts = self.get_cuts_cm()
+        if cuts:
+            return cuts, dict(cuts[0])
+        return [], {
+            'corner': self._cb_lcorner.currentData(),
+            'cut_w_cm': max(0.0, self._sp_lw.value()),
+            'cut_h_cm': max(0.0, self._sp_lh.value()),
+        }
+
     def build_standard_ui(self):
         """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""
         panel = self._panel

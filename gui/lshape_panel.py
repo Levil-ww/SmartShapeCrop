@@ -748,7 +748,7 @@ class LShapePanel(QWidget):
     # ====================================================================
     # L 形参数变化 → 通知 PropertyPanel 触发预览
     # ====================================================================
-    def _on_param_changed(self, *_):
+    def _on_param_changed_legacy(self, *_):
         """参数变化（挖角 + 外框画布）→ 更新 _lshape_params 设计真值 + 发信号触发预览。
 
         语义转换：
@@ -762,13 +762,8 @@ class LShapePanel(QWidget):
         canvas_outer_h = max(0.0, self._sp_outer_h.value())
         design_outer_w = max(0.0, canvas_outer_w - _TRIM)
         design_outer_h = max(0.0, canvas_outer_h - _TRIM)
-        cuts = self.get_cuts_cm()
+        cuts, primary = self._corner_control.manual_cut_snapshot()
         self._update_margin_hint(design_outer_w, design_outer_h, cuts)
-        primary = cuts[0] if cuts else {
-            'corner': self._corner_control._cb_lcorner.currentData(),
-            'cut_w_cm': max(0.0, self._corner_control._sp_lw.value()),
-            'cut_h_cm': max(0.0, self._corner_control._sp_lh.value()),
-        }
         if self._lshape_params is None:
             self._lshape_params = {
                 'corner': primary['corner'],
@@ -807,6 +802,9 @@ class LShapePanel(QWidget):
         # [2026-09-05 交互范式切换] 不再 emit lshape_params_changed 触发实时渲染
         # SpinBox 修改 → 只更新 _lshape_params dict（参数真值），渲染由显式生成按钮驱动
         # self.lshape_params_changed.emit()
+
+    def _on_param_changed(self, *args):
+        return self._corner_control.on_param_changed(*args)
 
     def _update_margin_hint(self, outer_w_cm: float, outer_h_cm: float,
                             cuts: list[dict]):
