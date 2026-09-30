@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QGroupBox,
-    QCheckBox,
+    QCheckBox, QPushButton,
 )
 
 class CornerCutControl(QWidget):
@@ -89,22 +89,69 @@ class CornerCutControl(QWidget):
         panel._stair_rows_container = self._stair_rows_container
         panel._stair_rows = self._stair_rows
         panel._stair_add_btns = self._stair_add_btns
-        panel._stair_add_level_row_legacy()
-        panel._stair_add_level_row_legacy()
-        panel._update_stair_buttons_legacy()
+        self.add_level_row()
+        self.add_level_row()
+        self.update_buttons()
         return self._gb_staircase
 
     def add_level_row(self, r: float = 0.0, d: float = 0.0):
-        return self._panel._stair_add_level_row_legacy(r, d)
+        panel = self._panel
+        if len(self._stair_rows) >= panel._stair_max_levels:
+            return
+        level_idx = len(self._stair_rows)
+        sp_r = panel._dspin(0, 450, r)
+        sp_d = panel._dspin(0, 450, d)
+        for sp in (sp_r, sp_d):
+            sp.valueChanged.connect(panel._on_staircase_changed)
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        if level_idx > 0:
+            arrow = QLabel("↳")
+            arrow.setStyleSheet("color:#E67E22; font-size:12px;")
+            row.addWidget(arrow, 0)
+        label = QLabel(f"第{level_idx + 1}级")
+        label.setStyleSheet("color:#E67E22; font-weight:bold; font-size:12px;")
+        row.addWidget(label, 0)
+        row.addWidget(QLabel("宽"), 0)
+        row.addWidget(sp_r, 1)
+        row.addWidget(QLabel("cm"), 0)
+        row.addWidget(QLabel("高"), 0)
+        row.addWidget(sp_d, 1)
+        add_btn = QPushButton("+ 追加一级")
+        add_btn.setFixedWidth(80)
+        add_btn.clicked.connect(self.add_level)
+        row.addWidget(add_btn, 0)
+        self._stair_add_btns.append(add_btn)
+        container = QWidget()
+        container.setLayout(row)
+        if level_idx > 0:
+            container.setStyleSheet(f"margin-left: {16 * level_idx}px;")
+        self._stair_rows_container.addWidget(container)
+        self._stair_rows.append((sp_r, sp_d, container))
+        self.update_buttons()
 
     def add_level(self):
-        return self._panel._on_stair_add_level_legacy()
+        if len(self._stair_rows) < self._panel._stair_max_levels:
+            self.add_level_row()
+            self._panel._on_staircase_changed()
 
     def remove_level(self):
-        return self._panel._on_stair_remove_level_legacy()
+        if len(self._stair_rows) <= 1:
+            return
+        _r, _d, widget = self._stair_rows.pop()
+        self._stair_rows_container.removeWidget(widget)
+        widget.setParent(None)
+        widget.deleteLater()
+        button = self._stair_add_btns.pop()
+        button.setParent(None)
+        button.deleteLater()
+        self.update_buttons()
+        self._panel._on_staircase_changed()
 
     def update_buttons(self):
-        return self._panel._update_stair_buttons_legacy()
+        n = len(self._stair_rows)
+        for i, button in enumerate(self._stair_add_btns):
+            button.setVisible(i == n - 1 and n < self._panel._stair_max_levels)
 
     def build_standard_ui(self):
         """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""
