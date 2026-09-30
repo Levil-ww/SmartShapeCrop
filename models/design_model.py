@@ -18,6 +18,7 @@ from core.geometry import (
     CropDesign, BorderText, CutRect, limit_l_cut_rects_per_anchor,
     COMPOSITE_MODE, is_lshape_layout,
 )
+from core.multihole_layout import layout_holes
 
 
 class DesignModel:
@@ -417,44 +418,17 @@ class DesignModel:
         return hole
 
     @staticmethod
-    def _layout_holes(
-        layout: str, ox_cm: float, oy_cm: float,
-        new_wh: list, new_gaps: list,
-        mt_i, mb_i, ml_i, mr_i,
-        shared_mt: float, shared_mb: float,
-        shared_ml: float, shared_mr: float,
-        old_holes: list,
-    ) -> list:
-        """按布局方向排列洞位，返回 hole dict 列表。"""
-        new_holes_cm = []
-        if layout == 'vertical':
-            cursor_y = oy_cm + mt_i(0, shared_mt)
-            for i, (wv, hv) in enumerate(new_wh):
-                if i > 0 and i - 1 < len(new_gaps):
-                    cursor_y += new_gaps[i - 1]
-                hmt = mt_i(i, shared_mt)
-                hmb = mb_i(i, shared_mb)
-                hml = ml_i(i, shared_ml)
-                hmr = mr_i(i, shared_mr)
-                new_holes_cm.append(
-                    DesignModel._build_hole_dict(
-                        ox_cm + hml, cursor_y, wv, hv, hmt, hmb, hml, hmr, i, old_holes,
-                    )
-                )
-                cursor_y += hv
-        else:
-            cursor_x = ox_cm + ml_i(0, shared_ml)
-            for i, (wv, hv) in enumerate(new_wh):
-                if i > 0 and i - 1 < len(new_gaps):
-                    cursor_x += new_gaps[i - 1]
-                hmt = mt_i(i, shared_mt)
-                hmb = mb_i(i, shared_mb)
-                hml = ml_i(i, shared_ml)
-                hmr = mr_i(i, shared_mr)
-                new_holes_cm.append(
-                    DesignModel._build_hole_dict(
-                        cursor_x, oy_cm + hmt, wv, hv, hmt, hmb, hml, hmr, i, old_holes,
-                    )
-                )
-                cursor_x += wv
-        return new_holes_cm
+    def _layout_holes(layout, ox_cm, oy_cm, new_wh, new_gaps,
+                      mt_i, mb_i, ml_i, mr_i, shared_mt, shared_mb,
+                      shared_ml, shared_mr, old_holes):
+        """Compatibility wrapper around the shared multi-hole layout primitive."""
+        holes = layout_holes(
+            layout, ox_cm, oy_cm, new_wh, new_gaps,
+            lambda i: mt_i(i, shared_mt), lambda i: mb_i(i, shared_mb),
+            lambda i: ml_i(i, shared_ml), lambda i: mr_i(i, shared_mr))
+        for i, hole in enumerate(holes):
+            source = old_holes[i] if i < len(old_holes) and isinstance(old_holes[i], dict) else {}
+            for key in ('inner_material_path', '_cached_inner_image', '_src_design_w_cm', '_src_design_h_cm'):
+                if key in source:
+                    hole[key] = source[key]
+        return holes

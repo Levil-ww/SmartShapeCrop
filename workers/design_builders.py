@@ -7,6 +7,7 @@ from services.parser.template_matcher import TemplateEntry
 
 if TYPE_CHECKING:
     from core.geometry import CropDesign
+from core.multihole_layout import layout_holes
 
 
 class DesignBuildError(ValueError):
@@ -391,41 +392,10 @@ def build_multihole_geometry(
             _s_ml = design.inner_margin_left_cm
             _s_mt = design.inner_margin_top_cm
             _s_mr = design.inner_margin_right_cm
-            _new_holes = []
-            if _lo == 'vertical':
-                cursor_y = _oy + _mt_i(0)
-                for i, (_w, _h) in enumerate(_new_wh):
-                    if i > 0:
-                        cursor_y += _new_gaps[i - 1]
-                    hmt = _mt_i(i)
-                    hmb = _mb_i(i)
-                    hml = _ml_i(i, _s_ml)
-                    hmr = _mr_i(i, _s_mr)
-                    _new_holes.append({
-                        'x_cm': _ox + hml,
-                        'y_cm': cursor_y,
-                        'w_cm': _w, 'h_cm': _h,
-                        'mt_cm': hmt, 'mb_cm': hmb,
-                        'ml_cm': hml, 'mr_cm': hmr,
-                    })
-                    cursor_y += _h
-            else:  # horizontal / mixed → 横排语义（占 90% 业务）
-                cursor_x = _ox + _ml_i(0, _s_ml)
-                for i, (_w, _h) in enumerate(_new_wh):
-                    if i > 0:
-                        cursor_x += _new_gaps[i - 1]
-                    hmt = _mt_i(i)
-                    hmb = _mb_i(i)
-                    hml = _ml_i(i, _s_ml)
-                    hmr = _mr_i(i, _s_mr)
-                    _new_holes.append({
-                        'x_cm': cursor_x,
-                        'y_cm': _oy + hmt,
-                        'w_cm': _w, 'h_cm': _h,
-                        'mt_cm': hmt, 'mb_cm': hmb,
-                        'ml_cm': hml, 'mr_cm': hmr,
-                    })
-                    cursor_x += _w
+            _new_holes = layout_holes(
+                _lo, _ox, _oy, _new_wh, _new_gaps,
+                lambda i: _mt_i(i), lambda i: _mb_i(i),
+                lambda i: _ml_i(i, _s_ml), lambda i: _mr_i(i, _s_mr))
             design.pool_holes_cm = _new_holes
             design.pool_holes_gaps_cm = _new_gaps
             design.pool_is_multi_hole = True
