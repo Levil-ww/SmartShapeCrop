@@ -983,17 +983,12 @@ class LShapePanel(QWidget):
 
         # 先回填外框 SpinBox：阶梯路径 set_cut_rects → _on_staircase_changed
         # 会从 SpinBox 读取外框写入 _lshape_params，顺序颠倒会用旧值覆盖识别结果
-        self._sp_outer_w.blockSignals(True)
-        self._sp_outer_h.blockSignals(True)
-        try:
-            _TRIM = CUT_LOSS_CM
-            if result.outer_w_cm > 0:
-                self._sp_outer_w.setValue(max(0.0, float(result.outer_w_cm) + _TRIM))
-            if result.outer_h_cm > 0:
-                self._sp_outer_h.setValue(max(0.0, float(result.outer_h_cm) + _TRIM))
-        finally:
-            self._sp_outer_w.blockSignals(False)
-            self._sp_outer_h.blockSignals(False)
+        _TRIM = CUT_LOSS_CM
+        current_w, current_h = self._parameter_control.get_outer_size()
+        self._parameter_control.set_outer_size(
+            max(0.0, float(result.outer_w_cm) + _TRIM) if result.outer_w_cm > 0 else current_w,
+            max(0.0, float(result.outer_h_cm) + _TRIM) if result.outer_h_cm > 0 else current_h,
+            block_signals=True)
         self._lshape_params = {
             'corner': corner,
             'cut_w_cm': max(0.0, cut_w_cm),
@@ -1122,14 +1117,7 @@ class LShapePanel(QWidget):
         if self._staircase_mode:
             self._set_staircase_mode(False)
         # SpinBox 重置为最小画布值（5cm = 设计值 4cm + 1cm 损耗，clip 到 5cm）
-        self._sp_outer_w.blockSignals(True)
-        self._sp_outer_h.blockSignals(True)
-        try:
-            self._sp_outer_w.setValue(5.0)
-            self._sp_outer_h.setValue(5.0)
-        finally:
-            self._sp_outer_w.blockSignals(False)
-            self._sp_outer_h.blockSignals(False)
+        self._parameter_control.set_outer_size(5.0, 5.0, block_signals=True)
 
     def _set_lshape_params_legacy(self, corner: str, cut_w_cm: float, cut_h_cm: float):
         """外部回填 L 形参数（blockSignals 避免触发预览）。
@@ -1192,14 +1180,7 @@ class LShapePanel(QWidget):
         _TRIM = CUT_LOSS_CM
         canvas_w = max(5.0, max(0.0, float(outer_w_cm)) + _TRIM)
         canvas_h = max(5.0, max(0.0, float(outer_h_cm)) + _TRIM)
-        self._sp_outer_w.blockSignals(True)
-        self._sp_outer_h.blockSignals(True)
-        try:
-            self._sp_outer_w.setValue(canvas_w)
-            self._sp_outer_h.setValue(canvas_h)
-        finally:
-            self._sp_outer_w.blockSignals(False)
-            self._sp_outer_h.blockSignals(False)
+        self._parameter_control.set_outer_size(canvas_w, canvas_h, block_signals=True)
         # 同步到 _lshape_params dict（如果存在）
         if self._lshape_params is not None:
             self._lshape_params['outer_w_cm'] = max(0.0, float(outer_w_cm))
