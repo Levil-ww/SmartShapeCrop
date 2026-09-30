@@ -35,6 +35,7 @@ from core.config import CUT_LOSS_CM
 from .property_panel_widgets import _SketchDropLabel
 from .corner_cut_control import CornerCutControl
 from .target_file_widget import TargetFileWidget
+from .sketch_upload_widget import SketchUploadWidget
 from workers.property_panel_workers import _LShapeParseWorker
 logger = logging.getLogger(__name__)
 
@@ -142,25 +143,14 @@ class LShapePanel(QWidget):
 
         # ===== 2) 尺寸草图上传 + 缩略预览 =====
         self._gb_sketch = QGroupBox("🖼 尺寸草图")
+        self._sketch_control = SketchUploadWidget(self)
+        self._sk_preview = self._sketch_control.preview
+        self._sketch_control.sketchDropped.connect(self._on_sketch_dropped)
+        self._sketch_control.viewRequested.connect(self.sketch_view_requested)
+        self._sketch_control.uploadRequested.connect(self.sketch_pick_requested)
+        self._sketch_control.clearRequested.connect(self.sketch_clear_requested)
         row_sk = QHBoxLayout(self._gb_sketch)
-        self._sk_preview = _SketchDropLabel("（未上传）\n或拖入图片")
-        self._sk_preview.fileDropped.connect(self._on_sketch_dropped)   # 拖拽 → 委托 PropertyPanel
-        self._sk_preview.clicked.connect(self.sketch_view_requested.emit)  # 点击 → 委托查看大图
-        sk_btns = QVBoxLayout()
-        btn_sk1 = QPushButton("上传草图…")
-        btn_sk1.clicked.connect(self.sketch_pick_requested.emit)
-        btn_sk2 = QPushButton("清除草图")
-        btn_sk2.clicked.connect(self.sketch_clear_requested.emit)
-        sk_btns.addWidget(btn_sk1)
-        sk_btns.addWidget(btn_sk2)
-        row_sk.addWidget(self._sk_preview, 0)
-        row_sk.addLayout(sk_btns, 0)
-        sk_desc = QLabel(
-            "💡 草图格式示例（红色线标注上下左右边距即可）\n"
-            "自动识别失败时可在【水池设计器】下方【内挖边距】手动调整")
-        sk_desc.setStyleSheet("color:#666;")
-        sk_desc.setWordWrap(True)
-        row_sk.addWidget(sk_desc, 1)
+        row_sk.addWidget(self._sketch_control)
         self._inner_layout.addWidget(self._gb_sketch)
 
         # ===== 3) L 形挖角识别区 =====
@@ -700,6 +690,7 @@ class LShapePanel(QWidget):
         与原 _pool_load_sketch_from_path 中缩略图显示逻辑一致。
         """
         if not sketch_path or not os.path.isfile(sketch_path):
+            self._sketch_control.set_path("")
             self._sk_preview.clear()
             self._sk_preview.setText("（未上传）\n或拖入图片")
             self._sk_preview.setStyleSheet(
@@ -709,6 +700,7 @@ class LShapePanel(QWidget):
             return
         pm = QPixmap(sketch_path)
         if not pm.isNull():
+            self._sketch_control.set_path(sketch_path)
             self._sk_preview.setPixmap(pm.scaled(
                 self._sk_preview.size(),
                 Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -716,6 +708,7 @@ class LShapePanel(QWidget):
                 "QLabel { border: 1px solid #888; background:#fff; border-radius: 6px; }")
             self._sk_preview.set_has_image(True)
         else:
+            self._sketch_control.set_path("")
             self._sk_preview.clear()
             self._sk_preview.setText("（预览失败）\n或拖入图片")
             self._sk_preview.set_has_image(False)
@@ -730,7 +723,7 @@ class LShapePanel(QWidget):
 
     def set_sketch_path_for_view(self, path: str):
         """PropertyPanel 回填草图路径（供点击缩略图查看大图用）。"""
-        self._sk_preview.setProperty("sketch_path", path)
+        self._sketch_control.set_path(path)
 
     # ====================================================================
     # L 形参数变化 → 通知 PropertyPanel 触发预览
