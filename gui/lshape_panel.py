@@ -191,14 +191,7 @@ class LShapePanel(QWidget):
         #   → _on_param_changed 回写 dict['outer_w_cm'] = 144 - 1 = 143.0（设计真值）
         #   → PropertyPanel 桥接层同步 _pool_raw_outer_w = 143，_sp_w = 144
         # 与水池设计器 _sp_w/_sp_h（画布值）语义完全一致。
-        self._gb_outer = QGroupBox("外框尺寸（cm）")
-        self._gb_outer.setStyleSheet(self._param_group_style("#5B6CFF"))
-        fo = QVBoxLayout(self._gb_outer)
-        fo.setSpacing(6)
-        self._sp_outer_w = self._dspin(5, 500, 5.0)
-        self._sp_outer_h = self._dspin(5, 500, 5.0)
-        fo.addLayout(self._row("宽(cm)", self._sp_outer_w))
-        fo.addLayout(self._row("高(cm)", self._sp_outer_h))
+        self._gb_outer, self._sp_outer_w, self._sp_outer_h = self._parameter_control.build_outer_ui()
         params_row.addWidget(self._gb_outer, 1)  # 外框尺寸 → 左
 
         # ===== 4) L 形挖角参数 GroupBox (右侧：后 add → 右) =====
