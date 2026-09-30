@@ -34,6 +34,7 @@ from core.app_settings import get_app_settings
 from core.config import CUT_LOSS_CM
 from .property_panel_widgets import _SketchDropLabel
 from .corner_cut_control import CornerCutControl
+from .target_file_widget import TargetFileWidget
 from workers.property_panel_workers import _LShapeParseWorker
 logger = logging.getLogger(__name__)
 
@@ -116,28 +117,14 @@ class LShapePanel(QWidget):
         # ===== 1) 目标文件名 =====
         self._gb_target = QGroupBox("📋 目标文件名")
         row_fn = QHBoxLayout(self._gb_target)
-        row_fn.addWidget(QLabel("目标文件:"), 0)
-        self._target_edit = QLineEdit()
-        self._target_edit.setPlaceholderText(
-            "例：吸水皮革-定制-裁剪有图-克罗印花;60.5x133CM  （花型名+尺寸必须写）")
-        self._target_edit.textChanged.connect(self._on_target_text_changed)
-        row_fn.addWidget(self._target_edit, 1)
-        btn_pick = QPushButton("选文件")
-        btn_pick.setFixedWidth(64)
-        btn_pick.clicked.connect(self.target_pick_requested.emit)
-        row_fn.addWidget(btn_pick, 0)
-        btn_clr = QPushButton("清空")
-        btn_clr.setFixedWidth(48)
-        btn_clr.clicked.connect(self.target_clear_requested.emit)
-        row_fn.addWidget(btn_clr, 0)
-        # 历史记录按钮（PropertyPanel 侧注入菜单项）
-        self._btn_target_history = QToolButton()
-        self._btn_target_history.setText("▾")
-        self._btn_target_history.setPopupMode(QToolButton.InstantPopup)
-        self._btn_target_history.setToolTip("目标文件名历史记录（保留3天）")
-        self._target_history_menu = QMenu(self._btn_target_history)
-        self._btn_target_history.setMenu(self._target_history_menu)
-        row_fn.addWidget(self._btn_target_history, 0)
+        self._target_control = TargetFileWidget(self)
+        self._target_edit = self._target_control.edit
+        self._btn_target_history = self._target_control.history_button
+        self._target_history_menu = self._target_control.history_menu
+        self._target_control.textChanged.connect(self._on_target_text_changed)
+        self._target_control.pickRequested.connect(self.target_pick_requested)
+        self._target_control.clearRequested.connect(self.target_clear_requested)
+        row_fn.addWidget(self._target_control, 1)
         self._inner_layout.addWidget(self._gb_target)
 
         # ===== 1.5) 输出文件名（默认跟随目标文件名，用于导出 JPG）=====
