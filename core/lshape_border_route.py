@@ -430,6 +430,15 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
             and _BLACK_MAX_CHANNEL < max(layers[1][0]) < 235):
         layers.pop(1)
 
+    # 外层黑色段若已占据结构窗口的大部分，后面的近白中性段通常是
+    # 素材内容底色而非第二条色带（花满金陵等黑底素材）。只在黑段远厚
+    # 于正常厚黑边时应用，保留庄园秘境等真实黑边+米色带结构。
+    if (len(layers) >= 2
+            and layers[0][1] >= _THICK_BLACK_MIN * 2
+            and max(layers[1][0]) - min(layers[1][0]) <= 8
+            and max(layers[1][0]) >= 235):
+        layers.pop(1)
+
     total = sum(t for _, t in layers)
     if total <= 0 or total > thick_cap * 1.4:
         return None
@@ -839,10 +848,18 @@ def _apply_profile_path(*,
         _is_anchor = (_max_c < _BLACK_MAX_CHANNEL and t > _LINE_MAX_THICK)
         _is_line = (_max_c < _DARK_LINE_MAX_CHANNEL
                     and _ANCHOR_MIN_THICK <= t <= _LINE_MAX_THICK)
-        if not _is_anchor and not _is_line and not bg_is_default_white:
+        # 有色内框线（如梦里兰香的褐色细线）也是结构层，不能按
+        # bg_color 当作普通色带覆盖，否则三层素材会丢掉内层细线。
+        _is_color_line = (
+            _ANCHOR_MIN_THICK <= t <= _COLOR_LINE_MAX_THICK
+            and max(c) - min(c) >= _COLOR_LINE_SAT_MIN
+            and max(c) >= _DARK_LINE_MAX_CHANNEL
+        )
+        if (not _is_anchor and not _is_line and not _is_color_line
+                and not bg_is_default_white):
             # 带层 + bg_color 有效 → 直接替换为精确底色
             c = bg
-        elif not _is_anchor and not _is_line:
+        elif not _is_anchor and not _is_line and not _is_color_line:
             # 带层 + bg_color 白色 → 回退原 d<30 逻辑
             d = _color_dist(c, bg)
             if d < 30.0:

@@ -705,7 +705,13 @@ def _detect_lshape_border_auto(detect_img: Image.Image):
     v13_preferred = False
     if profile_layers and profile_yields_to_v13(profile_layers):
         v13_preferred = True
-        v13_result = detect_border_v13(detect_img)
+        # 佩斯等素材的独立色带与中心底色接近，通用的大理石防误检会
+        # 把该色带清成 band=0。仅在 Profile 已确认一层独立黑边时放宽
+        # 这一条过滤；直接调用 detect_border_v13 的默认行为不变。
+        v13_result = detect_border_v13(
+            detect_img,
+            allow_center_matched_band=(len(profile_layers) == 1),
+        )
         v13_computed = True
     return profile_layers, v13_result, v13_computed, v13_preferred
 
@@ -1362,7 +1368,11 @@ def _v13_band_consistent(arr: np.ndarray, band: int,
     )
 
 
-def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, int], tuple[int, int, int]] | None:
+def detect_border_v13(
+    src_img: Image.Image,
+    *,
+    allow_center_matched_band: bool = False,
+) -> tuple[int, int, tuple[int, int, int], tuple[int, int, int]] | None:
     """V13 自动边框检测：返回 (黑描边宽px, 主带宽px, 黑描边色RGB, 主带色RGB) 或 None。
 
     规则（_v13_pick 内部已有完整分段逻辑）：
@@ -1376,6 +1386,8 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
 
     Args:
         src_img: 原始素材 PIL Image（建议未拉伸）
+        allow_center_matched_band: 仅供 Profile 已确认结构的内部路由使用；
+            为 True 时保留与中心底色接近、但已通过四边一致性校验的色带。
 
     Returns:
         (edge_px, band_px, (r, g, b), (r, g, b)) 或 None（未检测到有效黑描边）
@@ -1498,7 +1510,7 @@ def detect_border_v13(src_img: Image.Image) -> tuple[int, int, tuple[int, int, i
     # [Fix 2026-09-19 大理石纹理误检] 褐色/黑色大理石等素材的"色带"实际是
     # 大理石纹理本身（与中心内容色一致），不是独立的边框色带。白色大理石
     # 因 max(c)>235 被天然过滤，深色大理石需要额外用"中心色匹配"剔除。
-    if pt[1] > 0:
+    if pt[1] > 0 and not allow_center_matched_band:
         H, W = arr.shape[:2]
         m0, m1 = int(H * 0.1), int(H * 0.9)
         n0, n1 = int(W * 0.1), int(W * 0.9)
