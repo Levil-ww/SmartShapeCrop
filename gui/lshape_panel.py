@@ -460,31 +460,7 @@ class LShapePanel(QWidget):
 
     def _on_staircase_changed(self, *_):
         """阶梯控件变化 → 更新 _lshape_params dict（与 _on_param_changed 同语义）。"""
-        if not self._staircase_mode:
-            return
-        cut_rects = self.get_cut_rects_cm()
-        outer_w = max(0.0, self._sp_outer_w.value() - CUT_LOSS_CM)
-        outer_h = max(0.0, self._sp_outer_h.value() - CUT_LOSS_CM)
-        anchor = self._stair_corner.currentData() or 'tr'
-        primary_w = cut_rects[0]['w_cm'] if cut_rects else 0.0
-        primary_h = sum(cr['h_cm'] for cr in cut_rects)
-        if self._lshape_params is None:
-            self._lshape_params = {}
-        self._lshape_params.update({
-            'corner': anchor,
-            'cut_w_cm': primary_w,
-            'cut_h_cm': primary_h,
-            # 旧格式 cuts_cm 不允许同角位重复；阶梯几何真值只由 cut_rects 承载
-            'cuts_cm': [],
-            'cut_rects': cut_rects,
-            'outer_w_cm': outer_w,
-            'outer_h_cm': outer_h,
-        })
-        self._params_source = 'manual'
-        # G1 参数闸口（简化版）：无有效级时提示，防止空参进入渲染层报错
-        if not cut_rects:
-            self._set_status(
-                "请填写至少一级「步进宽 × 落差」（均需 > 0）后再生成预览", is_error=True)
+        return self._corner_control.on_staircase_changed()
 
     def _set_staircase_mode_legacy(self, enabled: bool):
         """切换标准多角模式 ↔ 单边阶梯模式。

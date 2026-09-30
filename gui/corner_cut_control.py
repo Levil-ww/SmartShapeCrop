@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QGroupBox,
     QCheckBox, QPushButton,
 )
+from core.config import CUT_LOSS_CM
 
 class CornerCutControl(QWidget):
     """为标准多角和单边阶梯模式提供统一的挖角契约。
@@ -58,7 +59,41 @@ class CornerCutControl(QWidget):
             self._mode_combo.blockSignals(False)
 
     def on_mode_combo_changed(self, *args) -> None:
-        self._panel._on_mode_combo_changed_legacy(*args)
+        panel = self._panel
+        want = self._mode_combo.currentData() == 'staircase'
+        if want == panel._staircase_mode:
+            return
+        if want:
+            panel._lshape_params = None
+            panel._params_source = None
+            self.set_staircase_mode(True)
+            while len(self._stair_rows) < 2:
+                self.add_level_row()
+            while len(self._stair_rows) > 2:
+                self.remove_level()
+            for r_sp, d_sp, _ in self._stair_rows:
+                r_sp.blockSignals(True); d_sp.blockSignals(True)
+                r_sp.setValue(0.0); d_sp.setValue(0.0)
+                r_sp.blockSignals(False); d_sp.blockSignals(False)
+            self.update_buttons()
+            panel._on_staircase_changed()
+            panel._set_status("已切换到「单边阶梯 L 形」：共用一个角位，逐级填「步进宽 × 落差」（第 1 级 = 远端第一步，依次向角位）")
+        else:
+            rects = self.get_cut_rects_cm()
+            first = rects[0] if rects else None
+            self.set_staircase_mode(False)
+            panel._lshape_params = None
+            panel._params_source = None
+            if first is not None:
+                ci = self._cb_lcorner.findData(first['anchor'])
+                if ci >= 0:
+                    self._cb_lcorner.setCurrentIndex(ci)
+                self._sp_lw.setValue(first['w_cm'])
+                self._sp_lh.setValue(first['h_cm'])
+            for enabled, _combo, width, height in self._corner_rows[1:]:
+                enabled.setChecked(False); width.setValue(0.0); height.setValue(0.0)
+            panel._on_param_changed()
+            panel._set_status("已切换到「标准 L 形」模式（保留第 1 级参数）")
 
     def build_mode_selector(self):
         """创建模式选择行；返回布局供宿主插入原位置。"""
@@ -160,6 +195,29 @@ class CornerCutControl(QWidget):
         n = len(self._stair_rows)
         for i, button in enumerate(self._stair_add_btns):
             button.setVisible(i == n - 1 and n < self._panel._stair_max_levels)
+
+    def on_staircase_changed(self):
+        panel = self._panel
+        if not panel._staircase_mode:
+            return
+        rects = self.get_cut_rects_cm()
+        outer_w = max(0.0, panel._sp_outer_w.value() - CUT_LOSS_CM)
+        outer_h = max(0.0, panel._sp_outer_h.value() - CUT_LOSS_CM)
+        anchor = self._stair_corner.currentData() or 'tr'
+        primary_w = rects[0]['w_cm'] if rects else 0.0
+        primary_h = sum(item['h_cm'] for item in rects)
+        if panel._lshape_params is None:
+            panel._lshape_params = {}
+        panel._lshape_params.update({
+            'corner': anchor, 'cut_w_cm': primary_w, 'cut_h_cm': primary_h,
+            'cuts_cm': [], 'cut_rects': rects,
+            'outer_w_cm': outer_w, 'outer_h_cm': outer_h,
+        })
+        panel._params_source = 'manual'
+        if not rects:
+            panel._set_status(
+                "请填写至少一级「步进宽 × 落差」（均需 > 0）后再生成预览",
+                is_error=True)
 
     def build_standard_ui(self):
         """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""
