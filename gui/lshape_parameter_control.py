@@ -135,6 +135,12 @@ class LShapeParameterControl(QWidget):
     def get_cuts_cm(self) -> list[dict]:
         return self._corner_control.get_cuts_cm()
 
+    def manual_cut_snapshot(self) -> tuple[list[dict], dict]:
+        return self._corner_control.manual_cut_snapshot()
+
+    def build_manual_params(self, outer_w_cm: float, outer_h_cm: float) -> dict:
+        return self._corner_control.build_manual_params(outer_w_cm, outer_h_cm)
+
     def set_cut_rects(self, cut_rects: list[dict]):
         """识别结果回填：把 CutRect 条带列表逆换算为步进值写入阶梯子行 SpinBox。
 

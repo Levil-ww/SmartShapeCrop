@@ -648,9 +648,9 @@ class LShapePanel(QWidget):
         canvas_outer_h = max(0.0, self._sp_outer_h.value())
         design_outer_w = max(0.0, canvas_outer_w - _TRIM)
         design_outer_h = max(0.0, canvas_outer_h - _TRIM)
-        cuts, primary = self._corner_control.manual_cut_snapshot()
+        cuts, primary = self._parameter_control.manual_cut_snapshot()
         self._update_margin_hint(design_outer_w, design_outer_h, cuts)
-        manual_params = self._corner_control.build_manual_params(
+        manual_params = self._parameter_control.build_manual_params(
             design_outer_w, design_outer_h)
         if self._lshape_params is None:
             self._lshape_params = manual_params

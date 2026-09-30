@@ -35,6 +35,10 @@ def test_parameter_control_keeps_legacy_mode_contract(qapp):
     assert control._sp_lh is panel._sp_lh
     assert control.get_outer_size() == (panel._sp_outer_w.value(), panel._sp_outer_h.value())
     assert control.get_cuts_cm() == panel.get_cuts_cm()
+    snapshot_cuts, primary = control.manual_cut_snapshot()
+    assert snapshot_cuts == panel.get_cuts_cm()
+    assert primary['corner'] == panel.get_corner()
+    assert control.build_manual_params(80, 60)['outer_w_cm'] == 80
     control.set_outer_size(42, 24)
     assert control.get_outer_size() == (42.0, 24.0)
     panel.set_lshape_params('tr', 10, 8)
