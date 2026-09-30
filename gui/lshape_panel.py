@@ -281,6 +281,7 @@ class LShapePanel(QWidget):
         self._cb_lcorner = self._corner_rows[0][1]
         self._sp_lw = self._corner_rows[0][2]
         self._sp_lh = self._corner_rows[0][3]
+        self._corner_control.adopt_standard_ui()
         params_row.addWidget(self._gb_l, 1)  # L 形挖角参数 → 右
 
         self._inner_layout.addLayout(params_row)

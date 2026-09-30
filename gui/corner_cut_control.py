@@ -25,6 +25,11 @@ class CornerCutControl(QWidget):
         self._stair_add_btns = []
         self._stair_corner = None
         self._stair_rows_container = None
+        self._corner_rows = []
+        self._gb_l = None
+        self._cb_lcorner = None
+        self._sp_lw = None
+        self._sp_lh = None
 
     @property
     def staircase_mode(self) -> bool:
@@ -66,6 +71,15 @@ class CornerCutControl(QWidget):
         self._stair_add_btns = self._panel._stair_add_btns
         self._stair_corner = self._panel._stair_corner
         self._stair_rows_container = self._panel._stair_rows_container
+
+    def adopt_standard_ui(self):
+        """接管标准多角 UI 的 canonical 引用，保持宿主兼容字段不变。"""
+        panel = self._panel
+        self._corner_rows = panel._corner_rows
+        self._gb_l = panel._gb_l
+        self._cb_lcorner = panel._cb_lcorner
+        self._sp_lw = panel._sp_lw
+        self._sp_lh = panel._sp_lh
 
     def get_mode(self) -> str:
         return "staircase" if self._panel._staircase_mode else "standard"
