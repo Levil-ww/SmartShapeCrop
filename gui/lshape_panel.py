@@ -37,6 +37,7 @@ from .corner_cut_control import CornerCutControl
 from .target_file_widget import TargetFileWidget
 from .sketch_upload_widget import SketchUploadWidget
 from .design_action_control import DesignActionControl
+from .lshape_parameter_control import LShapeParameterControl
 from workers.property_panel_workers import _LShapeParseWorker
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ class LShapePanel(QWidget):
         self._app_settings = get_app_settings()
         # 先建立契约适配器；UI 构建期间已有的参数初始化也通过它读取。
         self._corner_control = CornerCutControl(self)
+        self._parameter_control = LShapeParameterControl(self, self._corner_control)
         self._build_ui()
         # —— 初始化本面板独立的目标文件名历史菜单 ——
         self._refresh_target_history_ui()
@@ -171,8 +173,8 @@ class LShapePanel(QWidget):
 
         # ===== 4.4) 挖角模式选择器（识别区下方、参数区上方）=====
         # 识别自动锁定对应模式；用户也可手动切换（清空参数，见 _on_mode_combo_changed）
-        mode_row = self._corner_control.build_mode_selector()
-        self._mode_combo = self._corner_control._mode_combo
+        mode_row = self._parameter_control.build_mode_selector()
+        self._mode_combo = self._parameter_control.mode_combo
         self._inner_layout.addLayout(mode_row)
 
         # ===== 4+5) 参数组同行并排：外框尺寸(左) + L 形挖角参数(右) =====
