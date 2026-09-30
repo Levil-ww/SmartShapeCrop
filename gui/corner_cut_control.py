@@ -233,6 +233,17 @@ class CornerCutControl(QWidget):
             'cut_h_cm': max(0.0, self._sp_lh.value()),
         }
 
+    def build_manual_params(self, outer_w_cm: float, outer_h_cm: float) -> dict:
+        cuts, primary = self.manual_cut_snapshot()
+        return {
+            'corner': primary['corner'],
+            'cut_w_cm': primary['cut_w_cm'],
+            'cut_h_cm': primary['cut_h_cm'],
+            'cuts_cm': cuts,
+            'outer_w_cm': max(0.0, float(outer_w_cm)),
+            'outer_h_cm': max(0.0, float(outer_h_cm)),
+        }
+
     def build_standard_ui(self):
         """创建标准多角参数组，并返回可插入宿主布局的 GroupBox。"""
         panel = self._panel

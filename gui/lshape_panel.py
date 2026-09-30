@@ -764,22 +764,12 @@ class LShapePanel(QWidget):
         design_outer_h = max(0.0, canvas_outer_h - _TRIM)
         cuts, primary = self._corner_control.manual_cut_snapshot()
         self._update_margin_hint(design_outer_w, design_outer_h, cuts)
+        manual_params = self._corner_control.build_manual_params(
+            design_outer_w, design_outer_h)
         if self._lshape_params is None:
-            self._lshape_params = {
-                'corner': primary['corner'],
-                'cut_w_cm': primary['cut_w_cm'],
-                'cut_h_cm': primary['cut_h_cm'],
-                'cuts_cm': cuts,
-                'outer_w_cm': design_outer_w,
-                'outer_h_cm': design_outer_h,
-            }
+            self._lshape_params = manual_params
         else:
-            self._lshape_params['corner'] = primary['corner']
-            self._lshape_params['cut_w_cm'] = primary['cut_w_cm']
-            self._lshape_params['cut_h_cm'] = primary['cut_h_cm']
-            self._lshape_params['cuts_cm'] = cuts
-            self._lshape_params['outer_w_cm'] = design_outer_w
-            self._lshape_params['outer_h_cm'] = design_outer_h
+            self._lshape_params.update(manual_params)
         # 标记为用户手动修改（回填识别值时 blockSignals 已保护不会触发这里）
         self._params_source = 'manual'
         # 旧格式不允许同角位重复：多笔同角位挖角属于阶梯形态，提示切换模式
