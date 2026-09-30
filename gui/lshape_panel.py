@@ -482,12 +482,12 @@ class LShapePanel(QWidget):
         数值与角位无关（offset 从 anchor 自身边测量，镜像不变）。
         非阶梯模式返回空列表。
         """
-        return self._corner_control.get_cut_rects_cm()
+        return self._parameter_control.get_cut_rects_cm()
 
     # Public compatibility API. These delegates preserve the old panel
     # contract while the挖角 implementation moves behind CornerCutControl.
     def get_cut_rects_cm(self) -> list[dict]:
-        return self._corner_control.get_cut_rects_cm()
+        return self._parameter_control.get_cut_rects_cm()
 
     def get_corner(self) -> str:
         return self._parameter_control.get_corner()
@@ -505,62 +505,17 @@ class LShapePanel(QWidget):
         return self._corner_control.get_lshape_params()
 
     def set_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
-        return self._parameter_control.set_standard_params(corner, cut_w_cm, cut_h_cm)
+        return self._set_lshape_params_legacy(corner, cut_w_cm, cut_h_cm)
 
     def set_lshape_cuts(self, cuts: list[dict] | None):
-        return self._parameter_control.set_cuts(cuts)
+        return self._set_lshape_cuts_legacy(cuts)
 
     def _set_mode_legacy(self, staircase: bool) -> None:
         self._set_staircase_mode(staircase)
 
     def set_cut_rects(self, cut_rects: list[dict]):
-        """识别结果回填：把 CutRect 条带列表逆换算为步进值写入阶梯子行 SpinBox。
-
-        cut_rects: [{'anchor': str, 'offset_x_cm': float, 'offset_y_cm': float,
-                      'w_cm': float, 'h_cm': float}, ...]
-        逆换算：r_i = w_i − w_{i+1}（末级 r_N = w_N）；d_i = h_i；按 offset_y 升序。
-        自动切换到阶梯模式（_gb_staircase 可见，_gb_l 隐藏）。
-        子行数按输入长度调整（1~3），多余行删除，不足行追加。
-        """
-        cut_rects = list(cut_rects or [])[:self._stair_max_levels]
-        if not cut_rects:
-            return
-        self._set_staircase_mode(True)
-        anchor = cut_rects[0].get('anchor', 'tr')
-        idx = self._stair_corner.findData(anchor)
-        self._stair_corner.blockSignals(True)
-        if idx >= 0:
-            self._stair_corner.setCurrentIndex(idx)
-        self._stair_corner.blockSignals(False)
-        rects = sorted(
-            cut_rects,
-            key=lambda c: (float(c.get('offset_y_cm', 0)), float(c.get('offset_x_cm', 0))))
-        steps = []
-        for i, cr in enumerate(rects):
-            w_i = max(0.0, float(cr.get('w_cm', 0)))
-            d_i = max(0.0, float(cr.get('h_cm', 0)))
-            if i < len(rects) - 1:
-                w_next = max(0.0, float(rects[i + 1].get('w_cm', 0)))
-                r_i = w_i - w_next if w_i > w_next else 0.0
-            else:
-                r_i = w_i
-            steps.append((r_i, d_i))
-        while len(self._stair_rows) > len(steps):
-            self._on_stair_remove_level()
-        for i, (r_val, d_val) in enumerate(steps):
-            if i >= len(self._stair_rows):
-                self._stair_add_level_row()
-            r_sp, d_sp, _ = self._stair_rows[i]
-            for sp in (r_sp, d_sp):
-                sp.blockSignals(True)
-            try:
-                r_sp.setValue(max(0.0, r_val))
-                d_sp.setValue(max(0.0, d_val))
-            finally:
-                for sp in (r_sp, d_sp):
-                    sp.blockSignals(False)
-        self._update_stair_buttons()
-        self._on_staircase_changed()
+        """兼容入口：由参数控件回填阶梯条带并同步面板参数。"""
+        return self._parameter_control.set_cut_rects(cut_rects)
 
     # ====================================================================
     # 目标文件名处理
