@@ -22,6 +22,24 @@ class CornerCutControl(QWidget):
         self.setObjectName("cornerCutControl")
         self._panel = panel
 
+    @property
+    def staircase_mode(self) -> bool:
+        return self._panel._staircase_mode
+
+    @property
+    def stair_rows(self):
+        return self._panel._stair_rows
+
+    @property
+    def corner_rows(self):
+        return self._panel._corner_rows
+
+    def set_staircase_mode(self, enabled: bool) -> None:
+        self._panel._set_staircase_mode_legacy(enabled)
+
+    def on_mode_combo_changed(self, *args) -> None:
+        self._panel._on_mode_combo_changed_legacy(*args)
+
     def get_mode(self) -> str:
         return "staircase" if self._panel._staircase_mode else "standard"
 
@@ -38,10 +56,45 @@ class CornerCutControl(QWidget):
         return self._panel._get_cut_h_cm_legacy()
 
     def get_cuts_cm(self) -> list[dict]:
-        return self._panel._get_cuts_cm_legacy()
+        panel = self._panel
+        if panel._staircase_mode:
+            # 旧格式不允许同角位重复；阶梯真值由 cut rects 承载。
+            return []
+        cuts = []
+        for enabled, combo, width, height in panel._corner_rows:
+            if not enabled.isChecked() or width.value() <= 0 or height.value() <= 0:
+                continue
+            cuts.append({
+                'corner': combo.currentData(),
+                'cut_w_cm': width.value(),
+                'cut_h_cm': height.value(),
+            })
+        return cuts[:4]
 
     def get_cut_rects_cm(self) -> list[dict]:
-        return self._panel._get_cut_rects_cm_legacy()
+        panel = self._panel
+        if not panel._staircase_mode:
+            return []
+        anchor = panel._stair_corner.currentData() or 'tr'
+        rows = [(r_sp.value(), d_sp.value())
+                for r_sp, d_sp, _ in panel._stair_rows]
+        rows = [(r, d) for r, d in rows if r > 0 and d > 0]
+        if not rows:
+            return []
+        result = []
+        prev_y = 0.0
+        total_w = sum(r for r, _ in rows)
+        for r, d in rows:
+            result.append({
+                'anchor': anchor,
+                'offset_x_cm': 0.0,
+                'offset_y_cm': round(prev_y, 2),
+                'w_cm': round(total_w, 2),
+                'h_cm': round(d, 2),
+            })
+            prev_y += d
+            total_w -= r
+        return result
 
     def get_lshape_params(self):
         return self._panel._get_lshape_params_legacy()

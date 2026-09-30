@@ -496,7 +496,7 @@ class LShapePanel(QWidget):
             self._set_status(
                 "请填写至少一级「步进宽 × 落差」（均需 > 0）后再生成预览", is_error=True)
 
-    def _set_staircase_mode(self, enabled: bool):
+    def _set_staircase_mode_legacy(self, enabled: bool):
         """切换标准多角模式 ↔ 单边阶梯模式。
 
         enabled=True:  隐藏 _gb_l（4 角行），显示 _gb_staircase
@@ -514,7 +514,7 @@ class LShapePanel(QWidget):
         finally:
             self._mode_combo.blockSignals(False)
 
-    def _on_mode_combo_changed(self, *_):
+    def _on_mode_combo_changed_legacy(self, *_):
         """用户手动切换挖角模式（报告 V2.3 模式切换规则）。"""
         want_staircase = (self._mode_combo.currentData() == 'staircase')
         if want_staircase == self._staircase_mode:
@@ -570,6 +570,14 @@ class LShapePanel(QWidget):
             self._on_param_changed()
             self._set_status("已切换到「标准 L 形」模式（保留第 1 级参数）")
 
+    def _set_staircase_mode(self, enabled: bool):
+        """兼容入口：模式状态由 CornerCutControl 统一调度。"""
+        return self._corner_control.set_staircase_mode(enabled)
+
+    def _on_mode_combo_changed(self, *args):
+        """兼容入口：模式切换逻辑由 CornerCutControl 统一调度。"""
+        return self._corner_control.on_mode_combo_changed(*args)
+
     def _get_cut_rects_cm_legacy(self) -> list[dict]:
         """返回阶梯挖角的 CutRect 列表（厘米），步进值 → 条带换算（报告 V2.4）。
 
@@ -578,27 +586,7 @@ class LShapePanel(QWidget):
         数值与角位无关（offset 从 anchor 自身边测量，镜像不变）。
         非阶梯模式返回空列表。
         """
-        if not self._staircase_mode:
-            return []
-        anchor = self._stair_corner.currentData() or 'tr'
-        rows = [(r_sp.value(), d_sp.value()) for r_sp, d_sp, _ in self._stair_rows]
-        rows = [(r, d) for r, d in rows if r > 0 and d > 0]
-        if not rows:
-            return []
-        result = []
-        prev_y = 0.0
-        total_w = sum(r for r, _ in rows)
-        for r, d in rows:
-            result.append({
-                'anchor': anchor,
-                'offset_x_cm': 0.0,
-                'offset_y_cm': round(prev_y, 2),
-                'w_cm': round(total_w, 2),
-                'h_cm': round(d, 2),
-            })
-            prev_y += d
-            total_w -= r
-        return result
+        return self._corner_control.get_cut_rects_cm()
 
     # Public compatibility API. These delegates preserve the old panel
     # contract while the挖角 implementation moves behind CornerCutControl.
@@ -1237,18 +1225,7 @@ class LShapePanel(QWidget):
         阶梯模式下返回空列表：旧格式 {corner, cut_w_cm, cut_h_cm} 不允许同角位
         重复，阶梯几何真值只由 get_cut_rects_cm() 承载。
         """
-        if self._staircase_mode:
-            return []
-        cuts = []
-        for enabled, combo, width, height in self._corner_rows:
-            if not enabled.isChecked() or width.value() <= 0 or height.value() <= 0:
-                continue
-            cuts.append({
-                'corner': combo.currentData(),
-                'cut_w_cm': width.value(),
-                'cut_h_cm': height.value(),
-            })
-        return cuts[:4]
+        return self._corner_control.get_cuts_cm()
 
     def _get_lshape_params_legacy(self):
         """读取 _lshape_params"""
