@@ -1125,22 +1125,7 @@ class LShapePanel(QWidget):
         同时同步 `_lshape_params` dict，确保 Worker 下次读取时拿到回填后的值，
         而非回填前用户手动编辑的旧值。
         """
-        self._cb_lcorner.blockSignals(True)
-        self._sp_lw.blockSignals(True)
-        self._sp_lh.blockSignals(True)
-        try:
-            ci = self._cb_lcorner.findData(corner)
-            if ci >= 0:
-                self._cb_lcorner.setCurrentIndex(ci)
-            self._sp_lw.setValue(max(0.0, float(cut_w_cm)))
-            self._sp_lh.setValue(max(0.0, float(cut_h_cm)))
-            self._corner_rows[0][0].setChecked(True)
-            for row in self._corner_rows[1:]:
-                row[0].setChecked(False)
-        finally:
-            self._cb_lcorner.blockSignals(False)
-            self._sp_lw.blockSignals(False)
-            self._sp_lh.blockSignals(False)
+        self._parameter_control.set_standard_params(corner, cut_w_cm, cut_h_cm)
         # [D8 修复] 懒初始化守卫：模板菜单回填可能在面板从未交互时到达（fresh panel 时 _lshape_params 为 None）
         if self._lshape_params is None:
             self._lshape_params = {}
@@ -1151,22 +1136,7 @@ class LShapePanel(QWidget):
 
     def _set_lshape_cuts_legacy(self, cuts: list[dict] | None):
         """回填多角参数；空列表回退到旧单角控件。"""
-        cuts = list(cuts or [])[:4]
-        for index, (enabled, combo, width, height) in enumerate(self._corner_rows):
-            enabled.blockSignals(True); combo.blockSignals(True)
-            width.blockSignals(True); height.blockSignals(True)
-            try:
-                if index < len(cuts):
-                    cut = cuts[index]
-                    enabled.setChecked(True)
-                    combo.setCurrentIndex(max(0, combo.findData(cut.get('corner', 'br'))))
-                    width.setValue(max(0.0, float(cut.get('cut_w_cm', 0))))
-                    height.setValue(max(0.0, float(cut.get('cut_h_cm', 0))))
-                else:
-                    enabled.setChecked(False)
-            finally:
-                enabled.blockSignals(False); combo.blockSignals(False)
-                width.blockSignals(False); height.blockSignals(False)
+        self._parameter_control.set_cuts(cuts)
         # [D8 修复] 懒初始化守卫：同 set_lshape_params
         if self._lshape_params is None:
             self._lshape_params = {}

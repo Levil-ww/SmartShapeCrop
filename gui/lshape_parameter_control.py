@@ -70,10 +70,42 @@ class LShapeParameterControl(QWidget):
                     widget.blockSignals(False)
 
     def set_standard_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
-        return self._corner_control.set_lshape_params(corner, cut_w_cm, cut_h_cm)
+        self._cb_lcorner.blockSignals(True)
+        self._sp_lw.blockSignals(True)
+        self._sp_lh.blockSignals(True)
+        try:
+            index = self._cb_lcorner.findData(corner)
+            if index >= 0:
+                self._cb_lcorner.setCurrentIndex(index)
+            self._sp_lw.setValue(max(0.0, float(cut_w_cm)))
+            self._sp_lh.setValue(max(0.0, float(cut_h_cm)))
+            self._corner_rows[0][0].setChecked(True)
+            for row in self._corner_rows[1:]:
+                row[0].setChecked(False)
+        finally:
+            self._cb_lcorner.blockSignals(False)
+            self._sp_lw.blockSignals(False)
+            self._sp_lh.blockSignals(False)
+        return self.get_cuts_cm()
 
     def set_cuts(self, cuts: list[dict] | None):
-        return self._corner_control.set_lshape_cuts(cuts)
+        cuts = list(cuts or [])[:4]
+        for index, (enabled, combo, width, height) in enumerate(self._corner_rows):
+            enabled.blockSignals(True); combo.blockSignals(True)
+            width.blockSignals(True); height.blockSignals(True)
+            try:
+                if index < len(cuts):
+                    cut = cuts[index]
+                    enabled.setChecked(True)
+                    combo.setCurrentIndex(max(0, combo.findData(cut.get('corner', 'br'))))
+                    width.setValue(max(0.0, float(cut.get('cut_w_cm', 0))))
+                    height.setValue(max(0.0, float(cut.get('cut_h_cm', 0))))
+                else:
+                    enabled.setChecked(False)
+            finally:
+                enabled.blockSignals(False); combo.blockSignals(False)
+                width.blockSignals(False); height.blockSignals(False)
+        return self.get_cuts_cm()
 
     def get_corner(self) -> str:
         return self._corner_control.get_corner()
