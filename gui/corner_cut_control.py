@@ -47,7 +47,15 @@ class CornerCutControl(QWidget):
         return self._panel._corner_rows
 
     def set_staircase_mode(self, enabled: bool) -> None:
-        self._panel._set_staircase_mode_legacy(enabled)
+        panel = self._panel
+        panel._staircase_mode = enabled
+        self._gb_l.setVisible(not enabled)
+        self._gb_staircase.setVisible(enabled)
+        self._mode_combo.blockSignals(True)
+        try:
+            self._mode_combo.setCurrentIndex(1 if enabled else 0)
+        finally:
+            self._mode_combo.blockSignals(False)
 
     def on_mode_combo_changed(self, *args) -> None:
         self._panel._on_mode_combo_changed_legacy(*args)
