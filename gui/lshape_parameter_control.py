@@ -52,3 +52,18 @@ class LShapeParameterControl(QWidget):
 
     def set_staircase_mode(self, enabled: bool):
         return self._corner_control.set_staircase_mode(enabled)
+
+    def get_outer_size(self) -> tuple[float, float]:
+        return self._sp_outer_w.value(), self._sp_outer_h.value()
+
+    def get_corner(self) -> str:
+        return self._corner_control.get_corner()
+
+    def get_cut_w_cm(self) -> float:
+        return self._corner_control.get_cut_w_cm()
+
+    def get_cut_h_cm(self) -> float:
+        return self._corner_control.get_cut_h_cm()
+
+    def get_cuts_cm(self) -> list[dict]:
+        return self._corner_control.get_cuts_cm()

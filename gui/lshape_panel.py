@@ -490,16 +490,16 @@ class LShapePanel(QWidget):
         return self._corner_control.get_cut_rects_cm()
 
     def get_corner(self) -> str:
-        return self._corner_control.get_corner()
+        return self._parameter_control.get_corner()
 
     def get_cut_w_cm(self) -> float:
-        return self._corner_control.get_cut_w_cm()
+        return self._parameter_control.get_cut_w_cm()
 
     def get_cut_h_cm(self) -> float:
-        return self._corner_control.get_cut_h_cm()
+        return self._parameter_control.get_cut_h_cm()
 
     def get_cuts_cm(self) -> list[dict]:
-        return self._corner_control.get_cuts_cm()
+        return self._parameter_control.get_cuts_cm()
 
     def get_lshape_params(self):
         return self._corner_control.get_lshape_params()
