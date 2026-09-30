@@ -76,6 +76,8 @@ _ANCHOR_GRAY_MAX_CHANNEL = 140
 _DARK_LINE_MAX_CHANNEL = 185    # 细线判定：低纹理段 max(rgb) < 该值视为"线"
                                 # （真实素材细框线跨边漂移 168~179，需放宽）
 _LINE_MAX_THICK = 32            # "线"的最大厚度（源像素）：真实素材细框线可达 24px
+_COLOR_LINE_MAX_THICK = 64      # 有色细框线允许更宽：缩放/重采样后可达 40~60px
+_COLOR_LINE_SAT_MIN = 35        # 与浅色底带拉开色差，避免把米/白底当成细线
 
 
 @dataclass
@@ -209,6 +211,47 @@ def _is_anchor_seg(s: _Seg) -> bool:
             and s.thickness >= _ANCHOR_MIN_THICK)
 
 
+def _is_weak_edge_transition(segs: list[_Seg], index: int) -> bool:
+    """识别外框与内容之间的 1px 灰色抗锯齿过渡段。
+
+    JPEG/缩放后的黑框经常在真实黑带前出现一到两像素的中性灰。它不是
+    可补画的边框层；将它保留下来会在 L 形切边外侧重绘一条灰线。仅当
+    后面紧接着一个更厚、颜色更深的锚点时才跳过，避免影响真实的细灰框。
+    """
+    if index < 0 or index >= len(segs):
+        return False
+    seg = segs[index]
+    if seg.thickness > _ANCHOR_MIN_THICK or seg.std >= _LINE_STD_MAX:
+        return False
+    if max(seg.color) < _BLACK_MAX_CHANNEL:
+        return False
+    for nxt in segs[index + 1:]:
+        if nxt.thickness < _ANCHOR_MIN_THICK:
+            continue
+        return (_is_anchor_seg(nxt)
+                and nxt.thickness >= _ANCHOR_MIN_THICK + 1
+                and max(nxt.color) < _BLACK_MAX_CHANNEL)
+    return False
+
+
+def _is_structural_color_line(seg: _Seg) -> bool:
+    """低纹理的彩色细框线（如褐/金色细线）。
+
+    旧判定只接受近黑细线，因此会把有色细框线当成普通内容，导致三层
+    边框退化成直角或只剩前两层。颜色线仍需足够薄且平整，避免把花纹段
+    当成边框。
+    """
+    return (seg.std < _LINE_STD_MAX
+            and _ANCHOR_MIN_THICK <= seg.thickness <= _COLOR_LINE_MAX_THICK
+            and max(seg.color) - min(seg.color) >= _COLOR_LINE_SAT_MIN
+            and max(seg.color) >= _DARK_LINE_MAX_CHANNEL)
+
+
+def _is_neutral_dark(c: tuple[int, int, int]) -> bool:
+    """识别同一黑带被压缩后形成的中性深灰段。"""
+    return max(c) < _BLACK_MAX_CHANNEL and max(c) - min(c) <= 8
+
+
 def _classify_profile(segs: list[_Seg], field_ref: tuple,
                       thick_cap: int, max_struct_depth: int,
                       giant_cap_t: int) -> list[tuple[tuple[int, int, int], int]] | None:
@@ -239,15 +282,22 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
     for seg in segs:
         if depth_acc >= max_struct_depth:
             break
-        if seg.thickness > thick_cap:
-            if (collected and _color_dist(seg.color, field_ref) < _FIELD_COLOR_TOL
-                    and seg.std < _FIELD_STD_TOL
-                    and max(seg.color) < _DARK_LINE_MAX_CHANNEL):
-                # 与中心同色的深色巨平段：色带直通内部（如克罗印花棕带），限厚收录；
-                # 浅色巨段（花田/白底直通内部）不收录，按内部底色收尾
-                collected.append(_Seg(seg.d0, seg.d0 + max(1, giant_cap_t) - 1,
-                                      seg.color, seg.std))
-                giant_tail = True
+        if seg.thickness >= thick_cap:
+            is_flat_field = (
+                seg.std < _FIELD_STD_TOL
+                and (_color_dist(seg.color, field_ref) < _FIELD_COLOR_TOL
+                     or min(seg.color) >= 220)
+            )
+            if collected and is_flat_field:
+                # 深色巨平段是连续色带；浅色巨平段通常是内容底色，跳过它
+                # 但继续扫描，避免遮住后面的有色细框线。
+                if max(seg.color) < _DARK_LINE_MAX_CHANNEL:
+                    collected.append(_Seg(seg.d0, seg.d0 + max(1, giant_cap_t) - 1,
+                                          seg.color, seg.std))
+                    giant_tail = True
+                    break
+                depth_acc += min(seg.thickness, giant_cap_t)
+                continue
             break
         collected.append(seg)
         depth_acc += seg.thickness
@@ -256,12 +306,20 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
 
     # —— 2. 锚点对齐：跳过最外出血边/裁切边 ——
     anchor_idx = next(
-        (i for i, s in enumerate(collected) if _is_anchor_seg(s)),
+        (i for i, s in enumerate(collected)
+         if _is_anchor_seg(s) and not _is_weak_edge_transition(collected, i)),
         -1,
     )
     if anchor_idx < 0:
         return None
     collected = collected[anchor_idx:]
+    # 锚点后的单像素灰/浅色过渡只用于抗锯齿，不应成为可绘制层；保留真实
+    # 2px 以上的细框线。这样既能跳过黑带内缘的过渡像素，也不会削掉真实
+    # 的最薄框线。
+    collected = [
+        s for i, s in enumerate(collected)
+        if i == 0 or s.thickness >= _ANCHOR_MIN_THICK
+    ]
 
     # —— 3. 截断到第二条细线（用户层深边界）——
     # 先在 line#2 之前的非线段中丢掉花纹段（std 高），只保留紧邻锚点
@@ -273,7 +331,8 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
         band_end = 1  # 至少保留锚点
         for i in range(1, len(collected)):
             s = collected[i]
-            if _is_line_seg(s) or _is_anchor_seg(s):
+            if (_is_line_seg(s) or _is_structural_color_line(s)
+                    or _is_anchor_seg(s)):
                 band_end = i + 1   # 保留该线段本身
                 break
             if s.std >= _FIELD_STD_TOL:
@@ -285,7 +344,7 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
         line_seen = 0
         cut_at = -1
         for i, s in enumerate(collected):
-            if _is_line_seg(s):
+            if _is_line_seg(s) or _is_structural_color_line(s):
                 line_seen += 1
                 if line_seen >= 2:
                     cut_at = i
@@ -305,12 +364,35 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
         if _is_anchor_seg(s) and s.thickness > _LINE_MAX_THICK:
             # 粗黑带（庄园秘境 117px）独立成层，避免与紧随的米/白带
             # 平均成灰糊 —— 这是用户 L 形挖角"补了但视觉无效果"的根因
-            grouped.append([s])
-        elif _is_line_seg(s):
-            grouped.append([s])          # 细线层（描边或细框线）
+            if (grouped and _is_anchor_seg(grouped[-1][-1])
+                    and (_color_dist(grouped[-1][-1].color, s.color)
+                         < _MERGE_L1_TOL
+                         or (_is_neutral_dark(grouped[-1][-1].color)
+                             and _is_neutral_dark(s.color)))):
+                # 真实黑带在 JPEG/缩放后可能被切成相邻的深灰+黑两段，
+                # 两段仍属于同一外框层。
+                grouped[-1].append(s)
+            else:
+                grouped.append([s])
+        elif _is_line_seg(s) or _is_structural_color_line(s):
+            if (grouped and (_is_line_seg(grouped[-1][-1])
+                             or _is_structural_color_line(grouped[-1][-1]))
+                    and _color_dist(grouped[-1][-1].color, s.color)
+                    < _MERGE_L1_TOL):
+                grouped[-1].append(s)
+            else:
+                grouped.append([s])      # 细线层（描边或细框线）
         elif grouped and not _is_anchor_seg(grouped[-1][0]) \
                 and not _is_line_seg(grouped[-1][0]):
-            grouped[-1].append(s)        # 并入当前带组
+            # 连续的同色/近色带合并；两个相邻且均为宽、平整、颜色明显
+            # 不同的带保留为独立层（黑边 + 浅色带 + 金/褐色带等）。
+            prev = grouped[-1][-1]
+            if (prev.thickness > _LINE_MAX_THICK
+                    and s.thickness > _LINE_MAX_THICK
+                    and _color_dist(prev.color, s.color) >= _MERGE_L1_TOL):
+                grouped.append([s])
+            else:
+                grouped[-1].append(s)        # 并入当前带组
         else:
             grouped.append([s])          # 新带组
 
@@ -322,6 +404,31 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
     layers = layers[:_MAX_LAYERS]
     if not layers:
         return None
+
+    # 薄黑框后只有一层浅色、且没有第二条结构线时，浅色段通常是素材
+    # 内容底色而非需要沿 L 形补画的色带（素华牡丹类素材）。深色带仍由
+    # V13 处理；粗黑带保留原有 Profile 语义（庄园秘境等）。
+    if (len(layers) == 2
+            and layers[0][1] < _THICK_BLACK_MIN
+            and (
+                # 素材底色可能是米色而不是中性灰；只要它与中心参考色
+                # 一致，就属于内容底，不应作为 L 形额外色带重绘。
+                _color_dist(layers[1][0], field_ref) < _FIELD_COLOR_TOL
+                or (
+                    max(layers[1][0]) - min(layers[1][0]) <= 8
+                    and max(layers[1][0]) >= _DARK_LINE_MAX_CHANNEL
+                )
+            )):
+        layers = layers[:1]
+
+    # 厚黑边后的中性灰宽段通常是切角/压缩产生的过渡或洞色，不是素材
+    # 的独立色带；保留它会在黑色 L 边内侧多补一条灰带。带明显色相的米
+    # 色层（例如庄园秘境）继续沿用原有两层语义。
+    if (len(layers) >= 2
+            and layers[0][1] >= _THICK_BLACK_MIN
+            and max(layers[1][0]) - min(layers[1][0]) <= 8
+            and _BLACK_MAX_CHANNEL < max(layers[1][0]) < 235):
+        layers.pop(1)
 
     total = sum(t for _, t in layers)
     if total <= 0 or total > thick_cap * 1.4:
@@ -346,7 +453,14 @@ def profile_yields_to_v13(layers: list[tuple[tuple[int, int, int], int]]) -> boo
         return False
     if first_t >= _THICK_BLACK_MIN:
         return True
-    if len(layers) >= 2 and max(layers[1][0]) < _DARK_LINE_MAX_CHANNEL:
+    # Profile 有时只看到最外黑边（内侧色带被素材纹理/宽色区吞并），
+    # 但 V13 仍能通过四边一致性找到主色带。让 V13 接管可避免一层
+    # Profile 结果提前返回，造成 L 形切口缺少素材色带。
+    if len(layers) == 1 and max(layers[0][0]) < _DARK_LINE_MAX_CHANNEL:
+        return True
+    # V13 只支持「黑描边 + 主带」两层。检测到第三层时必须留在
+    # Profile 路径，否则会把内框细线丢掉，切口退化为直角。
+    if len(layers) == 2 and max(layers[1][0]) < _DARK_LINE_MAX_CHANNEL:
         return True
     return False
 
@@ -716,6 +830,12 @@ def _apply_profile_path(*,
     for color, t in layers_src:
         c = tuple(int(x) for x in color)
         _max_c = max(c)
+        # 由连续黑带外缘压缩出的中性灰不能作为独立灰色 L 形重绘；
+        # 合并后统一落回黑色，避免补边颜色与原素材黑边不一致。
+        if (_is_neutral_dark(c) and _max_c >= 25
+                and float(t) >= _ANCHOR_MIN_THICK):
+            c = (0, 0, 0)
+            _max_c = 0
         _is_anchor = (_max_c < _BLACK_MAX_CHANNEL and t > _LINE_MAX_THICK)
         _is_line = (_max_c < _DARK_LINE_MAX_CHANNEL
                     and _ANCHOR_MIN_THICK <= t <= _LINE_MAX_THICK)
