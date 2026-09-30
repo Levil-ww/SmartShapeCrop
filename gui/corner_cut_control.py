@@ -21,6 +21,10 @@ class CornerCutControl(QWidget):
         super().__init__(panel)
         self.setObjectName("cornerCutControl")
         self._panel = panel
+        self._stair_rows = []
+        self._stair_add_btns = []
+        self._stair_corner = None
+        self._stair_rows_container = None
 
     @property
     def staircase_mode(self) -> bool:
@@ -28,7 +32,7 @@ class CornerCutControl(QWidget):
 
     @property
     def stair_rows(self):
-        return self._panel._stair_rows
+        return self._stair_rows
 
     @property
     def corner_rows(self):
@@ -50,6 +54,18 @@ class CornerCutControl(QWidget):
         self._mode_combo.currentIndexChanged.connect(self.on_mode_combo_changed)
         row.addWidget(self._mode_combo, 1)
         return row
+
+    def build_staircase_ui(self):
+        """构建阶梯 UI 的迁移入口。
+
+        本步骤先迁移构建责任入口，内部仍调用宿主的兼容实现；下一步再将
+        rows、角位选择器和容器的真实状态所有权移入本控件。
+        """
+        self._panel._build_staircase_ui_legacy()
+        self._stair_rows = self._panel._stair_rows
+        self._stair_add_btns = self._panel._stair_add_btns
+        self._stair_corner = self._panel._stair_corner
+        self._stair_rows_container = self._panel._stair_rows_container
 
     def get_mode(self) -> str:
         return "staircase" if self._panel._staircase_mode else "standard"

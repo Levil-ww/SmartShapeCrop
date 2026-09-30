@@ -286,7 +286,7 @@ class LShapePanel(QWidget):
         self._inner_layout.addLayout(params_row)
 
         # ===== 4.5) 阶梯挖角参数 GroupBox（默认隐藏，阶梯模式时显示）=====
-        self._build_staircase_ui()
+        self._corner_control.build_staircase_ui()
         self._inner_layout.addWidget(self._gb_staircase)
         self._gb_staircase.setVisible(False)
 
@@ -354,7 +354,7 @@ class LShapePanel(QWidget):
             " left: 10px; top: -2px; padding: 0 6px;"
             f" color: {accent}; }}")
 
-    def _build_staircase_ui(self):
+    def _build_staircase_ui_legacy(self):
         """构建阶梯挖角参数 GroupBox（默认隐藏，_set_staircase_mode(True) 时显示）。
 
         结构：
@@ -388,6 +388,11 @@ class LShapePanel(QWidget):
         self._stair_add_level_row()
         self._stair_add_level_row()
         self._update_stair_buttons()
+        # CornerCutControl 持有阶梯状态的 canonical 引用；旧字段继续保留。
+        self._corner_control._stair_rows = self._stair_rows
+        self._corner_control._stair_add_btns = self._stair_add_btns
+        self._corner_control._stair_corner = self._stair_corner
+        self._corner_control._stair_rows_container = self._stair_rows_container
 
     def _stair_add_level_row(self, r: float = 0.0, d: float = 0.0):
         """向阶梯容器追加一行（步进宽 / 落差 SpinBox，报告 V2.4 尺寸语义）。
