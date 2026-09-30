@@ -36,6 +36,7 @@ from .property_panel_widgets import _SketchDropLabel
 from .corner_cut_control import CornerCutControl
 from .target_file_widget import TargetFileWidget
 from .sketch_upload_widget import SketchUploadWidget
+from .design_action_control import DesignActionControl
 from workers.property_panel_workers import _LShapeParseWorker
 logger = logging.getLogger(__name__)
 
@@ -157,36 +158,15 @@ class LShapePanel(QWidget):
         # 标题只保留文字，去掉底部白色背景渲染，避免背景块遮挡内容。
         # 用 subcontrol-origin: border + 给足 margin-top，让含 emoji 图标的
         # 标题完整浮在边框线上方（与「尺寸草图」观感一致，不被裁切）。
-        self._gb_lshape_recog = QGroupBox("L 形挖角识别")
-        self._gb_lshape_recog.setStyleSheet(
-            "QGroupBox { font-weight: bold; border: 2px solid #E6A23C; "
-            "border-radius: 6px; margin-top: 14px; padding-top: 12px; "
-            "background: #FFFFFF; }"
-            "QGroupBox[lowConfidence=\"true\"] { border-color: #D97706; "
-            "background: #FFFBEB; }"
-            "QGroupBox::title { subcontrol-origin: border; subcontrol-position: top left; "
-            "left: 12px; top: -2px; padding: 0 6px; color: #B26A00; }")
-        fr = QVBoxLayout(self._gb_lshape_recog)
-        fr.setSpacing(6)
-
-        self._btn_lshape = QPushButton("✂️ 识别L形挖角")
-        self._btn_lshape.setToolTip(
-            "把当前草图按 L 形挖角识别（A/B/C/D/E/F 六处尺寸标注）。\n"
-            "识别成功会弹出确认框，可修改挖角位置/宽/高后一键生成。\n"
-            "上传草图后也会自动尝试 L 形识别；此按钮用于手动重新识别。")
-        self._btn_lshape.setStyleSheet(
-            "QPushButton { background:#FFF3E0; color:#B26A00; border:1px solid #E6A23C;"
-            " border-radius:4px; padding:6px 10px; font-weight:bold; }"
-            "QPushButton:hover { background:#FFE8C2; }"
-            "QPushButton:disabled { color:#ccc; background:#f5f5f5; border-color:#ddd; }")
-        self._btn_lshape.clicked.connect(self._on_recognize_clicked)
-        fr.addWidget(self._btn_lshape)
-
-        self._lshape_status = QLabel(
-            "（填写目标文件名并上传草图后，点上方按钮识别 L 形挖角）")
-        self._lshape_status.setWordWrap(True)
-        self._lshape_status.setStyleSheet("color:#555; padding: 4px 6px;")
-        fr.addWidget(self._lshape_status)
+        self._action_control = DesignActionControl(self)
+        self._gb_lshape_recog = self._action_control.group
+        self._btn_lshape = self._action_control.recognize_button
+        self._lshape_status = self._action_control.status_label
+        self._btn_generate = self._action_control.generate_button
+        self._btn_save = self._action_control.save_button
+        self._action_control.recognizeRequested.connect(self._on_recognize_clicked)
+        self._action_control.generateRequested.connect(self.generate_requested)
+        self._action_control.saveRequested.connect(self.save_requested)
         self._inner_layout.addWidget(self._gb_lshape_recog)
 
         # ===== 4.4) 挖角模式选择器（识别区下方、参数区上方）=====
@@ -241,29 +221,7 @@ class LShapePanel(QWidget):
         self._gb_staircase.setVisible(False)
 
         # ===== 6) 一键生成预览 + 导出 JPG（底部主操作行，与水池设计器一致）=====
-        row_action = QHBoxLayout()
-        row_action.setSpacing(8)
-        self._btn_generate = QPushButton("🔍 生成预览")
-        self._btn_generate.setToolTip(
-            "匹配模板 → 解析草图 → 生成预览（在水池设计器画布上实时渲染）")
-        self._btn_generate.setStyleSheet(
-            "QPushButton { padding: 10px 12px; font-weight: bold; font-size: 14px;"
-            " background: #4A90E2; color: white; border: none; border-radius: 5px; }"
-            "QPushButton:hover { background: #357ABD; }"
-            "QPushButton:disabled { background: #A0BFE0; color: #eee; }")
-        self._btn_generate.clicked.connect(self.generate_requested.emit)
-        self._btn_save = QPushButton("💾 导出 JPG")
-        self._btn_save.setToolTip(
-            "把当前画布设计渲染为全分辨率 JPG 并保存到本地文件。\n"
-            "导出文件名优先取上方“目标文件名”，未填写则按画布尺寸自动生成。")
-        self._btn_save.setStyleSheet(
-            "QPushButton { padding: 10px 12px; font-weight: bold; font-size: 14px;"
-            " background: #27AE60; color: white; border: none; border-radius: 5px; }"
-            "QPushButton:hover { background: #1F8B4C; }"
-            "QPushButton:disabled { background: #A8D8B9; color: #eee; }")
-        self._btn_save.clicked.connect(self.save_requested.emit)
-        row_action.addWidget(self._btn_generate, 1)
-        row_action.addWidget(self._btn_save, 1)
+        row_action = self._action_control.action_layout
         self._action_layout = row_action
         self._inner_layout.addLayout(row_action)
 
@@ -677,9 +635,7 @@ class LShapePanel(QWidget):
 
     def set_generate_enabled(self, enabled: bool, text: str | None = None):
         """启用/禁用一键生成按钮 + 可选改文字（供 PropertyPanel 在运行时调用）。"""
-        self._btn_generate.setEnabled(enabled)
-        if text is not None:
-            self._btn_generate.setText(text)
+        self._action_control.set_generate_enabled(enabled, text)
 
     # ====================================================================
     # 草图缩略图 + 拖入处理
@@ -1386,8 +1342,4 @@ class LShapePanel(QWidget):
     # 状态提示
     # ====================================================================
     def _set_status(self, msg: str, is_error: bool = False):
-        color = "#B00020" if is_error else "#388E3C"
-        self._lshape_status.setText(msg)
-        self._lshape_status.setStyleSheet(
-            f"color:{color}; padding:4px 6px; background: {'#FFEBEE' if is_error else '#E8F5E9'};"
-            " border-radius: 4px;")
+        self._action_control.set_status(msg, is_error)
