@@ -266,7 +266,7 @@ class LShapePanel(QWidget):
           - 末级行内嵌「+ 追加一级」按钮
         """
         # 兼容入口：实际 GroupBox 与基础容器由 CornerCutControl 创建。
-        return self._corner_control.build_staircase_ui()
+        return self._parameter_control.build_staircase_ui()
 
         self._gb_staircase = QGroupBox("单边阶梯挖角参数")
         self._gb_staircase.setStyleSheet(self._param_group_style("#E67E22"))
@@ -377,16 +377,16 @@ class LShapePanel(QWidget):
     # Compatibility entry points; implementation is routed through the
     # CornerCutControl boundary while existing callers keep old names.
     def _stair_add_level_row(self, r: float = 0.0, d: float = 0.0):
-        return self._corner_control.add_level_row(r, d)
+        return self._parameter_control.add_level_row(r, d)
 
     def _on_stair_add_level(self):
-        return self._corner_control.add_level()
+        return self._parameter_control.add_level()
 
     def _on_stair_remove_level(self):
-        return self._corner_control.remove_level()
+        return self._parameter_control.remove_level()
 
     def _update_stair_buttons(self):
-        return self._corner_control.update_buttons()
+        return self._parameter_control.update_buttons()
 
     def _on_staircase_changed(self, *_):
         """阶梯控件变化 → 更新 _lshape_params dict（与 _on_param_changed 同语义）。"""
@@ -468,11 +468,11 @@ class LShapePanel(QWidget):
 
     def _set_staircase_mode(self, enabled: bool):
         """兼容入口：模式状态由 CornerCutControl 统一调度。"""
-        return self._corner_control.set_staircase_mode(enabled)
+        return self._parameter_control.set_staircase_mode(enabled)
 
     def _on_mode_combo_changed(self, *args):
         """兼容入口：模式切换逻辑由 CornerCutControl 统一调度。"""
-        return self._corner_control.on_mode_combo_changed(*args)
+        return self._parameter_control.on_mode_combo_changed(*args)
 
     def _get_cut_rects_cm_legacy(self) -> list[dict]:
         """返回阶梯挖角的 CutRect 列表（厘米），步进值 → 条带换算（报告 V2.4）。
@@ -502,7 +502,7 @@ class LShapePanel(QWidget):
         return self._parameter_control.get_cuts_cm()
 
     def get_lshape_params(self):
-        return self._corner_control.get_lshape_params()
+        return self._parameter_control.get_lshape_params()
 
     def set_lshape_params(self, corner: str, cut_w_cm: float, cut_h_cm: float):
         return self._set_lshape_params_legacy(corner, cut_w_cm, cut_h_cm)
@@ -1060,7 +1060,7 @@ class LShapePanel(QWidget):
         阶梯模式下返回空列表：旧格式 {corner, cut_w_cm, cut_h_cm} 不允许同角位
         重复，阶梯几何真值只由 get_cut_rects_cm() 承载。
         """
-        return self._corner_control.get_cuts_cm()
+        return self._parameter_control.get_cuts_cm()
 
     def _get_lshape_params_legacy(self):
         """读取 _lshape_params"""

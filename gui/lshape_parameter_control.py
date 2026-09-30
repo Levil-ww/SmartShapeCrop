@@ -126,6 +126,9 @@ class LShapeParameterControl(QWidget):
     def get_corner(self) -> str:
         return self._corner_control.get_corner()
 
+    def get_lshape_params(self):
+        return self._corner_control.get_lshape_params()
+
     def get_cut_w_cm(self) -> float:
         return self._corner_control.get_cut_w_cm()
 
@@ -192,3 +195,18 @@ class LShapeParameterControl(QWidget):
 
     def get_cut_rects_cm(self) -> list[dict]:
         return self._corner_control.get_cut_rects_cm()
+
+    def add_level_row(self, *args):
+        return self._corner_control.add_level_row(*args)
+
+    def add_level(self):
+        return self._corner_control.add_level()
+
+    def remove_level(self):
+        return self._corner_control.remove_level()
+
+    def update_buttons(self):
+        return self._corner_control.update_buttons()
+
+    def on_mode_combo_changed(self, *args):
+        return self._corner_control.on_mode_combo_changed(*args)
