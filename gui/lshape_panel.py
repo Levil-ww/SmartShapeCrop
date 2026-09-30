@@ -390,7 +390,7 @@ class LShapePanel(QWidget):
 
     def _on_staircase_changed(self, *_):
         """阶梯控件变化 → 更新 _lshape_params dict（与 _on_param_changed 同语义）。"""
-        return self._corner_control.on_staircase_changed()
+        return self._parameter_control.on_staircase_changed()
 
     def _set_staircase_mode_legacy(self, enabled: bool):
         """切换标准多角模式 ↔ 单边阶梯模式。
@@ -680,7 +680,7 @@ class LShapePanel(QWidget):
         # self.lshape_params_changed.emit()
 
     def _on_param_changed(self, *args):
-        return self._corner_control.on_param_changed(*args)
+        return self._parameter_control.on_standard_changed(*args)
 
     def _update_margin_hint(self, outer_w_cm: float, outer_h_cm: float,
                             cuts: list[dict]):

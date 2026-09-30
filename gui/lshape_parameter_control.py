@@ -1,14 +1,30 @@
 """Compatibility boundary for the L-shape parameter section."""
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QWidget, QGroupBox, QVBoxLayout
 
 
 class LShapeParameterControl(QWidget):
     """Adapter for mode selection and L-shape parameter construction."""
 
+    parametersEdited = pyqtSignal(str)
+
     def __init__(self, panel, corner_control):
         super().__init__(panel)
         self._panel = panel
         self._corner_control = corner_control
+        self.parametersEdited.connect(self._apply_parameter_edit)
+
+    def _apply_parameter_edit(self, mode: str):
+        if mode == 'staircase':
+            self._corner_control.on_staircase_changed()
+        else:
+            self._panel._on_param_changed_legacy()
+
+    def on_standard_changed(self, *_):
+        self.parametersEdited.emit('standard')
+
+    def on_staircase_changed(self, *_):
+        self.parametersEdited.emit('staircase')
 
     @property
     def mode_combo(self):
@@ -166,7 +182,7 @@ class LShapeParameterControl(QWidget):
                 for sp in (r_sp, d_sp):
                     sp.blockSignals(False)
         self._corner_control.update_buttons()
-        self._panel._on_staircase_changed()
+        self.on_staircase_changed()
 
     def get_cut_rects_cm(self) -> list[dict]:
         return self._corner_control.get_cut_rects_cm()

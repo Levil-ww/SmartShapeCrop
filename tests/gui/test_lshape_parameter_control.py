@@ -1,6 +1,26 @@
 from gui.lshape_panel import LShapePanel
 
 
+def test_parameter_notifications_follow_model_updates(qapp):
+    panel = LShapePanel()
+    events = []
+    panel._parameter_control.parametersEdited.connect(
+        lambda mode: events.append((mode, dict(panel.get_lshape_params()))))
+    renders = []
+    panel.lshape_params_changed.connect(lambda: renders.append(True))
+    panel._sp_outer_w.setValue(81)
+    assert events[-1][0] == 'standard'
+    assert events[-1][1]['outer_w_cm'] == 80
+    panel.set_cut_rects([
+        {'anchor': 'tr', 'offset_x_cm': 0, 'offset_y_cm': 0, 'w_cm': 20, 'h_cm': 5},
+    ])
+    panel._stair_rows[0][0].setValue(25)
+    assert events[-1][0] == 'staircase'
+    assert events[-1][1]['cut_w_cm'] == 25
+    assert renders == []
+    panel.close()
+
+
 def test_parameter_control_keeps_legacy_mode_contract(qapp):
     panel = LShapePanel()
     control = panel._parameter_control

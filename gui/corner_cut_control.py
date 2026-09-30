@@ -76,7 +76,7 @@ class CornerCutControl(QWidget):
                 r_sp.setValue(0.0); d_sp.setValue(0.0)
                 r_sp.blockSignals(False); d_sp.blockSignals(False)
             self.update_buttons()
-            panel._on_staircase_changed()
+            panel._parameter_control.on_staircase_changed()
             panel._set_status("已切换到「单边阶梯 L 形」：共用一个角位，逐级填「步进宽 × 落差」（第 1 级 = 远端第一步，依次向角位）")
         else:
             rects = self.get_cut_rects_cm()
@@ -92,7 +92,7 @@ class CornerCutControl(QWidget):
                 self._sp_lh.setValue(first['h_cm'])
             for enabled, _combo, width, height in self._corner_rows[1:]:
                 enabled.setChecked(False); width.setValue(0.0); height.setValue(0.0)
-            panel._on_param_changed()
+            panel._parameter_control.on_standard_changed()
             panel._set_status("已切换到「标准 L 形」模式（保留第 1 级参数）")
 
     def build_mode_selector(self):
@@ -120,7 +120,7 @@ class CornerCutControl(QWidget):
                            ("左下角", "bl"), ("右下角", "br")):
             self._stair_corner.addItem(text, data)
         self._stair_corner.setCurrentIndex(1)
-        self._stair_corner.currentIndexChanged.connect(panel._on_staircase_changed)
+        self._stair_corner.currentIndexChanged.connect(panel._parameter_control.on_staircase_changed)
         row_corner.addWidget(self._stair_corner, 1)
         form.addLayout(row_corner)
         self._stair_rows_container = QVBoxLayout()
@@ -145,7 +145,7 @@ class CornerCutControl(QWidget):
         sp_r = panel._dspin(0, 450, r)
         sp_d = panel._dspin(0, 450, d)
         for sp in (sp_r, sp_d):
-            sp.valueChanged.connect(panel._on_staircase_changed)
+            sp.valueChanged.connect(panel._parameter_control.on_staircase_changed)
         row = QHBoxLayout()
         row.setSpacing(4)
         if level_idx > 0:
@@ -176,7 +176,7 @@ class CornerCutControl(QWidget):
     def add_level(self):
         if len(self._stair_rows) < self._panel._stair_max_levels:
             self.add_level_row()
-            self._panel._on_staircase_changed()
+            self._panel._parameter_control.on_staircase_changed()
 
     def remove_level(self):
         if len(self._stair_rows) <= 1:
@@ -189,7 +189,7 @@ class CornerCutControl(QWidget):
         button.setParent(None)
         button.deleteLater()
         self.update_buttons()
-        self._panel._on_staircase_changed()
+        self._panel._parameter_control.on_staircase_changed()
 
     def update_buttons(self):
         n = len(self._stair_rows)
@@ -263,10 +263,10 @@ class CornerCutControl(QWidget):
             combo.setCurrentIndex(3 if row_index == 0 else row_index)
             width = panel._dspin(0, 450, 0.0)
             height = panel._dspin(0, 450, 0.0)
-            enabled.toggled.connect(panel._on_param_changed)
-            combo.currentIndexChanged.connect(panel._on_param_changed)
-            width.valueChanged.connect(panel._on_param_changed)
-            height.valueChanged.connect(panel._on_param_changed)
+            enabled.toggled.connect(panel._parameter_control.on_standard_changed)
+            combo.currentIndexChanged.connect(panel._parameter_control.on_standard_changed)
+            width.valueChanged.connect(panel._parameter_control.on_standard_changed)
+            height.valueChanged.connect(panel._parameter_control.on_standard_changed)
             row = QHBoxLayout()
             row.addWidget(enabled, 0)
             row.addWidget(combo, 1)
