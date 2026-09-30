@@ -64,16 +64,35 @@ class CornerCutControl(QWidget):
         return row
 
     def build_staircase_ui(self):
-        """构建阶梯 UI 的迁移入口。
-
-        本步骤先迁移构建责任入口，内部仍调用宿主的兼容实现；下一步再将
-        rows、角位选择器和容器的真实状态所有权移入本控件。
-        """
-        self._panel._build_staircase_ui_legacy()
-        self._stair_rows = self._panel._stair_rows
-        self._stair_add_btns = self._panel._stair_add_btns
-        self._stair_corner = self._panel._stair_corner
-        self._stair_rows_container = self._panel._stair_rows_container
+        """创建阶梯参数组；行内容仍通过兼容入口填充。"""
+        panel = self._panel
+        self._gb_staircase = QGroupBox("单边阶梯挖角参数", self)
+        self._gb_staircase.setStyleSheet(panel._param_group_style("#E67E22"))
+        form = QVBoxLayout(self._gb_staircase)
+        form.setSpacing(6)
+        row_corner = QHBoxLayout()
+        row_corner.addWidget(QLabel("角位"), 0)
+        self._stair_corner = QComboBox(self)
+        for text, data in (("左上角", "tl"), ("右上角", "tr"),
+                           ("左下角", "bl"), ("右下角", "br")):
+            self._stair_corner.addItem(text, data)
+        self._stair_corner.setCurrentIndex(1)
+        self._stair_corner.currentIndexChanged.connect(panel._on_staircase_changed)
+        row_corner.addWidget(self._stair_corner, 1)
+        form.addLayout(row_corner)
+        self._stair_rows_container = QVBoxLayout()
+        self._stair_rows_container.setSpacing(4)
+        form.addLayout(self._stair_rows_container)
+        self._stair_rows = []
+        self._stair_add_btns = []
+        panel._stair_corner = self._stair_corner
+        panel._stair_rows_container = self._stair_rows_container
+        panel._stair_rows = self._stair_rows
+        panel._stair_add_btns = self._stair_add_btns
+        panel._stair_add_level_row_legacy()
+        panel._stair_add_level_row_legacy()
+        panel._update_stair_buttons_legacy()
+        return self._gb_staircase
 
     def add_level_row(self, r: float = 0.0, d: float = 0.0):
         return self._panel._stair_add_level_row_legacy(r, d)

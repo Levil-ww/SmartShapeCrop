@@ -255,6 +255,11 @@ class LShapePanel(QWidget):
 
         # ===== 4.5) 阶梯挖角参数 GroupBox（默认隐藏，阶梯模式时显示）=====
         self._corner_control.build_staircase_ui()
+        self._gb_staircase = self._corner_control._gb_staircase
+        self._stair_corner = self._corner_control._stair_corner
+        self._stair_rows_container = self._corner_control._stair_rows_container
+        self._stair_rows = self._corner_control._stair_rows
+        self._stair_add_btns = self._corner_control._stair_add_btns
         self._inner_layout.addWidget(self._gb_staircase)
         self._gb_staircase.setVisible(False)
 
@@ -330,6 +335,9 @@ class LShapePanel(QWidget):
           - 紧凑行：「第X级 宽 [val] cm 高 [val] cm」，↳ 缩进表示逐级嵌套
           - 末级行内嵌「+ 追加一级」按钮
         """
+        # 兼容入口：实际 GroupBox 与基础容器由 CornerCutControl 创建。
+        return self._corner_control.build_staircase_ui()
+
         self._gb_staircase = QGroupBox("单边阶梯挖角参数")
         self._gb_staircase.setStyleSheet(self._param_group_style("#E67E22"))
         fs = QVBoxLayout(self._gb_staircase)
