@@ -214,13 +214,8 @@ class LShapePanel(QWidget):
 
         # ===== 4.4) 挖角模式选择器（识别区下方、参数区上方）=====
         # 识别自动锁定对应模式；用户也可手动切换（清空参数，见 _on_mode_combo_changed）
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("挖角模式"), 0)
-        self._mode_combo = QComboBox()
-        self._mode_combo.addItem("标准 L 形（多角位）", "standard")
-        self._mode_combo.addItem("单边阶梯 L 形（同角位多级）", "staircase")
-        self._mode_combo.currentIndexChanged.connect(self._on_mode_combo_changed)
-        mode_row.addWidget(self._mode_combo, 1)
+        mode_row = self._corner_control.build_mode_selector()
+        self._mode_combo = self._corner_control._mode_combo
         self._inner_layout.addLayout(mode_row)
 
         # ===== 4+5) 参数组同行并排：外框尺寸(左) + L 形挖角参数(右) =====

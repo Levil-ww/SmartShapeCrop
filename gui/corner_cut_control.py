@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QComboBox
 
 class CornerCutControl(QWidget):
     """为标准多角和单边阶梯模式提供统一的挖角契约。
@@ -39,6 +39,17 @@ class CornerCutControl(QWidget):
 
     def on_mode_combo_changed(self, *args) -> None:
         self._panel._on_mode_combo_changed_legacy(*args)
+
+    def build_mode_selector(self):
+        """创建模式选择行；返回布局供宿主插入原位置。"""
+        row = QHBoxLayout()
+        row.addWidget(QLabel("挖角模式"), 0)
+        self._mode_combo = QComboBox(self)
+        self._mode_combo.addItem("标准 L 形（多角位）", "standard")
+        self._mode_combo.addItem("单边阶梯 L 形（同角位多级）", "staircase")
+        self._mode_combo.currentIndexChanged.connect(self.on_mode_combo_changed)
+        row.addWidget(self._mode_combo, 1)
+        return row
 
     def get_mode(self) -> str:
         return "staircase" if self._panel._staircase_mode else "standard"
