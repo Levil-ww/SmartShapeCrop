@@ -78,6 +78,8 @@ _DARK_LINE_MAX_CHANNEL = 185    # 细线判定：低纹理段 max(rgb) < 该值�
 _LINE_MAX_THICK = 32            # "线"的最大厚度（源像素）：真实素材细框线可达 24px
 _COLOR_LINE_MAX_THICK = 64      # 有色细框线允许更宽：缩放/重采样后可达 40~60px
 _COLOR_LINE_SAT_MIN = 35        # 与浅色底带拉开色差，避免把米/白底当成细线
+_LIGHT_FIELD_MIN_CHANNEL = 220  # 近白内容底色，不作为 L 形独立色带
+_LIGHT_FIELD_MAX_CHROMA = 40
 
 
 @dataclass
@@ -170,6 +172,10 @@ def _segment_profile(profile: np.ndarray, std: np.ndarray,
 
     segs: list[_Seg] = []
     for s, e, color in out:
+        # 合并过渡像素后，颜色必须来自完整段的原始中位数。保留合并前
+        # 的首段色会把 1~2px 灰色过渡传播到整条黑带（真实黑 0 被取成
+        # 19），也会把浅色带的过渡色扩展成多余一层。
+        color = tuple(int(round(v)) for v in np.median(raw[s:e + 1], axis=0))
         seg_std = float(std[s:e + 1].mean())
         segs.append(_Seg(s, e, color, seg_std))
     return segs
@@ -250,6 +256,12 @@ def _is_structural_color_line(seg: _Seg) -> bool:
 def _is_neutral_dark(c: tuple[int, int, int]) -> bool:
     """识别同一黑带被压缩后形成的中性深灰段。"""
     return max(c) < _BLACK_MAX_CHANNEL and max(c) - min(c) <= 8
+
+
+def _is_neutral_light(c: tuple[int, int, int]) -> bool:
+    """识别近白/浅色内容底，不把它当作独立边框色带。"""
+    return (min(c) >= _LIGHT_FIELD_MIN_CHANNEL
+            and max(c) - min(c) <= _LIGHT_FIELD_MAX_CHROMA)
 
 
 def _classify_profile(segs: list[_Seg], field_ref: tuple,
@@ -418,6 +430,7 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
                     max(layers[1][0]) - min(layers[1][0]) <= 8
                     and max(layers[1][0]) >= _DARK_LINE_MAX_CHANNEL
                 )
+                or _is_neutral_light(layers[1][0])
             )):
         layers = layers[:1]
 
@@ -470,6 +483,15 @@ def profile_yields_to_v13(layers: list[tuple[tuple[int, int, int], int]]) -> boo
     # V13 只支持「黑描边 + 主带」两层。检测到第三层时必须留在
     # Profile 路径，否则会把内框细线丢掉，切口退化为直角。
     if len(layers) == 2 and max(layers[1][0]) < _DARK_LINE_MAX_CHANNEL:
+        return True
+    # 某些素材的真实结构是「黑边 + 主色带」，但主色带后还会被剖面
+    # 分出一段近白内容底。此时交给 V13，避免 Profile 把内容底再补成
+    # 一层同色带；梦里兰香的第三层是有色细线，不满足该条件，仍走三层。
+    if (len(layers) == 3
+            and min(layers[2][0]) >= 200
+            and max(layers[2][0]) - min(layers[2][0]) <= _LIGHT_FIELD_MAX_CHROMA
+            and layers[2][1] > _COLOR_LINE_MAX_THICK
+            and layers[1][1] > _LINE_MAX_THICK):
         return True
     return False
 
@@ -826,15 +848,9 @@ def _apply_profile_path(*,
         scale_avg = 1.0
     scale_avg = max(scale_avg, 0.1)
 
-    # 底色对齐：profile 检测到的"主色带"颜色（如蔓生花米色 243,232,212）
-    # 与实际素材底色 (247,233,206) 常有 3~10 的偏差（边缘抗锯齿 / 段均值拉低）。
-    # 带层（边距底色层）语义上就是"素材底色带"，必须与素材底色完全一致。
-    # 锚点层（近黑粗描边）和线段层（近黑细框线）颜色不受底色影响，保持
-    # Profile 检测值。
-    # 策略：bg_color 不是默认白色时，所有带层直接替换为精确 bg_color；
-    # bg_color 为白色（上游采样失败 fallback）时回退到原 d<30 模糊匹配。
-    bg = tuple(int(c) for c in bg_color)
-    bg_is_default_white = tuple(bg_color) == (255, 255, 255)
+    # 结构色统一来自原始素材剖面。两个面板的 bg_color 采样区域不同，
+    # 即使色差较小也可能是另一层内容底色，不能用它改写已确认的色带。
+    # bg_color 参数保留兼容调用；内容底色过滤由检测阶段负责。
     layers_colored: list[tuple[tuple[int, int, int], float]] = []
     for color, t in layers_src:
         c = tuple(int(x) for x in color)
@@ -844,27 +860,6 @@ def _apply_profile_path(*,
         if (_is_neutral_dark(c) and _max_c >= 25
                 and float(t) >= _ANCHOR_MIN_THICK):
             c = (0, 0, 0)
-            _max_c = 0
-        _is_anchor = (_max_c < _BLACK_MAX_CHANNEL and t > _LINE_MAX_THICK)
-        _is_line = (_max_c < _DARK_LINE_MAX_CHANNEL
-                    and _ANCHOR_MIN_THICK <= t <= _LINE_MAX_THICK)
-        # 有色内框线（如梦里兰香的褐色细线）也是结构层，不能按
-        # bg_color 当作普通色带覆盖，否则三层素材会丢掉内层细线。
-        _is_color_line = (
-            _ANCHOR_MIN_THICK <= t <= _COLOR_LINE_MAX_THICK
-            and max(c) - min(c) >= _COLOR_LINE_SAT_MIN
-            and max(c) >= _DARK_LINE_MAX_CHANNEL
-        )
-        if (not _is_anchor and not _is_line and not _is_color_line
-                and not bg_is_default_white):
-            # 带层 + bg_color 有效 → 直接替换为精确底色
-            c = bg
-        elif not _is_anchor and not _is_line and not _is_color_line:
-            # 带层 + bg_color 白色 → 回退原 d<30 逻辑
-            d = _color_dist(c, bg)
-            if d < 30.0:
-                c = bg
-        # 锚点/线段层：不替换，保持 Profile 检测值
         layers_colored.append((c, float(t)))
 
     def _to_canvas(scale: float) -> list[tuple[tuple[int, int, int], int]]:

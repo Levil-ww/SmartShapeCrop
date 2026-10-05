@@ -713,6 +713,11 @@ def _detect_lshape_border_auto(detect_img: Image.Image):
             allow_center_matched_band=(len(profile_layers) == 1),
         )
         v13_computed = True
+        # V13 把 >50px 的黑段当作完整边框并返回 band=0；如果 Profile
+        # 已通过四边投票确认额外结构层，不能让这条简化规则丢掉真实色带。
+        # V13 结果仍保留，供 Profile 绘制失败时按原顺序回退。
+        if v13_result is not None and v13_result[1] == 0 and len(profile_layers) == 2:
+            v13_preferred = False
     return profile_layers, v13_result, v13_computed, v13_preferred
 
 

@@ -222,6 +222,20 @@ class TestDetectBorderProfile:
                                      ((243, 236, 220), 60)]) is False
         # 首层非黑
         assert profile_yields_to_v13([((243, 236, 220), 60)]) is False
+        # 主色带后误分出的近白内容底应回到 V13 的两层路径，避免重复补画色带。
+        assert profile_yields_to_v13([((8, 8, 8), 10),
+                                     ((209, 196, 173), 240),
+                                     ((234, 223, 208), 86)]) is True
+
+    def test_thin_black_with_neutral_light_content_keeps_only_black_layer(self):
+        """素华牡丹类黑边+近白内容底不应生成额外浅色色带。"""
+        img = Image.new('RGB', (800, 600), (180, 160, 130))
+        ImageDraw.Draw(img).rectangle(
+            [0, 0, 799, 599], outline=(8, 8, 8), width=10)
+        ImageDraw.Draw(img).rectangle(
+            [10, 10, 789, 589], fill=(255, 255, 236))
+        layers = detect_border_profile(img)
+        assert layers == [((8, 8, 8), 10)]
 
     def test_plain_material_returns_none(self):
         """纯色素材（无边框）→ None（回退旧路径，画布不被修改）。"""
@@ -348,6 +362,31 @@ class TestPatchLshapeCutLayers:
 # ---------------------------------------------------------------------------
 
 class TestCompletionRouting:
+
+    @pytest.mark.parametrize('directional_scale', [False, True])
+    @pytest.mark.parametrize('bg_color', [(235, 226, 209), (158, 115, 81)])
+    @pytest.mark.parametrize('edge,size', [(60, (1000, 800)), (220, (2400, 2000))])
+    def test_two_layer_band_keeps_material_color_across_panel_backgrounds(
+            self, directional_scale, bg_color, edge, size):
+        """两面板采样底色不同，也不能把黑边后的棕带重绘成花纹米色。"""
+        w, h = size
+        src = Image.new('RGB', size, (235, 226, 209))
+        draw = ImageDraw.Draw(src)
+        draw.rectangle((0, 0, w-1, h-1), outline=(0, 0, 0), width=edge)
+        draw.rectangle((edge, edge, w-edge-1, h-edge-1),
+                       outline=(158, 115, 81), width=40)
+        layers = detect_border_profile(src)
+        assert len(layers) == 2
+        canvas = np.asarray(src).copy()
+        assert apply_lshape_border_completion(
+            canvas, src, RectShape(0, 0, w, h), 'tr', 350, 300,
+            src_material_img=src, bg_color=bg_color,
+            cuts=[('tr', 350, 300), ('tl', 350, 300)],
+            directional_scale=directional_scale,
+        )
+        for x in (300, w-300):
+            np.testing.assert_array_equal(canvas[320, x], (0, 0, 0))
+            np.testing.assert_array_equal(canvas[300+edge+20, x], (158, 115, 81))
 
     def _canvas(self, w=800, h=600):
         return np.full((h, w, 3), 255, dtype=np.uint8)
