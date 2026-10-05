@@ -126,6 +126,71 @@ def _make_zhuangyuanmiji_material(size=(800, 610)) -> Image.Image:
 
 class TestDetectBorderProfile:
 
+    def test_common_thick_black_frame_survives_content_layer_vote_split(self):
+        """花满金陵式四边黑框一致、浅色内容层不一致时不能丢掉黑框。"""
+        img = Image.new('RGB', (1000, 800), (255, 243, 221))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 0, 999, 799), outline=(0, 0, 0), width=100)
+        draw.rectangle((100, 100, 899, 699), outline=(250, 234, 210), width=40)
+        draw.rectangle((140, 140, 859, 659), outline=(0, 0, 0), width=4)
+        draw.rectangle((100, 100, 899, 119), fill=(255, 255, 255))
+        draw.rectangle((100, 680, 899, 699), fill=(255, 255, 255))
+        layers = detect_border_profile(img)
+        assert layers == [((0, 0, 0), 100)]
+
+    def test_gray_compression_prefix_does_not_end_thick_frame_before_band(self):
+        """繁花说原图上下边的3px深灰过渡不能充当第一条独立细线。"""
+        img = Image.new('RGB', (800, 600), (139, 99, 75))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 0, 799, 599), outline=(0, 0, 0), width=100)
+        draw.rectangle((100, 100, 699, 499), outline=(251, 235, 219), width=40)
+        draw.rectangle((0, 0, 799, 2), fill=(22, 22, 22))
+        draw.rectangle((0, 597, 799, 599), fill=(22, 22, 22))
+        layers = detect_border_profile(img)
+        assert layers is not None
+        assert len(layers) == 2
+        assert layers[0] == ((0, 0, 0), 100)
+        assert layers[1] == ((251, 235, 219), 40)
+
+    @pytest.mark.parametrize('case', ['recover', 'blocked', 'different_band'])
+    @pytest.mark.parametrize('directional_scale', [False, True])
+    def test_patterned_band_rescans_before_rejecting_two_vs_two_vote(self, case, directional_scale):
+        """繁花说式纹饰命中水平扫描线时，仍应识别独立的浅色色带。"""
+        img = Image.new('RGB', (800, 600), (139, 99, 75))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 0, 799, 599), outline=(0, 0, 0), width=100)
+        draw.rectangle((100, 100, 699, 499), outline=(251, 235, 219), width=40)
+        for x in (240, 400):
+            draw.rectangle((x-3, 100, x+3, 129), fill=(0, 0, 0))
+            draw.rectangle((x-3, 470, x+3, 499), fill=(0, 0, 0))
+        if case == 'blocked':
+            for x in (160, 320, 480):
+                draw.rectangle((x-3, 100, x+3, 129), fill=(0, 0, 0))
+                draw.rectangle((x-3, 470, x+3, 499), fill=(0, 0, 0))
+        elif case == 'different_band':
+            draw.rectangle((660, 140, 699, 459), fill=(240, 200, 160))
+        layers = detect_border_profile(img)
+        if case != 'recover':
+            assert layers is None  # 复扫没有足够一致证据时仍拒绝，不强行升为两层。
+            return
+        assert layers is not None
+        assert len(layers) == 2
+        assert layers[0][0] == (0, 0, 0)
+        assert layers[1][0] == (251, 235, 219)
+        assert abs(layers[1][1] - 40) <= 2
+        canvas = np.asarray(img).copy()
+        canvas[:160, :200] = 255
+        canvas[:160, 600:] = 255
+        assert apply_lshape_border_completion(
+            canvas, img, RectShape(0, 0, 800, 600), 'tr', 200, 160,
+            src_material_img=img, cuts=[('tl', 200, 160), ('tr', 200, 160)],
+            directional_scale=directional_scale)
+        # 检测保留浅色结构信息，但繁花说式厚黑框只补黑色，不铺纯米条。
+        np.testing.assert_array_equal(canvas[270, 650], (139, 99, 75))
+        np.testing.assert_array_equal(canvas[140, 480], (139, 99, 75))
+        np.testing.assert_array_equal(canvas[140, 550], (0, 0, 0))
+        np.testing.assert_array_equal(canvas[100, 700], (255, 255, 255))
+
     def test_jpeg_gray_outer_frame_is_anchor(self):
         """压缩后约 110 灰的连续外框仍应作为锚点，避免 Profile 整体放弃。"""
         assert _is_anchor_seg(_Seg(0, 5, (108, 101, 100), 2.0))
@@ -364,6 +429,25 @@ class TestPatchLshapeCutLayers:
 class TestCompletionRouting:
 
     @pytest.mark.parametrize('directional_scale', [False, True])
+    @pytest.mark.parametrize('corner', ['tl', 'tr', 'bl', 'br'])
+    def test_luyi_cream_strip_is_not_repainted(self, directional_scale, corner):
+        """路易花坊日志中的152px黑带+18px米色条，只沿切边补黑带。"""
+        src = Image.new('RGB', (1600, 1200), (149, 132, 112))
+        draw = ImageDraw.Draw(src)
+        draw.rectangle((0, 0, 1599, 1199), outline=(0, 0, 0), width=152)
+        draw.rectangle((152, 152, 1447, 1047), outline=(238, 226, 210), width=18)
+        canvas = np.asarray(src).copy()
+        assert apply_lshape_border_completion(
+            canvas, src, RectShape(0, 0, 1600, 1200), corner, 400, 300,
+            src_material_img=src, directional_scale=directional_scale)
+        # 以右上角为基准采样，其他角位映射到对应位置。
+        x = 1399 if corner in ('tr', 'br') else 200
+        black_y = 400 if corner in ('tr', 'tl') else 799
+        content_y = 461 if corner in ('tr', 'tl') else 738
+        np.testing.assert_array_equal(canvas[black_y, x], (0, 0, 0))
+        np.testing.assert_array_equal(canvas[content_y, x], (149, 132, 112))
+
+    @pytest.mark.parametrize('directional_scale', [False, True])
     @pytest.mark.parametrize('bg_color', [(235, 226, 209), (158, 115, 81)])
     @pytest.mark.parametrize('edge,size', [(60, (1000, 800)), (220, (2400, 2000))])
     def test_two_layer_band_keeps_material_color_across_panel_backgrounds(
@@ -478,9 +562,201 @@ class TestCompletionRouting:
 # 工具断言
 # ---------------------------------------------------------------------------
 
+@pytest.mark.parametrize('directional', [False, True])
+def test_paisi_split_jpeg_stroke_keeps_beige_cut_border(directional):
+    """压缩过渡不能把佩斯的细描边拆成独立框线，导致补边全失败。"""
+    a = np.full((800, 1000, 3), (240, 230, 210), dtype=np.uint8)
+    a[:153] = a[-153:] = (228, 214, 187)
+    a[:, :157] = a[:, -157:] = (228, 214, 187)
+    a[:13] = a[-13:] = 0
+    a[:, :17] = a[:, -17:] = 0
+    a[:2] = a[-2:] = (44, 41, 38)
+    a[:, :2] = a[:, -2:] = (46, 46, 46)
+    a[:, 2:4] = a[:, -4:-2] = (16, 16, 16)
+    # 顶边黑段自身也被 JPEG 拆成两个近黑段。
+    a[3:8, 17:-17] = (1, 0, 14)
+    a[-8:-3, 17:-17] = (1, 0, 14)
+    src = Image.fromarray(a)
+    canvas = np.full_like(a, 255)
+    assert apply_lshape_border_completion(
+        canvas, src, RectShape(x=0, y=0, w=1000, h=800),
+        'tr', 250, 200, src_material_img=src,
+        scale_x=1, scale_y=1, directional_scale=directional,
+    )
+    np.testing.assert_array_equal(canvas[240, 900], (228, 214, 187))
+    np.testing.assert_array_equal(canvas[100, 900], (255, 255, 255))
+
+
+@pytest.mark.parametrize('corner', ['tr', 'tl', 'bl', 'br'])
+@pytest.mark.parametrize('sx,sy', [(1, 1), (1.5, 0.75)])
+@pytest.mark.parametrize('soft_edge', [False, True])
+@pytest.mark.parametrize('directional', [False, True])
+def test_composite_v13_stroke_matches_each_material_axis(corner, sx, sy, soft_edge, directional):
+    src = Image.new('RGB', (1000, 800), (240, 230, 210))
+    a = np.array(src)
+    a[:153] = a[-153:] = (228, 214, 187)
+    a[:, :157] = a[:, -157:] = (228, 214, 187)
+    a[:13] = a[-13:] = 0
+    a[:, :17] = a[:, -17:] = 0
+    src = Image.fromarray(a)
+    if soft_edge:
+        # 模拟缩放后保留下来的灰色内缘；补画不能把它扩成纯黑。
+        a[11:13] = a[-13:-11] = (60, 60, 60)
+        a[:, 15:17] = a[:, -17:-15] = (70, 70, 70)
+        canvas_source = Image.fromarray(a)
+    else:
+        canvas_source = src
+    a = np.array(canvas_source.resize((round(1000*sx), round(800*sy)), Image.Resampling.NEAREST))
+    canvas = a.copy()
+    xc, yc = round(750*sx), round(200*sy)
+    canvas[:yc, xc:] = 255
+    if corner in ('tl', 'bl'):
+        canvas = np.fliplr(canvas).copy()
+    if corner in ('bl', 'br'):
+        canvas = np.flipud(canvas).copy()
+    assert apply_lshape_border_completion(
+        canvas, src, RectShape(0, 0, a.shape[1], a.shape[0]), corner,
+        round(250*sx), yc, src_material_img=src,
+        scale_x=sx, scale_y=sy, directional_scale=directional)
+    if corner in ('bl', 'br'):
+        canvas = np.flipud(canvas)
+    if corner in ('tl', 'bl'):
+        canvas = np.fliplr(canvas)
+    # 水平补画应与原顶边同为13px，竖向补画应与原右边同为17px。
+    ex = np.count_nonzero(a[round(400*sy), -round(30*sx):].max(axis=1) < 90)
+    ey = np.count_nonzero(a[:round(30*sy), round(500*sx)].max(axis=1) < 90)
+    assert np.count_nonzero(canvas[yc:yc+round(30*sy), round(900*sx)].max(axis=1) < 90) == ey
+    assert np.count_nonzero(canvas[round(100*sy), xc-round(30*sx):xc].max(axis=1) < 90) == ex
+    np.testing.assert_array_equal(canvas[yc:yc+ey, round(900*sx)],
+                                  a[:ey, round(500*sx)])
+    np.testing.assert_array_equal(canvas[round(100*sy), xc-ex:xc],
+                                  a[round(400*sy), -ex:])
+    # 内凹接头应接续整条水平描边的过渡，不能留下实色黑块。
+    np.testing.assert_array_equal(canvas[yc:yc+ey, xc-1],
+                                  canvas[yc:yc+ey, round(900*sx)])
+    assert np.all(canvas[:yc, xc:] == 255)
+    # 色带不能压窄接缝处保留下来的原描边。
+    np.testing.assert_array_equal(canvas[:ey, round(720*sx)], a[:ey, round(720*sx)])
+    np.testing.assert_array_equal(canvas[round(240*sy), -ex:], a[round(240*sy), -ex:])
+
 def _color_close(c1, c2, tol=20.0) -> bool:
     return float(np.linalg.norm(
         np.array(c1, dtype=np.float64) - np.array(c2, dtype=np.float64))) < tol
+
+
+@pytest.mark.parametrize('corner', ['tr', 'tl', 'bl', 'br'])
+@pytest.mark.parametrize('colors', [
+    [(0, 0, 0)],
+    [(80, 30, 20), (170, 120, 70)],
+    [(110, 70, 35), (200, 150, 90)],
+    [(0, 0, 0), (243, 236, 220), (70, 60, 50)],
+])
+@pytest.mark.parametrize('route', ['profile', 'legacy'])
+def test_all_profile_border_styles_align_stroke_and_corners(corner, colors, route):
+    from core.lshape_border_route import _apply_profile_path
+    a = np.full((600, 800, 3), (220, 200, 170), dtype=np.uint8)
+    a[:10] = a[-10:] = colors[0]
+    a[:, :14] = a[:, -14:] = colors[0]
+    a[:100, 600:] = 255
+    if corner in ('tl', 'bl'):
+        a = np.fliplr(a).copy()
+    if corner in ('bl', 'br'):
+        a = np.flipud(a).copy()
+    before = a.copy()
+    layers = [(c, t) for c, t in zip(colors, [12, 40, 3])]
+    if route == 'profile':
+        assert _apply_profile_path(
+            canvas_arr=a, outer_rect=RectShape(0, 0, 800, 600),
+            cut_corner=corner, cut_w_px=200, cut_h_px=100,
+            layers_src=layers, scale_x=1, scale_y=1)
+    else:
+        from core.lshape_border import _draw_lshape_layers_on_retained_side
+        assert _draw_lshape_layers_on_retained_side(
+            a, RectShape(0, 0, 800, 600), corner, 200, 100, layers)
+    if corner in ('bl', 'br'):
+        a = np.flipud(a)
+        before = np.flipud(before)
+    if corner in ('tl', 'bl'):
+        a = np.fliplr(a)
+        before = np.fliplr(before)
+    np.testing.assert_array_equal(a[100:110, 700], before[:10, 400])
+    assert tuple(a[110, 700]) != colors[0]
+    np.testing.assert_array_equal(a[50, 586:600], before[400, -14:])
+    assert tuple(a[50, 585]) != colors[0]
+    assert np.all(a[:100, 600:] == 255)
+
+
+@pytest.mark.parametrize('corners', [('tl', 'tr'), ('bl', 'br'), ('tl', 'tr', 'bl', 'br')])
+@pytest.mark.parametrize('layers', [
+    [((0, 0, 0), 12)],
+    [((110, 70, 35), 12), ((200, 150, 90), 40)],
+    [((0, 0, 0), 12), ((243, 236, 220), 40), ((70, 60, 50), 3)],
+])
+def test_shared_alignment_multicut_preserves_every_corner(monkeypatch, corners, layers):
+    import core.lshape_border as border
+    monkeypatch.setattr(border, '_detect_lshape_border_auto',
+                        lambda image: (layers, None, False, False))
+    a = np.full((600, 800, 3), (220, 200, 170), dtype=np.uint8)
+    a[:10] = a[-10:] = layers[0][0]
+    a[:, :14] = a[:, -14:] = layers[0][0]
+    src = Image.fromarray(a)
+    for c in corners:
+        xs = slice(0, 200) if c in ('tl', 'bl') else slice(600, 800)
+        ys = slice(0, 100) if c in ('tl', 'tr') else slice(500, 600)
+        a[ys, xs] = 255
+    assert border.apply_lshape_border_completion(
+        a, src, RectShape(0, 0, 800, 600), corners[0], 200, 100,
+        src_material_img=src, cuts=[(c, 200, 100) for c in corners])
+    for c in corners:
+        normalized = np.flipud(a) if c in ('bl', 'br') else a
+        if c in ('tl', 'bl'):
+            normalized = np.fliplr(normalized)
+        assert np.all(normalized[:100, 600:] == 255)
+        assert np.all(normalized[100:110, 700] == layers[0][0])
+        assert tuple(normalized[110, 700]) != layers[0][0]
+        assert np.all(normalized[50, 586:600] == layers[0][0])
+        assert tuple(normalized[50, 585]) != layers[0][0]
+
+
+@pytest.mark.parametrize('corner', ['tl', 'tr', 'bl', 'br'])
+@pytest.mark.parametrize('directional', [False, True])
+@pytest.mark.parametrize('case', ['consistent', 'missing_boundary', 'unequal_width'])
+def test_dotted_inner_decoration_keeps_plain_outer_band(corner, directional, case):
+    src = Image.new('RGB', (800, 600), (242, 234, 211))
+    d = ImageDraw.Draw(src)
+    d.rectangle((0, 0, 799, 599), outline=(0, 0, 0), width=8)
+    for x in (240, 400, 560):
+        d.rectangle((x-4, 68, x+4, 79), fill=(0, 0, 0))
+        d.rectangle((x-4, 520, x+4, 531), fill=(0, 0, 0))
+    for y in (180, 300):
+        d.rectangle((68, y-4, 79, y+4), fill=(0, 0, 0))
+    for y in (300, 420):
+        d.rectangle((720, y-4, 731, y+4), fill=(0, 0, 0))
+    if case == 'missing_boundary':
+        d.rectangle((68, 8, 79, 591), fill=(242, 234, 211))
+        d.rectangle((720, 8, 731, 591), fill=(242, 234, 211))
+    elif case == 'unequal_width':
+        d.rectangle((720, 8, 731, 591), fill=(242, 234, 211))
+        for y in (300, 420):
+            d.rectangle((700, y-4, 711, y+4), fill=(0, 0, 0))
+    layers = detect_border_profile(src)
+    if case != 'consistent':
+        assert layers is None
+        return
+    assert layers is not None and len(layers) == 2
+    assert layers[1][0] == (242, 234, 211)
+    assert abs(layers[1][1]-60) <= 2
+    a = np.full((600, 800, 3), 255, dtype=np.uint8)
+    assert apply_lshape_border_completion(
+        a, src, RectShape(0, 0, 800, 600), corner, 200, 120,
+        src_material_img=src, directional_scale=directional)
+    if corner in ('bl', 'br'):
+        a = np.flipud(a)
+    if corner in ('tl', 'bl'):
+        a = np.fliplr(a)
+    assert np.all(a[50, 598] == 0)
+    np.testing.assert_array_equal(a[50, 570], (242, 234, 211))
+    np.testing.assert_array_equal(a[50, 520], (255, 255, 255))
 
 
 def _is_brownish(c) -> bool:

@@ -634,12 +634,12 @@ def _draw_lshape_layers_on_retained_side(
 
     sub = canvas_arr[oy:bottom, ox:right, :]
     try:
-        patched = patch_lshape_cut_layers(sub, cut_corner, x0, y0, cw, ch, layers)
+        return _patch_lshape_auto_layers(
+            canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px, layers, layers)
     except ValueError as exc:
         logger.info("[LShapeBorder] 几何分层补边跳过: %s", exc)
         return False
-    canvas_arr[oy:bottom, ox:right, :] = patched
-    return True
+
 
 
 # ---------------------------------------------------------------------------
@@ -771,6 +771,102 @@ def _apply_multi_cut_completion(
     return completion_ok
 
 
+def _patch_lshape_auto_layers(
+    canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px, layers_x, layers_y,
+) -> bool:
+    """自动补边公共出口：实测描边、保留结构层和四角接头过渡。"""
+    # 两个面板均按仍保留的原边缘测量描边，避免取均值。
+    # 测量画布像素，既避免取均值，也包含 JPEG/缩放后的灰色过渡。
+    from .lshape_border_route import patch_lshape_cut_layers
+    h, w = canvas_arr.shape[:2]
+    ox, oy = max(0, round(outer_rect.x)), max(0, round(outer_rect.y))
+    right, bottom = min(w, round(outer_rect.right)), min(h, round(outer_rect.bottom))
+    sub = canvas_arr[oy:bottom, ox:right]
+    sh, sw = sub.shape[:2]
+    cw, ch = round(min(cut_w_px, sw)), round(min(cut_h_px, sh))
+    if min(sh, sw) < 4 or min(cw, ch) < 1:
+        return False
+
+    def measured_stroke(vertical: bool, fallback: int) -> np.ndarray:
+        axis_layers = layers_x if vertical else layers_y
+        edge_color = axis_layers[0][0]
+        samples = []
+        for frac in (0.3, 0.5, 0.7):
+            if vertical:
+                line = sub[min(sh - 1, round(sh * frac))]
+                if cut_corner in ('tr', 'br'):
+                    line = line[::-1]
+            else:
+                line = sub[:, min(sw - 1, round(sw * frac))]
+                if cut_corner in ('bl', 'br'):
+                    line = line[::-1]
+            if max(edge_color) < 90:
+                matches = line.max(axis=1) < 90
+            else:
+                matches = np.linalg.norm(line.astype(float) - np.asarray(edge_color), axis=1) < 50
+            non_dark = np.flatnonzero(~matches)
+            thickness = int(non_dark[0]) if non_dark.size else len(line)
+            # 白色切区、花纹和其他异常剖线不能参与原描边测量。
+            if max(1, fallback * 0.5) <= thickness <= max(2, fallback * 2):
+                if len(axis_layers) > 1:
+                    # 内缘还可能有亮于黑色阈值的过渡像素，一直保留到
+                    # 已确认色带的颜色，避免接缝处留下浅色台阶。
+                    original_thickness = thickness
+                    limit = min(len(line), thickness + 6, max(2, fallback * 2))
+                    while (thickness < limit and float(np.linalg.norm(
+                            line[thickness].astype(float)
+                            - np.asarray(axis_layers[1][0], dtype=float))) > 25):
+                        thickness += 1
+                    if thickness == limit:
+                        thickness = original_thickness
+                samples.append((thickness, line))
+        if not samples:
+            return np.tile(np.asarray(edge_color, dtype=np.uint8), (fallback, 1))
+        thickness = int(round(float(np.median([s[0] for s in samples]))))
+        widths = [s[0] for s in samples]
+        if max(widths) - min(widths) > max(2, fallback * 0.15):
+            thickness = min(widths)
+        # 同时保留描边内外缘抗锯齿颜色，不能把灰色过渡扩成纯黑。
+        lines = [line[:thickness] for width, line in samples if width == thickness]
+        if not lines:
+            return np.tile(np.asarray(edge_color, dtype=np.uint8), (thickness, 1))
+        profile = np.rint(np.median(np.stack(lines), axis=0)).astype(np.uint8)
+        return profile
+
+    stroke_x = measured_stroke(True, layers_x[0][1])
+    stroke_y = measured_stroke(False, layers_y[0][1])
+    layers_x = [(layers_x[0][0], len(stroke_x)), *layers_x[1:]]
+    layers_y = [(layers_y[0][0], len(stroke_y)), *layers_y[1:]]
+    x0 = 0 if cut_corner in ('tl', 'bl') else sw - cw
+    y0 = 0 if cut_corner in ('tl', 'tr') else sh - ch
+    patched = patch_lshape_cut_layers(
+        sub, cut_corner, x0, y0, cw, ch, layers_x, layers_y=layers_y)
+    # 保持绘制器的两层语义；抗锯齿剖面独立回填，不能当成不同层，
+    # 否则两方向颜色段数量不同会使色带的起点互相错位。
+    normalized = patched
+    if cut_corner in ('tl', 'bl'):
+        normalized = np.fliplr(normalized)
+    if cut_corner in ('bl', 'br'):
+        normalized = np.flipud(normalized)
+    xc = sw - cw
+    ex, ey = min(len(stroke_x), xc), min(len(stroke_y), sh - ch)
+    normalized[:ch, xc-ex:xc] = stroke_x[:ex][::-1]
+    # 内凹接头同属水平描边，必须一起回填灰色过渡，不能留实色块。
+    normalized[ch:ch+ey, xc-ex:] = stroke_y[:ey, None, :]
+    original = sub
+    if cut_corner in ('tl', 'bl'):
+        original = np.fliplr(original)
+    if cut_corner in ('bl', 'br'):
+        original = np.flipud(original)
+    # 两个凸接头取两方向描边的并集，保留原顶/侧边的抗锯齿像素。
+    normalized[:ey, xc-ex:xc] = np.minimum(
+        normalized[:ey, xc-ex:xc], original[:ey, xc-ex:xc])
+    normalized[ch:ch+ey, sw-ex:] = np.minimum(
+        normalized[ch:ch+ey, sw-ex:], original[ch:ch+ey, sw-ex:])
+    canvas_arr[oy:bottom, ox:right] = patched
+    return True
+
+
 def _try_v13_with_params(
     canvas_arr: np.ndarray,
     material_img: Image.Image,
@@ -784,6 +880,7 @@ def _try_v13_with_params(
     v13: tuple,
     staircase_cut_rects: list[tuple[float, float, float, float]] | None,
     cut_area_mask: np.ndarray | None,
+    directional_scale: bool = False,
 ) -> bool:
     """尝试用 V13 检测结果绘制边框，返回是否成功。
 
@@ -793,6 +890,16 @@ def _try_v13_with_params(
         "[LShapeBorder] V13 检测命中: edge=%dpx band=%dpx color=%s",
         v13[0], v13[1], v13[2],
     )
+    if (src_material_img is not None or directional_scale) and cut_area_mask is None and not staircase_cut_rects:
+        scale_avg = max(0.1, float(np.sqrt(scale_x * scale_y))) if scale_x > 0 and scale_y > 0 else 1.0
+        layers_x = [(v13[2], max(1, round(v13[0] * scale_x)))]
+        layers_y = [(v13[2], max(1, round(v13[0] * scale_y)))]
+        if v13[1] > 0:
+            band_width = max(1, round(v13[1] * scale_avg))
+            layers_x.append((v13[3], band_width))
+            layers_y.append((v13[3], band_width))
+        return _patch_lshape_auto_layers(
+            canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px, layers_x, layers_y)
     return _try_apply_v13(
         canvas_arr=canvas_arr,
         material_img=material_img,
@@ -1012,6 +1119,7 @@ def apply_lshape_border_completion(
             v13=_v13,
             staircase_cut_rects=staircase_cut_rects,
             cut_area_mask=cut_area_mask,
+            directional_scale=directional_scale,
         )
         if _v13_ok:
             return True
@@ -1063,6 +1171,7 @@ def apply_lshape_border_completion(
             v13=v13,
             staircase_cut_rects=staircase_cut_rects,
             cut_area_mask=cut_area_mask,
+            directional_scale=directional_scale,
         )
         if _v13_ok2:
             return True
@@ -1319,6 +1428,16 @@ def _v13_pick(segs, window_size: int | None = None):
         edge_color = segs[i][2]  # 最外暗色段的中位色 = 真实描边色
         bw = segs[i][1] - segs[i][0] + 1
         i += 1
+        # JPEG 可将一条连续描边拆成几个近黑段；只有相邻且颜色接近
+        # 的段才合并，避免顶/左边宽度比较把真实描边判成噪声。
+        while (i < len(segs)
+               and segs[i - 1][1] + 1 == segs[i][0]
+               and max(segs[i][2]) < 40
+               and max(edge_color) < 40
+               and max(abs(segs[i][2][ch] - edge_color[ch])
+                       for ch in range(3)) <= 20):
+            bw += segs[i][1] - segs[i][0] + 1
+            i += 1
     else:
         return None
 

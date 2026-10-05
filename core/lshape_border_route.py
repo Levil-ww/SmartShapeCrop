@@ -114,7 +114,9 @@ def _smooth_1d(a: np.ndarray, window: int = 5) -> np.ndarray:
     return out
 
 
-def _edge_profiles(arr: np.ndarray, depth: int) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+def _edge_profiles(arr: np.ndarray, depth: int,
+                   scan_fracs: tuple[float, ...] = _SCAN_FRACS
+                   ) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """四条边的"由外向内"剖面。
 
     Returns:
@@ -124,8 +126,8 @@ def _edge_profiles(arr: np.ndarray, depth: int) -> dict[str, tuple[np.ndarray, n
         profile_raw:      (depth, 3) float64 —— 未平滑均值（用于取段颜色中位数）
     """
     H, W = arr.shape[:2]
-    cols = [min(W - 1, int(round(f * W))) for f in _SCAN_FRACS]
-    rows = [min(H - 1, int(round(f * H))) for f in _SCAN_FRACS]
+    cols = [min(W - 1, int(round(f * W))) for f in scan_fracs]
+    rows = [min(H - 1, int(round(f * H))) for f in scan_fracs]
 
     def _pack(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         # samples: (depth, n_scan, 3)
@@ -325,6 +327,20 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
     if anchor_idx < 0:
         return None
     collected = collected[anchor_idx:]
+    # JPEG 在黑框最外侧可留下 1~6px 深灰过渡。它与相邻黑段
+    # 属于同一外框，必须在「第二条线」截断前合并；否则先把过渡
+    # 当描边，再遇厚黑段就收尾，导致真实色带只在部分边被检出。
+    while (len(collected) >= 2
+            and collected[0].thickness <= _ANCHOR_MIN_THICK * 3
+            and max(collected[1].color) < 25
+            and collected[0].d1 + 1 == collected[1].d0
+            and _is_anchor_seg(collected[1])
+            and _is_neutral_dark(collected[0].color)
+            and _is_neutral_dark(collected[1].color)):
+        first, thick = collected[:2]
+        mean_std = (first.std * first.thickness + thick.std * thick.thickness) / (
+            first.thickness + thick.thickness)
+        collected[:2] = [_Seg(first.d0, thick.d1, thick.color, mean_std)]
     # 锚点后的单像素灰/浅色过渡只用于抗锯齿，不应成为可绘制层；保留真实
     # 2px 以上的细框线。这样既能跳过黑带内缘的过渡像素，也不会削掉真实
     # 的最薄框线。
@@ -443,13 +459,28 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
             and _BLACK_MAX_CHANNEL < max(layers[1][0]) < 235):
         layers.pop(1)
 
-    # 外层黑色段若已占据结构窗口的大部分，后面的近白中性段通常是
-    # 素材内容底色而非第二条色带（花满金陵等黑底素材）。只在黑段远厚
-    # 于正常厚黑边时应用，保留庄园秘境等真实黑边+米色带结构。
+    # 玛利亚玫瑰等偏暗米色装饰底低于近白阈值，但与内容中心同色。
+    # 仅过滤厚黑框后、无第三条结构线的浅色内容层；与中心不同的
+    # 独立色带和真正三层细框不受影响。两个面板共用此检测结果。
+    if (len(layers) == 2
+            and layers[0][1] >= _THICK_BLACK_MIN * 2
+            and _is_neutral_dark(layers[0][0])
+            and min(layers[1][0]) >= 185
+            and max(layers[1][0]) >= 215
+            and max(layers[1][0]) - min(layers[1][0]) <= _LIGHT_FIELD_MAX_CHROMA
+            and _color_dist(layers[1][0], field_ref) < _FIELD_COLOR_TOL):
+        layers.pop(1)
+
+    # 外层厚黑段后，近白内容底不应作为独立纯色条覆盖原有花纹。
+    # 除原有的中性白底规则外，仅对无第三条结构线、且第二层与内容
+    # 中心色一致的近白底扩展判定（庄园秘境）；棕色独立带及三层细框保留。
     if (len(layers) >= 2
             and layers[0][1] >= _THICK_BLACK_MIN * 2
-            and max(layers[1][0]) - min(layers[1][0]) <= 8
-            and max(layers[1][0]) >= 235):
+            and max(layers[1][0]) >= 235
+            and (max(layers[1][0]) - min(layers[1][0]) <= 8
+                 or (len(layers) == 2
+                     and _is_neutral_light(layers[1][0])
+                     and _color_dist(layers[1][0], field_ref) < _FIELD_COLOR_TOL))):
         layers.pop(1)
 
     total = sum(t for _, t in layers)
@@ -562,8 +593,94 @@ def detect_border_profile(src_img: Image.Image) -> list[tuple[tuple[int, int, in
     votes: dict[int, int] = {}
     for r in results:
         votes[len(r)] = votes.get(len(r), 0) + 1
+    # 繁花说等带纹饰的独立色带可能恰好命中固定扫描线，使两边提前
+    # 在花纹处收尾成一层。仅对 1:2 / 2:2 的分歧换位置复扫，不降低
+    # 三边一致门槛；复扫必须与原两边的颜色、带宽一致，且不是内容底。
+    if votes == {1: 2, 2: 2}:
+        two_layer = [r for r in results if len(r) == 2]
+        band_t = float(np.mean([r[1][1] for r in two_layer]))
+        if (all(_color_dist(two_layer[0][i][0], two_layer[1][i][0])
+                < _FIELD_COLOR_TOL for i in range(2))
+                and all(_color_dist(r[1][0], field_ref) >= _FIELD_COLOR_TOL
+                        for r in two_layer)):
+            alternate = _edge_profiles(arr, depth, (0.20, 0.40, 0.60))
+            for edge, original in per_edge.items():
+                if original is None or len(original) != 1:
+                    continue
+                prof, std, raw = alternate[edge]
+                candidate = _classify_profile(
+                    _segment_profile(prof, std, raw), field_ref, thick_cap,
+                    max_struct_depth, giant_cap_t)
+                if (candidate is not None and len(candidate) == 2
+                        and _color_dist(candidate[0][0], original[0][0]) < _FIELD_COLOR_TOL
+                        and abs(candidate[0][1] - original[0][1])
+                        <= max(2, original[0][1] * 0.30)
+                        and all(_color_dist(candidate[i][0], two_layer[0][i][0])
+                                < _FIELD_COLOR_TOL for i in range(2))
+                        and abs(candidate[1][1] - band_t) <= max(4, band_t * 0.50)):
+                    per_edge[edge] = candidate
+                    votes[1] -= 1
+                    votes[2] += 1
+            results = [v for v in per_edge.values() if v is not None]
+            logger.info("[LShapeRoute] 独立色带换位复扫后层数投票: %s", votes)
+    # 花满金陵：四边厚黑框已经一致，只是两边把接近内容底色的
+    # 内部浅色段多算一层。此时保留四边共同确认的黑框，不能因
+    # 不可靠的内容层把可靠黑框也全部丢弃；独立色带不走这条路径。
+    if (votes == {1: 2, 2: 2}
+            and all(r[0][1] >= _THICK_BLACK_MIN * 2
+                    and _is_neutral_dark(r[0][0]) for r in results)
+            and max(r[0][1] for r in results) <= min(r[0][1] for r in results) * 1.30
+            and all(len(r) == 1 or _color_dist(r[1][0], field_ref) < _FIELD_COLOR_TOL
+                    for r in results)):
+        per_edge = {edge: r[:1] if r is not None else None
+                    for edge, r in per_edge.items()}
+        results = [r for r in per_edge.values() if r is not None]
+        votes = {1: len(results)}
+        logger.info("[LShapeRoute] 四边厚黑框一致，过滤有分歧的内容底色层")
     best_count = max(votes, key=lambda k: votes[k])
     if votes[best_count] < 3:
+        # 点饰带恰好命中部分扫描线时，会出现两边三层、两边一层。
+        # 只恢复四边均有同色同宽平整带、且带内缘确有点饰边界的结构；
+        # 不降低普通层数投票门槛，不把同色内容底或连续细框强行改成两层。
+        if votes == {1: 2, 3: 2}:
+            candidates = []
+            dotted_edges = 0
+            for prof, std, raw in _edge_profiles(arr, depth).values():
+                segs = _segment_profile(prof, std, raw)
+                stroke = segs[0]
+                if not (_is_anchor_seg(stroke) and stroke.d0 == 0
+                        and stroke.thickness <= _LINE_MAX_THICK):
+                    break
+                band = next((s for s in segs[1:]
+                    if s.d0 <= stroke.d1 + 8 and s.thickness > _LINE_MAX_THICK
+                    and s.std < 3 and min(s.color) >= 185
+                    and max(s.color) >= 215
+                    and max(s.color)-min(s.color) <= _LIGHT_FIELD_MAX_CHROMA
+                    and _color_dist(s.color, field_ref) < _FIELD_COLOR_TOL), None)
+                if band is None:
+                    break
+                boundary = [s for s in segs if band.d1 < s.d0 <= band.d1 + 12]
+                if not any(max(s.color) < _DARK_LINE_MAX_CHANNEL for s in boundary):
+                    break
+                dotted_edges += any(s.std >= _FIELD_STD_TOL for s in boundary)
+                candidates.append((stroke, band))
+            if (len(candidates) == 4 and dotted_edges >= 2
+                    and max(b.thickness for _, b in candidates)
+                    <= min(b.thickness for _, b in candidates) * 1.20
+                    and max(s.thickness for s, _ in candidates)
+                    <= min(s.thickness for s, _ in candidates) * 1.30
+                    and all(_color_dist(candidates[0][1].color, b.color)
+                            < _FIELD_COLOR_TOL for _, b in candidates)):
+                layers = []
+                for index in (0, 1):
+                    color = tuple(int(round(np.mean([pair[index].color[ch]
+                                  for pair in candidates]))) for ch in range(3))
+                    thickness = int(round(np.median([pair[index].thickness
+                                                    for pair in candidates])))
+                    layers.append((color, thickness))
+                if sum(t for _, t in layers) <= min_dim * _STRUCT_WINDOW_RATIO:
+                    logger.info("[LShapeRoute] 四边平整色带一致，内侧点饰不补画: %s", layers)
+                    return layers
         logger.info("[LShapeRoute] 层数投票不一致 %s（<3 边一致），放弃", votes)
         return None
 
@@ -837,6 +954,17 @@ def _apply_profile_path(*,
     """
     if not layers_src:
         return False
+    # 厚黑外框后的近白/米色装饰底只用于识别素材结构，不沿切边铺成
+    # 纯色条（繁花说）。切边只补黑框，内侧保留原有纹饰/花纹。
+    # 独立棕色色带、薄描边的色带及真正三层细框仍按原层序补画。
+    layers_to_draw = layers_src
+    if (len(layers_src) == 2
+            and _is_neutral_dark(layers_src[0][0])
+            and layers_src[0][1] >= _THICK_BLACK_MIN * 2
+            and min(layers_src[1][0]) >= 200
+            and max(layers_src[1][0]) >= 235
+            and max(layers_src[1][0]) - min(layers_src[1][0]) <= _LIGHT_FIELD_MAX_CHROMA):
+        layers_to_draw = layers_src[:1]
     # 几何平均（sqrt(sx*sy)）对「adapt_pool_material 旋转校正」稳健：
     # 旋转后 scale_x/scale_y 互换但乘积不变，几何均值恒等于真实缩放
     # （stretch 填满模式）；普通情况 sx≈sy，几何均值 ≈ 算术均值。
@@ -852,7 +980,7 @@ def _apply_profile_path(*,
     # 即使色差较小也可能是另一层内容底色，不能用它改写已确认的色带。
     # bg_color 参数保留兼容调用；内容底色过滤由检测阶段负责。
     layers_colored: list[tuple[tuple[int, int, int], float]] = []
-    for color, t in layers_src:
+    for color, t in layers_to_draw:
         c = tuple(int(x) for x in color)
         _max_c = max(c)
         # 由连续黑带外缘压缩出的中性灰不能作为独立灰色 L 形重绘；
@@ -911,23 +1039,12 @@ def _apply_profile_path(*,
 
     sub = canvas_arr[oy:obottom, ox:oright, :]
     try:
-        patched = patch_lshape_cut_layers(
-            sub, cut_corner, bx0, by0, cw_r, ch_r,
+        from .lshape_border import _patch_lshape_auto_layers
+        return _patch_lshape_auto_layers(
+            canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px,
             layers_x if layers_x is not None else layers_canvas,
-            layers_y=layers_y,
+            layers_y if layers_y is not None else layers_canvas,
         )
     except ValueError as e:
         logger.info("[LShapeRoute] patch 跳过: %s", e)
         return False
-    canvas_arr[oy:obottom, ox:oright, :] = patched
-    if layers_x is not None:
-        logger.info(
-            "[LShapeRoute] 补边完成(分向): x=%s y=%s",
-            layers_x, layers_y,
-        )
-    else:
-        logger.info(
-            "[LShapeRoute] 补边完成: %d 层 (scale=%.2f×) %s",
-            len(layers_canvas), scale_avg, layers_canvas,
-        )
-    return True
