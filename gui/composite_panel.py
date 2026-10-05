@@ -320,6 +320,7 @@ class CompositePanel(LShapePanel):
         self._echo_composite_outer(result.outer_w_cm, result.outer_h_cm)
         # 3) 挖角（N ≤ 4 项）
         self._echo_composite_cuts(list(result.cuts_cm or []))
+        self._refresh_margin_hint()
         self._composite_basis_source = 'recognize'
         cuts_n = len(self.get_cuts_cm())
         self.set_composite_status(

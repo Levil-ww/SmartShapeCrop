@@ -723,6 +723,12 @@ class LShapePanel(QWidget):
         suffix = "（输入超出外框）" if invalid else ""
         self._margin_hint.setText(f"边余量：{values}{suffix}")
 
+    def _refresh_margin_hint(self):
+        """屏蔽控件信号的回填结束后，只刷新余量，不触发参数编辑或预览。"""
+        if not self._staircase_mode:
+            self._update_margin_hint(
+                self.get_outer_w_cm(), self.get_outer_h_cm(), self.get_cuts_cm())
+
     # ====================================================================
     # L 形挖角识别（Worker 调度 + 确认框，逻辑与原实现一致）
     # ====================================================================
@@ -988,6 +994,7 @@ class LShapePanel(QWidget):
                     self._sp_lw.blockSignals(False)
                     self._sp_lh.blockSignals(False)
                 self._lshape_params['cuts_cm'] = self.get_cuts_cm()
+                self._refresh_margin_hint()
             self._params_source = 'recognize'
             # 画布尺寸 = 外框设计值 + 1cm 损耗
             _canvas_w = float(result.outer_w_cm or 0) + 1.0
@@ -1083,6 +1090,7 @@ class LShapePanel(QWidget):
             self._set_staircase_mode(False)
         # SpinBox 重置为最小画布值（5cm = 设计值 4cm + 1cm 损耗，clip 到 5cm）
         self._parameter_control.set_outer_size(5.0, 5.0, block_signals=True)
+        self._refresh_margin_hint()
 
     def _set_lshape_params_legacy(self, corner: str, cut_w_cm: float, cut_h_cm: float):
         """外部回填 L 形参数（blockSignals 避免触发预览）。
@@ -1098,6 +1106,7 @@ class LShapePanel(QWidget):
         self._lshape_params['cut_w_cm'] = max(0.0, float(cut_w_cm))
         self._lshape_params['cut_h_cm'] = max(0.0, float(cut_h_cm))
         self._lshape_params['cuts_cm'] = self.get_cuts_cm()
+        self._refresh_margin_hint()
 
     def _set_lshape_cuts_legacy(self, cuts: list[dict] | None):
         """回填多角参数；空列表回退到旧单角控件。"""
@@ -1106,6 +1115,7 @@ class LShapePanel(QWidget):
         if self._lshape_params is None:
             self._lshape_params = {}
         self._lshape_params['cuts_cm'] = self.get_cuts_cm()
+        self._refresh_margin_hint()
 
     def set_outer_dims(self, outer_w_cm: float, outer_h_cm: float):
         """外部回填外框设计真值到 SpinBox（设计值 + 1cm = 画布值）。
@@ -1120,6 +1130,7 @@ class LShapePanel(QWidget):
         if self._lshape_params is not None:
             self._lshape_params['outer_w_cm'] = max(0.0, float(outer_w_cm))
             self._lshape_params['outer_h_cm'] = max(0.0, float(outer_h_cm))
+        self._refresh_margin_hint()
 
     def get_outer_w_cm(self) -> float:
         """读取设计外框宽度（SpinBox画布值 - 1cm损耗）"""
