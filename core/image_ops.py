@@ -568,6 +568,9 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
     lod_design.corner_tr_cm = design.corner_tr_cm * _lod_rscale
     lod_design.corner_bl_cm = design.corner_bl_cm * _lod_rscale
     lod_design.corner_br_cm = design.corner_br_cm * _lod_rscale
+    for key in ('tl', 'tr', 'bl', 'br'):
+        name = f'hole_corner_{key}_cm'
+        setattr(lod_design, name, getattr(design, name) * _lod_rscale)
 
     # [Fix 2026-09-24 P0-2] 椭圆直径同步缩放（ellipse_px → cm2px，宽高分方向）。
     # 0 表示自动模式（回退 inner_w_cm / inner_h_cm，二者已缩放）；0 * sx 仍为 0，语义不变。
@@ -1173,7 +1176,7 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
 
         inner_rect = design.inner_rect_px()
         outer = design.outer_rect_px()
-        corners = design.corners_px
+        corners = _hole_corners_px(design)
 
         inner_corners = compute_inner_corner_radii(
             outer, inner_rect, corners,
@@ -1566,10 +1569,18 @@ def _use_direct_hole_corners(design: CropDesign) -> bool:
         return True
     material = getattr(design, 'pool_inner_material_image', None)
     return bool(
-        design.mode == 'rect_hole'
+        design.mode in ('rect_hole', COMPOSITE_MODE)
         and not getattr(design, 'pool_is_multi_hole', False)
         and material and os.path.isfile(material)
     )
+
+
+def _hole_corners_px(design: CropDesign) -> dict[str, float]:
+    """综合形状中心洞独立取值，其他模式沿用原四角字段。"""
+    if design.mode == COMPOSITE_MODE:
+        return {key: design.cm2px(getattr(design, f'hole_corner_{key}_cm'))
+                for key in ('tl', 'tr', 'bl', 'br')}
+    return design.corners_px
 
 
 def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
@@ -1607,7 +1618,7 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
 
     inner_rect = design.inner_rect_px()
     outer = design.outer_rect_px()
-    corners = design.corners_px
+    corners = _hole_corners_px(design)
 
     # 使用正确的算法计算内层圆角半径（每个角落独立计算）
     # 空白洞与单洞水池素材共用直接半径，填充遮罩与描边使用同一判定。

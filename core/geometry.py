@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 import copy
 import logging
+import math
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -231,6 +232,12 @@ class CropDesign:
     corner_bl_cm: float = 0.0
     corner_br_cm: float = 0.0
 
+    # 综合形状中心水池的圆角，与外轮廓圆角独立。
+    hole_corner_tl_cm: float = 0.0
+    hole_corner_tr_cm: float = 0.0
+    hole_corner_bl_cm: float = 0.0
+    hole_corner_br_cm: float = 0.0
+
     # —— mode == ellipse_hole 椭圆直径（厘米） ——
     # 0 表示自动按四边距计算；大于 0 时作为用户手动输入的直径。
     ellipse_diameter_w_cm: float = 0.0
@@ -343,9 +350,11 @@ class CropDesign:
             raise ValueError(f"ellipse_diameter_w_cm 不能为负数，当前值: {self.ellipse_diameter_w_cm}")
         if self.ellipse_diameter_h_cm < 0:
             raise ValueError(f"ellipse_diameter_h_cm 不能为负数，当前值: {self.ellipse_diameter_h_cm}")
-        for name in ('corner_tl_cm', 'corner_tr_cm', 'corner_bl_cm', 'corner_br_cm'):
+        for name in ('corner_tl_cm', 'corner_tr_cm', 'corner_bl_cm', 'corner_br_cm',
+                     'hole_corner_tl_cm', 'hole_corner_tr_cm',
+                     'hole_corner_bl_cm', 'hole_corner_br_cm'):
             v = getattr(self, name)
-            if v < 0:
+            if not math.isfinite(v) or v < 0:
                 raise ValueError(f"{name} 不能为负数，当前值: {v}")
             half = min(self.canvas_w_cm, self.canvas_h_cm) / 2.0
             if v > half:
@@ -1157,14 +1166,17 @@ def compute_composite_border_bands(design: CropDesign) -> list[tuple[np.ndarray,
     lshape = design.l_shapes_px()
     corners = design.corners_px
     hole = design.inner_rect_px()
-    hole_radii = {ck: max(0.0, getattr(design, f'corner_{ck}_cm') * design.dpi / CM_PER_INCH)
-                  for ck in ('tl', 'tr', 'bl', 'br')}
+    hole_radii = compute_inner_corner_radii(
+        outer, hole,
+        {ck: design.cm2px(getattr(design, f'hole_corner_{ck}_cm'))
+         for ck in ('tl', 'tr', 'bl', 'br')}, direct=True)
     outer_mask = np.array(build_lshape_mask(
         (w, h), outer, lshape.corner, lshape.cut_w, lshape.cut_h,
         corners, fill_value=255, cuts=lshape.cut_rect_specs()), dtype=bool)
     hole_img = make_mask((w, h))
-    fill_rect_mask(hole_img, RectShape(hole.x, hole.y, hole.w, hole.h,
-                                      max(hole_radii.values(), default=0.0)), 255)
+    fill_rect_mask(hole_img, hole, 255)
+    if any(hole_radii.values()):
+        apply_rounded_corners_to_mask(hole_img, hole, hole_radii)
     hole_mask = np.array(hole_img, dtype=bool)
     frame_mask = outer_mask & ~hole_mask
 
@@ -1181,9 +1193,14 @@ def compute_composite_border_bands(design: CropDesign) -> list[tuple[np.ndarray,
             (w, h), inner, lshape.corner, lshape.cut_w, lshape.cut_h,
             corners, fill_value=255, cuts=lshape.cut_rect_specs()), dtype=bool)
         inner_hole = make_mask((w, h))
-        fill_rect_mask(inner_hole, RectShape(hole.x + cumulative, hole.y + cumulative,
-                                             max(1, hole.w - 2 * cumulative),
-                                             max(1, hole.h - 2 * cumulative)), 255)
+        shrunk_hole = RectShape(hole.x + cumulative, hole.y + cumulative,
+                               max(1, hole.w - 2 * cumulative),
+                               max(1, hole.h - 2 * cumulative))
+        fill_rect_mask(inner_hole, shrunk_hole, 255)
+        shrunk_radii = {ck: max(0.0, radius - cumulative)
+                        for ck, radius in hole_radii.items()}
+        if any(shrunk_radii.values()):
+            apply_rounded_corners_to_mask(inner_hole, shrunk_hole, shrunk_radii)
         current = inner_l & ~np.array(inner_hole, dtype=bool)
         bands.append((prev & ~current, layer))
         prev = current

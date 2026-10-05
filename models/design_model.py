@@ -84,6 +84,9 @@ class DesignModel:
         d.pool_holes_cm = []
         d.pool_holes_gaps_cm = []
         d.pool_hole_transparent = params.get('hole_fill_mode', 'blank') != 'image'
+        for key in ('tl', 'tr', 'bl', 'br'):
+            name = f'hole_corner_{key}_cm'
+            setattr(d, name, float(params.get(name, 0.0)))
         self._design = d
 
     @staticmethod

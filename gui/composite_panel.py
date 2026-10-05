@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import logging
 import os
-from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QDoubleSpinBox, QFormLayout, QGroupBox, QLabel, QPushButton, QCheckBox, QFileDialog
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import QDoubleSpinBox, QFormLayout, QHBoxLayout, QVBoxLayout, QWidget, QGroupBox, QLabel, QPushButton, QCheckBox, QFileDialog
 
 from workers.property_panel_workers import _CompositeParseWorker
 from core.config import CUT_LOSS_CM
@@ -115,7 +115,16 @@ class CompositePanel(LShapePanel):
             self.set_composite_status(f"无法打开草图：{e}", is_error=True)
 
     def _build_composite_controls(self):
-        self._gb_composite = QGroupBox("中心矩形洞（综合形状）", self)
+        # 基类末尾的弹性占位必须仍在全部控件之后，避免撑开参数区之间的空隙。
+        trailing_spacer = None
+        last_index = self._inner_layout.count() - 1
+        if last_index >= 0 and self._inner_layout.itemAt(last_index).spacerItem() is not None:
+            trailing_spacer = self._inner_layout.takeAt(last_index)
+        self._composite_controls = QWidget(self)
+        controls_layout = QVBoxLayout(self._composite_controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        params_row = QHBoxLayout()
+        self._gb_composite = QGroupBox("中心矩形洞（综合形状）", self._composite_controls)
         form = QFormLayout(self._gb_composite)
         self._hole_w = self._make_spin(80.0)
         self._hole_h = self._make_spin(60.0)
@@ -131,22 +140,40 @@ class CompositePanel(LShapePanel):
         ):
             form.addRow(label, widget)
         form.addRow(self._hole_material)
+        self._gb_hole_corners = QGroupBox("中心水池圆角（厘米）", self._composite_controls)
+        corner_form = QFormLayout(self._gb_hole_corners)
+        self._hole_corners = {}
+        for key, label in (
+            ('tl', '左上角'), ('tr', '右上角'), ('bl', '左下角'), ('br', '右下角'),
+        ):
+            spin = self._make_spin(0.0)
+            spin.setRange(0.0, 50.0)
+            spin.setDecimals(1)
+            spin.setSuffix(" cm")
+            spin.setToolTip("中心水池的圆角半径，直接按厘米生效；0 表示直角。")
+            corner_form.addRow(label, spin)
+            self._hole_corners[key] = spin
+        params_row.addWidget(self._gb_composite, 3, Qt.AlignTop)
+        params_row.addWidget(self._gb_hole_corners, 2, Qt.AlignTop)
+        controls_layout.addLayout(params_row)
         self._btn_composite_recognize = QPushButton("识别综合形状草图")
         self._btn_composite_recognize.setToolTip(
             "按当前「外框尺寸」（来自目标文件名或手动填写）为基准，识别草图里的\n"
             "中心矩形洞与 L 形挖角，识别结果直接回填到下方参数与挖角控件。")
         self._btn_composite_recognize.clicked.connect(self._recognize_composite_sketch)
-        form.addRow(self._btn_composite_recognize)
+        controls_layout.addWidget(self._btn_composite_recognize)
         # 状态行：L 形面板的状态行在隐藏的识别区里，这里必须有独立可见的反馈区
         self._composite_status = QLabel("（填写目标文件名并上传草图后，点上方按钮识别综合形状）")
         self._composite_status.setWordWrap(True)
         self._composite_status.setStyleSheet("color:#555; padding: 4px 6px;")
-        form.addRow(self._composite_status)
-        self._inner_layout.addWidget(self._gb_composite)
+        controls_layout.addWidget(self._composite_status)
+        self._inner_layout.addWidget(self._composite_controls)
         # 生成预览与导出按钮固定放在综合参数之后，作为面板底部主操作。
         if hasattr(self, '_action_layout'):
             self._inner_layout.removeItem(self._action_layout)
             self._inner_layout.addLayout(self._action_layout)
+        if trailing_spacer is not None:
+            self._inner_layout.addItem(trailing_spacer)
 
     @staticmethod
     def _make_spin(value):
@@ -173,6 +200,8 @@ class CompositePanel(LShapePanel):
             'outer_h_cm': self.get_outer_h_cm(),
             'cuts_cm': self.get_cuts_cm(),
         })
+        params.update({f'hole_corner_{key}_cm': spin.value()
+                       for key, spin in self._hole_corners.items()})
         return params
 
     def to_crop_design(self, *, dpi: int = 150) -> CropDesign:
@@ -199,6 +228,8 @@ class CompositePanel(LShapePanel):
             l_cut_w_cm=primary['cut_w_cm'],
             l_cut_h_cm=primary['cut_h_cm'],
             l_cuts_cm=cuts,
+            **{f'hole_corner_{key}_cm': spin.value()
+               for key, spin in self._hole_corners.items()},
         )
 
     def cancel_composite_parse(self):
