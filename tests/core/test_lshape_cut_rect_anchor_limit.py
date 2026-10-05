@@ -148,11 +148,15 @@ class TestValidateSharesTheSameCap:
 
 
 # ---------------------------------------------------------------------------
-# 3) 源码级防回归：写入端不得再按总数截断
+# 3) 源码级防回归：实际写入实现和兼容入口不得再按总数截断
 # ---------------------------------------------------------------------------
 
-WRITE_PATH_FILES = [
+HELPER_IMPORT_FILES = [
     PROJECT_ROOT / 'models' / 'design_model.py',
+    PROJECT_ROOT / 'core' / 'design_build_geometry.py',
+]
+WRITE_PATH_FILES = [
+    *HELPER_IMPORT_FILES,
     PROJECT_ROOT / 'workers' / 'design_builders.py',
 ]
 
@@ -165,7 +169,7 @@ class TestWritePathsNoLongerTruncateByTotal:
             f'{path.name} 仍存在按总数 [:3] 截断 —— '
             f'应改用 limit_l_cut_rects_per_anchor()，与 validate() 的每角 ≤3 对齐')
 
-    @pytest.mark.parametrize('path', WRITE_PATH_FILES, ids=lambda p: p.name)
+    @pytest.mark.parametrize('path', HELPER_IMPORT_FILES, ids=lambda p: p.name)
     def test_imports_helper(self, path):
         tree = ast.parse(path.read_text(encoding='utf-8'))
         imported = set()
@@ -174,6 +178,30 @@ class TestWritePathsNoLongerTruncateByTotal:
                 imported |= {a.name for a in node.names}
         assert 'limit_l_cut_rects_per_anchor' in imported, (
             f'{path.name} 未从 core.geometry 导入分组截断辅助函数')
+
+    def test_worker_uses_extracted_lshape_implementation(self):
+        from core.design_build_geometry import apply_lshape_geometry
+        from workers import design_builders
+
+        assert design_builders.apply_lshape_geometry is apply_lshape_geometry
+
+    @pytest.mark.parametrize('anchor', ['tl', 'tr', 'bl', 'br'])
+    def test_worker_keeps_other_anchors_when_one_exceeds_cap(self, anchor):
+        from workers.design_builders import apply_lshape_geometry
+
+        rects = _bands(anchor, 5) + [
+            _bands(other, 1)[0] for other in ('tl', 'tr', 'bl', 'br') if other != anchor
+        ]
+        design = CropDesign()
+        apply_lshape_geometry(design, {'cut_rects': rects}, 'material.jpg')
+
+        assert Counter(c.anchor for c in design.l_cut_rects) == {
+            other: MAX_L_CUT_RECTS_PER_ANCHOR if other == anchor else 1
+            for other in ('tl', 'tr', 'bl', 'br')
+        }
+        assert [c.offset_y_cm for c in design.l_cut_rects if c.anchor == anchor] == [
+            r['offset_y_cm'] for r in rects[:MAX_L_CUT_RECTS_PER_ANCHOR]
+        ]
 
 
 # ---------------------------------------------------------------------------
