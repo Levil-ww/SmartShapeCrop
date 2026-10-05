@@ -1177,7 +1177,7 @@ def _compute_border_mask(design, W, H, inner_mask, border_width_px):
 
         inner_corners = compute_inner_corner_radii(
             outer, inner_rect, corners,
-            direct=design.pool_hole_transparent,
+            direct=_use_direct_hole_corners(design),
         )
 
         shrunk_w = max(0, inner_rect.w - 2 * border_width_px)
@@ -1560,6 +1560,18 @@ def _looks_like_tile(path: str) -> bool:
     return re.search(r'hua(?!n)|zhuan(?!g)', n) is not None
 
 
+def _use_direct_hole_corners(design: CropDesign) -> bool:
+    """空白洞和单洞水池素材直接采用洞口半径；其他模式保留边距缩减。"""
+    if design.pool_hole_transparent:
+        return True
+    material = getattr(design, 'pool_inner_material_image', None)
+    return bool(
+        design.mode == 'rect_hole'
+        and not getattr(design, 'pool_is_multi_hole', False)
+        and material and os.path.isfile(material)
+    )
+
+
 def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     """返回挖洞区域（即内部填充区域）的 bool mask，与边框带的同心圆角保持一致。"""
     from .geometry import (make_mask, fill_rect_mask, fill_ellipse_mask, fill_lshape_mask, 
@@ -1598,9 +1610,9 @@ def _get_inner_pixel_mask(design: CropDesign) -> np.ndarray:
     corners = design.corners_px
 
     # 使用正确的算法计算内层圆角半径（每个角落独立计算）
-    # 水池模式：direct=True 跳过边距缩减，圆角设置直接作用于内挖区域
+    # 空白洞与单洞水池素材共用直接半径，填充遮罩与描边使用同一判定。
     inner_corners = compute_inner_corner_radii(outer, inner_rect, corners,
-                                                direct=design.pool_hole_transparent)
+                                                direct=_use_direct_hole_corners(design))
 
     if design.mode == 'rect_hole':
         fill_rect_mask(m, inner_rect, 255)
