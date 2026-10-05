@@ -83,6 +83,9 @@ class DesignModel:
         d.pool_is_multi_hole = False
         d.pool_holes_cm = []
         d.pool_holes_gaps_cm = []
+        # 综合形状的中心洞使用 hole_corner_*；水池面板的外轮廓圆角不能继承。
+        for key in ('tl', 'tr', 'bl', 'br'):
+            setattr(d, f'corner_{key}_cm', 0.0)
         d.pool_hole_transparent = params.get('hole_fill_mode', 'blank') != 'image'
         for key in ('tl', 'tr', 'bl', 'br'):
             name = f'hole_corner_{key}_cm'
@@ -182,10 +185,11 @@ class DesignModel:
             d.inner_margin_bottom_cm = snap['inner']['bottom']
             d.inner_margin_left_cm = snap['inner']['left']
             d.inner_margin_right_cm = snap['inner']['right']
-        d.corner_tl_cm = snap['corners']['tl']
-        d.corner_tr_cm = snap['corners']['tr']
-        d.corner_bl_cm = snap['corners']['bl']
-        d.corner_br_cm = snap['corners']['br']
+        # corners 来自水池面板：L 形/综合挖角必须保持直角，不读取此控件。
+        # 仅清理设计快照里的共享字段，保留水池控件值，切回水池时可重新应用。
+        for key in ('tl', 'tr', 'bl', 'br'):
+            value = 0.0 if is_lshape_layout(d.mode) else snap['corners'][key]
+            setattr(d, f'corner_{key}_cm', value)
         d.ellipse_diameter_w_cm = snap['ellipse']['diameter_w_cm']
         d.ellipse_diameter_h_cm = snap['ellipse']['diameter_h_cm']
         d.outer_bg_color = snap['colors']['outer']
