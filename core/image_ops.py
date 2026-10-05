@@ -1464,10 +1464,18 @@ def _stale_decor_residual_cleaner(canvas_arr, design, W, H, border_mask, inner_m
                 _residual = _residual & _near_hole
                 if not _residual.any():
                     return
-                # ===== [V2.1 Fix ①] 连通域 bbox 过滤：细条( min(w,h)≤30px ) 才保留 =====
+                # 只清理长条旧黑线；小花瓣/斑点同样可能小于 30px，不能仅凭薄度清理。
                 _res_u8 = (_residual.astype(np.uint8) * 255)
                 _n_lbl, _lbl, _st, _cen = _cv2.connectedComponentsWithStats(
                     _res_u8, connectivity=8)
+                # 清理环带会截断跨越洞边的合法花纹，使其 bbox 看起来像细条。
+                # 接触环带外缘的分量无法确认为独立旧黑线，保留其原始颜色；
+                # 否则采样底色会在黑框外形成一圈棕色/花纹色溢出。
+                _ring_edge = _residual & _cv2.dilate(
+                    (~_near_hole).astype(np.uint8),
+                    np.ones((3, 3), dtype=np.uint8), iterations=1,
+                ).astype(bool)
+                _clipped_labels = set(np.unique(_lbl[_ring_edge]).tolist())
                 # [PERF FIX 2026-09-02] 原代码用循环 N 次 _thin_band |= (_lbl == _li)：
                 #   每次迭代对 38.6 MP 标签矩阵做 int32→bool 比较 + OR，
                 #   N=395 连通域时总开销 ~12s（152 亿次比较），是导出 64.8s 的主因。
@@ -1475,10 +1483,14 @@ def _stale_decor_residual_cleaner(canvas_arr, design, W, H, border_mask, inner_m
                 _THIN_MAX = 30  # px，与注释"细条带状 30px"一致
                 _keep_labels = []
                 for _li in range(1, _n_lbl):
+                    if _li in _clipped_labels:
+                        continue
                     _bw = int(_st[_li, _cv2.CC_STAT_WIDTH])
                     _bh = int(_st[_li, _cv2.CC_STAT_HEIGHT])
-                    # 一维薄即视为细条：边框（10px厚，另一维很长）/ 小段 / 小斑点都命中
-                    if min(_bw, _bh) <= _THIN_MAX:
+                    _thin = min(_bw, _bh)
+                    _long = max(_bw, _bh)
+                    if (_thin <= _THIN_MAX and _long > _THIN_MAX
+                            and _long >= 4 * _thin):
                         _keep_labels.append(_li)
                 if _keep_labels:
                     _thin_band = np.isin(_lbl, _keep_labels)
