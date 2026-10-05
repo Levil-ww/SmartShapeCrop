@@ -27,9 +27,111 @@ from core.lshape_border_route import (
 )
 
 
+@pytest.mark.parametrize('corner', ['tl', 'tr', 'bl', 'br'])
+@pytest.mark.parametrize('cut_cm', [(0.5, 16.9), (2.0, 16.9), (2.49, 16.9),
+                                   (16.9, 0.5), (16.9, 2.49)])
+@pytest.mark.parametrize('dpi', [25.4, 50.8])
+def test_small_cut_does_not_reroute_inner_line(corner, cut_cm, dpi):
+    """小切口只补外描边/色带，不在原内框线之外生成新细线。"""
+    src = _make_manshenghua_material()
+    canvas = np.asarray(src).copy()
+    cw, ch = round(cut_cm[0] * dpi / 2.54), round(cut_cm[1] * dpi / 2.54)
+    x0 = 0 if corner in ('tl', 'bl') else 800 - cw
+    y0 = 0 if corner in ('tl', 'tr') else 600 - ch
+    canvas[y0:y0+ch, x0:x0+cw] = 255
+    before = canvas.copy()
+    assert apply_lshape_border_completion(
+        canvas, src, RectShape(0, 0, 800, 600), corner,
+        cut_cm[0] * dpi / 2.54, cut_cm[1] * dpi / 2.54,
+        dpi=dpi, src_material_img=src,
+        preserve_inner_line_corners=frozenset([corner]))
+    line = np.all(canvas == (70, 60, 50), axis=2)
+    original_line = np.all(before == (70, 60, 50), axis=2)
+    assert not np.any(line & ~original_line), '小切口生成了向外溢出的新细线'
+    np.testing.assert_array_equal(
+        canvas[original_line], before[original_line],
+        err_msg='停止重绘之后，原素材内框线仍被色带覆盖')
+    np.testing.assert_array_equal(canvas[y0:y0+ch, x0:x0+cw], 255)
+
+
+@pytest.mark.parametrize('mode', ['rect_lshape', 'rect_lshape_hole'])
+@pytest.mark.parametrize('dpi', [25, 75])
+@pytest.mark.parametrize('small_cm', [0.5, 2.0, 2.49, 2.5, 2.51])
+@pytest.mark.parametrize('short_axis', ['width', 'height'])
+@pytest.mark.parametrize('quality', ['export', 'lod'])
+def test_render_small_cut_threshold_and_normal_cut_are_independent(
+        tmp_path, monkeypatch, mode, dpi, small_cm, short_axis, quality):
+    """真实渲染入口：两面板、两种 DPI、损耗边距和 2.5cm 边界。"""
+    from core import lshape_border
+    from core.geometry import CropDesign
+    from core.image_ops import render_design, render_design_lod
+
+    path = tmp_path / 'border.png'
+    _make_manshenghua_material().save(path)
+    design = CropDesign(
+        canvas_w_cm=80, canvas_h_cm=60, dpi=dpi, mode=mode,
+        outer_margin_cm=0.5,
+        pool_outer_material_image=str(path),
+        l_cuts_cm=[
+            {'corner': 'br',
+             'cut_w_cm': small_cm if short_axis == 'width' else 16.9,
+             'cut_h_cm': small_cm if short_axis == 'height' else 16.9},
+            {'corner': 'tl', 'cut_w_cm': 19.8, 'cut_h_cm': 20.0},
+        ])
+    calls = []
+    original = lshape_border._patch_lshape_auto_layers
+
+    def capture(canvas, rect, corner, cw, ch, layers_x, layers_y, **kwargs):
+        calls.append((corner, kwargs.get('preserve_inner_line', False)))
+        before = canvas.copy()
+        ok = original(canvas, rect, corner, cw, ch, layers_x, layers_y, **kwargs)
+        if kwargs.get('preserve_inner_line'):
+            px = sum(t for _, t in layers_x[:2])
+            py = sum(t for _, t in layers_y[:2])
+            np.testing.assert_array_equal(canvas[py:-py, px:-px], before[py:-py, px:-px])
+        return ok
+
+    monkeypatch.setattr(lshape_border, '_patch_lshape_auto_layers', capture)
+    result = (render_design_lod(design, scale=0.25) if quality == 'lod'
+              else render_design(design, quality='export'))
+    assert result.size == (design.canvas_w_px, design.canvas_h_px)
+    assert calls == [('br', small_cm < 2.5), ('tl', False)]
+
+
 # ---------------------------------------------------------------------------
 # 合成素材夹具
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('corner', ['tl', 'tr', 'bl', 'br'])
+@pytest.mark.parametrize('cut', [(1000, 35), (1130, 150)])
+@pytest.mark.parametrize('transpose', [False, True])
+@pytest.mark.parametrize('sx,sy', [(1, 1), (1.25, 0.75)])
+def test_inner_line_cannot_extend_into_original_outer_band(corner, cut, transpose, sx, sy):
+    """100×3.5 / 113×15cm 及其横纵对称：接头不能溢入原外侧色带。"""
+    src = _make_manshenghua_material(size=(1210, 620))
+    cw, ch = cut
+    if transpose:
+        src = src.transpose(Image.Transpose.TRANSPOSE)
+        cw, ch = ch, cw
+    w, h = round(src.width*sx), round(src.height*sy)
+    canvas = np.array(src.resize((w, h), Image.Resampling.NEAREST))
+    cw, ch = round(cw*sx), round(ch*sy)
+    x0 = 0 if corner in ('tl', 'bl') else w-cw
+    y0 = 0 if corner in ('tl', 'tr') else h-ch
+    canvas[y0:y0+ch, x0:x0+cw] = 255
+    before = canvas.copy()
+    assert apply_lshape_border_completion(
+        canvas, src, RectShape(0, 0, w, h), corner, cw, ch,
+        src_material_img=src, scale_x=sx, scale_y=sy)
+    xs, ys = np.arange(w), np.arange(h)
+    outer_band = ((np.minimum(xs, w-1-xs)[None, :] < round(68*sx)-2)
+                  | (np.minimum(ys, h-1-ys)[:, None] < round(68*sy)-2))
+    new_line = (np.all(canvas == (70, 60, 50), axis=2)
+                & ~np.all(before == (70, 60, 50), axis=2))
+    assert not np.any(new_line & outer_band), '内框接头在原外侧色带生成了竖/横线'
+    assert np.any(new_line & ~outer_band), '正常切边的内框线应继续补全'
+    np.testing.assert_array_equal(canvas[y0:y0+ch, x0:x0+cw], 255)
 
 def _make_keluo_material(size=(600, 400)) -> Image.Image:
     """克罗印花风格：黑描边 6px + 棕色带 40px + 米色底（两层结构）。"""

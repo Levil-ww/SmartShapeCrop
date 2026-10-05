@@ -500,6 +500,13 @@ def render_design_lod(design: CropDesign, scale: float = 0.25) -> Image.Image:
     return lod_result
 
 
+def _small_lshape_cut_corners(design: CropDesign) -> frozenset[str]:
+    """按输入尺寸标记不重走内框线的角位，不含损耗边距。"""
+    return frozenset(
+        spec['corner'] for spec in design.l_shapes_px().cut_rect_specs()
+        if min(float(spec['cut_w']), float(spec['cut_h'])) < design.cm2px(2.5))
+
+
 def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
     """
     创建一个临时的 LOD 版本的 CropDesign。
@@ -508,6 +515,11 @@ def _make_lod_design(design: CropDesign, lod_w: int, lod_h: int) -> CropDesign:
     # [Fix 2026-09-12 N-P1-02] 使用 clone() 代替 deepcopy，
     # 共享 _cached_outer_image 只读引用，避免大图像素数据被深拷贝（内存翻倍）。
     lod_design = design.clone()
+    # LOD 会缩小 cm 参数而保持 DPI；必须在缩小前按实际输入尺寸判断，
+    # 否则正常切口也会被误判为 <2.5cm。标记只属于临时预览快照。
+    if design.mode in ('rect_lshape', COMPOSITE_MODE):
+        lod_design._lshape_preserve_inner_line_corners = getattr(
+            design, '_lshape_preserve_inner_line_corners', _small_lshape_cut_corners(design))
     orig_w = design.canvas_w_px
     orig_h = design.canvas_h_px
     
@@ -1282,6 +1294,8 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
             _ir_x, _ir_y = inner_rect.x, inner_rect.y
             _ir_r, _ir_b = inner_rect.right, inner_rect.bottom
             border_cuts = []
+            preserve_inner_line_corners = getattr(
+                design, '_lshape_preserve_inner_line_corners', _small_lshape_cut_corners(design))
             staircase_cut_rects = []
             staircase_mode = bool(getattr(design, 'l_cut_rects', None))
             for spec in lshape.cut_rect_specs():
@@ -1365,6 +1379,7 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                     if border_cuts else 0.0
                 ),
                 cuts=border_cuts or None,
+                preserve_inner_line_corners=frozenset(preserve_inner_line_corners),
                 dpi=design.dpi,
                 # [Fix 2026-09-08 v3] bg_color 从硬编码白色改为实际素材底色：
                 # 白色导致 detect_pool_material_borders 把米色等底色误判为边框层，

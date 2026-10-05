@@ -772,7 +772,8 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
                                      layers: list[tuple[tuple[int, int, int], int]],
                                      offs: list[int],
                                      layers_y: list[tuple[tuple[int, int, int], int]] | None = None,
-                                     offs_y: list[int] | None = None) -> None:
+                                     offs_y: list[int] | None = None,
+                                     clip_inner_line: bool = False) -> None:
     """在"缺口贴右上角"的画布 b 上按层补齐切边边框。
 
     坐标语义与 lshape_border._fill_vertical_horizontal 完全一致：
@@ -807,6 +808,11 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
         x_lo, x_hi = max(0, xc - offs[k + 1]), min(W, xc - offs[k])
         y_lo = offs_y[k] if offs_y[k] < yc else 0
         y_hi = min(yc + 1, H)
+        if clip_inner_line and k >= 2:
+            # 内框只能接到素材自己的内框深度，不能退回顶边或伸进
+            # 对侧外色带（短切边/窄保留边均适用）。
+            x_lo, x_hi = max(x_lo, offs[k]), min(x_hi, W-offs[k])
+            y_lo, y_hi = max(y_lo, offs_y[k]), min(y_hi, H-offs_y[k])
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
@@ -819,6 +825,9 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
         y_lo = max(0, yc + offs_y[k])
         y_hi = min(H, yc + offs_y[k + 1])
         x_lo, x_hi = max(0, xc), max(0, min(W - offs[k], W))
+        if clip_inner_line and k >= 2:
+            x_lo = max(x_lo, offs[k])
+            y_lo, y_hi = max(y_lo, offs_y[k]), min(y_hi, H-offs_y[k])
         if x_hi > x_lo and y_hi > y_lo:
             b[y_lo:y_hi, x_lo:x_hi] = color
 
@@ -854,20 +863,32 @@ def _fill_layers_vertical_horizontal(b: np.ndarray, xc: int, yc: int,
         if mask_edge.any():
             k_edge = np.searchsorted(offs_y_arr, dy, side='right') - 1
             k_edge = np.clip(k_edge, 0, len(layers) - 1)
-            b[yy, xs[mask_edge]] = colors_arr[k_edge]
+            edge_xs = xs[mask_edge]
+            if clip_inner_line and k_edge >= 2:
+                valid = ((edge_xs >= offs[k_edge]) & (edge_xs < W-offs[k_edge])
+                         & (yy >= offs_y[k_edge]) & (yy < H-offs_y[k_edge]))
+                edge_xs = edge_xs[valid]
+            b[yy, edge_xs] = colors_arr[k_edge]
         # dx>edge 组: max(dx, dy) L 形分层（两向网格各自取层后取较大层）
         if mask_layers.any():
             dx_lay = dx_arr[mask_layers]
             kx = np.searchsorted(offs_arr, dx_lay, side='right') - 1
             ky = np.searchsorted(offs_y_arr, dy, side='right') - 1
             k = np.clip(np.maximum(kx, ky), 0, len(layers) - 1)
-            b[yy, xs[mask_layers]] = colors_arr[k]
+            layer_xs = xs[mask_layers]
+            if clip_inner_line:
+                valid = ((k < 2) | ((layer_xs >= offs_arr[k])
+                         & (layer_xs < W-offs_arr[k]) & (yy >= offs_y_arr[k])
+                         & (yy < H-offs_y_arr[k])))
+                layer_xs, k = layer_xs[valid], k[valid]
+            b[yy, layer_xs] = colors_arr[k]
 
 
 def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
                             x0: int, y0: int, cw: int, ch: int,
                             layers: list[tuple[tuple[int, int, int], int]],
                             layers_y: list[tuple[tuple[int, int, int], int]] | None = None,
+                            *, clip_inner_line: bool = False,
                             ) -> np.ndarray:
     """在最终画布上沿缺口切边按层结构补边（不修改入参，返回新数组）。
 
@@ -879,6 +900,8 @@ def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
                 x 向层厚网格（用于垂直切边拷贝深度 / 水平切边拷贝 x 截断）
         layers_y: 可选，y 向层厚网格（与 layers 逐层同色，厚度按 y 缩放）。
                   非等比拉伸（综合形状）时必传；None → 与 layers 同一网格。
+        clip_inner_line: 自动补边时限制第三层细线接头，避免进入素材原外侧
+                  色带；默认 False 保持既有直接调用语义。
 
     契约与 patch_lshape_cut 一致：翻转后缺口必须贴画布右上角，
     否则抛 ValueError。
@@ -915,7 +938,8 @@ def patch_lshape_cut_layers(canvas: np.ndarray, corner: str,
     if not (nx1 == b.shape[1] and ny0 == 0):
         raise ValueError('缺口矩形不在画布角落, 请检查 x0/y0/cw/ch 与翻转角的一致性')
     _fill_layers_vertical_horizontal(b, nx0, ny1, layers, offs,
-                                     layers_y=layers_y, offs_y=offs_y)
+                                     layers_y=layers_y, offs_y=offs_y,
+                                     clip_inner_line=clip_inner_line)
     if flipy:
         b = np.flipud(b)
     if flipx:
@@ -940,6 +964,7 @@ def _apply_profile_path(*,
                         staircase_cut_rects: list[tuple[float, float, float, float]] | None = None,
                         cut_area_mask: np.ndarray | None = None,
                         directional_scale: bool = False,
+                        preserve_inner_line: bool = False,
                         ) -> bool:
     """Profile 路径：源图层结构 → 画布坐标 → patch_lshape_cut_layers。
 
@@ -1037,6 +1062,7 @@ def _apply_profile_path(*,
             canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px,
             layers_x if layers_x is not None else layers_canvas,
             layers_y if layers_y is not None else layers_canvas,
+            **({'preserve_inner_line': True} if preserve_inner_line else {}),
         )
     except ValueError as e:
         logger.info("[LShapeRoute] patch 跳过: %s", e)

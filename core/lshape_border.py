@@ -735,6 +735,7 @@ def _apply_multi_cut_completion(
     manual_band_px: int | None,
     manual_band_color: tuple[int, int, int] | None,
     directional_scale: bool,
+    preserve_inner_line_corners: frozenset[str],
 ) -> bool:
     """多角挖角的幂等像素提交。
 
@@ -762,6 +763,7 @@ def _apply_multi_cut_completion(
             manual_band_px=manual_band_px,
             manual_band_color=manual_band_color,
             directional_scale=directional_scale,
+            preserve_inner_line_corners=preserve_inner_line_corners,
         )
         changed = np.any(trial != base_canvas, axis=2)
         write_mask = changed & ~claimed
@@ -773,6 +775,7 @@ def _apply_multi_cut_completion(
 
 def _patch_lshape_auto_layers(
     canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px, layers_x, layers_y,
+    *, preserve_inner_line: bool = False,
 ) -> bool:
     """自动补边公共出口：实测描边、保留结构层和四角接头过渡。"""
     # 两个面板均按仍保留的原边缘测量描边，避免取均值。
@@ -786,6 +789,16 @@ def _patch_lshape_auto_layers(
     cw, ch = round(min(cut_w_px, sw)), round(min(cut_h_px, sh))
     if min(sh, sw) < 4 or min(cw, ch) < 1:
         return False
+
+    protected_inset = None
+    if preserve_inner_line and len(layers_x) == len(layers_y) == 3:
+        # 检测剖面有平滑/重采样过渡：向外留一条细线宽的保护余量，
+        # 保留原框线的抗锯齿像素。只限制本次补边，不恢复已挖空的像素。
+        protected_inset = (
+            max(0, sum(t for _, t in layers_x[:2]) - layers_x[2][1]),
+            max(0, sum(t for _, t in layers_y[:2]) - layers_y[2][1]),
+        )
+        layers_x, layers_y = layers_x[:2], layers_y[:2]
 
     def measured_stroke(vertical: bool, fallback: int) -> np.ndarray:
         axis_layers = layers_x if vertical else layers_y
@@ -840,7 +853,8 @@ def _patch_lshape_auto_layers(
     x0 = 0 if cut_corner in ('tl', 'bl') else sw - cw
     y0 = 0 if cut_corner in ('tl', 'tr') else sh - ch
     patched = patch_lshape_cut_layers(
-        sub, cut_corner, x0, y0, cw, ch, layers_x, layers_y=layers_y)
+        sub, cut_corner, x0, y0, cw, ch, layers_x, layers_y=layers_y,
+        clip_inner_line=(len(layers_x) == len(layers_y) == 3))
     # 保持绘制器的两层语义；抗锯齿剖面独立回填，不能当成不同层，
     # 否则两方向颜色段数量不同会使色带的起点互相错位。
     normalized = patched
@@ -863,6 +877,11 @@ def _patch_lshape_auto_layers(
         normalized[:ey, xc-ex:xc], original[:ey, xc-ex:xc])
     normalized[ch:ch+ey, sw-ex:] = np.minimum(
         normalized[ch:ch+ey, sw-ex:], original[ch:ch+ey, sw-ex:])
+    if protected_inset is not None:
+        px, py = protected_inset
+        # sub 是本次补边前的画布，包含实际挖空和已有中心洞；保留整个
+        # 原内框区域，既不擦线/切线，也不以细线颜色重新描画或填回洞区。
+        patched[py:sh-py, px:sw-px] = sub[py:sh-py, px:sw-px]
     canvas_arr[oy:bottom, ox:right] = patched
     return True
 
@@ -991,6 +1010,7 @@ def apply_lshape_border_completion(
     # （x 向 scale_x / y 向 scale_y）。综合形状把素材非等比拉伸到整张画布
     # 才需要；默认 False → 几何均值单网格，所有历史路径逐像素不变。
     directional_scale: bool = False,
+    preserve_inner_line_corners: frozenset[str] = frozenset(),
 ) -> bool:
     """
     L 形挖角边框补全：检测素材图边框层 → 计算 cut 区域新边缘的 bbox → 绘制。
@@ -1017,6 +1037,8 @@ def apply_lshape_border_completion(
                        错误地把阶梯间的保留区也包含进来，造成边框画到色带内部）。
         directional_scale: 保留旧调用兼容性。自动矩形 L 切口始终按
                        横纵比例分别缩放层厚，两个面板共用规则。
+        preserve_inner_line_corners: 按输入尺寸判断的小切口角位；只补描边和
+                       色带，不重走第三层内框线。阶梯和手动路径保持原行为。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
@@ -1066,6 +1088,7 @@ def apply_lshape_border_completion(
             manual_band_px=manual_band_px,
             manual_band_color=manual_band_color,
             directional_scale=directional_scale,
+            preserve_inner_line_corners=preserve_inner_line_corners,
         )
 
     # ===== [V13 集成] 手动覆盖路径：任一 manual_* 非 None → 走 V13 路径 =====
@@ -1150,6 +1173,7 @@ def apply_lshape_border_completion(
             staircase_cut_rects=staircase_cut_rects,
             cut_area_mask=cut_area_mask,
             directional_scale=directional_scale,
+            preserve_inner_line=(cut_corner in preserve_inner_line_corners),
         ):
             return True
         logger.info("[LShapeBorder] Profile 路径绘制失败，回退 V13/旧路径")
