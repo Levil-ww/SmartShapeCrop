@@ -74,6 +74,7 @@ def _redraw_outer_border_on_corners(
     bg_color: tuple = (255, 255, 255),
     skip_outside_arc: bool = False,
     only_outermost: bool = False,
+    measured_outer_line: bool = False,
 ) -> None:
     """
     圆角最外轮廓细边的安全补绘（V1.0 风格简化版）。
@@ -102,13 +103,11 @@ def _redraw_outer_border_on_corners(
         if border_layers and border_layers[0][1] is not None
         else 0
     )
-    # Keep a conservative ceiling for unusually broad decorative bands.  The
-    # corner-only redraw is intended for the outer line; allowing a very wide
-    # detected layer to sweep through a deliberate white gap changes the
-    # established border-only behavior.
+    # A confirmed straight-edge line may exceed the historical 20px limit.
+    # Keep the conservative behavior for unconfirmed decorative bands.
     OUTER_BAND = (
         max(1, detected_outer_depth)
-        if 0 < detected_outer_depth <= 20
+        if detected_outer_depth > 0 and (detected_outer_depth <= 20 or measured_outer_line)
         else 5
     )
 
@@ -119,6 +118,7 @@ def _redraw_outer_border_on_corners(
         only_outermost
         and border_layers
         and detected_outer_depth > 20
+        and not measured_outer_line
         and float(np.mean(np.asarray(border_layers[0][0], dtype=np.float64))) < 100.0
         and int(max(border_layers[0][0])) - int(min(border_layers[0][0])) < 20
     ):
@@ -404,12 +404,13 @@ def _estimate_dark_edge_border_depth(
     """Measure a dark outer border from the four straight edges.
 
     Layer detection intentionally smooths short transitions, which can turn
-    an 8–12px black line into a 1–2px layer.  For dark materials the useful
-    invariant is the contiguous dark run on each edge, so measure that run
-    directly and use the most conservative edge width.
+    a black line into a 1–2px layer. Measure its contiguous dark run up to a
+    confirmed light transition; ignore unbounded runs in dark content.
     """
     w, h = img.size
-    arr = np.asarray(img, dtype=np.float64)
+
+    # Only convert the narrow edge sequences, not the full print-size image.
+    arr = np.asarray(img)
     sequences = (
         arr[:max_scan, w // 2, :],
         arr[max(0, h - max_scan):, w // 2, :][::-1],
@@ -419,7 +420,9 @@ def _estimate_dark_edge_border_depth(
     depths: list[int] = []
     for seq in sequences:
         luminance = np.mean(seq, axis=1)
-        dark = luminance < 120.0
+        # This correction is for neutral dark outlines only. Colored
+        # decorative bands retain the existing layer-based rendering.
+        dark = (luminance < 120.0) & (np.ptp(seq.astype(np.int16), axis=1) < 20)
         start_candidates = np.flatnonzero(dark[:4])
         if start_candidates.size == 0:
             continue
@@ -427,7 +430,9 @@ def _estimate_dark_edge_border_depth(
         end = start
         while end < len(dark) and dark[end]:
             end += 1
-        if end - start >= 3:
+        # A run reaching the scan limit is unmeasured dark content, not a
+        # confirmed outline. Require a sustained light transition after it.
+        if end - start >= 3 and end + 3 <= len(dark) and not np.any(dark[end:end + 3]):
             depths.append(end)
     if not depths:
         return None
@@ -454,6 +459,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     w, h = img.size
 
     # 获取边框层信息
+    measured_depth = _estimate_dark_edge_border_depth(img)
     if pre_detected_layers:
         border_layers = pre_detected_layers
     else:
@@ -586,14 +592,14 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
     if outermost_layers:
         outer_bg_for_this = _estimate_outer_background(img)
         outer_bg_mean = float(np.mean(outer_bg_for_this))
-        if outer_bg_mean <= 200:  # 无白色外背景
+        if outer_bg_mean <= 200 or measured_depth is not None:
             # 从图像真实边缘采样中位色（避免 border_layers 均值拉偏颜色）
             img_arr_for_scan = np.array(img)
-            # Skip the first raster row/column: it is frequently a light
-            # anti-aliased transition while the real dark border starts one
-            # pixel inward.
-            edge_offset_y = min(1, h - 1)
-            edge_offset_x = min(1, w - 1)
+            # Sample within the confirmed line, beyond a light raster edge.
+            # Without a measurement, retain the existing one-pixel offset.
+            edge_offset = max(1, measured_depth // 2) if measured_depth else 1
+            edge_offset_y = min(edge_offset, h - 1)
+            edge_offset_x = min(edge_offset, w - 1)
             edge_top = img_arr_for_scan[edge_offset_y, w // 2, :]
             edge_bottom = img_arr_for_scan[h - 1 - edge_offset_y, w // 2, :]
             edge_left = img_arr_for_scan[h // 2, edge_offset_x, :]
@@ -606,7 +612,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             outermost_layers = [(edge_color, old_depth)]
 
             # === 厚度修正：独立判断是否需要调小 ===
-            actual_outer = _estimate_dark_edge_border_depth(img)
+            actual_outer = measured_depth
             if actual_outer is None:
                 actual_outer = _find_first_color_change_from_edge(img, edge_color)
             # A one-pixel transition is commonly the anti-aliased edge of a
@@ -619,7 +625,10 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
                 and actual_outer >= min_reliable_depth
                 and (
                     (actual_outer < raw_depth)
-                    or (actual_outer > raw_depth and actual_outer <= 12)
+                    or (
+                        actual_outer > raw_depth
+                        and (measured_depth is not None or actual_outer <= 12)
+                    )
                 )
             ):
                 raw_depth = actual_outer
@@ -701,6 +710,7 @@ def apply_border_only_corners(img: Image.Image, corners: dict[str, float],
             result, img, corners_px, outermost_layers, validity_mask, bg_color,
             skip_outside_arc=False,  # 补绘所有 border_zone 内像素，确保圆弧处边框连续
             only_outermost=True,
+            measured_outer_line=measured_depth is not None,
         )
 
     # Step C: [Fix 多余边框弧线 v2] 兜底间隙清理
