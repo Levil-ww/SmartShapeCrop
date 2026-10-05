@@ -890,14 +890,12 @@ def _try_v13_with_params(
         "[LShapeBorder] V13 检测命中: edge=%dpx band=%dpx color=%s",
         v13[0], v13[1], v13[2],
     )
-    if (src_material_img is not None or directional_scale) and cut_area_mask is None and not staircase_cut_rects:
-        scale_avg = max(0.1, float(np.sqrt(scale_x * scale_y))) if scale_x > 0 and scale_y > 0 else 1.0
+    if cut_area_mask is None and not staircase_cut_rects:
         layers_x = [(v13[2], max(1, round(v13[0] * scale_x)))]
         layers_y = [(v13[2], max(1, round(v13[0] * scale_y)))]
         if v13[1] > 0:
-            band_width = max(1, round(v13[1] * scale_avg))
-            layers_x.append((v13[3], band_width))
-            layers_y.append((v13[3], band_width))
+            layers_x.append((v13[3], max(1, round(v13[1] * scale_x))))
+            layers_y.append((v13[3], max(1, round(v13[1] * scale_y))))
         return _patch_lshape_auto_layers(
             canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px, layers_x, layers_y)
     return _try_apply_v13(
@@ -960,10 +958,13 @@ def _apply_legacy_border_path(
             cut_area_mask=cut_area_mask,
         )
 
-    return _draw_lshape_layers_on_retained_side(
-        canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px,
-        border_layers_canvas,
-    )
+    # 自动兜底也使用横纵换算，不能在检测路径切换后恢复平均层厚。
+    layers_x = [(color, max(1, round(thickness * scale_x)))
+                for color, thickness in border_layers_src]
+    layers_y = [(color, max(1, round(thickness * scale_y)))
+                for color, thickness in border_layers_src]
+    return _patch_lshape_auto_layers(
+        canvas_arr, outer_rect, cut_corner, cut_w_px, cut_h_px, layers_x, layers_y)
 
 
 def apply_lshape_border_completion(
@@ -1014,10 +1015,8 @@ def apply_lshape_border_completion(
         cut_area_mask: 实际 cut 区域的布尔掩膜 (H, W)，与 canvas_arr 同尺寸。
                        优先级高于 staircase_cut_rects（对角线阶梯时矩形并集会
                        错误地把阶梯间的保留区也包含进来，造成边框画到色带内部）。
-        directional_scale: [Fix 2026-09-28] True → Profile 路径按方向分别缩放
-                       层厚（x 向 scale_x、y 向 scale_y），用于素材被非等比
-                       拉伸到整张画布的综合形状模式；False（默认）保持
-                       几何均值单网格的历史行为。
+        directional_scale: 保留旧调用兼容性。自动矩形 L 切口始终按
+                       横纵比例分别缩放层厚，两个面板共用规则。
 
     Returns:
         bool: 是否成功补全（素材无边框时返回 False，不影响后续渲染）
@@ -1042,6 +1041,16 @@ def apply_lshape_border_completion(
     [H-04] 路由策略已拆分为 _detect_lshape_border_auto（检测选路）与
     _try_apply_v13（V13 绘制尝试），主函数保持原三级回退顺序不变。
     """
+    # 与素材铺图的方向校正一致。只有自动补边换算源像素层厚，
+    # 手动覆盖的像素值保持原有语义。
+    if (src_material_img is not None
+            and all(value is None for value in
+                    (manual_edge_px, manual_band_px, manual_band_color))):
+        sw, sh = src_material_img.size
+        h, w = canvas_arr.shape[:2]
+        if sw > 0 and sh > 0 and (sw > sh) != (w > h):
+            src_material_img = src_material_img.transpose(Image.Transpose.ROTATE_270)
+            scale_x, scale_y = scale_x * sw / sh, scale_y * sh / sw
     if cuts:
         return _apply_multi_cut_completion(
             canvas_arr=canvas_arr,

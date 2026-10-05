@@ -946,11 +946,8 @@ def _apply_profile_path(*,
     与 _apply_v13_path 相同的子图/贴角机制；任何几何异常返回 False，
     由调用方回退到 V13 / 旧路径。
 
-    directional_scale: [Fix 2026-09-28] True 时按方向分别缩放层厚
-    （x 向用 scale_x、y 向用 scale_y）。综合形状把素材非等比拉伸到
-    整张画布（186×89cm：sx=2.33 / sy=1.59），只有分向缩放才能让补边
-    与素材自身的左右/上下边距带对齐。False（默认）→ 单网格几何均值，
-    与历史行为逐像素一致。
+    directional_scale 保留旧调用兼容性。自动矩形 L 切口统一按方向
+    分别缩放层厚；阶梯轮廓仍使用各向同性距离变换。
     """
     if not layers_src:
         return False
@@ -965,11 +962,7 @@ def _apply_profile_path(*,
             and max(layers_src[1][0]) >= 235
             and max(layers_src[1][0]) - min(layers_src[1][0]) <= _LIGHT_FIELD_MAX_CHROMA):
         layers_to_draw = layers_src[:1]
-    # 几何平均（sqrt(sx*sy)）对「adapt_pool_material 旋转校正」稳健：
-    # 旋转后 scale_x/scale_y 互换但乘积不变，几何均值恒等于真实缩放
-    # （stretch 填满模式）；普通情况 sx≈sy，几何均值 ≈ 算术均值。
-    # 修复 2026-09-08：旧 (sx+sy)/2 在 ROTATE_270 素材下误差 100%+
-    # （如庄园秘境 226px vs 素材 118px），几何均值偏差 < 1%。
+    # 阶梯轮廓的距离变换使用几何均值；矩形切口使用下方横纵网格。
     if scale_x > 0 and scale_y > 0:
         scale_avg = float(np.sqrt(scale_x * scale_y))
     else:
@@ -999,12 +992,12 @@ def _apply_profile_path(*,
 
     # [Fix 2026-09-28] 非等比画布：额外准备 y 向网格（同色、按 scale_y 缩放）。
     # union 抽屉（staircase）仍用 layers_canvas（各向同性距离变换），不受影响。
-    layers_x = layers_y = None
-    if directional_scale:
-        _sx = scale_x if scale_x > 0 else scale_avg
-        _sy = scale_y if scale_y > 0 else scale_avg
-        layers_x = _to_canvas(_sx)
-        layers_y = _to_canvas(_sy)
+    # 两个面板的自动补边统一按素材到画布的实际横/纵比例换算。
+    # directional_scale 保留调用兼容性，不再让面板选择不同的层厚规则。
+    _sx = scale_x if scale_x > 0 else scale_avg
+    _sy = scale_y if scale_y > 0 else scale_avg
+    layers_x = _to_canvas(_sx)
+    layers_y = _to_canvas(_sy)
 
     if cut_area_mask is not None or staircase_cut_rects:
         from .lshape_border import _draw_staircase_union_layers

@@ -1247,7 +1247,12 @@ def _apply_unified_black_border(canvas_arr, design, border_mask, is_pool_with_ma
         #   会在 Step 3.6 末尾补画统一黑框兜底，保证切口至少有一条边框。
         _skip_unified = design.mode == 'rect_lshape' and is_pool_with_material
         if not _skip_unified:
-            canvas_arr[border_mask] = BLACK_RGB
+            if design.mode == COMPOSITE_MODE and is_pool_with_material:
+                # 中心洞继续使用统一描边；L 切口交给素材补边，避免粗框
+                # 在细描边接头处留下超出实测宽度的黑色像素。
+                canvas_arr[border_mask & _get_inner_pixel_mask(design)] = BLACK_RGB
+            else:
+                canvas_arr[border_mask] = BLACK_RGB
 
 def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with_material, _lshape_cut_bg_color, border_mask, canvas, BLACK_RGB, lshape_cut_area_mask=None):
     """[C-01] L形挖角处素材边框补全（含三层失败兜底，原 L1170-1269）。"""
@@ -1373,10 +1378,7 @@ def _lshape_border_completion(canvas_arr, design, W, H, cached_img, is_pool_with
                 manual_band_color=getattr(design, 'lshape_manual_band_color', None),
                 staircase_cut_rects=staircase_cut_rects or None,
                 cut_area_mask=lshape_cut_area_mask,
-                # [Fix 2026-09-28 非等比缩放] 综合形状把素材非等比拉伸到
-                # 整张画布（sx≠sy），Profile 补边必须按方向分开缩放层厚
-                # 才能与素材自身的左右/上下边距带对齐。其他模式保持
-                # 几何均值单网格的历史行为（逐像素不变）。
+                # 保留旧调用参数；自动矩形补边已统一按横纵比例缩放。
                 directional_scale=(design.mode == COMPOSITE_MODE),
             )
             # [Fix N-P1-01] 补全返回值接入真值（仅日志记录，不改变渲染逻辑）
