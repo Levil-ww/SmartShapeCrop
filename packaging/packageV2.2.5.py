@@ -4,11 +4,11 @@ packageV2.2.5.py
 SmartShapeCrop V2.2.5 打包脚本（Python 版）
 
 功能：
-    将 main.py 打包为 Windows 桌面可执行文件（单文件模式，双击即可运行）：
+    将 main.py 打包为 Windows 桌面可执行文件（默认目录模式，双击 exe 即可运行）：
       - exe 文件名：由 core.config.APP_VERSION 派生（当前为 智能裁剪设计器V2.2.5）
       - exe 图标：images/SmartShapeCrop.ico
       - 运行时窗口图标：images/logo.png（由 main.py 的 set_app_icon 加载）
-      - 默认内嵌本机 Tesseract-OCR 到 exe 内部（用户免安装即可使用草图 OCR）
+      - 默认随包附带本机 Tesseract-OCR（用户免安装即可使用草图 OCR）
 
 版本来源（单一事实来源）：
     exe 名与打包横幅一律取自 core/config.py 的 APP_VERSION / APP_DISPLAY_NAME，
@@ -72,8 +72,9 @@ V2.1.2 基础功能（继承）：
       - 圆角裁剪 border/mask 独立模块：image_cropper_border / image_cropper_mask
 
 使用方式：
-    python packageV2.2.5.py                    # 单文件模式（默认，生成单个 exe，双击即可运行）
-    python packageV2.2.5.py --onedir           # 目录模式（更稳定，若 onefile 有问题可用）
+    python packageV2.2.5.py                    # 目录模式（默认，避免每次启动解压依赖）
+    python packageV2.2.5.py --onedir           # 显式指定目录模式
+    python packageV2.2.5.py --onefile          # 单文件模式（启动时解压，兼容旧分发方式）
     python packageV2.2.5.py --debug            # 调试模式（显示控制台窗口，便于排查错误）
     python packageV2.2.5.py --clean            # 清理旧构建后打包
     python packageV2.2.5.py --no-tesseract     # 不内嵌 Tesseract（默认已内嵌；OCR 不可用时草图识别将失败，需自装 Tesseract）
@@ -117,6 +118,9 @@ def _load_version_constants() -> tuple:
 
 
 APP_VERSION, APP_NAME = _load_version_constants()
+# Tesseract 的 Windows 文件系统接口不兼容本环境中的中文绝对目录。
+# 分发文件夹保持 ASCII，最终 EXE 文件名仍沿用中文显示名。
+DIST_FOLDER_NAME = f"SmartShapeCropV{APP_VERSION}"
 ICON_FILE = PROJECT_ROOT / "images" / "SmartShapeCrop.ico"
 LOGO_FILE = PROJECT_ROOT / "images" / "logo.png"
 DIST_DIR = PROJECT_ROOT / "dist"
@@ -246,7 +250,7 @@ def _fail(msg: str) -> None:
 
 def parse_args() -> dict:
     args = {
-        "mode": "onefile",          # onefile | onedir（默认单文件）
+        "mode": "onedir",           # onefile | onedir（默认目录模式，减少启动解包）
         "debug": False,
         "clean": False,
         "embed_tesseract": True,    # 默认内嵌 Tesseract 到 exe，用户机器免安装即可用 OCR
@@ -350,9 +354,10 @@ def _build_cmd(mode: str, debug: bool, tesseract_src_dir: Path | None = None) ->
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--name", APP_NAME,
+        "--name", APP_NAME if mode == "onefile" else DIST_FOLDER_NAME,
         "--icon", str(ICON_FILE),
         "--add-data", f"{str(LOGO_FILE)};images",
+        "--specpath", str(BUILD_DIR / "specs"),
     ]
 
     # 内嵌 Tesseract（onefile 运行时解压到 _MEIPASS/tesseract，由 PathResolver 自动发现）
@@ -398,7 +403,21 @@ def _run_build(mode: str, debug: bool, tesseract_src_dir: Path | None = None) ->
     print("      注意：首次打包较慢（约 2-5 分钟），请耐心等待...\n")
 
     result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+    if result.returncode == 0 and mode == "onedir":
+        _finalize_directory_exe()
     return result.returncode == 0
+
+
+def _finalize_directory_exe() -> None:
+    """保留 ASCII 资源目录，仅将生成的 EXE 改为中文显示名。"""
+    folder = (DIST_DIR / DIST_FOLDER_NAME).resolve()
+    if folder.parent != DIST_DIR.resolve() or not folder.is_relative_to(PROJECT_ROOT.resolve()):
+        _fail("目录版输出路径不在预期 dist 目录中")
+    source = folder / f"{DIST_FOLDER_NAME}.exe"
+    target = folder / f"{APP_NAME}.exe"
+    if not source.is_file() or target.exists():
+        _fail("目录版 EXE 缺失或目标已存在，停止重命名以保护已有文件")
+    source.rename(target)
 
 
 def build_exe(mode: str, debug: bool, embed_tesseract: bool) -> tuple[bool, str]:
@@ -414,7 +433,7 @@ def build_exe(mode: str, debug: bool, embed_tesseract: bool) -> tuple[bool, str]
     print(f"      PyInstaller : {'.'.join(str(v) for v in pyinst_ver) if pyinst_ver else '待安装'}")
     print(f"      exe 名称: {APP_NAME}")
     print(f"      exe 图标: {ICON_FILE.name}")
-    print(f"      打包模式: {'单文件 (onefile, 默认)' if mode == 'onefile' else '目录 (onedir)'}")
+    print(f"      打包模式: {'单文件 (onefile)' if mode == 'onefile' else '目录 (onedir, 默认)'}")
     print(f"      调试模式: {'是（显示控制台）' if debug else '否（无控制台）'}")
 
     tess_src_dir: Path | None = None
@@ -509,7 +528,7 @@ def show_result(mode: str, tesseract_embedded: bool, tess_info: str) -> None:
     if mode == "onefile":
         exe_path = DIST_DIR / f"{APP_NAME}.exe"
     else:
-        exe_path = DIST_DIR / APP_NAME / f"{APP_NAME}.exe"
+        exe_path = DIST_DIR / DIST_FOLDER_NAME / f"{APP_NAME}.exe"
 
     print("\n" + "=" * 60)
     print("  打包成功！")
@@ -522,7 +541,7 @@ def show_result(mode: str, tesseract_embedded: bool, tess_info: str) -> None:
     if mode == "onefile":
         print("\n  使用说明（单文件模式）:")
         print(f"    直接双击 {APP_NAME}.exe 即可运行，无需其他文件。")
-        print("    首次启动需要解压临时文件（到系统临时目录），可能需要 5-15 秒。")
+        print("    每次启动均需解压依赖到系统临时目录，耗时取决于用户机器。")
         print()
         print("    重要提示：")
         print("      1. 拷贝到其他机器之前，先在本机双击测试能否正常运行")
@@ -534,13 +553,15 @@ def show_result(mode: str, tesseract_embedded: bool, tess_info: str) -> None:
             print("      3. [OCR 未内嵌] 草图识别需 Tesseract-OCR，未内嵌时识别将失败（无几何估算降级路径）；")
             print("         可让用户自行安装，或本机装好 Tesseract 后重新打包")
     else:
-        folder = DIST_DIR / APP_NAME
+        folder = DIST_DIR / DIST_FOLDER_NAME
         print(f"\n  使用说明（目录模式）:")
         print(f"    1. 保持整个文件夹 ({folder.name}) 完整，不要单独移动 exe")
         print(f"    2. 双击文件夹内的 {APP_NAME}.exe 即可运行")
         print(f"    3. 如需分发：右键整个文件夹 → 发送到 → 压缩(zipped)文件夹")
         if tesseract_embedded:
-            print("      4. [OCR 已内嵌] Tesseract 已打包进 exe 内部，文件夹分发即可使用草图 OCR")
+            print("    4. [OCR 已附带] Tesseract 位于程序依赖目录，完整文件夹分发即可使用草图 OCR")
+        print("    5. 可为文件夹内的 exe 创建桌面快捷方式；启动不再解压整套依赖")
+        print("    6. OCR 要求完整安装路径不含中文，例如 C:\\Apps\\" + DIST_FOLDER_NAME)
     print()
 
 

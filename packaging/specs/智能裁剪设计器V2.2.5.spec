@@ -61,9 +61,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='智能裁剪设计器V2.2.5',
     debug=False,
     bootloader_ignore_signals=False,
@@ -78,4 +77,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['F:/SmartShapeCrop/images/SmartShapeCrop.ico'],
+)
+
+# 与当前打包入口保持一致：依赖随目录分发，启动无需每次解包。
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='SmartShapeCropV2.2.5',
 )
