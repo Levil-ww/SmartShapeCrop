@@ -1,8 +1,8 @@
-# SmartShapeCrop — 智能形状裁剪设计器 V2.2.3
+# SmartShapeCrop — 智能形状裁剪设计器 V2.2.5
 
-> 面向印刷行业定制尺寸成品图的桌面设计工具：等比缩放 + 圆角裁剪 + 多层边框处理 + 水池设计器草图 OCR 智能识别 + 多洞嵌套 + 椭圆挖洞 + L 形挖角（单角 / 多角并行 / 单边阶梯）独立设计 + L 形挖角素材边框自动补全。
+> 面向印刷行业定制尺寸成品图的桌面设计工具：等比缩放 + 圆角裁剪 + 多层边框处理 + 水池设计器草图 OCR 智能识别 + 多洞嵌套 + 椭圆挖洞 + L 形挖角（单角 / 多角并行 / 单边阶梯）独立设计 + L 形挖角素材边框自动补全 + 综合形状（水池 + L 形挖角复合设计）。
 
-**最后验证**：2026-09-24（V2.2.3 单边阶梯 L 形、P0 批次正确性/安全修复、P1 批次代码卫生与 `APP_VERSION` 单一来源、P2-7 junction 越界加固，并**完成 V2.2.3 出包**后复验）
+**最后验证**：2026-10-06（V2.2.5 综合形状功能、控件抽离与组合、统一参数协议重构、L 形边框与阶梯修复、导出掩膜优化、关窗线程修复，并**完成 V2.2.5 出包**后复验）
 **更新触发**：目录结构变更、模块迁移、依赖变更、测试基线变更、打包入口变更时须同步更新本文件
 **版本唯一来源**：`core/config.py` 的 `APP_VERSION`（由打包脚本 / 启动日志头 / 关于框三处引用，发版只改这一行）
 
@@ -10,11 +10,12 @@
 
 ## 项目简介
 
-SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具（PyQt5），采用**参数化设计 + 图像智能识别**双模式，核心解决三大需求：
+SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具（PyQt5），采用**参数化设计 + 图像智能识别**双模式，核心解决四大需求：
 
 1. **圆角裁剪工具**：将已有成品图（JPG/PSD）按目标尺寸等比缩放，并自动/手动对四角施加圆角裁剪。支持从文件名自动解析尺寸与圆角参数、模板库匹配源图、多层边框自动检测与圆角重绘。
 2. **水池设计器**：参数化生成矩形嵌套、椭圆挖孔等设计稿，支持**手绘草图上传自动识别尺寸**（7 步串行流程）、多层边框、素材填充、边框文字环绕，导出印刷级 JPG。支持**多洞嵌套挖洞**与逐洞独立边距，支持内挖**空白（挖去不留白）**与**素材填充**两种挖空方式。
 3. **L 形挖角设计器**（独立面板）：承载 L 形挖角的参数设置、草图上传与生成。支持草图自动识别挖角方向（tl/tr/bl/br）、挖角尺寸、外框完整尺寸，含 OCR 降级路径；支持**多角同时挖角**（最多 4 角，`l_cuts_cm` 列表）；新增**素材边框自动补全**——对自带边框的池素材图，在 L 形挖角产生的新边缘上按素材原始边框层次重绘，使成品呈完整 L 形外框。
+4. **综合形状设计器**（V2.2.4 新增，独立面板）：承载水池 + L 形挖角的复合设计——在同一画布上同时实现矩形嵌套/椭圆挖孔与 L 形挖角，支持草图自动识别复合参数。与水池/L 形面板共享渲染管线与边框补全逻辑，独立历史记录源。
 
 ### 核心特性
 
@@ -39,11 +40,14 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具�
 - **G1 结构一致性闸口**（V2.2.2，不变量常驻）：`notches_detected != notches_consumed` 即拦截并在 message 中告警，不随识别能力提升而移除
 - **实时边余量与低置信度警告**（V2.2.2）：面板实时显示四边剩余余量，输入超出外框时红字提示；参数校验失败给出逐边可读提示
 - **L 形挖角素材边框自动补全**：沿 L 形两条新切边按素材原始边框层次重绘，内凹角用 `max(dx, dy)` 几何分层保证边框沿 L 形轮廓连续
+- **综合形状复合设计**（V2.2.4）：水池 + L 形挖角在同一画布上复合，独立面板（`gui/composite_panel.py`）、独立草图识别（`services/sketch_parser/composite_sketch_parser.py`）、独立 Worker 与退役链路
+- **控件抽离与组合**（V2.2.5）：L 形面板的角切割控件（`CornerCutControl`）、目标文件控件（`TargetFileWidget`）、草图上传控件（`SketchUploadWidget`）、设计操作控件（`DesignActionControl`）、L 形参数控件（`LShapeParameterControl`）抽离为独立可组合 QWidget，综合面板与 L 形面板共享
+- **统一参数协议与 Builder 分派**（V2.2.5）：`workers/design_builders.py` 提取 `apply_pool_geometry` / `apply_lshape_geometry` / `build_multihole_geometry` / `apply_composite_geometry` 四个纯构建函数，`DesignBuilder` Protocol + `BUILDERS` 分发表，Worker 净减约 471 行
 - **三级边框路由**：Profile 路径 → V13 路径 → 旧 detect_pool_material_borders 路径，任一环节失败自动落到下一环节，向后兼容
 - **模板库缓存预热**：目录 mtime 持久化到磁盘缓存，未变化时快速跳过（2ms）；主线程不阻塞预热
 - **参数修改即时响应**：尺寸/边距等常用参数改为显式按钮驱动即时生成（`一键生成`/`预览`），避免实时 valueChanged 回调的堆积阻塞（防抖链已整体移除）
 - **预览/导出质量区分**：预览用 BILINEAR（快 3-5×），导出用 LANCZOS
-- **历史记录功能**：目标文件名 3 天历史记录，三个面板物理隔离独立存储
+- **历史记录功能**：目标文件名 3 天历史记录，四个面板物理隔离独立存储（圆角裁剪 / 水池设计器 / L 形挖角 / 综合形状）
 
 ---
 
@@ -83,20 +87,20 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具�
 
 **GUI 面板解耦补充**（V2.2.1 起）：`gui/lshape_panel_bridge.py` 把 `LShapePanel` 对外暴露的 13 个细粒度信号（sketch_* / target_* / lshape_* 等）合并翻译为单一 `lshape_action_requested(action, params)` 粗粒度信号，`PropertyPanel` 只连接这一个信号再按 action 分派；`LShapePanel` 本身零改动，桥接为纯加法、行为等价。
 
-### 代码规模（2026-09-24 实测）
+### 代码规模（2026-10-06 实测）
 
 | 层 | 文件数 | 行数 |
 |---|---|---|
-| `core/` | 20 py | 10,107 |
-| `services/` | 16 py | 10,073 |
-| `gui/` | 12 py | 6,631 |
-| `workers/` | 4 py | 1,250 |
-| `models/` | 2 py | 432 |
-| `tests/` | 57 py | 13,944 |
-| `scripts/` | 38 py（另有 `diagnose/_archive/` 73 py 未计入本表） | 3,912 |
-| `packaging/` | 2 py | 1,102 |
-| 入口（`main.py` / `process_image.py` / `conftest.py`） | 3 py | 647 |
-| **合计** | **154 py** | **≈ 48,098** |
+| `core/` | 23 py | 11,579 |
+| `services/` | 17 py | 10,598 |
+| `gui/` | 18 py | 7,903 |
+| `workers/` | 5 py | 1,129 |
+| `models/` | 2 py | 448 |
+| `tests/` | 99 py | 20,950 |
+| `scripts/` | 44 py（另有 `diagnose/_archive/` 73 py 未计入本表） | 4,710 |
+| `packaging/` | 3 py | 1,692 |
+| 入口（`main.py` / `process_image.py` / `conftest.py`） | 3 py | 667 |
+| **合计** | **214 py** | **≈ 59,676** |
 
 > 口径：`rglob('*.py')` + `read_text().count('\n')`，排除 `.venv` / `_archive`（仓库根） / `.workbuddy` / `.dumate` / `__pycache__` / `build` / `dist`。
 
@@ -106,14 +110,14 @@ SmartShapeCrop 是一款面向印刷/定制设计行业的 Windows 桌面工具�
 
 ```
 SmartShapeCrop/
-├── main.py                         # 应用入口（PyQt5 主窗口 + 3 标签页 + 模板预设 + 全局异常 crash.log）
+├── main.py                         # 应用入口（PyQt5 主窗口 + 4 标签页 + 模板预设 + 全局异常 crash.log）
 ├── process_image.py                # 命令行批处理脚本（等比缩放 + 圆角，示例/批处理）
 ├── conftest.py                     # pytest 全局 fixture + 防御性收集忽略
 ├── requirements.txt                # Python 依赖（带版本约束）
 ├── pytest.ini                      # 测试配置（PytestReturnNotNoneWarning 升为 ERROR）
 ├── crash.log                       # 全局 excepthook 崩溃日志（本地生成，已被 .gitignore 忽略）
 │
-├── core/                           # 核心业务逻辑层（20 py）
+├── core/                           # 核心业务逻辑层（23 py）
 │   ├── __init__.py                 #   公共 API 总入口（聚合子包对外名称 + 触发 compat 别名注册）
 │   ├── config.py                   #   统一配置管理（阈值、单位换算、切割损耗、PathResolver 跨平台路径）
 │   ├── geometry.py                 #   参数化形状定义 + Mask 生成 + 多角并集 mask + compute_inner_corner_radii
@@ -123,8 +127,11 @@ SmartShapeCrop/
 │   ├── image_cropper_mask.py       #   裁剪 mask 逻辑（从 image_cropper 拆分）
 │   ├── lshape_border.py            #   L 形挖角素材边框补全（apply_lshape_border_completion 入口 + 三级路由）
 │   ├── lshape_border_route.py      #   L 形挖角「描边+色带+细边框」Profile 路由
+│   ├── lshape_staircase_border.py  #   阶梯 L 形挖角边框补全（V2.2.5）
+│   ├── design_build_geometry.py    #   设计构建几何纯函数（V2.2.5，从 workers 提取）
+│   ├── multihole_layout.py         #   多洞空间布局模块（V2.2.5，从 workers 提取）
 │   ├── log_setup.py                #   统一日志配置（控制台 + 滚动文件，默认 INFO 级别）
-│   ├── app_settings.py             #   历史记录存储层（QSettings/JSON 双通道 + 三源物理隔离）
+│   ├── app_settings.py             #   历史记录存储层（QSettings/JSON 双通道 + 四源物理隔离）
 │   ├── artifact_cleanup.py         #   启动时调试产物自动清理（F19）
 │   │
 │   ├── compat/                     #   向后兼容层（sys.modules 别名注册）
@@ -140,7 +147,7 @@ SmartShapeCrop/
 │   ├── pool_designer/              #   [兼容 shim] → services.sketch_parser（仅 __init__.py）
 │   └── psd/                        #   [兼容 shim] → services.psd（仅 __init__.py）
 │
-├── services/                       # 服务层（外部能力封装，不含 UI 引用；15 py）
+├── services/                       # 服务层（外部能力封装，不含 UI 引用；17 py）
 │   ├── __init__.py                 #   包入口（parser / sketch_parser / psd 三个子包）
 │   │
 │   ├── parser/                     #   文件名解析 + 模板库匹配
@@ -148,8 +155,9 @@ SmartShapeCrop/
 │   │   ├── name_parser.py          #     文件名解析（尺寸/方向/圆角/产品名，6 层容错）
 │   │   └── template_matcher.py     #     模板库扫描与匹配引擎 v2（mtime 缓存 + 信号槽预热 + pickle 缓存 + 倒排索引）
 │   │
-│   ├── sketch_parser/              #   草图尺寸解析（单洞 / 多洞 / L 形）
-│   │   ├── __init__.py             #     子包入口（导出单洞/多洞/L 形解析符号）
+│   ├── sketch_parser/              #   草图尺寸解析（单洞 / 多洞 / L 形 / 综合）
+│   │   ├── __init__.py             #     子包入口（导出单洞/多洞/L 形/综合解析符号）
+│   │   ├── _sketch_init.py         #     草图解析器初始化（V2.2.5）
 │   │   ├── sketch_parser.py        #     单洞草图解析主编排层（7 步串行 + 全局 OCR + 位置映射 + 稳定性投票）
 │   │   ├── sketch_parser_base.py   #     草图解析基类与公共工具
 │   │   ├── sketch_parser_cache.py  #     OCR 结果缓存（避免重复调用 Tesseract）
@@ -157,28 +165,36 @@ SmartShapeCrop/
 │   │   ├── sketch_parser_numbers.py#     数字 Token 合并与小数修复
 │   │   ├── sketch_parser_vision.py #     矩形检测 / 区域划分 / 方向标签扫描
 │   │   ├── sketch_parser_multihole.py #  多洞识别（Phase A-E 消包络盒 + OCR 加权众数投票）
-│   │   └── lshape_sketch_parser.py #     L 形草图识别（两矩形减法 + 逐角 OCR 归属 + G1 不变量；V3 算法）
+│   │   ├── lshape_sketch_parser.py #     L 形草图识别（两矩形减法 + 逐角 OCR 归属 + G1 不变量；V3 算法）
+│   │   └── composite_sketch_parser.py #  综合形状草图识别（V2.2.4）
 │   │
 │   └── psd/                        #   PSD 分层文件处理
 │       ├── __init__.py             #     子包入口（导出 PsdLayer / PsdLoadError / 加载与导出函数）
 │       └── loader.py               #     PSD 读取/裁剪/合成
 │
-├── workers/                        # 线程调度层（所有 QThread Worker 集中管理；4 py）
+├── workers/                        # 线程调度层（所有 QThread Worker 集中管理；5 py）
 │   ├── __init__.py                 #   包入口（声明三类 Worker 职责）
 │   ├── canvas_workers.py           #   画布渲染 Worker（PreviewRenderWorker + ExportSaveWorker）
 │   ├── cropper_workers.py          #   裁剪 Worker（CropWorker + AutoMatchWorker）
+│   ├── design_builders.py          #   设计构建器（V2.2.5，DesignBuilder Protocol + BUILDERS 分发表）
 │   └── property_panel_workers.py   #   水池设计 Worker（PoolRenderWorker / _SketchParseWorker / _WarmupScanWorker / _LShapeParseWorker 等）
 │
 ├── models/                         # 数据模型层（纯数据结构，不含 UI 和业务逻辑；2 py）
 │   ├── __init__.py                 #   包入口
 │   └── design_model.py             #   DesignModel：CropDesign 薄包装器（apply_ui_snapshot / 克隆快照 / 属性读写）
 │
-├── gui/                            # PyQt5 界面层（12 py）
-│   ├── __init__.py                 #   包入口（导出 PreviewCanvas / PropertyPanel / CropperPanel / LShapePanel）
+├── gui/                            # PyQt5 界面层（18 py）
+│   ├── __init__.py                 #   包入口（导出 PreviewCanvas / PropertyPanel / CropperPanel / LShapePanel / CompositePanel）
 │   ├── canvas_widget.py            #   预览画布（渲染线程 + LOD 降采样 + ExportSaveWorker 后台导出）
 │   ├── cropper_panel.py            #   圆角裁剪面板（上传/识别/预览/导出 + 历史记录 TARGET_SRC_CROPPER）
 │   ├── lshape_panel.py             #   L 形挖角独立设计面板（草图上传 + 多角参数 + 一键生成 + TARGET_SRC_LSHAPE）
 │   ├── lshape_panel_bridge.py      #   [H-13] LShapePanel 信号桥接适配器（13 细粒度信号 → 1 action 信号）
+│   ├── composite_panel.py          #   综合形状面板（V2.2.4，水池 + L 形复合设计 + TARGET_SRC_COMPOSITE）
+│   ├── corner_cut_control.py       #   角切割控件（V2.2.5，从 LShapePanel 抽离，L 形 + 综合面板共享）
+│   ├── design_action_control.py    #   设计操作控件（V2.2.5，生成/预览按钮）
+│   ├── lshape_parameter_control.py #   L 形参数控件（V2.2.5，标准 L 形 + 多角 + 阶梯参数区）
+│   ├── sketch_upload_widget.py     #   草图上传控件（V2.2.5，从面板抽离）
+│   ├── target_file_widget.py       #   目标文件控件（V2.2.5，从面板抽离）
 │   ├── property_panel.py           #   水池设计器属性面板主入口（Facade，聚合子模块 + TARGET_SRC_POOL）
 │   ├── property_panel_widgets.py   #   自定义控件（ColorButton / _SketchDropLabel 草图拖拽等）
 │   ├── property_panel_workers.py   #   [兼容 shim] → workers.property_panel_workers
@@ -187,50 +203,68 @@ SmartShapeCrop/
 │   ├── property_panel_layers.py    #   多层边框编辑 UI（_LayersMixin）
 │   └── property_panel_poolbox.py   #   多洞参数面板 + 空挖方式 + 草图识别与边距回填调度（_PoolBoxMixin）
 │
-├── tests/                          # 单元/集成测试（pytest；2026-09-24 实测 818 passed / 0 failed）
+├── tests/                          # 单元/集成测试（pytest；2026-10-06 实测 1145 passed / 0 failed）
 │   ├── conftest.py                 #   全局 fixture + 防御性收集忽略
 │   ├── __init__.py
 │   ├── run_test.bat
 │   ├── test_phase0_multihole.py    #   多洞 Phase 0 回归
-│   ├── core/                       #   核心模块测试（22 py）
+│   ├── core/                       #   核心模块测试（39 py）
 │   │   ├── test_rounded_corner.py
 │   │   ├── test_lshape_render.py / test_lshape_rendering.py
 │   │   ├── test_lshape_sketch_parser.py
 │   │   ├── test_lshape_border.py / test_lshape_border_route.py
 │   │   ├── test_lshape_cutrect.py / test_lshape_cut_rect_anchor_limit.py  # V2.2.3：阶梯 L 形 + 每角上限
+│   │   ├── test_lshape_cream_content.py / test_lshape_panel_size_consistency.py  # V2.2.5
+│   │   ├── test_staircase_material_border.py  # V2.2.5：阶梯素材边框
 │   │   ├── test_g1_invariant.py            # G1 结构一致性不变量
 │   │   ├── test_multi_corner_detection.py  # 多角几何检测
 │   │   ├── test_multi_corner_ocr.py        # 多角 OCR 逐角归属
+│   │   ├── test_composite_geometry.py / test_composite_hole_corners.py  # V2.2.4：综合形状几何
+│   │   ├── test_composite_render_pipeline.py  # V2.2.4：综合形状渲染管线
+│   │   ├── test_multihole_geometry.py / test_multihole_layout.py / test_multihole_ui_override.py  # V2.2.5
+│   │   ├── test_apply_composite_geometry.py / test_apply_lshape_geometry.py / test_apply_pool_geometry.py  # V2.2.5
+│   │   ├── test_export_fill_equivalence.py / test_pool_fill_pattern_spill.py / test_pool_material_rounded_corners.py  # V2.2.5
 │   │   ├── test_stale_decor_guard_behavior.py       # V2.2.3：Stale-Decor 守卫行为锁
 │   │   ├── test_debug_residue_removed.py            # V2.2.3：调试残留防回归（AST 断言）
 │   │   ├── test_config_tesseract_probe_hardened.py  # V2.2.3：Tesseract 探测加固
 │   │   ├── test_disk_cache_unpickler_hardening.py   # V2.2.3：受限 Unpickler
 │   │   ├── test_app_version_single_source.py        # V2.2.3：APP_VERSION 单一来源
+│   │   ├── test_packaging_directory_mode.py         # V2.2.5：打包目录模式
 │   │   ├── test_image_cropper.py / test_image_ops_p2.py
 │   │   ├── test_screenshot_lshape.py
 │   │   ├── test_name_parser.py / test_template_matcher.py
 │   │   └── test_crop_design_validate.py
-│   ├── integration/                #   集成测试（10 py：F1-F19 修复验证 / 水池-L 形流程 / LOD 一致性）
-│   │   └── test_lod_geometry_consistency.py  # V2.2.3：LOD vs 全分辨率掩膜 IoU（P0-2 防复发）
+│   ├── integration/                #   集成测试（20 py）
+│   │   ├── test_lod_geometry_consistency.py  # V2.2.3：LOD vs 全分辨率掩膜 IoU（P0-2 防复发）
+│   │   ├── test_composite_end_to_end.py / test_composite_real_material_samples.py  # V2.2.4：综合形状端到端
+│   │   ├── test_composite_worker_p1.py / test_worker_snapshot_construction.py  # V2.2.4/2.2.5：Worker 侧
+│   │   ├── test_design_builders_contract.py / test_design_builders_equivalence.py / test_builder_integration.py  # V2.2.5：Builder 契约
+│   │   ├── test_adapter_boundary.py / test_validation_chain_contract.py  # V2.2.5：Adapter 边界
+│   │   └── test_legacy_mode_pixel_goldens.py  # V2.2.4：旧模式像素黄金基线
 │   ├── sketch/                     #   草图识别测试（4 py：多洞 / 特征化 / 输入校验 / 逻辑函数）
-│   ├── sketch_parser/              #   草图解析测试（2 py：阶梯识别 / 多洞边界）
-│   ├── models/                     #   数据模型测试（1 py：design_model）
-│   ├── border/                     #   边框测试（3 py：边框修复 / 复杂花纹安全 / 用户案例）
-│   └── gui/                        #   GUI 层测试（11 py，离屏运行）
+│   ├── sketch_parser/              #   草图解析测试（4 py：阶梯识别 / 多洞边界 / 综合分派 / 综合 OCR 角色）
+│   ├── models/                     #   数据模型测试（2 py：design_model / composite_design_model）
+│   ├── border/                     #   边框测试（4 py：边框修复 / 复杂花纹安全 / 用户案例 / 浅色素材轮廓）
+│   └── gui/                        #   GUI 层测试（22 py，离屏运行）
 │       ├── conftest.py             #     离屏 QApplication / 设置隔离 / 线程清理夹具
 │       ├── test_gui_smoke.py / test_main_window.py / test_signals_contract.py
 │       ├── test_property_panel.py / test_property_panel_validation.py
 │       ├── test_property_panel_write_paths.py   # V2.2.3：模式回填与旧索引表逐例等价
 │       ├── test_lshape_panel.py / test_lshape_panel_staircase.py
+│       ├── test_lshape_margin_hint.py / test_lshape_parameter_control.py / test_lshape_panel_lazy_guard.py  # V2.2.5
+│       ├── test_composite_panel_wiring.py / test_composite_panel_hole_corners.py  # V2.2.4：综合面板
+│       ├── test_composite_close_retire.py / test_composite_d6_mode_roundtrip.py  # V2.2.4
+│       ├── test_design_action_control.py / test_pool_corner_panel_isolation.py / test_pool_material_corner_retention.py  # V2.2.5
+│       ├── test_property_shutdown_threads.py  # V2.2.5：关窗线程退役
 │       ├── test_canvas_multihole_overlay.py
 │       └── test_cropper_panel.py
 │
 │   注 1：混入 tests/ 的诊断脚本已于 2026-09-11 全部移至 scripts/diagnose/；最后一个
 │         遗留的 tests/core/debug_lshape.py 已于 2026-09-24 迁入 scripts/diagnose/。
 │   注 2：GUI 测试以 QT_QPA_PLATFORM=offscreen 离屏运行，不弹真实窗口。
-│   注 3：本目录 py 文件数 **56**（排除 __pycache__），2026-09-24 实测；用例基线见"开发指南 → 测试"。
+│   注 3：本目录 py 文件数 **98**（排除 __pycache__），2026-10-06 实测；用例基线见"开发指南 → 测试"。
 │
-├── scripts/                        # 人工诊断/验证脚本（不进 CI，共 38 py）
+├── scripts/                        # 人工诊断/验证脚本（不进 CI，共 44 py）
 │   ├── README.md                   #   脚本组织规范与命名约定（2026-09-24 按实测重写）
 │   ├── _v13_baseline_render.py     #   V13 边框基线渲染
 │   ├── verify_v13_fix.py           #   V13 修复验证
@@ -247,13 +281,16 @@ SmartShapeCrop/
 │
 ├── packaging/                      # PyInstaller 打包
 │   ├── README.md                   #   打包目录说明
-│   ├── packageV2.2.3.py            #   【当前唯一入口】V2.2.3 打包脚本，exe 名由 APP_VERSION 派生
-│   ├── packageV2.2.2.py            #   上一版入口（保留备查，exe 名硬编码为 V2.2.2，勿再用于出包）
-│   └── specs/                      #   .spec 归档（SmartShapeCrop / V2.1 / V2.1.2 / V2.2 / V2.2.2 / V2.2.3）
+│   ├── packageV2.2.5.py            #   【当前唯一入口】V2.2.5 打包脚本，exe 名由 APP_VERSION 派生
+│   ├── packageV2.2.2.py            #   历史入口（保留备查，exe 名硬编码为 V2.2.2，勿再用于出包）
+│   ├── packageV2.2.3.py            #   历史入口（保留备查，exe 名硬编码为 V2.2.3，勿再用于出包）
+│   ├── releases/                   #   出包验证记录
+│   │   └── 20261006-staircase-repack.md
+│   └── specs/                      #   .spec 归档（SmartShapeCrop / V2.1 / V2.1.2 / V2.2 / V2.2.2 / V2.2.3 / V2.2.5）
 │
 ├── _archive/                       # 归档备份（备份快照 / 调试输出 / 临时脚本，不进 Git）
 │
-├── dist/                           # 打包产物（智能裁剪设计器V2.2.3.exe，218.4 MB，2026-09-24 出包）
+├── dist/                           # 打包产物（SmartShapeCropV2.2.5/ 目录模式，2026-10-06 出包）
 ├── build/                          # PyInstaller 中间构建产物
 ├── images/                         # 应用图标（SmartShapeCrop.ico / logo.png）
 ├── logs/                           # 运行日志 + OCR 诊断截图（自动生成）
@@ -287,7 +324,7 @@ SmartShapeCrop/
     4. Linux/macOS 常见路径（`/usr/local/opt/tesseract`、`/opt/homebrew/opt/tesseract` 等）
     5. 环境变量 `TESSERACT_PATH`（**非常规安装位置请走此路径显式指定**）
     6. 兜底：`shutil.which('tesseract')` + `tesseract --list-langs` 语言包校验
-  - 打包模式：V2.2.3 默认将本机 Tesseract **内嵌进 exe**，用户机器免安装即可使用草图 OCR
+  - 打包模式：V2.2.5 目录模式打包默认将本机 Tesseract **内嵌进 `_internal/`**，用户机器免安装即可使用草图 OCR
   - 未安装 Tesseract 时：水池设计器草图尺寸识别将无法完成（7 步法依赖 OCR 数值识别）；L 形挖角识别降级为纯 CV 几何推断（可用但精度略降）；圆角裁剪功能本身不依赖 OCR
 
 **开发环境实测版本**（2026-09-16，`F:\SmartShapeCrop\.venv`）：
@@ -333,13 +370,14 @@ python main.py
 启动后界面分两部分：
 
 - **左侧**：预览画布（水池设计器渲染 / 圆角裁剪预览 / L 形挖角预览 / 草图直接显示）
-- **右侧标签页**（3 个）：
+- **右侧标签页**（4 个）：
   - **圆角裁剪工具**：上传成品图 → 自动识别/手动输入参数 → 预览 → 导出
   - **水池设计器**：参数化设计（矩形嵌套/椭圆挖孔 + 多层边框）或手绘草图上传 → QThread 后台异步解析 → 自动回填 → 生成预览
   - **L形挖角设计**：独立承载 L 形挖角参数设置（单角/多角）+ 草图上传 + 一键生成
+  - **综合形状设计**：水池 + L 形挖角复合设计，草图识别 + 参数化生成
 
-> V2.2.3 打包版（**已出包，2026-09-24**）：双击 `dist/智能裁剪设计器V2.2.3.exe`（218.4 MB）即可运行（首次启动需解压内嵌资源，等待 5-15 秒）。
-> 已通过「交付物时效铁律」核对：exe mtime 10:34:11 ≥ 最新源码 10:15:32。`dist/` 中仍保留 V2.2.2 产物备查。
+> V2.2.5 打包版（**已出包，2026-10-06**）：`dist/SmartShapeCropV2.2.5/智能裁剪设计器V2.2.5.exe`（目录模式打包，含 `_internal/` 资源目录与 `使用说明.txt`），另有 `dist/SmartShapeCropV2.2.5-20261006.zip`（约 220 MB）可分发归档。
+> `dist/` 中仍保留 V2.2.2 / V2.2.3 产物备查。
 
 ### 命令行批处理
 
@@ -368,7 +406,7 @@ python process_image.py --src "D:\path\to\源图.jpg" --out-dir "D:\path\to\out"
 ### 运行测试
 
 ```bash
-# 全部测试（2026-09-24 实测 818 passed / 0 failed / 0 error，217.1 秒）
+# 全部测试（2026-10-06 实测 1145 passed / 0 failed / 0 error）
 python -m pytest tests/ -q
 
 # 仅圆角测试
@@ -393,25 +431,25 @@ python -m pytest tests/integration/ -v
 ### 打包发布
 
 ```bash
-# 使用当前 V2.2.3 打包入口，生成单文件 exe（默认）
-python packaging/packageV2.2.3.py
+# 使用当前 V2.2.5 打包入口，生成目录模式打包产物（默认）
+python packaging/packageV2.2.5.py
 
-# 目录模式（更稳定）
-python packaging/packageV2.2.3.py --onedir
+# 单文件模式
+python packaging/packageV2.2.5.py --onefile
 
 # 调试模式（带控制台窗口）
-python packaging/packageV2.2.3.py --debug
+python packaging/packageV2.2.5.py --debug
 
 # 清理旧构建后打包
-python packaging/packageV2.2.3.py --clean
+python packaging/packageV2.2.5.py --clean
 
 # 不内嵌 Tesseract（默认已内嵌，用户免安装 OCR）
-python packaging/packageV2.2.3.py --no-tesseract
+python packaging/packageV2.2.5.py --no-tesseract
 ```
 
-打包要点（V2.2.3）：
+打包要点（V2.2.5）：
 
-- 产物：`dist/智能裁剪设计器V2.2.3.exe`（单文件，**实测 218.4 MB**，其中内嵌 Tesseract-OCR 约 115 MB）
+- 产物：`dist/SmartShapeCropV2.2.5/智能裁剪设计器V2.2.5.exe`（目录模式，含 `_internal/` 资源目录）；zip 归档 `dist/SmartShapeCropV2.2.5-20261006.zip`（约 220 MB）
 - **exe 名与打包横幅由 `core/config.py` 的 `APP_VERSION` 派生**，脚本内不再硬编码版本号 —— 发版只需改 `APP_VERSION` 一行
 - 自动内嵌本机 Tesseract-OCR 到 exe 内部，用户机器免安装即可使用草图 OCR
 - hidden imports 声明 `services.*` / `workers.*` / `models.*` / `core.*`；
@@ -419,7 +457,7 @@ python packaging/packageV2.2.3.py --no-tesseract
   **不要**声明 `core.psd.loader` 之类子路径（该文件不存在，会报 `Hidden import not found`），应声明 `services.psd.loader`
 - 打包失败时 onefile 自动回退 onedir；崩溃时在 exe 同目录生成 `crash.log` 便于排障
 - **交付物时效铁律**：出包后须确认 `dist/*.exe` 时间戳 ≥ 最新源码时间戳
-  （✅ **2026-09-24 实测通过**：`智能裁剪设计器V2.2.3.exe` 10:34:11 ≥ 源码 10:15:32；打包工具 PyInstaller 6.22.3）
+  （✅ **2026-10-06 实测通过**：`智能裁剪设计器V2.2.5.exe` 已确认；打包工具 PyInstaller 6.22.3）
 
 ---
 
@@ -514,6 +552,48 @@ python packaging/packageV2.2.3.py --no-tesseract
 - 实测基线 **818 passed / 0 failed / 0 error**（217.1s；带 `--basetemp=.pytest_tmp/final_h15`，耗时不可与 ~103s 的口径直接比较）
 
 > 完整审查与整改记录见 `ProductSummary/项目审查报告/SmartShapeCrop-项目全面审查报告-20260924.md`。
+
+### V2.2.4 综合形状功能（2026-09-29）
+
+**新增功能**：
+
+- **综合形状设计（composite shape）**：水池 + L 形组合设计，一个画布内同时表达挖洞与挖角；新增 `gui/composite_panel.py` 独立面板，独立解析线程与旧 L 形线程隔离
+- **综合形状草图解析**：`services/sketch_parser/composite_sketch_parser.py` + Phase D.5 面积预过滤 + Phase D.6 洞数一致性验证（面积差距否决 + 几何否决）
+- **多洞 OCR 角色分类**：区分「内挖洞」与「装饰孔」，综合形状模式下正确归属各洞角色
+- **D6 模式守卫**：`models/design_model.py` 复合守卫隔离复合设计与水池/L 形快照路径；L 形面板惰性守卫，防止旧模式残留几何干扰复合设计
+- **综合形状 Worker 侧支持**：`workers/` 经 `LegacyRequestAdapter` 适配复合模式
+- **综合形状关窗退役链路**：`_retire_worker()` 范式统一，关窗时安全退出后台线程
+
+**测试增长**：501 → 889（**+388** 条，覆盖综合形状全链路：面板接线 / D6 模式往返 / 综合 OCR 角色 / Worker 适配 / 真实素材样本 / 旧模式像素黄金基线 / 关窗退役）
+
+### V2.2.5 控件抽离与统一参数协议（2026-10-06）
+
+**控件抽离与组合（三阶段）**：
+
+- **阶段 1**：`CornerCutControl`（角位切割参数控件）、`TargetFileWidget`（目标文件控件）、`SketchUploadWidget`（草图上传控件）抽离为独立可复用 QWidget
+- **阶段 2**：`DesignActionControl`（设计操作控件）、`LShapeParameterControl`（L 形参数控件）抽离；各面板改用组合方式装配，消除跨面板重复代码
+- **阶段 3**：控件间信号协议统一，校验文案与回填逻辑集中到控件内部
+
+**统一参数协议重构**：
+
+- **新增 `workers/design_builders.py`**：提取 `apply_pool_geometry` / `apply_lshape_geometry` / `build_multihole_geometry` / `apply_composite_geometry` 四个纯构建函数，配套 `DesignBuildRequest` / `DesignBuildContext` / `DesignBuilder` Protocol + `BUILDERS` 分发表
+- **精简 `workers/property_panel_workers.py`**：`_build_design` 改为 `LegacyRequestAdapter.from_worker(...)` + `BUILDERS[mode].build(...)`，净减约 **471 行**
+- **等价 + 契约测试**：4 条等价用例（pool / multihole / lshape / composite）+ 10 条契约用例（dataclass 契约、Protocol 一致性、分发表完整性、适配器映射、构建冒烟、复合守卫）
+
+**正确性修复**：
+
+- **L 形边框坐标溢出修复**：`lshape_border.py` / `lshape_border_route.py` 修复坐标溢出问题
+- **阶梯 L 形边框缺失与内框线宽不一致**：修复阶梯 L 形外框缺失及内框线宽不一致
+- **挖角内框细线溢出**：修复小切口原线被裁切问题
+- **导出掩膜填充像素一致性**：优化导出掩膜填充，保持像素输出一致
+- **关闭面板时预热线程未退出**：修复关窗时后台线程残留
+
+**打包升级**：
+
+- 新增 `packaging/packageV2.2.5.py` + `specs/智能裁剪设计器V2.2.5.spec`
+- **目录模式打包**（替代单文件 exe）：产物为 `dist/智能裁剪设计器V2.2.5/` 目录 + zip 归档（~220 MB），启动速度显著提升
+
+**测试基线**：**1145 passed / 0 failed / 0 error**（2026-10-06 全量实跑 228.79s）
 
 ---
 
@@ -784,7 +864,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 **版本号单一事实来源**（V2.2.3 新增）：
 
 ```python
-APP_VERSION: str = "2.2.3"
+APP_VERSION: str = "2.2.5"
 APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 ```
 
@@ -792,7 +872,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 
 | 消费方 | 引用方式 |
 |---|---|
-| 打包脚本 `packaging/packageV2.2.3.py` | `importlib.util.spec_from_file_location` **按文件路径加载** `core/config.py` |
+| 打包脚本 `packaging/packageV2.2.5.py` | `importlib.util.spec_from_file_location` **按文件路径加载** `core/config.py` |
 | 启动日志头 `core/log_setup.py` | 函数内**局部导入** `from .config import APP_VERSION` |
 | 「关于」框 `main.py` | `from core.config import px_to_cm, APP_VERSION` |
 
@@ -947,24 +1027,24 @@ python main.py
 
 测试位于 `tests/` 目录，按模块分子目录组织，使用 pytest 框架。
 
-**实测基线（2026-09-24，`.venv` 实跑）**：
+**实测基线（2026-10-06，`.venv` 实跑）**：
 
 ```
-818 passed / 0 failed / 0 error / 0 skipped，耗时 217.06s
+1145 passed / 0 failed / 0 error / 0 skipped，耗时 228.79s
 ```
 
 各层用例分布（按 pytest 收集计数）：
 
 | 目录 | 用例数 | 说明 |
 |---|---|---|
-| `tests/core/` | 436 | 圆角 / 裁剪 / 文件名解析 / 模板匹配 / L 形渲染与边框 / 草图解析 / G1 / 多角 / 阶梯 / 版本单一来源 / 产物清理链接剪枝 / CropDesign 校验 |
-| `tests/gui/` | 119 | 离屏 GUI（冒烟 / 主窗口 / 信号契约 / 三面板 / 校验文案 / 模式回填 / 草图解码 Worker 退役） |
-| `tests/integration/` | 101 | F1-F19 修复验证 / 配置 / 水池-L 形数据流 / LOD 一致性 |
+| `tests/core/` | 558 | 圆角 / 裁剪 / 文件名解析 / 模板匹配 / L 形渲染与边框 / 草图解析 / G1 / 多角 / 阶梯 / 版本单一来源 / 产物清理链接剪枝 / CropDesign 校验 / Builder 几何 |
+| `tests/gui/` | 166 | 离屏 GUI（冒烟 / 主窗口 / 信号契约 / 四面板 / 校验文案 / 模式回填 / 控件抽离 / 草图解码 Worker 退役 / 综合形状面板接线 / 关窗退役） |
+| `tests/integration/` | 298 | F1-F19 修复验证 / 配置 / 水池-L 形数据流 / LOD 一致性 / Builder 契约 / Adapter 边界 / 端到端验证链 / 综合形状 Worker / 像素黄金基线 |
 | `tests/sketch/` | 64 | 多洞 / 特征化 / 输入校验 / 逻辑函数 |
-| `tests/sketch_parser/` | 57 | 阶梯识别 / 多洞边界 |
-| `tests/models/` | 27 | 数据模型 |
+| `tests/sketch_parser/` | 68 | 阶梯识别 / 多洞边界 / 综合 OCR 角色 |
+| `tests/models/` | 28 | 数据模型 |
 | `tests/border/` | 10 | 边框修复 / 复杂花纹安全 / 用户案例 |
-| 根目录 | 4 | `test_phase0_multihole.py` |
+| 根目录 | 13 | `test_phase0_multihole.py` + Params 验证 + 综合形状错误路径 |
 
 ```bash
 # 全部测试
@@ -1180,10 +1260,10 @@ python -m pytest tests/integration/ -v
 
 | 项目 | 值 |
 |---|---|
-| 文档版本 | V2.2.3 |
-| 最后验证 | 2026-09-24 |
-| 验证方式 | 全量测试实跑（`.venv`，**818 passed**）+ 目录结构遍历 + 源码关键符号核对 + **`dist` 产物出包与时间戳比对**（exe 级启动冒烟 + 打包清单核验）+ **缺陷修复的判别力自检**（回退到修复前重跑，确认用例会红） |
-| 生命周期阶段 | 维护期（V2.2.3 阶梯 L 形与 P0/P1 批次整改已落地；**V2.2.3 exe 已于 2026-09-24 出包**；`_SketchDecodeWorker` 悬垂引用已修复） |
+| 文档版本 | V2.2.5 |
+| 最后验证 | 2026-10-06 |
+| 验证方式 | 全量测试实跑（`.venv`，**1145 passed**）+ 目录结构遍历 + 源码关键符号核对 + **`dist` 产物出包与时间戳比对**（目录模式打包 + zip 归档核验）+ **缺陷修复的判别力自检**（回退到修复前重跑，确认用例会红） |
+| 生命周期阶段 | 活跃开发期（V2.2.5 控件抽离与统一参数协议重构已落地；**V2.2.5 目录模式打包已于 2026-10-06 出包**；综合形状功能全链路交付） |
 
 ### 更新触发器
 
@@ -1219,8 +1299,8 @@ python -m pytest tests/integration/ -v
 > 状态核对：**2026-09-24**。完整清单（含严重度、位置与实测证据）见 `ProductSummary/项目审查报告/SmartShapeCrop-项目全面审查报告-20260924.md`。
 
 1. ✅ **已修复：原「1 个测试用例失败」** —— `tests/integration/test_f1_inner_rect_crash.py::test_render_design_lshape_degenerate_no_crash`，由 `core/geometry.py:349-352` 新增的退化守卫解决；2026-09-24 全量实跑 **818 passed / 0 failed / 0 error**。
-2. **✅ V2.2.3 已出包（2026-09-24）**：`dist/智能裁剪设计器V2.2.3.exe`（218.4 MB，内嵌 Tesseract），exe mtime 10:34:11 ≥ 最新源码 10:15:32，**时效铁律通过**。已过 exe 级启动冒烟（离屏启动存活 22–25 s、无崩溃日志）与打包清单核验（PYZ 项目模块 **49/49**、PKG 含 **161** 个 Tesseract 条目）。
-    **遗留建议**：GUI 端到端「阶梯 L 形**预览 = 导出**」（P0-2 的修复面）建议人工双击 exe 复验一次 —— 源码级几何一致性已由 `tests/integration/test_lod_geometry_consistency.py`（24 条）覆盖。
+2. **✅ V2.2.5 已出包（2026-10-06）**：`dist/智能裁剪设计器V2.2.5/` 目录模式打包 + zip 归档（~220 MB，内嵌 Tesseract），启动速度较 V2.2.3 单文件 exe 显著提升。
+    **遗留建议**：GUI 端到端「综合形状设计」建议人工双击 exe 复验一次 —— 源码级几何一致性已由 Builder 契约测试 + 综合形状全链路测试覆盖。
 3. **worker 生命周期回归（部分已覆盖，2026-09-24）**：「线程可被停止」已有覆盖；**`_SketchDecodeWorker` 的退役协议**已由 `tests/gui/test_poolbox_worker_retire.py`（5 条，含 2 条判别力用例）覆盖「C++ 对象已销毁、Python 引用仍在」的悬垂引用场景。仍待补：`CropWorker` / `PoolRenderWorker` / `_WarmupScanWorker` 的「取消后不回写 UI」回归，以及**同模式退役写法全量排查**（见第 15 条）。
 4. ✅ **单边阶梯 L 形挖角已实施**（V2.2.3 六期）：`CutRect` + `CropDesign.l_cut_rects` + `_validate_l_cut_rects` + 统一掩膜 `_build_design_lshape_mask`（`_draw_staircase_union_layers`）；与多边 L 形共用同一面板，未新增 `shape_type` 字段。`scripts/diagnose/_diag_stair_*.py` 保留为历史 POC 参考。
 5. ✅ **`scripts/README.md` 已按实测重写**（2026-09-24）：更正了「`scripts/_archive/` 与 `scripts/verify/_archive/` 仍存在」等失真描述 —— 归档入口统一在 `scripts/diagnose/_archive/`（73 py）。
@@ -1231,7 +1311,7 @@ python -m pytest tests/integration/ -v
 10. **环境风险**：切勿安装 `python-qt5`（与 PyQt5 同名冲突，破坏 DLL 加载）；`.venv` 曾因磁盘迁移与黑包安装反复损坏，重建后须复跑全量测试再出包。
 11. **兼容 shim 清理**：当所有调用方迁移到新路径后，可删除 `core/compat/`、`core/parser/`、`core/pool_designer/`、`core/psd/` shim 及 `gui/property_panel_workers.py` shim，无需改动业务代码。
     ⚠️ 在 shim 仍存在期间，打包的 hidden-import **只能声明 `services.psd.loader`**，不可声明 `core.psd.loader`（该文件不存在，会报 `Hidden import not found`）。
-12. **历史脚本归档**：`packaging/legacy/` 已于 **2026-09-17 整目录删除**（原含 `package*.py` 6 个 + `build_exe.bat`）。当前唯一入口为 `packaging/packageV2.2.3.py`（`packageV2.2.2.py` 保留备查，其 exe 名硬编码为 V2.2.2，**勿再用于出包**）。
+12. **历史脚本归档**：`packaging/legacy/` 已于 **2026-09-17 整目录删除**（原含 `package*.py` 6 个 + `build_exe.bat`）。当前唯一入口为 `packaging/packageV2.2.5.py`（`packageV2.2.2.py` 保留备查，其 exe 名硬编码为 V2.2.2，**勿再用于出包**）。
 13. **⚠️ Git 操作警示**：`git gc` / `git repack` 在本机曾导致 `.git` 被清空、历史全失，此类操作前请先 `cp -r .git .git.bak`。
 14. **✅ 已修复：`core/artifact_cleanup.py` 越界删除（2026-09-24）** —— 原用 `Path.rglob('*')` 收集候选：Python 3.13 的 `**` 只对**符号链接**停止递归，而 **Windows junction（目录联接）不是符号链接**（`os.path.islink()` 对它返回 `False`），故会进入其目标目录、联出目录外的**真实文件**并被 `os.remove` 删除（**已复现**）。符号链接（symlink）无此问题：目录链接不被进入、文件链接只删链接自身。
     修复：新增 `_is_link_node()`（`os.path.isjunction()`；Python < 3.12 退回按 `st_reparse_tag` 判定）+ `_iter_tree()` 剪枝遍历（产出与 `Path.rglob('*')` **逐条一致**，保持下游稳定排序的 tie-break 不变）；链接节点**既不递归、也不纳入** `candidates` / `empties`。配套 8 条回归用例见 `tests/core/test_artifact_cleanup_links.py`。
@@ -1247,4 +1327,4 @@ python -m pytest tests/integration/ -v
 
 ---
 
-<sub>SmartShapeCrop README · 文档版本 V2.2.3 · 最后验证 2026-09-24</sub>
+<sub>SmartShapeCrop README · 文档版本 V2.2.5 · 最后验证 2026-10-06</sub>
