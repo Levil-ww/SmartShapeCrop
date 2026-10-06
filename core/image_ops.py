@@ -650,7 +650,8 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
     _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material, has_outer_img)
     # 3. 挖洞后的内部区域（内矩形/椭圆/L形内部）填背景色或素材
     inner_fill = _render_inner_area(design, quality=quality)
-    inner_fill_arr = np.array(inner_fill, dtype=np.uint8)
+    # 内填只读，避免在 PIL 转换后再复制一份全尺寸 RGB 数组。
+    inner_fill_arr = np.asarray(inner_fill, dtype=np.uint8)
     inner_mask = _get_inner_pixel_mask(design)
     # 3.x L形挖角（cut 区填白 + 素材底色采样）
     lshape_cut_done, _lshape_cut_bg_color, lshape_cut_area_mask = _render_lshape_cut(
@@ -670,12 +671,12 @@ def render_design(design: CropDesign, quality: str = 'export', pixel_scale: floa
             and os.path.isfile(getattr(design, 'pool_inner_material_image', ''))
         )
         if _single_hole_material:
-            canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+            np.copyto(canvas_arr, inner_fill_arr, where=inner_mask[..., None])
         else:
             _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr)
     elif design.mode == COMPOSITE_MODE and inner_mask.any():
         # 复合模式的 L 形 cut 已单独处理；中心洞仍需按洞掩膜填充素材。
-        canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+        np.copyto(canvas_arr, inner_fill_arr, where=inner_mask[..., None])
     # 3.1 L形模式：填充被挖掉的角落区域（cut area）为 hole_bg_color
     _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, has_outer_img, lshape_cut_done)
     # 3.5 在挖空区域边缘绘制统一的黑色边框线（border_mask 计算）
@@ -782,10 +783,9 @@ def _apply_lshape_bg_overlay(canvas_arr, design, W, H, is_pool_with_material, ha
         if has_outer_img:
             lshape_mask = _build_design_lshape_mask(design, use_outer=True)
             # 非L形区域填充为outer_bg_color
-            outer_bg_arr = np.full((H, W, 3), design.outer_bg_color, dtype=np.uint8)
             non_lshape_mask = ~lshape_mask
             if non_lshape_mask.any():
-                canvas_arr[non_lshape_mask] = outer_bg_arr[non_lshape_mask]
+                canvas_arr[non_lshape_mask] = np.asarray(design.outer_bg_color, dtype=np.uint8)
     return has_outer_img
 
 def _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material, has_outer_img):
@@ -799,11 +799,11 @@ def _render_band_layers(canvas_arr, design, W, H, quality, is_pool_with_material
             if layer.fill_type == 'image' and layer.image_path and os.path.isfile(layer.image_path):
                 mode = 'tile' if layer.tile_mode else 'cover'
                 fill_img = load_and_fit(layer.image_path, W, H, mode=mode, quality=quality)
-                fill_arr = np.array(fill_img, dtype=np.uint8)
+                fill_arr = np.asarray(fill_img, dtype=np.uint8)
+                np.copyto(canvas_arr, fill_arr, where=band_mask[..., None])
             else:
-                fill_arr = np.full((H, W, 3), layer.color, dtype=np.uint8)
-            # 把 band_mask=True 的像素写入 canvas
-            canvas_arr[band_mask] = fill_arr[band_mask]
+                # 纯色直接广播到边框，省去全画布填色及候选像素复制。
+                canvas_arr[band_mask] = np.asarray(layer.color, dtype=np.uint8)
 
 def _render_lshape_cut(canvas_arr, design, W, H, inner_mask, is_pool_with_material):
     """[C-01] L形挖角：cut 区填白/填 bg + 素材底色采样（原 L733-846）。"""
@@ -1074,7 +1074,7 @@ def _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr):
                 _s1 = _e1 & ~_e2
                 _out_s0 = _outer_edge.copy()
                 _out_s1 = canvas_arr[_s1].copy() if _s1.any() else None
-                canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+                np.copyto(canvas_arr, inner_fill_arr, where=inner_mask[..., None])
                 # 最外缘 1px: α=0.70 接近外框色
                 _in0 = canvas_arr[_s0].copy()
                 canvas_arr[_s0] = (
@@ -1093,14 +1093,14 @@ def _seam_feather_paste(canvas_arr, inner_mask, inner_fill_arr):
                 )
             else:
                 # 色差太小，直接覆盖无羽化（省 erosion + 混合）
-                canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+                np.copyto(canvas_arr, inner_fill_arr, where=inner_mask[..., None])
         else:
-            canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+            np.copyto(canvas_arr, inner_fill_arr, where=inner_mask[..., None])
     except Exception as _se_e:
         logger.debug(
             f"[render_design] 接缝羽化异常（跳过，回退硬覆盖）: {_se_e}"
         )
-        canvas_arr[inner_mask] = inner_fill_arr[inner_mask]
+        np.copyto(canvas_arr, inner_fill_arr, where=inner_mask[..., None])
 
 def _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, has_outer_img, lshape_cut_done):
     """[C-01] L形模式：填充 cut area 为 hole_bg_color（原 L1013-1034）。"""
@@ -1125,7 +1125,7 @@ def _fill_lshape_cut_area(canvas_arr, design, W, H, inner_mask, inner_fill_arr, 
         # [Fix 2026-08-26] L 形 + 外背景图：cut 区域已由 step 1.1 填为 outer_bg_color，
         # 此处不再用 inner_fill（白色）覆盖，保持挖角显示外背景色。
         if cut_area_mask.any() and not (design.mode == 'rect_lshape' and has_outer_img):
-            canvas_arr[cut_area_mask] = inner_fill_arr[cut_area_mask]
+            np.copyto(canvas_arr, inner_fill_arr, where=cut_area_mask[..., None])
 
 def _compute_border_mask(design, W, H, inner_mask, border_width_px):
     """[C-01] 3.5 挖空边缘边框 mask 计算（含多洞 PRE-COMPUTE，原 L1036-1151）。"""
