@@ -1073,6 +1073,15 @@ def apply_lshape_border_completion(
         if sw > 0 and sh > 0 and (sw > sh) != (w > h):
             src_material_img = src_material_img.transpose(Image.Transpose.ROTATE_270)
             scale_x, scale_y = scale_x * sw / sh, scale_y * sh / sw
+    if (staircase_cut_rects
+            and all(value is None for value in
+                    (manual_edge_px, manual_band_px, manual_band_color))):
+        from .lshape_staircase_border import apply_staircase_material_profile
+        profile_src = src_material_img if src_material_img is not None else material_img
+        if profile_src is not None and apply_staircase_material_profile(
+                canvas_arr, profile_src, cut_corner, scale_x, scale_y,
+                staircase_cut_rects, cut_area_mask):
+            return True
     if cuts:
         return _apply_multi_cut_completion(
             canvas_arr=canvas_arr,
