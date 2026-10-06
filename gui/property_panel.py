@@ -1234,4 +1234,14 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             else:
                 old.deleteLater()
 
+        # 关闭窗口后 GUI 事件循环将结束，finished→deleteLater 不能替代等待。
+        # 同时覆盖切换目录时已退役、但仍由本面板持有的预热线程。
+        workers = self.findChildren(QThread)
+        for worker in workers:
+            if worker.isRunning():
+                worker.requestInterruption()
+        for worker in workers:
+            if worker.isRunning():
+                worker.wait()
+
     # ---- PSD 导出 ----
