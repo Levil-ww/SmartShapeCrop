@@ -326,12 +326,21 @@ class MainWindow(QMainWindow):
         self.canvas.rendered.emit(pil_img)
 
     def _on_tab_changed(self, index: int) -> None:
-        """切换标签页时清理/恢复多洞叠加层，避免残留到其他模块画布。"""
+        """切换标签页时清理/恢复多洞叠加层，避免残留到其他模块画布。
+
+        [Fix 2026-10-09] 切回水池设计器时重置模式下拉框为 rect_hole，
+        避免综合/L形运行后 _cb_mode 残留 COMPOSITE_MODE，导致水池「生成预览」
+        被 property_panel_generate.py:65-69 的路由守卫错误 delegate 到
+        _composite_run_generate()。
+        """
         if index != 1:
             # 离开水池设计器：清除多洞标注
             self.canvas.clear_pool_holes_overlay()
         else:
-            # 回到水池设计器：从当前 design 重新生成叠加层
+            # 回到水池设计器：重置模式下拉框 + 恢复多洞叠加层
+            pool_idx = self.panel._cb_mode.findData('rect_hole')
+            if pool_idx >= 0 and self.panel._cb_mode.currentIndex() != pool_idx:
+                self.panel._cb_mode.setCurrentIndex(pool_idx)
             self.canvas._update_pool_holes_overlay(self.canvas._design)
             self.canvas.update()
 
