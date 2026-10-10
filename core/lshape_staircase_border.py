@@ -76,10 +76,6 @@ def apply_staircase_material_profile(canvas, src, corner, sx, sy, rects, mask=No
     profiles = _profiles(src)
     if not profiles:
         return False
-    ex = 'left' if corner in ('tl', 'bl') else 'right'
-    ey = 'bottom' if corner in ('bl', 'br') else 'top'
-    px, bx = _scaled_profile(profiles.get(ex, profiles.get('right' if ex == 'left' else 'left')), sx)
-    py, by = _scaled_profile(profiles.get(ey, profiles.get('top' if ey == 'bottom' else 'bottom')), sy)
     h, w = canvas.shape[:2]
     if mask is None:
         mask = np.zeros((h, w), bool)
@@ -90,11 +86,64 @@ def apply_staircase_material_profile(canvas, src, corner, sx, sy, rects, mask=No
         mask = np.asarray(mask, dtype=bool)
     if mask.shape != (h, w) or not mask.any():
         return False
+    # 各角沿用单边剖面。贴上下边的条带确定角位，其余条带沿相邻
+    # 条带继承角位；不能按离哪边更近判断，否则深阶梯会被拆成两角。
+    grouped = {}
+    pending = []
+    for x0, y0, x1, y1 in rects or []:
+        left = x0 <= 0 if x0 <= 0 or x1 >= w else corner in ('tl', 'bl')
+        side = 'l' if left else 'r'
+        if y0 <= 0 or y1 >= h:
+            anchor = ('t' if y0 <= 0 else 'b') + side
+            grouped.setdefault(anchor, []).append((x0, y0, x1, y1))
+        else:
+            pending.append((side, (x0, y0, x1, y1)))
+    while pending:
+        remaining = []
+        for side, rect in pending:
+            x0, y0, x1, y1 = rect
+            anchor = next((anchor for anchor, cuts in grouped.items()
+                           if anchor.endswith(side) and any(
+                               min(x1, r) > max(x0, l)
+                               and min(y1, b) >= max(y0, t) - 1
+                               for l, t, r, b in cuts)), None)
+            if anchor is None:
+                remaining.append((side, rect))
+            else:
+                grouped[anchor].append(rect)
+        if len(remaining) == len(pending):
+            # 非贴边、非相邻输入保留原入口指定角位的处理方式。
+            grouped.setdefault(corner, []).extend(rect for _, rect in remaining)
+            break
+        pending = remaining
+    if len(grouped) <= 1:
+        return _paint_staircase_profile(canvas, profiles, corner, sx, sy, mask, mask)
+    painted = False
+    for anchor, cuts in grouped.items():
+        corner_mask = np.zeros((h, w), bool)
+        for x0, y0, x1, y1 in cuts:
+            corner_mask[max(0, round(y0)):min(h, round(y1)),
+                        max(0, round(x0)):min(w, round(x1))] = True
+        corner_mask &= mask
+        if corner_mask.any():
+            painted = _paint_staircase_profile(
+                canvas, profiles, anchor, sx, sy, corner_mask, mask) or painted
+    return painted
+
+
+def _paint_staircase_profile(canvas, profiles, corner, sx, sy, mask, all_cuts):
+    """补一个角位的真实轮廓，全局挖空区域始终禁止绘制。"""
+    ex = 'left' if corner in ('tl', 'bl') else 'right'
+    ey = 'bottom' if corner in ('bl', 'br') else 'top'
+    px, bx = _scaled_profile(profiles.get(ex, profiles.get('right' if ex == 'left' else 'left')), sx)
+    py, by = _scaled_profile(profiles.get(ey, profiles.get('top' if ey == 'bottom' else 'bottom')), sy)
+    h, w = canvas.shape[:2]
     import cv2
     ys, xs = np.where(mask)
     x0, x1 = max(0, int(xs.min())-len(px)), min(w, int(xs.max())+1+len(px))
     y0, y1 = max(0, int(ys.min())-len(py)), min(h, int(ys.max())+1+len(py))
     cut = mask[y0:y1, x0:x1]
+    excluded = all_cuts[y0:y1, x0:x1]
     contours, _ = cv2.findContours(cut.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     yy = np.arange(cut.shape[0], dtype=np.float32)[:, None]
     xx = np.arange(cut.shape[1], dtype=np.float32)[None, :]
@@ -116,7 +165,7 @@ def apply_staircase_material_profile(canvas, src, corner, sx, sy, rects, mask=No
                 dy = np.maximum(np.maximum(min(p[1], q[1])-yy, yy-max(p[1], q[1])), 0)
                 gx, gy = progress(dx, bx), progress(dy, by)
                 distance = np.maximum(gx, gy)
-                update = (~cut) & (distance < best) & (distance < 3)
+                update = (~excluded) & (distance < best) & (distance < 3)
                 if not update.any():
                     continue
                 ix = np.minimum(np.maximum(dx-1, 0).astype(int), len(px)-1)
@@ -135,6 +184,6 @@ def apply_staircase_material_profile(canvas, src, corner, sx, sy, rects, mask=No
     ):
         if touched:
             allowed = np.minimum(allowed, progress(distance, bounds))
-    paint = (~cut) & (best < 3) & (np.floor(best) <= np.floor(allowed))
+    paint = (~excluded) & (best < 3) & (np.floor(best) <= np.floor(allowed))
     canvas[y0:y1, x0:x1][paint] = colors[paint]
     return bool(paint.any())

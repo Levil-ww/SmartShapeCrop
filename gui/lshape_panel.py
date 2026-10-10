@@ -96,7 +96,9 @@ class LShapePanel(QWidget):
         # —— 持久化设置（与水池设计器/圆角裁剪工具共用同一份 QSettings，但 source 隔离）——
         self._app_settings = get_app_settings()
         # 先建立契约适配器；UI 构建期间已有的参数初始化也通过它读取。
-        self._corner_control = CornerCutControl(self)
+        # 综合形状复用本面板；本阶段新增入口仅对独立 L 形模块开放。
+        self._corner_control = CornerCutControl(
+            self, allow_multicorner_staircase=type(self) is LShapePanel)
         self._parameter_control = LShapeParameterControl(self, self._corner_control)
         self._build_ui()
         # —— 初始化本面板独立的目标文件名历史菜单 ——
@@ -214,6 +216,9 @@ class LShapePanel(QWidget):
         self._stair_add_btns = self._parameter_control._stair_add_btns
         self._inner_layout.addWidget(self._gb_staircase)
         self._gb_staircase.setVisible(False)
+        multi_staircase = self._corner_control.build_multi_staircase_ui()
+        if multi_staircase is not None:
+            self._inner_layout.addWidget(multi_staircase)
 
         # ===== 6) 一键生成预览 + 导出 JPG（底部主操作行，与水池设计器一致）=====
         row_action = self._action_control.action_layout
@@ -1054,6 +1059,9 @@ class LShapePanel(QWidget):
     def _get_corner_legacy(self) -> str:
         """读取挖角位置（阶梯模式从 _stair_corner 读取）。"""
         if self._staircase_mode:
+            if self._corner_control._multicorner_staircase_mode:
+                rects = self.get_cut_rects_cm()
+                return rects[0]['anchor'] if rects else 'tr'
             return self._stair_corner.currentData() or 'tr'
         return self._cb_lcorner.currentData()
 
@@ -1068,7 +1076,8 @@ class LShapePanel(QWidget):
         """读取挖角高度（阶梯模式取总落差 = Σ条带高）。"""
         if self._staircase_mode:
             rects = self.get_cut_rects_cm()
-            return sum(cr['h_cm'] for cr in rects)
+            corner = self.get_corner()
+            return sum(cr['h_cm'] for cr in rects if cr['anchor'] == corner)
         return self._sp_lh.value()
 
     def _get_cuts_cm_legacy(self) -> list[dict]:

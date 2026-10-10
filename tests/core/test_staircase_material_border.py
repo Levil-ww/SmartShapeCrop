@@ -1,6 +1,7 @@
 """阶梯切边应保留素材的三层结构和各方向线宽。"""
 import numpy as np
 import pytest
+from itertools import combinations
 from PIL import Image, ImageDraw
 
 from core.geometry import RectShape
@@ -127,3 +128,78 @@ def test_plain_staircase_material_falls_back_without_repainting_content():
         canvas, src, RectShape(0, 0, 800, 600), 'tr', 0, 0,
         src_material_img=src, staircase_cut_rects=[(600, 0, 800, 200)])
     np.testing.assert_array_equal(canvas, before)
+
+
+@pytest.mark.parametrize('corners', [pair for n in (2, 3, 4)
+                                    for pair in combinations(('tl', 'tr', 'bl', 'br'), n)])
+@pytest.mark.parametrize('style', ['wide_colored', 'soft_black'])
+def test_multicorner_staircase_uses_each_corners_material_edges(corners, style):
+    # 四边最外描边的像素不同，多角不能全部使用主角位的 top/right 剖面。
+    source = np.array(material(style))
+    source[0] = (10, 10, 10)
+    source[-1] = (20, 20, 20)
+    source[:, 0] = (30, 30, 30)
+    source[:, -1] = (40, 40, 40)
+    src = Image.fromarray(source)
+    canvas = source.copy()
+    mask = np.zeros(source.shape[:2], bool)
+    rects = []
+    h, w = mask.shape
+    per_corner = {}
+    for corner in corners:
+        # 角内两级：200×80 + 120×80，四角相互分离。
+        cuts = [(0, 0, 200, 80), (0, 80, 120, 160)]
+        if corner in ('tr', 'br'):
+            cuts = [(w-r, t, w-l, b) for l, t, r, b in cuts]
+        if corner in ('bl', 'br'):
+            cuts = [(l, h-b, r, h-t) for l, t, r, b in cuts]
+        per_corner[corner] = cuts
+        rects.extend(cuts)
+        for l, t, r, b in cuts:
+            mask[t:b, l:r] = True
+    canvas[mask] = 255
+    assert apply_lshape_border_completion(
+        canvas, src, RectShape(0, 0, w, h), corners[0], 0, 0,
+        src_material_img=src, cut_area_mask=mask, staircase_cut_rects=rects)
+    np.testing.assert_array_equal(canvas[mask], 255)
+    for corner, cuts in per_corner.items():
+        isolated = source.copy()
+        single_mask = np.zeros(mask.shape, bool)
+        for l, t, r, b in cuts:
+            single_mask[t:b, l:r] = True
+        isolated[single_mask] = 255
+        assert apply_lshape_border_completion(
+            isolated, src, RectShape(0, 0, w, h), corner, 0, 0,
+            src_material_img=src, cut_area_mask=single_mask, staircase_cut_rects=cuts)
+        x = 200 if corner in ('tl', 'bl') else w-201
+        y = 40 if corner in ('tl', 'tr') else h-41
+        np.testing.assert_array_equal(canvas[y, x],
+                                      (30, 30, 30) if corner in ('tl', 'bl') else (40, 40, 40))
+        # 整个角位区域的三层结构、抗锯齿应与单边处理一致。
+        ys = slice(0, 280) if corner in ('tl', 'tr') else slice(h-280, h)
+        xs = slice(0, 320) if corner in ('tl', 'bl') else slice(w-320, w)
+        np.testing.assert_array_equal(canvas[ys, xs], isolated[ys, xs])
+    np.testing.assert_array_equal(canvas[h//2, w//2], source[h//2, w//2])
+
+
+def test_deep_single_corner_strips_keep_the_original_material_profile():
+    source = np.array(material('soft_black', (1200, 900)))
+    source[0] = (10, 10, 10)
+    source[-1] = (20, 20, 20)
+    src = Image.fromarray(source)
+    rects = [(650, 0, 1200, 200), (850, 200, 1200, 450), (1000, 450, 1200, 700)]
+    mask = np.zeros(source.shape[:2], bool)
+    for l, t, r, b in rects:
+        mask[t:b, l:r] = True
+    with_rects = source.copy()
+    with_mask = source.copy()
+    with_rects[mask] = 255
+    with_mask[mask] = 255
+    assert apply_lshape_border_completion(
+        with_rects, src, RectShape(0, 0, 1200, 900), 'tr', 0, 0,
+        src_material_img=src, cut_area_mask=mask, staircase_cut_rects=rects)
+    # 直接使用单角剖面，与提供同角条带时的结果一致。
+    # 直接调用单角阶梯专用路径构造参照。
+    from core.lshape_staircase_border import apply_staircase_material_profile
+    assert apply_staircase_material_profile(with_mask, src, 'tr', 1, 1, None, mask)
+    np.testing.assert_array_equal(with_rects, with_mask)

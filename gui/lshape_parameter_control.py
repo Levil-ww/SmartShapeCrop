@@ -2,6 +2,7 @@
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QWidget, QGroupBox, QVBoxLayout
 from core.config import CUT_LOSS_CM
+from core.geometry import limit_l_cut_rects_per_anchor
 
 
 class LShapeParameterControl(QWidget):
@@ -166,33 +167,57 @@ class LShapeParameterControl(QWidget):
         if not self._corner_control.staircase_mode:
             return self.build_manual_params(outer_w, outer_h)
         rects = self.get_cut_rects_cm()
+        corner = self.get_corner()
         return {
-            'corner': self._stair_corner.currentData() or 'tr',
+            'corner': corner,
             'cut_w_cm': rects[0]['w_cm'] if rects else 0.0,
-            'cut_h_cm': sum(rect['h_cm'] for rect in rects),
+            'cut_h_cm': sum(rect['h_cm'] for rect in rects if rect['anchor'] == corner),
             'cuts_cm': [], 'cut_rects': rects,
             'outer_w_cm': outer_w, 'outer_h_cm': outer_h,
         }
 
-    def set_cut_rects(self, cut_rects: list[dict]):
+    def set_cut_rects(self, cut_rects: list[dict], *, multicorner=None):
         """识别结果回填：把 CutRect 条带列表逆换算为步进值写入阶梯子行 SpinBox。
 
         cut_rects: [{'anchor': str, 'offset_x_cm': float, 'offset_y_cm': float,
                       'w_cm': float, 'h_cm': float}, ...]
         逆换算：r_i = w_i − w_{i+1}（末级 r_N = w_N）；d_i = h_i；按 offset_y 升序。
         自动切换到阶梯模式（_gb_staircase 可见，_gb_l 隐藏）。
-        子行数按输入长度调整（1~3），多余行删除，不足行追加。
+        子行数按每角输入长度调整（1~3），多角位分别逆换算。
+        multicorner 为模式切换内部使用；外部回填按角位数量自动选择模式。
         """
-        cut_rects = list(cut_rects or [])[:self._panel._stair_max_levels]
+        cut_rects = list(cut_rects or [])
         if not cut_rects:
             return
-        self.set_staircase_mode(True)
+        control = self._corner_control
+        if control._allow_multicorner_staircase:
+            cut_rects = limit_l_cut_rects_per_anchor(cut_rects, self._panel._stair_max_levels)
+        else:
+            cut_rects = cut_rects[:self._panel._stair_max_levels]
+        anchors = {rect.get('anchor', 'tr') for rect in cut_rects}
+        use_multi = len(anchors) > 1 if multicorner is None else multicorner
+        control.set_staircase_mode(True, multicorner=use_multi)
+        if control._multicorner_staircase_mode:
+            for anchor, group in control._multi_stair_groups.items():
+                rects = [rect for rect in cut_rects if rect.get('anchor', 'tr') == anchor]
+                group['box'].blockSignals(True)
+                group['box'].setChecked(bool(rects))
+                group['box'].blockSignals(False)
+                self._fill_stair_rows(rects, group=group)
+            self.on_staircase_changed()
+            return
         anchor = cut_rects[0].get('anchor', 'tr')
         idx = self._stair_corner.findData(anchor)
         self._stair_corner.blockSignals(True)
         if idx >= 0:
             self._stair_corner.setCurrentIndex(idx)
         self._stair_corner.blockSignals(False)
+        self._fill_stair_rows(cut_rects)
+        self.on_staircase_changed()
+
+    def _fill_stair_rows(self, cut_rects, *, group=None):
+        """各角独立回填，批量更新期间只在末尾同步一次参数。"""
+        rows = self._stair_rows if group is None else group['rows']
         rects = sorted(
             cut_rects,
             key=lambda c: (float(c.get('offset_y_cm', 0)), float(c.get('offset_x_cm', 0))))
@@ -206,12 +231,14 @@ class LShapeParameterControl(QWidget):
             else:
                 r_i = w_i
             steps.append((r_i, d_i))
-        while len(self._stair_rows) > len(steps):
-            self._corner_control.remove_level()
+        if not steps:
+            steps = [(0.0, 0.0), (0.0, 0.0)]
+        while len(rows) > len(steps):
+            self._corner_control.remove_level(group, notify=False)
         for i, (r_val, d_val) in enumerate(steps):
-            if i >= len(self._stair_rows):
-                self._corner_control.add_level_row()
-            r_sp, d_sp, _ = self._stair_rows[i]
+            if i >= len(rows):
+                self._corner_control.add_level_row(group=group)
+            r_sp, d_sp, _ = rows[i]
             for sp in (r_sp, d_sp):
                 sp.blockSignals(True)
             try:
@@ -220,8 +247,7 @@ class LShapeParameterControl(QWidget):
             finally:
                 for sp in (r_sp, d_sp):
                     sp.blockSignals(False)
-        self._corner_control.update_buttons()
-        self.on_staircase_changed()
+        self._corner_control.update_buttons(group)
 
     def get_cut_rects_cm(self) -> list[dict]:
         return self._corner_control.get_cut_rects_cm()
