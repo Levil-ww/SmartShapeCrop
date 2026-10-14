@@ -1176,6 +1176,7 @@ def apply_lshape_border_completion(
             cut_w_px=cut_w_px,
             cut_h_px=cut_h_px,
             layers_src=_profile_layers,
+            src_material_img=detect_img,
             scale_x=scale_x,
             scale_y=scale_y,
             bg_color=bg_color,

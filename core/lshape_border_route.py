@@ -192,7 +192,7 @@ def _color_dist(c1: tuple, c2: tuple) -> float:
                                 - np.array(c2, dtype=np.float64)))
 
 
-def _is_line_seg(s: _Seg) -> bool:
+def _is_line_seg(s: _Seg, thickness_scale: float = 1.0) -> bool:
     """线段判定：低纹理 + 深色 + 薄（细描边 / 细框线）。
 
     最小厚度 = _ANCHOR_MIN_THICK 滤掉 1px JPEG 灰过渡段（典型颜色 ~116，
@@ -201,7 +201,7 @@ def _is_line_seg(s: _Seg) -> bool:
     """
     return (s.std < _LINE_STD_MAX
             and max(s.color) < _DARK_LINE_MAX_CHANNEL
-            and _ANCHOR_MIN_THICK <= s.thickness <= _LINE_MAX_THICK)
+            and _ANCHOR_MIN_THICK <= s.thickness <= _LINE_MAX_THICK * thickness_scale)
 
 
 def _is_anchor_seg(s: _Seg) -> bool:
@@ -242,7 +242,7 @@ def _is_weak_edge_transition(segs: list[_Seg], index: int) -> bool:
     return False
 
 
-def _is_structural_color_line(seg: _Seg) -> bool:
+def _is_structural_color_line(seg: _Seg, thickness_scale: float = 1.0) -> bool:
     """低纹理的彩色细框线（如褐/金色细线）。
 
     旧判定只接受近黑细线，因此会把有色细框线当成普通内容，导致三层
@@ -250,7 +250,7 @@ def _is_structural_color_line(seg: _Seg) -> bool:
     当成边框。
     """
     return (seg.std < _LINE_STD_MAX
-            and _ANCHOR_MIN_THICK <= seg.thickness <= _COLOR_LINE_MAX_THICK
+            and _ANCHOR_MIN_THICK <= seg.thickness <= _COLOR_LINE_MAX_THICK * thickness_scale
             and max(seg.color) - min(seg.color) >= _COLOR_LINE_SAT_MIN
             and max(seg.color) >= _DARK_LINE_MAX_CHANNEL)
 
@@ -268,7 +268,8 @@ def _is_neutral_light(c: tuple[int, int, int]) -> bool:
 
 def _classify_profile(segs: list[_Seg], field_ref: tuple,
                       thick_cap: int, max_struct_depth: int,
-                      giant_cap_t: int) -> list[tuple[tuple[int, int, int], int]] | None:
+                      giant_cap_t: int, thickness_scale: float = 1.0
+                      ) -> list[tuple[tuple[int, int, int], int]] | None:
     """从外向内走段分类，输出「描边 + 色带 + 内框线」≤3 层结构。
 
     算法（对 蔓生花 / 中古雨林 / 庄园秘境 / 克罗印花 真实素材剖面校准）：
@@ -359,7 +360,7 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
         band_end = 1  # 至少保留锚点
         for i in range(1, len(collected)):
             s = collected[i]
-            if (_is_line_seg(s) or _is_structural_color_line(s)
+            if (_is_line_seg(s, thickness_scale) or _is_structural_color_line(s, thickness_scale)
                     or _is_anchor_seg(s)):
                 band_end = i + 1   # 保留该线段本身
                 break
@@ -372,7 +373,7 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
         line_seen = 0
         cut_at = -1
         for i, s in enumerate(collected):
-            if _is_line_seg(s) or _is_structural_color_line(s):
+            if _is_line_seg(s, thickness_scale) or _is_structural_color_line(s, thickness_scale):
                 line_seen += 1
                 if line_seen >= 2:
                     cut_at = i
@@ -389,7 +390,7 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
     # —— 4. 分组：锚点（粗黑带）/细线 独立成层；非线段合并带层 ——
     grouped: list[list[_Seg]] = []
     for s in collected:
-        if _is_anchor_seg(s) and s.thickness > _LINE_MAX_THICK:
+        if _is_anchor_seg(s) and s.thickness > _LINE_MAX_THICK * thickness_scale:
             # 粗黑带（庄园秘境 117px）独立成层，避免与紧随的米/白带
             # 平均成灰糊 —— 这是用户 L 形挖角"补了但视觉无效果"的根因
             if (grouped and _is_anchor_seg(grouped[-1][-1])
@@ -402,16 +403,16 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
                 grouped[-1].append(s)
             else:
                 grouped.append([s])
-        elif _is_line_seg(s) or _is_structural_color_line(s):
-            if (grouped and (_is_line_seg(grouped[-1][-1])
-                             or _is_structural_color_line(grouped[-1][-1]))
+        elif _is_line_seg(s, thickness_scale) or _is_structural_color_line(s, thickness_scale):
+            if (grouped and (_is_line_seg(grouped[-1][-1], thickness_scale)
+                             or _is_structural_color_line(grouped[-1][-1], thickness_scale))
                     and _color_dist(grouped[-1][-1].color, s.color)
                     < _MERGE_L1_TOL):
                 grouped[-1].append(s)
             else:
                 grouped.append([s])      # 细线层（描边或细框线）
         elif grouped and not _is_anchor_seg(grouped[-1][0]) \
-                and not _is_line_seg(grouped[-1][0]):
+                and not _is_line_seg(grouped[-1][0], thickness_scale):
             # 连续的同色/近色带合并；两个相邻且均为宽、平整、颜色明显
             # 不同的带保留为独立层（黑边 + 浅色带 + 金/褐色带等）。
             prev = grouped[-1][-1]
@@ -583,6 +584,32 @@ def detect_border_profile(src_img: Image.Image) -> list[tuple[tuple[int, int, in
         segs = _segment_profile(prof, std, raw)
         per_edge[edge] = _classify_profile(segs, field_ref, thick_cap,
                                            max_struct_depth, giant_cap_t)
+
+    # 长条素材横纵拉伸后，长轴上的框线/色带可能超过短边的检测窗口。
+    # 仅在原检测层数未获三边一致时按轴长复判，保持已识别素材的旧结果。
+    # 复判仍须经过下方三边一致投票及总厚度检查，不能直接放行两边结果。
+    counts: dict[int, int] = {}
+    for layers in per_edge.values():
+        if layers is not None:
+            counts[len(layers)] = counts.get(len(layers), 0) + 1
+    references = [layers for layers in per_edge.values()
+                  if layers is not None and len(layers) == 3]
+    if (counts.get(3) == 2 and max(H, W) > min_dim
+            and all(_color_dist(references[0][i][0], references[1][i][0])
+                    < _FIELD_COLOR_TOL for i in range(3))):
+        for edge, (prof, std, raw) in _edge_profiles(arr, depth).items():
+            axis_scale = (W if edge in ('left', 'right') else H) / min_dim
+            if axis_scale <= 1:
+                continue
+            candidate = _classify_profile(
+                _segment_profile(prof, std, raw), field_ref,
+                int(round(thick_cap * axis_scale)),
+                int(round(max_struct_depth * axis_scale)),
+                int(round(giant_cap_t * axis_scale)), thickness_scale=axis_scale)
+            if (candidate is not None and len(candidate) == 3
+                    and all(_color_dist(candidate[i][0], references[0][i][0])
+                            < _FIELD_COLOR_TOL for i in range(3))):
+                per_edge[edge] = candidate
 
     results = [v for v in per_edge.values() if v is not None]
     if not results:
@@ -965,6 +992,7 @@ def _apply_profile_path(*,
                         cut_area_mask: np.ndarray | None = None,
                         directional_scale: bool = False,
                         preserve_inner_line: bool = False,
+                        src_material_img: Image.Image | None = None,
                         ) -> bool:
     """Profile 路径：源图层结构 → 画布坐标 → patch_lshape_cut_layers。
 
@@ -1023,6 +1051,44 @@ def _apply_profile_path(*,
     _sy = scale_y if scale_y > 0 else scale_avg
     layers_x = _to_canvas(_sx)
     layers_y = _to_canvas(_sy)
+
+    # 长条素材的源图本身已可能被横纵拉伸，三层平均厚度不能用于接头。
+    # 沿用同一分类器复核各方向，颜色与本次三层检测一致时，分别按
+    # 原左/右边和上/下边的层界换算绘制网格。
+    if (src_material_img is not None and len(layers_colored) == 3
+            and min(src_material_img.size) >= _MIN_DIM_PROFILE
+            and cut_area_mask is None and not staircase_cut_rects):
+        arr = np.asarray(src_material_img.convert('RGB')
+                         if src_material_img.mode != 'RGB' else src_material_img)
+        src_h, src_w = arr.shape[:2]
+        short = min(src_h, src_w)
+        field_ref = tuple(int(v) for v in np.median(
+            arr[int(src_h*.3):int(src_h*.7), int(src_w*.3):int(src_w*.7)]
+            .reshape(-1, 3), axis=0))
+        profiles = _edge_profiles(arr, max(8, int(short * _DEPTH_CAP_RATIO)))
+        directional = []
+        for edge, axis in ((('left' if cut_corner in ('tl', 'bl') else 'right'), src_w),
+                           (('top' if cut_corner in ('tl', 'tr') else 'bottom'), src_h)):
+            prof, std, raw = profiles[edge]
+            ratio = axis / short
+            candidate = _classify_profile(
+                _segment_profile(prof, std, raw), field_ref,
+                round(max(60, short*.25) * ratio),
+                round(max(120, short*_STRUCT_WINDOW_RATIO) * ratio),
+                round(max(60, short*_GIANT_BAND_RATIO) * ratio),
+                thickness_scale=ratio)
+            if (candidate is not None and len(candidate) == 3
+                    and all(_color_dist(candidate[i][0], layers_src[i][0])
+                            < _FIELD_COLOR_TOL for i in range(3))):
+                directional.append([t for _, t in candidate])
+        if len(directional) == 2:
+            widths_x, widths_y = directional
+            if any(abs(tx-ty) > max(2, min(tx, ty) * 0.15)
+                   for tx, ty in zip(widths_x, widths_y)):
+                layers_x = [(c, max(1, round(t * _sx)))
+                            for (c, _), t in zip(layers_colored, widths_x)]
+                layers_y = [(c, max(1, round(t * _sy)))
+                            for (c, _), t in zip(layers_colored, widths_y)]
 
     if cut_area_mask is not None or staircase_cut_rects:
         from .lshape_border import _draw_staircase_union_layers
