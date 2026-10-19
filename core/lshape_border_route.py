@@ -168,7 +168,11 @@ def _segment_profile(profile: np.ndarray, std: np.ndarray,
     for s, e in ranges:
         color = tuple(int(round(v)) for v in np.median(raw[s:e + 1], axis=0))
         if out and sum(abs(a - b) for a, b in zip(out[-1][2], color)) < _MERGE_L1_TOL:
-            out[-1][1] = e  # 颜色相近 → 并入前段（保前段色，减少碎片）
+            out[-1][1] = e
+            # 后续比较使用合并段的真实中位色，避免段首 JPEG 过渡色使
+            # 同一浅色带的尾端断成伪细线，参与四边投票后拉浅内框颜色。
+            out[-1][2] = tuple(int(round(v)) for v in np.median(
+                raw[out[-1][0]:e + 1], axis=0))
         else:
             out.append([s, e, color])
 
