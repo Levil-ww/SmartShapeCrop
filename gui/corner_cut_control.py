@@ -253,8 +253,7 @@ class CornerCutControl(QWidget):
             sp.valueChanged.connect(panel._parameter_control.on_staircase_changed)
         row = QHBoxLayout()
         row.setSpacing(4)
-        if group is not None:
-            row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(16 * level_idx if group is None else 0, 0, 0, 0)
         if level_idx > 0 and group is None:
             arrow = QLabel("↳")
             arrow.setStyleSheet("color:#E67E22; font-size:12px;")
@@ -280,8 +279,6 @@ class CornerCutControl(QWidget):
         buttons.append(add_btn)
         container = QWidget()
         container.setLayout(row)
-        if level_idx > 0 and group is None:
-            container.setStyleSheet(f"margin-left: {16 * level_idx}px;")
         layout.addWidget(container)
         rows.append((sp_r, sp_d, container))
         self.update_buttons(group)

@@ -207,14 +207,14 @@ class LShapePanel(QWidget):
 
         self._inner_layout.addLayout(params_row)
 
-        # ===== 4.5) 阶梯挖角参数 GroupBox（默认隐藏，阶梯模式时显示）=====
+        # ===== 4.5) 阶梯挖角参数 GroupBox（与标准 L 形共用外框右侧位置）=====
         self._parameter_control.build_staircase_ui()
         self._gb_staircase = self._parameter_control._gb_staircase
         self._stair_corner = self._parameter_control._stair_corner
         self._stair_rows_container = self._parameter_control._stair_rows_container
         self._stair_rows = self._parameter_control._stair_rows
         self._stair_add_btns = self._parameter_control._stair_add_btns
-        self._inner_layout.addWidget(self._gb_staircase)
+        params_row.addWidget(self._gb_staircase, 1)
         self._gb_staircase.setVisible(False)
         multi_staircase = self._corner_control.build_multi_staircase_ui()
         if multi_staircase is not None:
