@@ -299,3 +299,55 @@ class TestDirectionKeywordStrictMatching:
         if best is not None:
             assert '25x44' not in best.filename, \
                 f"竖版26x46目标不得匹配横版25x44模板: {best.filename}"
+
+
+class TestAreaThresholdFilter:
+    """pool 模式面积门槛：面积不足的素材不得参与评分（2026-10-17 修复）。
+
+    业务场景：大理石系列里，"白色大理石8;61x338.5CM" 目标
+    曾被 12x70cm 小图（比例接近但面积远不够）靠比例分赢过 60x350cm 大图。
+    修正：pool 模式下，模板面积 < 目标面积 × 0.64 的候选直接排除。
+    """
+
+    def test_small_template_excluded_in_pool_mode(self, tmp_path):
+        """pool 模式：12x70cm 小图应被面积门槛排除，60x350cm 大图胜出。"""
+        templates = [
+            ("吸水皮革-定制-定制尺寸-白色大理石8;12x70cm.jpg", (700, 120)),
+            ("吸水皮革-定制-定制尺寸-白色大理石8号;60x350CM.jpg", (3500, 600)),
+        ]
+        for name, size in templates:
+            img = Image.new('RGB', size, (255, 255, 255))
+            img.save(tmp_path / name, 'JPEG', quality=80)
+
+        m = TemplateMatcher()
+        m.set_template_dir(str(tmp_path))
+
+        # 目标：pool_mode（含"裁剪有图"），尺寸 61x338.5
+        target = "吸水皮革-定制-裁剪有图-白色大理石8;61x338.5CM裁剪有图"
+        best, candidates = m.find_best_match(target)
+
+        assert best is not None, "应匹配到素材"
+        # 12x70cm 面积=840，目标面积=20648.5，门槛=13215 → 应被排除
+        assert "12x70" not in best.filename, \
+            f"12x70cm 小图面积不足，不得被选中: {best.filename}"
+        # 60x350cm 面积=21000 ≥ 门槛 → 应胜出
+        assert "60x350" in best.filename or "60x350" in best.filename.upper() or \
+               "350" in best.filename, \
+            f"应选中 60x350cm 大图: {best.filename}"
+
+    def test_area_threshold_does_not_affect_normal_mode(self, tmp_path):
+        """普通模式（非 pool）不受面积门槛影响，保持原行为。"""
+        templates = [
+            ("纯色-经典;88x161cm.jpg", (1200, 600)),
+        ]
+        for name, size in templates:
+            img = Image.new('RGB', size, (255, 255, 255))
+            img.save(tmp_path / name, 'JPEG', quality=80)
+
+        m = TemplateMatcher()
+        m.set_template_dir(str(tmp_path))
+        # 非 pool 目标（无"裁剪有图"）
+        target = "纯色-经典;10x20cm"
+        best, _ = m.find_best_match(target)
+        # 普通模式不应触发面积门槛，即使模板比目标大很多也应正常匹配
+        assert best is not None

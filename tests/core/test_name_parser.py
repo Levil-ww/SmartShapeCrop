@@ -16,6 +16,7 @@ from services.parser.name_parser import (
     format_corner_spec,
     _parse_corners,
     _fmt_num,
+    get_base_pattern_name,
 )
 
 
@@ -311,3 +312,40 @@ class TestFilenamePreviewIntegration:
         assert "左下角圆角半径3.1cm" in generated
         reparsed = parse_filename(generated)
         assert reparsed.corners == parsed.corners
+
+
+class TestHaoSuffixNormalization:
+    """'号' 后缀归一：同一花型的带号/不带号命名应得到相同的 base pattern name。
+
+    业务背景：大理石等系列里，"白色大理石8" 与 "白色大理石8号" 是同一张花型图，
+    只是命名时有时带"号"有时不带；素材匹配时应当视为等价。
+    """
+
+    def test_hao_suffix_stripped(self):
+        assert get_base_pattern_name("白色大理石8号") == "白色大理石8"
+
+    def test_without_hao_unchanged(self):
+        assert get_base_pattern_name("白色大理石8") == "白色大理石8"
+
+    def test_hao_suffix_gray_marble(self):
+        assert get_base_pattern_name("灰色大理石4号") == "灰色大理石4"
+
+    def test_colors_remain_distinct(self):
+        """不同颜色仍区分——'号' 归一不跨颜色。"""
+        assert get_base_pattern_name("白色大理石8号") != get_base_pattern_name("灰色大理石8号")
+
+    def test_numbers_remain_distinct(self):
+        """不同编号仍区分——'号' 归一不跨编号。"""
+        assert get_base_pattern_name("白色大理石8号") != get_base_pattern_name("白色大理石14号")
+
+    def test_non_hao_patterns_unaffected(self):
+        """无关花型不受影响。"""
+        assert get_base_pattern_name("简织") == "简织"
+        assert get_base_pattern_name("克罗印花") == "克罗印花"
+
+    def test_parse_filename_pool_pattern_hao_equivalence(self):
+        """端到端：带号/不带号的目标文件名，pool_pattern_name 归一后相同。"""
+        a = parse_filename("吸水皮革-定制-裁剪有图-白色大理石8;61x338.5CM裁剪有图")
+        b = parse_filename("吸水皮革-定制-裁剪有图-白色大理石8号;61x338.5CM裁剪有图")
+        assert a.pool_pattern_name == b.pool_pattern_name
+        assert a.pool_pattern_name == "白色大理石8"

@@ -871,6 +871,7 @@ class TemplateMatcher:
         has_size = (t_w > 0 and t_h > 0)
         t_ratio = (max(t_w, t_h) / min(t_w, t_h)) if has_size else None
         force_pattern = bool(tgt.material and tgt_pattern)
+        tgt_pool_mode = bool(tgt.pool_mode)
 
         # 形状关键词分类（与 name_parser.SHAPE_SUFFIXES 对齐）
         _SHAPE_KEYWORDS_DIRECTION = {'横版', '竖版', '横', '竖'}
@@ -913,6 +914,30 @@ class TemplateMatcher:
                     f"候选 {len(candidate_keys)} → {len(filtered)}"
                 )
             candidate_keys = filtered
+
+        # [Fix 面积门槛 2026-10-17]
+        # pool 模式下，素材需要能覆盖目标区域（单边缩放 ≥ 0.8，即面积 ≥ 0.64）。
+        # 此前面积充足只作为 +10 加分项，导致"比例接近但面积远不够"的小图
+        # （如 12x70cm）靠比例分（+24）赢过"比例略差但面积充足"的大图（如 60x350cm）。
+        # 修正：面积不足直接排除，不再参与评分。
+        if tgt_pool_mode and has_size and candidate_keys:
+            tgt_area = t_w * t_h
+            min_tpl_area = tgt_area * 0.64
+            before_area = len(candidate_keys)
+            filtered_area = set()
+            for k in candidate_keys:
+                e = self._cache.get(k)
+                if e is None:
+                    continue
+                tpl_area = e._width_cm * e._height_cm
+                if tpl_area >= min_tpl_area:
+                    filtered_area.add(k)
+            if self.enable_match_debug_log:
+                self._log(
+                    f"🎯 面积门槛过滤(pool, 目标面积={tgt_area:.1f}, 门槛={min_tpl_area:.1f}): "
+                    f"候选 {before_area} → {len(filtered_area)}"
+                )
+            candidate_keys = filtered_area
 
         scored_count = 0
         shape_rejected_count = 0
@@ -971,7 +996,7 @@ class TemplateMatcher:
                 has_size=has_size,
                 t_w=t_w, t_h=t_h, t_ratio=t_ratio,
                 # —— 水池模式 ——
-                tgt_pool_mode=tgt.pool_mode,
+                tgt_pool_mode=tgt_pool_mode,
                 tgt_pool_pattern=(tgt.pool_pattern_name or "").lower(),
                 # [Fix B 2026-08-31] 方向严格匹配兜底参数
                 tgt_has_explicit_direction=tgt_has_explicit_direction,
