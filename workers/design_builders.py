@@ -124,7 +124,7 @@ def apply_composite_geometry(
     params['canvas_w_cm'] = float(params['outer_w_cm']) + request.trim_cm
     params['canvas_h_cm'] = float(params['outer_h_cm']) + request.trim_cm
     params['outer_margin_cm'] = 0.0
-    if not params.get('cuts_cm'):
+    if not params.get('cuts_cm') and not params.get('cut_rects'):
         raise DesignBuildValidationError("综合形状至少需要 1 处挖角")
     model = DesignModel(design)
     model.apply_composite_params(params)

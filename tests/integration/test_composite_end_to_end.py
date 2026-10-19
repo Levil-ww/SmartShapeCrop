@@ -15,6 +15,8 @@ def test_composite_parameters_flow_to_render():
     panel._hole_mb.setValue(18)
     panel._hole_ml.setValue(45)
     panel._hole_mr.setValue(60)
+    # 综合形状需要真实挖角输入，不能依赖 CropDesign 的历史占位默认值。
+    panel.set_lshape_cuts([{'corner': 'tr', 'cut_w_cm': 35, 'cut_h_cm': 10}])
     params = panel.get_composite_params()
     params.update({'canvas_w_cm': 186, 'canvas_h_cm': 89})
 
@@ -25,6 +27,7 @@ def test_composite_parameters_flow_to_render():
     output = render_design(design)
 
     assert design.mode == 'rect_lshape_hole'
+    assert design.l_cuts_cm == [{'corner': 'tr', 'cut_w_cm': 35, 'cut_h_cm': 10}]
     assert output.size == (186, 89)
 
 

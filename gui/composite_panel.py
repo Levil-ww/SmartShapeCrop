@@ -190,7 +190,8 @@ class CompositePanel(LShapePanel):
 
     def get_composite_params(self) -> dict:
         """返回可直接映射到 CropDesign 的复合参数。"""
-        params = super().get_lshape_params() or {}
+        # 直接读取当前控件，避免模式切换后复用旧识别快照；阶梯真值由 cut_rects 承载。
+        params = self._parameter_control.build_parameter_snapshot()
         params.update({
             'mode': 'rect_lshape_hole',
             'hole_w_cm': self._hole_w.value(),
@@ -216,26 +217,18 @@ class CompositePanel(LShapePanel):
         与水池/L 形面板口径一致；l_cut_* 取真实挖角值而非历史占位默认值，
         否则 validate() 会直接拒绝该 mode 的设计。
         """
-        cuts = self.get_cuts_cm()
-        if not cuts:
-            raise ValueError("综合形状至少需要 1 处挖角（当前挖角列表为空）")
+        from models.design_model import DesignModel
+
         params = self.get_composite_params()
-        primary = cuts[0]
-        return CropDesign(
-            mode='rect_lshape_hole', dpi=dpi,
+        if not params.get('cuts_cm') and not params.get('cut_rects'):
+            raise ValueError("综合形状至少需要 1 处挖角（当前挖角列表为空）")
+        params.update(
             canvas_w_cm=self.get_outer_w_cm() + CUT_LOSS_CM,
             canvas_h_cm=self.get_outer_h_cm() + CUT_LOSS_CM,
-            inner_margin_top_cm=params['hole_margin_top_cm'],
-            inner_margin_bottom_cm=params['hole_margin_bottom_cm'],
-            inner_margin_left_cm=params['hole_margin_left_cm'],
-            inner_margin_right_cm=params['hole_margin_right_cm'],
-            l_corner=primary['corner'],
-            l_cut_w_cm=primary['cut_w_cm'],
-            l_cut_h_cm=primary['cut_h_cm'],
-            l_cuts_cm=cuts,
-            **{f'hole_corner_{key}_cm': spin.value()
-               for key, spin in self._hole_corners.items()},
         )
+        model = DesignModel(CropDesign(dpi=dpi))
+        model.apply_composite_params(params)
+        return model.to_design()
 
     def cancel_composite_parse(self):
         """取消正在运行的综合解析线程（不等待调用方，避免堵塞 UI）。"""
@@ -354,11 +347,18 @@ class CompositePanel(LShapePanel):
             widget.setValue(float(value or 0.0))
         # 2) 外框（2 项）：结果给的是画布值
         self._echo_composite_outer(result.outer_w_cm, result.outer_h_cm)
-        # 3) 挖角（N ≤ 4 项）
-        self._echo_composite_cuts(list(result.cuts_cm or []))
+        # 3) 阶梯识别沿用独立 L 形的条带回填，标准多角保持原路径。
+        lshape_debug = (getattr(result, 'debug', {}) or {}).get('lshape', {}) or {}
+        stair_rects = (lshape_debug.get('cuts_cm') or []
+                       if lshape_debug.get('pattern') == 'single_edge_stepped' else [])
+        if stair_rects:
+            self.set_cut_rects(stair_rects)
+            self._params_source = 'recognize'
+        else:
+            self._echo_composite_cuts(list(result.cuts_cm or []))
         self._refresh_margin_hint()
         self._composite_basis_source = 'recognize'
-        cuts_n = len(self.get_cuts_cm())
+        cuts_n = len(self.get_cut_rects_cm() or self.get_cuts_cm())
         self.set_composite_status(
             f"✅ 识别完成：外框 {self.get_outer_w_cm():.1f} × {self.get_outer_h_cm():.1f} cm"
             f"（画布 {self.get_outer_w_cm() + CUT_LOSS_CM:.1f} × {self.get_outer_h_cm() + CUT_LOSS_CM:.1f} cm），"

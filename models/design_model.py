@@ -57,7 +57,7 @@ class DesignModel:
         """应用 CompositePanel 的纯参数快照，不影响旧模式快照路径。
 
         canvas_*_cm 由调用方给出画布值（外框设计真值 + CUT_LOSS_CM）；
-        cuts_cm 非空时是挖角的唯一几何真值，并同步首个挖角到单角字段。
+        cut_rects 非空时使用阶梯条带，否则使用标准 cuts_cm；两种几何互斥。
         """
         d = copy.deepcopy(self._design)
         d.mode = 'rect_lshape_hole'
@@ -72,14 +72,29 @@ class DesignModel:
         d.l_cut_w_cm = float(params.get('cut_w_cm', d.l_cut_w_cm))
         d.l_cut_h_cm = float(params.get('cut_h_cm', d.l_cut_h_cm))
         cuts = self._normalize_l_cuts(params.get('cuts_cm'))
+        d.l_cuts_cm = cuts
         if cuts:
-            d.l_cuts_cm = cuts
             d.l_corner = cuts[0]['corner']
             d.l_cut_w_cm = cuts[0]['cut_w_cm']
             d.l_cut_h_cm = cuts[0]['cut_h_cm']
-        # 清理从旧模式继承的几何：l_cut_rects 优先级高于 l_cuts_cm（阶梯矩形会静默覆盖
-        # 综合挖角），多洞分支也未按 mode 守卫（会被误当作多洞设计渲染）
-        d.l_cut_rects = []
+        # 阶梯几何只取综合快照，不继承旧模式；保留非法尺寸交由 validate() 拒绝。
+        d.l_cut_rects = [
+            CutRect(
+                anchor=r['anchor'],
+                offset_x_cm=float(r.get('offset_x_cm', 0)),
+                offset_y_cm=float(r.get('offset_y_cm', 0)),
+                w_cm=float(r.get('w_cm', 0)),
+                h_cm=float(r.get('h_cm', 0)),
+            )
+            for r in (params.get('cut_rects') or [])
+        ]
+        if d.l_cut_rects:
+            d.l_cuts_cm = []
+            primary = d.l_cut_rects[0]
+            d.l_corner = primary.anchor
+            d.l_cut_w_cm = primary.w_cm
+            d.l_cut_h_cm = sum(r.h_cm for r in d.l_cut_rects if r.anchor == primary.anchor)
+        # 多洞分支未按 mode 守卫，综合模式必须清理旧多洞参数。
         d.pool_is_multi_hole = False
         d.pool_holes_cm = []
         d.pool_holes_gaps_cm = []
