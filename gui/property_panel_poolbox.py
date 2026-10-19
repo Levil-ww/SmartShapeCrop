@@ -775,7 +775,9 @@ class _PoolBoxMixin:
                     old.deleteLater()
             else:
                 old.deleteLater()
-        worker = _SketchParseWorker(self._sketch_path, target_w, target_h, self)
+        worker = _SketchParseWorker(
+            self._sketch_path, target_w, target_h, self,
+            hole_mode=self._pool_shape_mode.currentData())
         worker.finished_ok.connect(self._on_sketch_parsed)
         worker.finished_err.connect(self._on_sketch_parse_err)
         self._sketch_parse_worker = worker
@@ -788,6 +790,10 @@ class _PoolBoxMixin:
             # 防御：忽略已被新解析取代的旧 worker 发来的结果（sender 不再是当前 worker）
             if self.sender() is not self._sketch_parse_worker:
                 logger.info("[PropertyPanel] 忽略已过期的草图解析结果")
+                return
+            # 模式切换后到达的旧结果不得覆盖当前选择及参数。
+            if (result.success and result.is_multi_hole
+                    != (self._pool_shape_mode.currentData() == "multi")):
                 return
             self._sketch_parse_result = result
 

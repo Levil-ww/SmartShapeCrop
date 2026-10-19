@@ -293,7 +293,8 @@ class PoolRenderWorker(QThread):
                  user_multihole_params: dict = None,
                  lshape_params: dict = None,
                  parent=None,
-                 composite_params: dict = None):
+                 composite_params: dict = None,
+                 pool_shape_mode: str = "auto"):
         """
         composite_params: 综合面板纯数据快照；独立于 L 形及多洞参数。
 
@@ -326,6 +327,7 @@ class PoolRenderWorker(QThread):
         self._template_dir = template_dir
         self._target = target_filename
         self._sketch = sketch_path
+        self._pool_shape_mode = pool_shape_mode
         self._pre_parsed = pre_parsed_result  # 预解析结果（来自 PropertyPanel 自动解析）
         self._user_margins = user_margins  # 用户手动修改的边距（覆盖 pre_parsed）
         # ===== [MULTI-HOLE Add-On 2026-08-29] UI 多洞改动 → Worker 覆盖 =====
@@ -463,7 +465,9 @@ class PoolRenderWorker(QThread):
         canvas_h_cm = file_h   # 原始文件名外框高（竖边）
         if self._sketch and os.path.isfile(self._sketch) and not is_lshape:
             # 优先使用 PropertyPanel 预解析结果（避免重复解析、保留用户调整）
-            if self._pre_parsed is not None and self._pre_parsed.success:
+            if (self._pre_parsed is not None and self._pre_parsed.success
+                    and (self._pool_shape_mode == "auto"
+                         or self._pre_parsed.is_multi_hole == (self._pool_shape_mode == "multi"))):
                 sketch_result = self._pre_parsed
                 self._log("使用界面已解析的草图结果（跳过重复解析）")
             else:
@@ -477,6 +481,8 @@ class PoolRenderWorker(QThread):
                         target_outer_w_cm=file_w,   # 外框参考宽（横边，无损耗）
                         target_outer_h_cm=file_h,   # 外框参考高（竖边，无损耗）
                         progress_callback=_sketch_progress,
+                        **({"hole_mode": self._pool_shape_mode}
+                           if self._pool_shape_mode != "auto" else {}),
                     )
                     self._log(f"草图解析：success={sketch_result.success}")
                     self._log(f"  {sketch_result.message}")
@@ -575,8 +581,10 @@ class _SketchParseWorker(QThread):
     finished_ok = pyqtSignal(object)      # 成功：SketchParseResult
     finished_err = pyqtSignal(str)        # 异常：错误消息
 
-    def __init__(self, sketch_path: str, target_w: float, target_h: float, parent=None):
+    def __init__(self, sketch_path: str, target_w: float, target_h: float, parent=None,
+                 hole_mode: str = "auto"):
         super().__init__(parent)
+        self._hole_mode = hole_mode
         self._sketch_path = sketch_path
         self._target_w = target_w
         self._target_h = target_h
@@ -588,6 +596,7 @@ class _SketchParseWorker(QThread):
                 self._sketch_path,
                 target_outer_w_cm=self._target_w,
                 target_outer_h_cm=self._target_h,
+                **({"hole_mode": self._hole_mode} if self._hole_mode != "auto" else {}),
             )
             # 若已被新解析取代（requestInterruption），不再发射旧结果，避免覆盖新结果
             if self.isInterruptionRequested():

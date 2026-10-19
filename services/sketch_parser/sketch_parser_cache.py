@@ -70,20 +70,21 @@ def _get_image_content_fingerprint(image_path: str) -> str | None:
 
 
 
-def _get_cache_key(image_path: str, target_w: float, target_h: float) -> tuple:
+def _get_cache_key(image_path: str, target_w: float, target_h: float, hole_mode: str = "auto") -> tuple:
     try:
         mtime = os.path.getmtime(image_path)
     except Exception:
         logger.debug("[_get_cache_key] 忽略异常", exc_info=True)
         mtime = 0
     fingerprint = _get_image_content_fingerprint(image_path)
-    return (image_path, mtime, fingerprint, round(target_w, 1), round(target_h, 1), _ALGO_VERSION)
+    key = (image_path, mtime, fingerprint, round(target_w, 1), round(target_h, 1), _ALGO_VERSION)
+    return key if hole_mode == "auto" else key + (hole_mode,)
 
 
 
-def _get_cached_result(image_path: str, target_w: float, target_h: float):
+def _get_cached_result(image_path: str, target_w: float, target_h: float, hole_mode: str = "auto"):
     with _SKETCH_CACHE_LOCK:
-        key = _get_cache_key(image_path, target_w, target_h)
+        key = _get_cache_key(image_path, target_w, target_h, hole_mode)
         cached = _SKETCH_CACHE.get(key)
         if cached is not None:
             logger.info(f"[sketch_parser] 缓存命中：{image_path}")
@@ -93,9 +94,9 @@ def _get_cached_result(image_path: str, target_w: float, target_h: float):
 
 
 
-def _store_cached_result(image_path: str, target_w: float, target_h: float, result):
+def _store_cached_result(image_path: str, target_w: float, target_h: float, result, hole_mode: str = "auto"):
     with _SKETCH_CACHE_LOCK:
-        key = _get_cache_key(image_path, target_w, target_h)
+        key = _get_cache_key(image_path, target_w, target_h, hole_mode)
         if len(_SKETCH_CACHE) >= _SKETCH_CACHE_MAX:
             oldest = next(iter(_SKETCH_CACHE))
             _SKETCH_CACHE.pop(oldest, None)
@@ -104,20 +105,21 @@ def _store_cached_result(image_path: str, target_w: float, target_h: float, resu
 
 
 
-def _get_consistent_cache_key(image_path: str) -> tuple:
+def _get_consistent_cache_key(image_path: str, hole_mode: str = "auto") -> tuple:
     try:
         mtime = os.path.getmtime(image_path)
     except Exception:
         logger.debug("[_get_consistent_cache_key] 忽略异常", exc_info=True)
         mtime = 0
     fingerprint = _get_image_content_fingerprint(image_path)
-    return (image_path, mtime, fingerprint, _ALGO_VERSION)
+    key = (image_path, mtime, fingerprint, _ALGO_VERSION)
+    return key if hole_mode == "auto" else key + (hole_mode,)
 
 
 
-def _get_consistent_cached_result(image_path: str):
+def _get_consistent_cached_result(image_path: str, hole_mode: str = "auto"):
     with _SKETCH_CONSISTENT_CACHE_LOCK:
-        key = _get_consistent_cache_key(image_path)
+        key = _get_consistent_cache_key(image_path, hole_mode)
         cached = _SKETCH_CONSISTENT_CACHE.get(key)
         if cached is not None:
             logger.info(f"[sketch_parser] 自洽解缓存命中：{image_path}")
@@ -127,9 +129,9 @@ def _get_consistent_cached_result(image_path: str):
 
 
 
-def _store_consistent_cached_result(image_path: str, result):
+def _store_consistent_cached_result(image_path: str, result, hole_mode: str = "auto"):
     with _SKETCH_CONSISTENT_CACHE_LOCK:
-        key = _get_consistent_cache_key(image_path)
+        key = _get_consistent_cache_key(image_path, hole_mode)
         if len(_SKETCH_CONSISTENT_CACHE) >= _SKETCH_CONSISTENT_CACHE_MAX:
             oldest = next(iter(_SKETCH_CONSISTENT_CACHE))
             _SKETCH_CONSISTENT_CACHE.pop(oldest, None)

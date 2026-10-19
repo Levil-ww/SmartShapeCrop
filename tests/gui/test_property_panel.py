@@ -98,6 +98,8 @@ class TestPropertyPanelInteraction:
         assert property_panel.get_output_filename() == 'lshape-name'
 
     def test_multihole_margin_edits_are_sent_to_worker(self, property_panel):
+        property_panel._pool_shape_mode.setCurrentIndex(
+            property_panel._pool_shape_mode.findData("multi"))
         property_panel._mh_active_count = 2
         property_panel.design.pool_is_multi_hole = True
         for i in range(2):

@@ -464,8 +464,9 @@ def parse_sketch(
     target_outer_w_cm: float = 0.0,
     target_outer_h_cm: float = 0.0,
     progress_callback=None,
+    hole_mode: str = "auto",
 ) -> SketchParseResult:
-    """解析尺寸草图（严格7步法），永不抛异常。"""
+    """解析尺寸草图；hole_mode 限定 single/multi，默认 auto 保持自动分流。"""
     def _progress(pct, msg):
         if progress_callback:
             try:
@@ -487,32 +488,39 @@ def parse_sketch(
 
     # [P2-07] 缓存查询提前：多洞解析结果同样写入 _SKETCH_CACHE（原实现：
     # 多洞成功直接 return、从不写缓存，导致同一多洞草图重复解析 9 步 OCR）。
-    # 缓存 key 含 mtime + target + _ALGO_VERSION，命中语义与单洞路径完全一致。
-    cached = _get_cached_result(image_path, target_outer_w_cm, target_outer_h_cm)
-    if cached is not None:
+    # 缓存 key 含 mtime + target + _ALGO_VERSION；复用前还需符合所选洞模式。
+    cache_options = {"hole_mode": hole_mode} if hole_mode != "auto" else {}
+    cached = _get_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, **cache_options)
+    if cached is not None and (hole_mode == "auto" or
+                               cached.is_multi_hole == (hole_mode == "multi")):
         return cached
     # 只有在没有目标尺寸时才使用一致缓存（目标尺寸不同时需要重新解析）
     if target_outer_w_cm <= 0 and target_outer_h_cm <= 0:
-        consistent = _get_consistent_cached_result(image_path)
-        if consistent is not None:
-            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent)
+        consistent = _get_consistent_cached_result(image_path, **cache_options)
+        if consistent is not None and (hole_mode == "auto" or
+                                       consistent.is_multi_hole == (hole_mode == "multi")):
+            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, consistent, **cache_options)
             return consistent
 
     # ===== [多洞扩展 2026-08-29] 入口分流 =====
-    # 原则：先快速尝试多洞路径（_classify_hole_layout <5ms），
+    # 手动单洞跳过多洞识别；手动多洞失败不回退单洞。auto 保持原有分流。
+    # 自动模式先快速尝试多洞路径（_classify_hole_layout <5ms），
     # 若草图判定为多洞 → 走 9 步多洞解析；
     # 若草图为单洞或多洞失败（_fallback_to_single_hole=True）→ 继续执行
     #   原有的 7 步单洞解析，零修改、零干扰。
     # 这段代码是 PURE ADD-ON，不触碰任何后续原有逻辑体。
     try:
-        from .sketch_parser_multihole import try_parse_multi_hole
-        _progress(7, "检测多洞布局...")
-        mhr = try_parse_multi_hole(
-            image_path,
-            target_outer_w_cm=target_outer_w_cm,
-            target_outer_h_cm=target_outer_h_cm,
-            progress_callback=progress_callback,
-        )
+        if hole_mode == "single":
+            mhr = {'success': False, '_fallback_to_single_hole': True}
+        else:
+            from .sketch_parser_multihole import try_parse_multi_hole
+            _progress(7, "检测多洞布局...")
+            mhr = try_parse_multi_hole(
+                image_path,
+                target_outer_w_cm=target_outer_w_cm,
+                target_outer_h_cm=target_outer_h_cm,
+                progress_callback=progress_callback,
+            )
         if mhr.get('success'):
             # 多洞识别成功 → 填充扩展结果立即返回
             result.success = True
@@ -548,11 +556,11 @@ def parse_sketch(
             logger.info(f"[parse_sketch] 多洞路径成功: layout={result.layout_type} "
                         f"outer={result.outer_w_cm:.1f}x{result.outer_h_cm:.1f} "
                         f"holes={len(result.holes)}")
-            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result)
+            _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result, **cache_options)
             return result
         else:
             # 非多洞布局 → 静默回退到单洞 7 步法（不打日志打扰用户）
-            if not mhr.get('_fallback_to_single_hole', True):
+            if hole_mode == 'multi' or not mhr.get('_fallback_to_single_hole', True):
                 # 罕见：多洞路径识别为多洞但解析失败 → 失败结果直接返回
                 result.message = mhr.get('message', '多洞识别失败')
                 result.debug['fail_reason'] = mhr.get('message', '')
@@ -560,6 +568,9 @@ def parse_sketch(
             # 否则（quick_check 判定非多洞，或异常 → fallback=True）→ 继续单洞
     except Exception as e:
         # 多洞扩展层异常 → 绝不影响原有单洞路径
+        if hole_mode == "multi":
+            result.message = f"多洞解析异常: {e}"
+            return result
         logger.warning(f"[多洞扩展] 入口分流异常（继续单洞路径）: {e}")
 
     _progress(10, "加载图片...")
@@ -630,8 +641,8 @@ def parse_sketch(
         result.margin_top_cm > 0, result.margin_bottom_cm > 0,
         result.margin_left_cm > 0, result.margin_right_cm > 0,
     ]):
-        _store_consistent_cached_result(image_path, result)
-    _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result)
+        _store_consistent_cached_result(image_path, result, **cache_options)
+    _store_cached_result(image_path, target_outer_w_cm, target_outer_h_cm, result, **cache_options)
 
     _progress(100, "识别完成")
     return result

@@ -178,6 +178,7 @@ class _GenerateMixin:
         worker = PoolRenderWorker(
             self._matcher, tpl_dir, target_name, self._sketch_path if source != 'composite' else '',
             pre_parsed_result=self._sketch_parse_result if source != 'composite' else None,
+            pool_shape_mode=(self._pool_shape_mode.currentData() if source == "pool" else "auto"),
             composite_params=(self._composite_panel.get_composite_params()
                               if source == 'composite' else None),
             user_margins=user_margins,
@@ -736,6 +737,9 @@ class _GenerateMixin:
         返回形状见 PoolRenderWorker.__init__ 中 user_multihole_params 的 docstring。
         """
         try:
+            if (hasattr(self, "_pool_shape_mode")
+                    and self._pool_shape_mode.currentData() != "multi"):
+                return None
             # —— 防御性前置条件（任何一条不满足 → 返回 None，零侵入）——
             if not hasattr(self, '_mh_active_count'):
                 return None
@@ -774,7 +778,8 @@ class _GenerateMixin:
             if hasattr(self, 'design') and self.design is not None:
                 layout = getattr(self.design, 'pool_layout_type', None)
             if (getattr(self, '_sketch_parse_result', None) is not None
-                    and getattr(self._sketch_parse_result, 'success', False)):
+                    and getattr(self._sketch_parse_result, 'success', False)
+                    and getattr(self._sketch_parse_result, 'is_multi_hole', False)):
                 layout = (getattr(self._sketch_parse_result, 'layout_type', None)
                           or layout)
             layout = layout or 'horizontal'
