@@ -41,6 +41,11 @@ class CompositePanel(LShapePanel):
         self.sketch_load_requested.connect(self._load_composite_sketch)
         self._build_composite_controls()
 
+    def _build_ui(self):
+        # 在基类构建参数区前开放现有多角阶梯控件，沿用独立 L 形的编辑与条带语义。
+        self._corner_control._allow_multicorner_staircase = True
+        super()._build_ui()
+
     def _pick_composite_sketch(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "选择综合形状草图", "",

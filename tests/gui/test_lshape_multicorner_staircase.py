@@ -159,7 +159,9 @@ def test_composite_panel_retains_existing_modes(qapp):
     from gui.composite_panel import CompositePanel
     panel = CompositePanel()
     try:
-        assert panel._mode_combo.findData('multicorner_staircase') == -1
+        assert [panel._mode_combo.itemData(i) for i in range(panel._mode_combo.count())] == [
+            'standard', 'staircase', 'multicorner_staircase',
+        ]
     finally:
         panel.shutdown()
         panel.close()
