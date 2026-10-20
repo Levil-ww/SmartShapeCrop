@@ -644,6 +644,7 @@ class LShapePanel(QWidget):
         if not self._staircase_mode:
             return
         snapshot = self._parameter_control.build_parameter_snapshot()
+        self._refresh_margin_hint()
         if self._lshape_params is None:
             self._lshape_params = {}
         self._lshape_params.update(snapshot)
@@ -720,19 +721,35 @@ class LShapePanel(QWidget):
         }
         invalid = any(value < 0 for value in remaining.values())
         color = '#C0392B' if invalid else '#667085'
-        self._margin_hint.setStyleSheet(f"color:{color}; padding: 2px 4px;")
         values = ' · '.join(
             f"{label}{remaining[key]:.1f} cm"
             for key, label in (
                 ('top', '上'), ('bottom', '下'), ('left', '左'), ('right', '右')))
         suffix = "（输入超出外框）" if invalid else ""
-        self._margin_hint.setText(f"边余量：{values}{suffix}")
+        for hint in (self._margin_hint,
+                     getattr(self._corner_control, '_stair_margin_hint', None),
+                     getattr(self._corner_control, '_multi_stair_margin_hint', None)):
+            if hint is not None:
+                hint.setStyleSheet(f"color:{color}; padding: 2px 4px;")
+                hint.setText(f"边余量：{values}{suffix}")
 
     def _refresh_margin_hint(self):
         """屏蔽控件信号的回填结束后，只刷新余量，不触发参数编辑或预览。"""
-        if not self._staircase_mode:
-            self._update_margin_hint(
-                self.get_outer_w_cm(), self.get_outer_h_cm(), self.get_cuts_cm())
+        cuts = self.get_cuts_cm()
+        if self._staircase_mode:
+            # 条带宽度随级数递减；每角取累计占用范围，不能逐条相加。
+            corners = {}
+            for rect in self.get_cut_rects_cm():
+                corner = rect['anchor']
+                cut = corners.setdefault(corner, {
+                    'corner': corner, 'cut_w_cm': 0.0, 'cut_h_cm': 0.0})
+                cut['cut_w_cm'] = max(
+                    cut['cut_w_cm'], rect['offset_x_cm'] + rect['w_cm'])
+                cut['cut_h_cm'] = max(
+                    cut['cut_h_cm'], rect['offset_y_cm'] + rect['h_cm'])
+            cuts = list(corners.values())
+        self._update_margin_hint(
+            self.get_outer_w_cm(), self.get_outer_h_cm(), cuts)
 
     # ====================================================================
     # L 形挖角识别（Worker 调度 + 确认框，逻辑与原实现一致）

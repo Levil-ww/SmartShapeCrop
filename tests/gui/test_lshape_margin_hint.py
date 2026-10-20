@@ -111,3 +111,81 @@ def test_single_corner_fill_and_clear_refreshes(lshape_panel, corner):
                    70.0 if corner in ('tr', 'br') else 80.0)
     panel.set_lshape_cuts([])
     assert_margins(panel, 100.0, 100.0, 80.0, 80.0)
+
+
+def staircase_strips(anchor):
+    return [
+        {'anchor': anchor, 'offset_x_cm': 0, 'offset_y_cm': 0,
+         'w_cm': 30, 'h_cm': 8},
+        {'anchor': anchor, 'offset_x_cm': 0, 'offset_y_cm': 8,
+         'w_cm': 10, 'h_cm': 12},
+    ]
+
+
+@pytest.mark.parametrize('corner', ['tl', 'tr', 'bl', 'br'])
+def test_staircase_margin_fill_edit_and_outer_sync(lshape_panel, corner):
+    panel = lshape_panel
+    previews = []
+    panel.generate_requested.connect(lambda: previews.append(True))
+    panel.set_outer_dims(100, 80)
+    panel.set_cut_rects(staircase_strips(corner))
+    hint = panel._corner_control._stair_margin_hint
+    assert hint.parentWidget() is panel._gb_staircase
+    assert not hint.isHidden()
+    assert not panel._gb_staircase.isHidden()
+    assert_margins(panel,
+                   70 if corner in ('tl', 'tr') else 100,
+                   70 if corner in ('bl', 'br') else 100,
+                   60 if corner in ('tl', 'bl') else 80,
+                   60 if corner in ('tr', 'br') else 80)
+    assert hint.text() == panel._margin_hint.text()
+    panel._stair_corner.setCurrentIndex(panel._stair_corner.findData('tr'))
+    panel._stair_rows[1][0].setValue(15)
+    panel._stair_rows[1][1].setValue(14)
+    assert_margins(panel, 65, 100, 80, 58)
+    panel.set_outer_dims(110, 90)
+    assert_margins(panel, 75, 110, 90, 68)
+    panel._sp_outer_h.setValue(101)
+    assert_margins(panel, 75, 110, 100, 78)
+    panel._on_stair_remove_level()
+    assert_margins(panel, 90, 110, 100, 92)
+    assert hint.text() == panel._margin_hint.text()
+    assert not previews
+
+
+def test_multicorner_staircase_margin_toggle_overflow_and_switch(lshape_panel):
+    panel = lshape_panel
+    panel.set_outer_dims(100, 35)
+    panel.set_cut_rects(staircase_strips('tr') + staircase_strips('br'))
+    control = panel._corner_control
+    hint = control._multi_stair_margin_hint
+    assert hint.parentWidget() is control._gb_multi_staircase
+    assert not hint.isHidden()
+    assert not control._gb_multi_staircase.isHidden()
+    assert_margins(panel, 70, 70, 35, -5)
+    assert '输入超出外框' in hint.text()
+    assert '#C0392B' in hint.styleSheet()
+    control._multi_stair_groups['br']['box'].setChecked(False)
+    assert_margins(panel, 70, 100, 35, 15)
+    assert '输入超出外框' not in hint.text()
+    group = control._multi_stair_groups['tr']
+    control.add_level(group)
+    group['rows'][-1][0].setValue(5)
+    group['rows'][-1][1].setValue(4)
+    assert_margins(panel, 65, 100, 35, 11)
+    assert hint.text() == panel._margin_hint.text()
+    control.remove_level(group)
+    assert_margins(panel, 70, 100, 35, 15)
+    panel._mode_combo.setCurrentIndex(panel._mode_combo.findData('staircase'))
+    assert control._stair_margin_hint.text() == hint.text()
+    assert not panel._gb_staircase.isHidden()
+    panel.clear_lshape_params()
+    assert_margins(panel, 4, 4, 4, 4)
+    panel.set_outer_dims(100, 35)
+    assert_margins(panel, 100, 100, 35, 35)
+    for mode, active_hint in (
+            ('staircase', control._stair_margin_hint),
+            ('multicorner_staircase', hint)):
+        panel._mode_combo.setCurrentIndex(panel._mode_combo.findData(mode))
+        assert_margins(panel, 100, 100, 35, 35)
+        assert active_hint.text() == panel._margin_hint.text()

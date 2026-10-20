@@ -67,6 +67,7 @@ class CornerCutControl(QWidget):
             self._mode_combo.setCurrentIndex(self._mode_combo.findData(mode))
         finally:
             self._mode_combo.blockSignals(False)
+        panel._refresh_margin_hint()
 
     def on_mode_combo_changed(self, *args) -> None:
         panel = self._panel
@@ -171,6 +172,8 @@ class CornerCutControl(QWidget):
         self.add_level_row()
         self.add_level_row()
         self.update_buttons()
+        self._stair_margin_hint = self._build_margin_hint(self._gb_staircase)
+        form.addWidget(self._stair_margin_hint)
         return self._gb_staircase
 
     def build_multi_staircase_ui(self):
@@ -220,6 +223,8 @@ class CornerCutControl(QWidget):
             self.update_buttons(group)
             box.toggled.connect(self._panel._parameter_control.on_staircase_changed)
             grid.addWidget(box, index // 2, index % 2)
+        self._multi_stair_margin_hint = self._build_margin_hint(self._gb_multi_staircase)
+        form.addWidget(self._multi_stair_margin_hint)
         self._gb_multi_staircase.setVisible(False)
         return self._gb_multi_staircase
 
@@ -360,10 +365,7 @@ class CornerCutControl(QWidget):
             row.addWidget(height, 1)
             form.addLayout(row)
             rows.append((enabled, combo, width, height))
-        margin_hint = QLabel("边余量：上— · 下— · 左— · 右—", group)
-        margin_hint.setObjectName("margin_hint")
-        margin_hint.setWordWrap(True)
-        margin_hint.setStyleSheet("color:#667085; padding: 2px 4px;")
+        margin_hint = self._build_margin_hint(group)
         form.addWidget(margin_hint)
         self._corner_rows = rows
         self._gb_l = group
@@ -372,6 +374,14 @@ class CornerCutControl(QWidget):
         self._sp_lh = rows[0][3]
         self._margin_hint = margin_hint
         return group
+
+    @staticmethod
+    def _build_margin_hint(parent):
+        hint = QLabel("边余量：上— · 下— · 左— · 右—", parent)
+        hint.setObjectName("margin_hint")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#667085; padding: 2px 4px;")
+        return hint
 
     def get_mode(self) -> str:
         if self._multicorner_staircase_mode:
