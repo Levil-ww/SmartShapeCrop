@@ -79,12 +79,20 @@ python -m pytest tests/gui/ -v
 - 打包：
 
 ```powershell
-python packaging/packageV2.2.5.py
+python packaging/packageV2.2.6.py
 ```
 
-  当前打包入口是 `packaging/packageV2.2.5.py`（配 `packaging/specs/智能裁剪设计器V2.2.5.spec`）。
+  当前打包入口是 `packaging/packageV2.2.6.py`（配 `packaging/specs/智能裁剪设计器V2.2.6.spec`）。
   `packaging/packageV2.2.2.py` 保留备查，**不要再用于出包**（其 `PROJECT_ROOT` 关系与版本号
   均指向 V2.2.2）。`packaging/legacy/` 已不存在，无需再避让。
+
+## 当前版本与提交推送约定
+
+- 自 2026-10-20 起，当前开发版本统一为 **V2.2.6**，版本唯一来源为 `core/config.py` 的 `APP_VERSION`。
+- 后续所有新提交及推送所含的新提交统一使用 `v2.2.6- 变更说明` 格式；沿用仓库小写 `v` 前缀风格，不再新增 `v2.2.5-` 提交。
+- 推送前确认程序版本、当前打包入口及本次文档说明均对应 V2.2.6；历史提交、标签、版本报告和既有交付物保留原版本，不重写历史。
+- 本次仅更新源码版本、打包入口与说明文档，未构建 V2.2.6 EXE；历史交付物不代表当前源码版本。
+- 版本变更说明见 `packaging/releases/20261020-v2.2.6.md`。
 
 ## 当前状态
 
@@ -137,14 +145,14 @@ python packaging/packageV2.2.5.py
 - 测试必须使用 `assert`，不要用 `return <bool>` 代替断言。
 - 保持兼容 shim，除非用户明确要求迁移旧导入路径。
 - 不要硬编码本机绝对路径，例如 `D:\SmartShapeCrop\...`。
-- 提交信息风格当前未发现强制规范；如需提交，先保持与仓库既有提交风格一致。
+- 提交信息统一使用 `v2.2.6- 变更说明`；后续提交与推送遵循上文「当前版本与提交推送约定」。
 
 ## 禁止
 
 - 不要修改用户未要求的文件；改动前先看 `git status`，不要回退已有未提交改动。
 - 不要安装 `python-qt5`，它会与 `PyQt5` 冲突并可能破坏 Windows DLL 加载。
 - 不要把正式 pytest 测试放进 `scripts/`、`_archive/`、`packaging/` 或 `ProductSummary/`。
-- 不要用 `packaging/packageV2.2.2.py` 出包；当前打包入口是 `packaging/packageV2.2.5.py`。
+- 不要用 `packaging/packageV2.2.2.py` 出包；当前打包入口是 `packaging/packageV2.2.6.py`。
 - 不要随意清理或改写 `logs/`、`build/`、`dist/` 生成物，除非任务明确涉及诊断、构建或打包。
 - 不要改 `.venv/`、`.git/`、`.idea/`、`.pytest_cache/`、`.workbuddy/`。
 - 涉及依赖安装、打包环境、OCR/Tesseract 路径、删除文件、数据库/持久化格式迁移、批量移动历史文档或更改测试基线时，先问用户。

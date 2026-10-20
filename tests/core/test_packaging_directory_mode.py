@@ -11,14 +11,14 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def packaging_script():
     spec = importlib.util.spec_from_file_location(
-        '_directory_packaging_probe', ROOT / 'packaging' / 'packageV2.2.5.py')
+        '_directory_packaging_probe', ROOT / 'packaging' / 'packageV2.2.6.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 def test_default_is_directory_with_ocr(packaging_script, monkeypatch):
-    monkeypatch.setattr(packaging_script.sys, 'argv', ['packageV2.2.5.py'])
+    monkeypatch.setattr(packaging_script.sys, 'argv', ['packageV2.2.6.py'])
     options = packaging_script.parse_args()
     assert options['mode'] == 'onedir'
     assert options['embed_tesseract'] is True
@@ -27,7 +27,7 @@ def test_default_is_directory_with_ocr(packaging_script, monkeypatch):
 
 @pytest.mark.parametrize('mode', ['onedir', 'onefile'])
 def test_explicit_mode_preserves_dependencies(packaging_script, monkeypatch, mode, tmp_path):
-    monkeypatch.setattr(packaging_script.sys, 'argv', ['packageV2.2.5.py', '--' + mode])
+    monkeypatch.setattr(packaging_script.sys, 'argv', ['packageV2.2.6.py', '--' + mode])
     options = packaging_script.parse_args()
     assert options['mode'] == mode
     tess = tmp_path / 'tesseract'

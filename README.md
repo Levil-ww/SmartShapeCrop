@@ -1,8 +1,10 @@
-# SmartShapeCrop — 智能形状裁剪设计器 V2.2.5
+# SmartShapeCrop — 智能形状裁剪设计器 V2.2.6
 
 > 面向印刷行业定制尺寸成品图的桌面设计工具：等比缩放 + 圆角裁剪 + 多层边框处理 + 水池设计器草图 OCR 智能识别 + 多洞嵌套 + 椭圆挖洞 + L 形挖角（单角 / 多角并行 / 单边阶梯）独立设计 + L 形挖角素材边框自动补全 + 综合形状（水池 + L 形挖角复合设计）。
 
 **最后验证**：2026-10-06（V2.2.5 综合形状功能、控件抽离与组合、统一参数协议重构、L 形边框与阶梯修复、导出掩膜优化、关窗线程修复，并**完成 V2.2.5 出包**后复验）
+**当前版本更新**：2026-10-20 起统一使用 **V2.2.6**；本次仅更新源码版本、打包入口与文档，尚未构建 V2.2.6 EXE。上方 V2.2.5 验证记录属于历史交付。
+**提交与推送约定**：后续新提交统一使用 `v2.2.6- 变更说明`，推送时保持 V2.2.6 版本一致；不重写历史提交或标签。详见 [V2.2.6 更新说明](packaging/releases/20261020-v2.2.6.md)。
 **更新触发**：目录结构变更、模块迁移、依赖变更、测试基线变更、打包入口变更时须同步更新本文件
 **版本唯一来源**：`core/config.py` 的 `APP_VERSION`（由打包脚本 / 启动日志头 / 关于框三处引用，发版只改这一行）
 
@@ -281,7 +283,8 @@ SmartShapeCrop/
 │
 ├── packaging/                      # PyInstaller 打包
 │   ├── README.md                   #   打包目录说明
-│   ├── packageV2.2.5.py            #   【当前唯一入口】V2.2.5 打包脚本，exe 名由 APP_VERSION 派生
+│   ├── packageV2.2.6.py            #   【当前唯一入口】V2.2.6 打包脚本，exe 名由 APP_VERSION 派生
+│   ├── packageV2.2.5.py            #   历史入口（保留备查）
 │   ├── packageV2.2.2.py            #   历史入口（保留备查，exe 名硬编码为 V2.2.2，勿再用于出包）
 │   ├── packageV2.2.3.py            #   历史入口（保留备查，exe 名硬编码为 V2.2.3，勿再用于出包）
 │   ├── releases/                   #   出包验证记录
@@ -431,25 +434,25 @@ python -m pytest tests/integration/ -v
 ### 打包发布
 
 ```bash
-# 使用当前 V2.2.5 打包入口，生成目录模式打包产物（默认）
-python packaging/packageV2.2.5.py
+# 使用当前 V2.2.6 打包入口，生成目录模式打包产物（默认）
+python packaging/packageV2.2.6.py
 
 # 单文件模式
-python packaging/packageV2.2.5.py --onefile
+python packaging/packageV2.2.6.py --onefile
 
 # 调试模式（带控制台窗口）
-python packaging/packageV2.2.5.py --debug
+python packaging/packageV2.2.6.py --debug
 
 # 清理旧构建后打包
-python packaging/packageV2.2.5.py --clean
+python packaging/packageV2.2.6.py --clean
 
 # 不内嵌 Tesseract（默认已内嵌，用户免安装 OCR）
-python packaging/packageV2.2.5.py --no-tesseract
+python packaging/packageV2.2.6.py --no-tesseract
 ```
 
-打包要点（V2.2.5）：
+打包要点（V2.2.6）：
 
-- 产物：`dist/SmartShapeCropV2.2.5/智能裁剪设计器V2.2.5.exe`（目录模式，含 `_internal/` 资源目录）；zip 归档 `dist/SmartShapeCropV2.2.5-20261006.zip`（约 220 MB）
+- 预期产物：`dist/SmartShapeCropV2.2.6/智能裁剪设计器V2.2.6.exe`（目录模式，含 `_internal/` 资源目录）；本次未执行打包，V2.2.6 产物尚未验收。
 - **exe 名与打包横幅由 `core/config.py` 的 `APP_VERSION` 派生**，脚本内不再硬编码版本号 —— 发版只需改 `APP_VERSION` 一行
 - 自动内嵌本机 Tesseract-OCR 到 exe 内部，用户机器免安装即可使用草图 OCR
 - hidden imports 声明 `services.*` / `workers.*` / `models.*` / `core.*`；
@@ -457,7 +460,7 @@ python packaging/packageV2.2.5.py --no-tesseract
   **不要**声明 `core.psd.loader` 之类子路径（该文件不存在，会报 `Hidden import not found`），应声明 `services.psd.loader`
 - 打包失败时 onefile 自动回退 onedir；崩溃时在 exe 同目录生成 `crash.log` 便于排障
 - **交付物时效铁律**：出包后须确认 `dist/*.exe` 时间戳 ≥ 最新源码时间戳
-  （✅ **2026-10-06 实测通过**：`智能裁剪设计器V2.2.5.exe` 已确认；打包工具 PyInstaller 6.22.3）
+  （历史 V2.2.5 于 2026-10-06 验收通过；V2.2.6 须在实际构建后重新验收）
 
 ---
 
@@ -864,7 +867,7 @@ Step7: 几何校验（inner = outer - margin_sum，5%偏差强制修正 + 自洽
 **版本号单一事实来源**（V2.2.3 新增）：
 
 ```python
-APP_VERSION: str = "2.2.5"
+APP_VERSION: str = "2.2.6"
 APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 ```
 
@@ -872,7 +875,7 @@ APP_DISPLAY_NAME: str = f"智能裁剪设计器V{APP_VERSION}"
 
 | 消费方 | 引用方式 |
 |---|---|
-| 打包脚本 `packaging/packageV2.2.5.py` | `importlib.util.spec_from_file_location` **按文件路径加载** `core/config.py` |
+| 打包脚本 `packaging/packageV2.2.6.py` | `importlib.util.spec_from_file_location` **按文件路径加载** `core/config.py` |
 | 启动日志头 `core/log_setup.py` | 函数内**局部导入** `from .config import APP_VERSION` |
 | 「关于」框 `main.py` | `from core.config import px_to_cm, APP_VERSION` |
 
@@ -1260,7 +1263,7 @@ python -m pytest tests/integration/ -v
 
 | 项目 | 值 |
 |---|---|
-| 文档版本 | V2.2.5 |
+| 文档版本 | V2.2.6 |
 | 最后验证 | 2026-10-06 |
 | 验证方式 | 全量测试实跑（`.venv`，**1145 passed**）+ 目录结构遍历 + 源码关键符号核对 + **`dist` 产物出包与时间戳比对**（目录模式打包 + zip 归档核验）+ **缺陷修复的判别力自检**（回退到修复前重跑，确认用例会红） |
 | 生命周期阶段 | 活跃开发期（V2.2.5 控件抽离与统一参数协议重构已落地；**V2.2.5 目录模式打包已于 2026-10-06 出包**；综合形状功能全链路交付） |
@@ -1311,7 +1314,7 @@ python -m pytest tests/integration/ -v
 10. **环境风险**：切勿安装 `python-qt5`（与 PyQt5 同名冲突，破坏 DLL 加载）；`.venv` 曾因磁盘迁移与黑包安装反复损坏，重建后须复跑全量测试再出包。
 11. **兼容 shim 清理**：当所有调用方迁移到新路径后，可删除 `core/compat/`、`core/parser/`、`core/pool_designer/`、`core/psd/` shim 及 `gui/property_panel_workers.py` shim，无需改动业务代码。
     ⚠️ 在 shim 仍存在期间，打包的 hidden-import **只能声明 `services.psd.loader`**，不可声明 `core.psd.loader`（该文件不存在，会报 `Hidden import not found`）。
-12. **历史脚本归档**：`packaging/legacy/` 已于 **2026-09-17 整目录删除**（原含 `package*.py` 6 个 + `build_exe.bat`）。当前唯一入口为 `packaging/packageV2.2.5.py`（`packageV2.2.2.py` 保留备查，其 exe 名硬编码为 V2.2.2，**勿再用于出包**）。
+12. **历史脚本归档**：`packaging/legacy/` 已于 **2026-09-17 整目录删除**（原含 `package*.py` 6 个 + `build_exe.bat`）。当前唯一入口为 `packaging/packageV2.2.6.py`（`packageV2.2.2.py` 保留备查，其 exe 名硬编码为 V2.2.2，**勿再用于出包**）。
 13. **⚠️ Git 操作警示**：`git gc` / `git repack` 在本机曾导致 `.git` 被清空、历史全失，此类操作前请先 `cp -r .git .git.bak`。
 14. **✅ 已修复：`core/artifact_cleanup.py` 越界删除（2026-09-24）** —— 原用 `Path.rglob('*')` 收集候选：Python 3.13 的 `**` 只对**符号链接**停止递归，而 **Windows junction（目录联接）不是符号链接**（`os.path.islink()` 对它返回 `False`），故会进入其目标目录、联出目录外的**真实文件**并被 `os.remove` 删除（**已复现**）。符号链接（symlink）无此问题：目录链接不被进入、文件链接只删链接自身。
     修复：新增 `_is_link_node()`（`os.path.isjunction()`；Python < 3.12 退回按 `st_reparse_tag` 判定）+ `_iter_tree()` 剪枝遍历（产出与 `Path.rglob('*')` **逐条一致**，保持下游稳定排序的 tie-break 不变）；链接节点**既不递归、也不纳入** `candidates` / `empties`。配套 8 条回归用例见 `tests/core/test_artifact_cleanup_links.py`。
@@ -1327,4 +1330,4 @@ python -m pytest tests/integration/ -v
 
 ---
 
-<sub>SmartShapeCrop README · 文档版本 V2.2.5 · 最后验证 2026-10-06</sub>
+<sub>SmartShapeCrop README · 文档版本 V2.2.6 · 版本说明更新 2026-10-20 · 历史全量验证 2026-10-06</sub>
