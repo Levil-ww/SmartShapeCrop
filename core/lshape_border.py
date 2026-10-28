@@ -848,6 +848,13 @@ def _patch_lshape_auto_layers(
 
     stroke_x = measured_stroke(True, layers_x[0][1])
     stroke_y = measured_stroke(False, layers_y[0][1])
+    # 描边实测会吸收内缘抗锯齿像素；从相邻色带扣回同样宽度，
+    # 保持已检测的内框绝对深度，避免接头伸进原素材外侧色带。
+    if len(layers_x) == len(layers_y) == 3:
+        layers_x = [layers_x[0], (layers_x[1][0], max(
+            1, layers_x[0][1] + layers_x[1][1] - len(stroke_x))), layers_x[2]]
+        layers_y = [layers_y[0], (layers_y[1][0], max(
+            1, layers_y[0][1] + layers_y[1][1] - len(stroke_y))), layers_y[2]]
     layers_x = [(layers_x[0][0], len(stroke_x)), *layers_x[1:]]
     layers_y = [(layers_y[0][0], len(stroke_y)), *layers_y[1:]]
     x0 = 0 if cut_corner in ('tl', 'bl') else sw - cw
@@ -1435,7 +1442,7 @@ def _v13_segv(arr: np.ndarray, tol: int = 12):
 
 
 def _v13_pick(segs, window_size: int | None = None):
-    """V13 段选择：最外暗色段=黑描边，其后第一个彩色段=主色带。
+    """V13 段选择：最外暗色段=黑描边，紧邻的彩色段=主色带。
 
     返回 (black_width, band_width, black_color, band_color) 或 None。
     black_color：最外暗色段的中位色（真实描边色）。重绘时必须透传该色
@@ -1504,9 +1511,11 @@ def _v13_pick(segs, window_size: int | None = None):
         # 30px 纯黑边 + 米色内容区曾误检 band=236px）。
         if min_ok and color_ok and j + 1 < len(segs):
             return (bw, w, edge_color, c)
-        # 遇到纯黑段（max<60）：可能是多层边框的内层黑描边，跳过继续
-        # 遇到近白段（max>235）：可能是留白，跳过继续
-        # 不提前 break — 允许 band 间有窄过渡段
+        # 主带必须紧邻外描边（允许少量 JPEG 过渡）。不能跨过宽浅色
+        # 边距去拾取内部虚线/花纹，否则悠米的虚线会被铺成连续深色带。
+        if w > 6:
+            break
+        # 窄灰段/浅色段可能是抗锯齿，继续查找紧邻主带。
     return (bw, 0, edge_color, (0, 0, 0))
 
 

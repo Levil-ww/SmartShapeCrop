@@ -434,6 +434,11 @@ def _classify_profile(segs: list[_Seg], field_ref: tuple,
         merged = _merge_segs(grp)
         if merged:
             layers.append(merged)
+    if len(layers) == 3 and len(grouped) == 3:
+        # 单像素过渡不单独补画，但它们占据的深度不能随过滤而消失。
+        # 将描边到内框之间的间隙计入色带，保持内框在原图中的绝对位置。
+        layers[1] = (layers[1][0],
+                     grouped[2][0].d0 - grouped[0][-1].d1 - 1)
     layers = layers[:_MAX_LAYERS]
     if not layers:
         return None
@@ -1087,12 +1092,12 @@ def _apply_profile_path(*,
                 directional.append([t for _, t in candidate])
         if len(directional) == 2:
             widths_x, widths_y = directional
-            if any(abs(tx-ty) > max(2, min(tx, ty) * 0.15)
-                   for tx, ty in zip(widths_x, widths_y)):
-                layers_x = [(c, max(1, round(t * _sx)))
-                            for (c, _), t in zip(layers_colored, widths_x)]
-                layers_y = [(c, max(1, round(t * _sy)))
-                            for (c, _), t in zip(layers_colored, widths_y)]
+            # 小于 15% 的边宽差也会在接头处形成可见线头；蔓栖枝
+            # 原图底边与侧边相差约 20px，不能再用四边平均值替代。
+            layers_x = [(c, max(1, round(t * _sx)))
+                        for (c, _), t in zip(layers_colored, widths_x)]
+            layers_y = [(c, max(1, round(t * _sy)))
+                        for (c, _), t in zip(layers_colored, widths_y)]
 
     if cut_area_mask is not None or staircase_cut_rects:
         from .lshape_border import _draw_staircase_union_layers
