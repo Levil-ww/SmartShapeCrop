@@ -831,14 +831,14 @@ class TemplateMatcher:
     # 匹配：预过滤 + 评分
     # ------------------------------------------------------------
 
-    def find_best_match(self, target_filename: str) -> tuple[Optional[TemplateEntry], list[TemplateEntry]]:
+    def find_best_match(self, target_filename: str, *, prefer_size: bool = False) -> tuple[Optional[TemplateEntry], list[TemplateEntry]]:
         self._lock.acquire()
         try:
-            return self._find_best_match_impl(target_filename)
+            return self._find_best_match_impl(target_filename, prefer_size=prefer_size)
         finally:
             self._lock.release()
 
-    def _find_best_match_impl(self, target_filename: str) -> tuple[Optional[TemplateEntry], list[TemplateEntry]]:
+    def _find_best_match_impl(self, target_filename: str, *, prefer_size: bool = False) -> tuple[Optional[TemplateEntry], list[TemplateEntry]]:
         if not self._template_dir:
             self._log("⚠️ 请先设置模板库目录")
             return None, []
@@ -1012,7 +1012,16 @@ class TemplateMatcher:
                 e.ratio_diff = details.get('ratio_diff', float('inf'))
                 candidates.append(e)
 
-        candidates.sort(key=lambda e: e.score, reverse=True)
+        if prefer_size and has_size:
+            # 圆角裁剪优先同花型，再比较尺寸差，避免小图被过度放大。
+            # 文件名作为最终排序键，使同分同尺寸的结果稳定。
+            candidates.sort(key=lambda e: (
+                0 if tgt_pattern and e._pattern_key == tgt_pattern else
+                1 if e.name_match else 2,
+                e.size_diff, e.ratio_diff, e.path.lower(), e.path,
+            ))
+        else:
+            candidates.sort(key=lambda e: e.score, reverse=True)
 
         self._log(f"⚡ 候选集 {len(candidate_keys)} → 评分 {scored_count} → 入围 {len(candidates)}")
 

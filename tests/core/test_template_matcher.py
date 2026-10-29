@@ -105,6 +105,21 @@ class TestTemplateMatcher:
 class TestScoringDetails:
     """评分细节"""
 
+    def test_size_priority_avoids_smaller_same_ratio_image(self, tmp_path):
+        for name in (
+            "双面格-定制-定制尺寸-奥斯汀;33x153.3CM.jpg",
+            "双面格-定制-定制尺寸-奥斯汀;50x230CM.jpg",
+            "吸水皮革-定制-定制尺寸-奥斯汀;50.2x232.8CM.jpg",
+        ):
+            Image.new('RGB', (10, 10)).save(tmp_path / name)
+        matcher = TemplateMatcher()
+        matcher.disk_cache_enabled = False
+        matcher.set_template_dir(str(tmp_path))
+        target = "双面格-定制-定制尺寸-奥斯汀;50.2x232.8CM右下角圆角半径3.6cm"
+        best, candidates = matcher.find_best_match(target, prefer_size=True)
+        assert best.filename.endswith("50.2x232.8CM.jpg")
+        assert best.size_diff < next(c.size_diff for c in candidates if '50x230' in c.filename)
+
     def test_size_diff_zero_for_exact_match(self, template_dir):
         """精确尺寸匹配 size_diff 应接近 0"""
         m = TemplateMatcher()

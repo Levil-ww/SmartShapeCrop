@@ -85,7 +85,7 @@ class AutoMatchWorker(QThread):
             self.progress.emit(60, "正在匹配源图...")
             self.log_msg.emit("正在匹配源图...")
 
-            best, candidates = self._matcher.find_best_match(self._target_name)
+            best, candidates = self._matcher.find_best_match(self._target_name, prefer_size=True)
             match_dt = time.time() - t0
 
             self.progress.emit(100, "匹配完成")

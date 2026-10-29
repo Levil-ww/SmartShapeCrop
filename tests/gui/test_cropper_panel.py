@@ -28,6 +28,7 @@ class TestCropperPanelInitialState:
         items = gui_helpers.combo_items(combo)
         for m in EXPECTED_RESIZE_MODES:
             assert m in items, f'缩放模式下拉缺少「{m}」，现有：{items}'
+        assert combo.currentData() == 'simple_resize'
 
     def test_corner_mode_buttons_exist(self, cropper_panel, gui_helpers):
         for text in EXPECTED_CORNER_MODES:
