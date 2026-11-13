@@ -168,7 +168,7 @@ class CompositePanel(LShapePanel):
         self._btn_composite_recognize.clicked.connect(self._recognize_composite_sketch)
         controls_layout.addWidget(self._btn_composite_recognize)
         # 状态行：L 形面板的状态行在隐藏的识别区里，这里必须有独立可见的反馈区
-        self._composite_status = QLabel("（填写目标文件名并上传草图后，点上方按钮识别综合形状）")
+        self._composite_status = QLabel("可手动填写外框、挖角和中心洞参数后生成预览；也可上传草图进行识别。")
         self._composite_status.setWordWrap(True)
         self._composite_status.setStyleSheet("color:#555; padding: 4px 6px;")
         controls_layout.addWidget(self._composite_status)

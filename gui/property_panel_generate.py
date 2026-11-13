@@ -146,7 +146,7 @@ class _GenerateMixin:
             return
 
         # [Fix 2026-08-28] 检测用户手动修改的边距值
-        user_margins = self._detect_user_margin_edits() if source != 'composite' else None
+        user_margins = self._detect_user_margin_edits() if source == 'pool' else None
 
         # ===== [MULTI-HOLE Add-On 2026-08-29] UI 多洞改动 → 传入 Worker =====
         user_multihole_params = self._detect_multihole_edits() if source != 'composite' else None
@@ -697,13 +697,13 @@ class _GenerateMixin:
                   若没有用户修改，返回空 dict。
         """
         result = {}
-        # L 形模式：margins 恒为 0（L 形 = 画布挖角），不检测用户边距修改
-        # ===== [L-Shape Panel Refactor 2026-09-02] 从 LShapePanel 读取 L 形参数 =====
-        if self._get_lshape_params() is not None:
-            return result
+        # 此方法只由水池生成入口调用；无草图时直接使用面板中的四边距。
         sr = self._sketch_parse_result
         if sr is None or not getattr(sr, 'success', False):
-            return result
+            if self._sketch_path and os.path.isfile(self._sketch_path):
+                return result
+            return {'top': self._sp_mt.value(), 'bottom': self._sp_mb.value(),
+                    'left': self._sp_ml.value(), 'right': self._sp_mr.value()}
 
         # 对比容差：0.01cm 以内视为相同（避免浮点精度问题）
         TOL = 0.01

@@ -346,8 +346,12 @@ def apply_pool_geometry(
          design.inner_margin_left_cm, design.inner_margin_right_cm) = vals
     else:
         m = min(canvas_w_cm, canvas_h_cm) * .10
+        vals = [m, m, m, m]
+        if user_margins and not is_lshape:
+            vals = [float(user_margins[k]) if user_margins.get(k) is not None else v
+                    for k, v in zip(('top', 'bottom', 'left', 'right'), vals)]
         (design.inner_margin_top_cm, design.inner_margin_bottom_cm,
-         design.inner_margin_left_cm, design.inner_margin_right_cm) = (m, m, m, m)
+         design.inner_margin_left_cm, design.inner_margin_right_cm) = vals
     (multihole_builder or build_multihole_geometry)(
         design, sketch_result, trim_cm, user_multihole, log)
     design.pool_hole_transparent = True
