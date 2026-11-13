@@ -699,6 +699,14 @@ class PropertyPanel(_LayersMixin, _GenerateMixin, _PoolBoxMixin, QWidget):
             return
         # 触发统一处理（解析尺寸 + 回填画布 + 跳过矩形草图解析）
         self._on_pool_target_changed(text, source='lshape')
+        try:
+            parsed = parse_filename(text.strip())
+            w = float(getattr(parsed, 'width_cm', 0.0) or 0.0)
+            h = float(getattr(parsed, 'height_cm', 0.0) or 0.0)
+            if w > 0 and h > 0:
+                self._lshape_panel.set_outer_dims(w, h)
+        except (TypeError, ValueError):
+            logger.warning("[PropertyPanel] L 形目标文件名尺寸解析失败", exc_info=True)
 
 
     # ==================== CompositePanel 桥接（综合形状：L 形挖角 + 中心矩形洞） ====================
